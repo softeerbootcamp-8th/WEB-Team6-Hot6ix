@@ -72,7 +72,7 @@ public class AuctionRoom extends BaseTimeEntity {
         this.description = description;
         this.liveUrl = liveUrl;
         this.shareCode = shareCode;
-        this.status = status != null ? status : AuctionRoomStatus.DRAFT;
+        this.status = status != null ? status : AuctionRoomStatus.BEFORE;
         this.softCloseTriggerSeconds = softCloseTriggerSeconds;
         this.softCloseExtendSeconds = softCloseExtendSeconds;
         this.closedAt = closedAt;
