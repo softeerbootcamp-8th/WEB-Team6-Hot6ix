@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hot6ix PR"
+  short_description: "팀 템플릿에 맞는 Pull Request 생성"
+  default_prompt: "지정한 시작 커밋부터 현재까지의 변경사항으로 Hot6ix 팀 PR을 만들어 주세요."

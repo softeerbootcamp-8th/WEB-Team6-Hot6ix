@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hot6ix Verify"
+  short_description: "변경 영역별 테스트·lint·타입 검사·빌드를 실행하고 보고"
+  default_prompt: "현재 변경 영역을 감지하고 Hot6ix 검증 절차를 실행해 결과를 정리해 주세요."

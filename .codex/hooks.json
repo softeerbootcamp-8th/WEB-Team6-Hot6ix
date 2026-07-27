@@ -1,0 +1,18 @@
+{
+  "description": "Hot6ix repository safety hooks for Codex.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/hooks/block-forbidden-commands.sh\"",
+            "timeout": 10,
+            "statusMessage": "금지 명령 검사 중"
+          }
+        ]
+      }
+    ]
+  }
+}

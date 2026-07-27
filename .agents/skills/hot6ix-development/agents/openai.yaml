@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hot6ix Development"
+  short_description: "Hot6ix 팀 개발 규칙과 도메인 계약 적용"
+  default_prompt: "Hot6ix 팀 규칙과 관련 계약을 확인해 이 작업을 구현하고 검증해 주세요."

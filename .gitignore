@@ -33,8 +33,10 @@ gradle-app.setting
 
 .DS_Store
 
-### Claude Code ###
-# 개인 전용 지침·설정은 커밋하지 않는다. 공용 규칙은 CLAUDE.md와 .claude/settings.json에 둔다.
+### AI coding agents ###
+# 개인 전용 지침·설정은 커밋하지 않는다. 공용 규칙만 저장소에 둔다.
 CLAUDE.local.md
 **/CLAUDE.local.md
 .claude/settings.local.json
+AGENTS.override.md
+**/AGENTS.override.md
