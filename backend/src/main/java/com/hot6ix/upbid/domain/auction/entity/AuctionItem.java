@@ -28,7 +28,8 @@ public class AuctionItem extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "auction_item_id")
+    private Long auctionItemId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "auction_room_id")

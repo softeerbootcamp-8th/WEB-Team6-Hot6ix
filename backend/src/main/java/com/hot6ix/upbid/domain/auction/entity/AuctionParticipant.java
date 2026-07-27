@@ -23,8 +23,8 @@ public class AuctionParticipant {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "auction_participants")
-    private Long id;
+    @Column(name = "auction_participant_id")
+    private Long auctionParticipantId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "auction_room_id")
