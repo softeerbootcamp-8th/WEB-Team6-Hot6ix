@@ -1,7 +1,7 @@
 ---
 description: 변경된 영역의 테스트·lint·타입 검사·빌드를 실행하고 완료 보고 형식으로 정리한다
 argument-hint: [be | fe | all (선택, 기본은 자동 감지)]
-allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(./gradlew:*), Bash(cd backend*), Bash(pnpm:*), Read, Grep, Glob
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(./gradlew:*), Bash(cd *), Bash(git rev-parse:*), Bash(pnpm:*), Read, Grep, Glob
 ---
 
 # 검증
@@ -23,19 +23,29 @@ CLAUDE.md 검증 규칙을 실행한다.
 `backend/` 변경 → 백엔드, `frontend/` 변경 → 프론트, 양쪽 → 둘 다.
 문서·설정만 바뀌었으면 실행할 검증이 없다고 알리고 끝낸다.
 
-## 2. 백엔드
+## 2. 저장소 루트 고정
 
-    ( cd backend && ./gradlew test )
+**모든 경로는 저장소 루트 기준으로 만든다.** 상대경로를 쓰면 `backend/`나
+`frontend/` 안에서 실행할 때 `backend/backend`를 찾아 실패한다.
+
+    R=$(git rev-parse --show-toplevel)
+
+이후 명령에서 `$R`를 앞에 붙인다. `git` 자체는 어느 하위 폴더에서 실행해도
+저장소 전체를 대상으로 동작하므로 별도 처리가 필요 없다.
+
+## 3. 백엔드
+
+    ( cd "$R/backend" && ./gradlew test )
 
 Gradle Wrapper를 쓴다. 전역 `gradle`을 쓰지 않는다.
 
 **`cd`는 반드시 서브셸 `( ... )` 안에서 한다.** 셸 작업 디렉터리는
 호출 간에 유지되므로, 서브셸 없이 `cd`하면 이후 명령이 엉뚱한 위치에서 돈다.
 
-## 3. 프론트엔드
+## 4. 프론트엔드
 
-    pnpm --dir frontend lint
-    pnpm --dir frontend build
+    pnpm --dir "$R/frontend" lint
+    pnpm --dir "$R/frontend" build
 
 `build`가 `tsc -b && vite build`라서 **타입 검사가 빌드에 포함**된다.
 별도 타입 체크 명령은 없다.
@@ -43,11 +53,11 @@ Gradle Wrapper를 쓴다. 전역 `gradle`을 쓰지 않는다.
 포맷까지 볼 때는 아래를 추가한다. `format`(자동 수정)이 아니라
 `format:check`를 쓴다. 검증 단계에서 파일을 임의로 고치지 않는다.
 
-    pnpm --dir frontend format:check
+    pnpm --dir "$R/frontend" format:check
 
 패키지 매니저는 **pnpm 고정**이다. npm이나 yarn을 섞지 않는다.
 
-## 4. 실패 처리
+## 5. 실패 처리
 
 **실패를 숨기거나 우회하지 않는다.** 다음은 금지다.
 
@@ -58,7 +68,7 @@ Gradle Wrapper를 쓴다. 전역 `gradle`을 쓰지 않는다.
 실패하면 출력 그대로 보여주고 원인을 분석한다. 고칠지는 사용자가 정한다.
 한쪽이 실패해도 나머지 검증은 마저 실행한다. 부분 결과가 더 유용하다.
 
-## 5. 보고
+## 6. 보고
 
 `references/workflow.md` 완료 보고 형식으로 정리한다.
 

@@ -10,9 +10,16 @@ allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git add:*), Bash(git c
 
 ## 1. 변경사항 파악
 
-    git status --short
-    git diff
-    git diff --staged
+먼저 저장소 루트를 기준으로 고정한다. `backend/`나 `frontend/` 안에서
+실행하면 `git status`가 `../.claude/...` 같은 상대경로를 출력해
+스테이징할 때 헷갈린다.
+
+    R=$(git rev-parse --show-toplevel)
+    git -C "$R" status --short
+    git -C "$R" diff
+    git -C "$R" diff --staged
+
+이후 모든 git 명령에 `-C "$R"`를 붙이고, 경로는 루트 기준으로 쓴다.
 
 **diff를 실제로 읽는다.** 파일명만 보고 요약하지 않는다.
 최근 커밋(`git log --oneline -5`)으로 현재 스타일을 확인한다.
