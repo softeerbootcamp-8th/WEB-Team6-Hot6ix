@@ -1,7 +1,7 @@
 ---
 description: 팀 컨벤션에 맞춰 GitHub 이슈를 생성한다
-argument-hint: <작업 내용 설명>
-allowed-tools: Bash(gh issue:*), Bash(gh auth:*), Bash(git branch:*), Bash(git switch:*), Bash(git log:*), Bash(git status:*), Read, Grep, Glob
+argument-hint: <작업 내용 설명> [assignee 지정 시 함께 언급]
+allowed-tools: Bash(gh issue:*), Bash(gh label:*), Bash(gh api:*), Bash(gh auth:*), Bash(git branch:*), Bash(git switch:*), Bash(git log:*), Bash(git status:*), Read, Write, Grep, Glob
 ---
 
 # 이슈 생성
@@ -58,20 +58,46 @@ allowed-tools: Bash(gh issue:*), Bash(gh auth:*), Bash(git branch:*), Bash(git s
 이슈 번호는 생성 전에는 모르므로, 먼저 브랜치명 자리를 `TBD`로 두고
 이슈를 만든 뒤 실제 번호로 채워 넣는다.
 
-## 3. 생성
+## 3. assignee와 label
+
+**assignee** — 사용자가 지정하지 않으면 **본인**으로 설정한다.
+
+    --assignee @me
+
+다른 사람을 지정했으면 그 GitHub 아이디를 쓴다.
+
+**label** — 저장소에 실제 존재하는 label 중에서 고른다.
+
+    gh label list --limit 100 --json name,description
+
+가져온 목록에서 이번 작업의 **타입**(feat/fix/bug/refactor/chore/docs)과
+**영역**(BE/FE)에 해당하는 것을 고른다. 이름이 정확히 일치하지 않아도
+의미가 맞으면 쓴다 (예: `enhancement` ← feat, `documentation` ← docs).
+
+마땅한 label이 없으면 **label 없이 진행하고 그 사실을 알린다.**
+label을 새로 만들지 않는다. 저장소 전체에 영향을 주는 변경이라
+팀 확인이 필요하다. 만들면 좋을 label이 있으면 제안만 한다.
+
+## 4. 생성
 
 본문은 임시 파일에 쓰고 `--body-file`로 넘긴다. 인라인 `--body`는
 따옴표 처리가 깨지기 쉽고, 금지 명령어 차단 hook의 오탐도 유발한다.
 
-    gh issue create --title "{제목}" --body-file {임시파일}
+    gh issue create --title "{제목}" --body-file {임시파일} \
+      --assignee @me --label "{label1},{label2}"
+
+`--label`에 없는 label을 넘기면 명령 전체가 실패한다. 반드시 위에서
+조회한 목록에 있는 이름만 쓴다.
 
 생성된 번호 `N`을 받아 본문의 `TBD`를 실제 브랜치명으로 교체한다.
 
     gh issue edit N --body-file {수정한 임시파일}
 
-## 4. 보고
+## 5. 보고
 
-생성된 이슈 번호·URL·확정된 브랜치명을 알린다.
+생성된 이슈 번호·URL·확정된 브랜치명, 그리고 **설정된 assignee와 label**을
+알린다. label을 못 붙였으면 이유(마땅한 label 없음)를 함께 알린다.
+
 그리고 브랜치를 지금 만들지 물어본다. 만든다고 하면:
 
     git switch -c {브랜치명}
