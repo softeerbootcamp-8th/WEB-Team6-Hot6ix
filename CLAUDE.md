@@ -35,6 +35,11 @@ Hot6ix는 링크·QR로 참여하는 SNS 연계 실시간 경매 서비스다.
 - `DROP`, `TRUNCATE`, `flyway clean`, `docker compose down -v`
 - `git push --force`, `git reset --hard`, `git clean`
 
+위 명령 중 일부는 `.claude/hooks/block-forbidden-commands.sh`가 자동 차단한다.
+다만 이는 **1차 방어선이며 보증이 아니다.** 훅은 Bash 명령 문자열만 보므로
+파일 안의 SQL(`mysql < migrate.sql`), Gradle 태스크가 감싼 실행, 스크립트 경유
+실행은 잡지 못한다. 최종 방어선은 DB 권한 분리, 백업, 브랜치 보호 규칙이다.
+
 ## 검증과 완료 보고
 
 - 변경한 영역의 테스트, lint, 타입 검사, 빌드를 실행한다.
