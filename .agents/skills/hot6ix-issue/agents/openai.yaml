@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hot6ix Issue"
+  short_description: "Hot6ix 팀 템플릿과 규칙에 맞는 GitHub 이슈 생성"
+  default_prompt: "요청 내용을 Hot6ix 팀 컨벤션에 맞는 GitHub 이슈로 만들어 주세요."
