@@ -45,6 +45,30 @@ Validation 에러 응답:
       ]
     }
 
+위 예시는 읽기 쉬운 순서로 적은 것이고, **실제 직렬화 순서는 다르다.**
+`CommonResponse` record의 필드 선언 순서가 그대로 JSON 순서가 된다.
+
+    success → data → code → message → errors
+
+`@JsonInclude(NON_NULL)`이 붙어 있어 null 필드는 응답에서 빠진다.
+성공 응답에 `code`와 `errors`가 없고, 데이터 없는 성공에 `data`가 없는 이유다.
+JSON 객체의 키 순서는 계약이 아니므로 파싱에는 영향이 없다.
+
+## 페이지네이션
+
+**cursor 방식으로 확정됐다.** `CursorPageResponse`가 이미 구현돼 있다.
+
+    {
+      "content": [],
+      "nextCursor": 42,
+      "hasNext": true,
+      "size": 20
+    }
+
+- `nextCursor`가 `null`이면 `hasNext`는 `false`다 (`of` 팩터리가 그렇게 만든다)
+- `size`는 요청한 크기가 아니라 **실제 반환된 `content`의 개수**다
+- 목록 API는 offset 방식을 새로 도입하지 않는다
+
 공용 계약에는 Method, Path, 필드, null, enum, 권한, status/code, 시간대,
 금액, 페이지네이션, 파일 제한, 실시간 채널과 payload가 포함된다.
 
@@ -64,7 +88,7 @@ Validation 에러 응답:
 - SSE와 WebSocket 선택
 - Redis의 구체적인 사용 범위
 - Transactional Outbox 도입 여부
-- 목록 API별 cursor/offset 방식
+- 영속성 스택(JPA·MySQL) 도입 시점과 마이그레이션 도구
 
 ## 실시간
 
