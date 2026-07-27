@@ -66,17 +66,34 @@ allowed-tools: Bash(gh issue:*), Bash(gh label:*), Bash(gh api:*), Bash(gh auth:
 
 다른 사람을 지정했으면 그 GitHub 아이디를 쓴다.
 
-**label** — 저장소에 실제 존재하는 label 중에서 고른다.
+**label** — **타입 1개 + 영역 label**을 붙인다.
+
+저장소의 label 이름에는 이모지가 붙어 있다. `--label`은 이름이 정확히
+일치해야 하므로 이모지를 포함해 그대로 넘긴다.
+
+| 타입 | label |
+|---|---|
+| feat | `✨feat` |
+| fix / bug | `🛠️fix` |
+| refactor | `🌿refactor` |
+| chore | `📃chore` |
+| test | `🧪test` |
+| docs | `📃chore` (전용 label 없음) |
+
+| 영역 | label |
+|---|---|
+| 백엔드만 | `BE` |
+| 프론트만 | `FE` |
+| 양쪽 | `BE`, `FE` 둘 다 |
+| 루트 설정·문서 전용 | 영역 label 없음 |
+
+위 표는 작성 시점 기준이다. **실행할 때 실제 목록을 다시 확인한다.**
 
     gh label list --limit 100 --json name,description
 
-가져온 목록에서 이번 작업의 **타입**(feat/fix/bug/refactor/chore/docs)과
-**영역**(BE/FE)에 해당하는 것을 고른다. 이름이 정확히 일치하지 않아도
-의미가 맞으면 쓴다 (예: `enhancement` ← feat, `documentation` ← docs).
-
-마땅한 label이 없으면 **label 없이 진행하고 그 사실을 알린다.**
-label을 새로 만들지 않는다. 저장소 전체에 영향을 주는 변경이라
-팀 확인이 필요하다. 만들면 좋을 label이 있으면 제안만 한다.
+표에 없는 label이 생겼거나 이름이 바뀌었으면 조회 결과를 따른다.
+마땅한 게 없으면 label 없이 진행하고 알린다. **label을 새로 만들지 않는다.**
+저장소 전체에 영향을 주는 변경이라 팀 확인이 필요하다. 제안만 한다.
 
 ## 4. 생성
 

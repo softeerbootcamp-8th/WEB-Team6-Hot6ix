@@ -105,12 +105,24 @@ allowed-tools: Bash(gh pr:*), Bash(gh label:*), Bash(gh auth:*), Bash(git log:*)
 속해 있어 collaborator 목록에 팀원이 아닌 사람까지 포함된다. 잘못 지정하면
 관계없는 사람에게 리뷰 요청이 간다. 사용자가 명시한 경우에만 지정한다.
 
-**label** — 저장소에 실제 존재하는 것 중에서 고른다.
+**label** — **타입 1개 + 영역 label**을 붙인다.
+label 이름에 이모지가 붙어 있고 `--label`은 정확히 일치해야 하므로
+이모지를 포함해 그대로 넘긴다.
+
+| 타입 | label |   | 영역 | label |
+|---|---|---|---|---|
+| feat | `✨feat` |   | 백엔드만 | `BE` |
+| fix / bug | `🛠️fix` |   | 프론트만 | `FE` |
+| refactor | `🌿refactor` |   | 양쪽 | `BE`, `FE` |
+| chore | `📃chore` |   | 루트 전용 | 없음 |
+| test | `🧪test` |   | | |
+| docs | `📃chore` (전용 없음) |   | | |
+
+위 표는 작성 시점 기준이다. **실행할 때 실제 목록을 다시 확인한다.**
 
     gh label list --limit 100 --json name,description
 
-타입(feat/fix/chore/docs)과 영역(BE/FE)에 맞는 것을 고른다. 마땅한 게
-없으면 label 없이 진행하고 알린다. **label을 새로 만들지 않는다.**
+마땅한 게 없으면 label 없이 진행하고 알린다. **label을 새로 만들지 않는다.**
 
 ## 8. 푸시와 생성
 
