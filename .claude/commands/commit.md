@@ -54,9 +54,8 @@ allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git add:*), Bash(git c
 본문이 필요하면(왜 그렇게 했는지, 트레이드오프) 빈 줄 뒤에 덧붙인다.
 단순한 변경이면 제목 한 줄로 끝낸다. 본문을 억지로 만들지 않는다.
 
-마지막에 아래 트레일러를 붙인다.
-
-    Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+**`Co-Authored-By` 등 AI 공동 작성자 트레일러를 붙이지 않는다.**
+커밋 author는 실제 작업자이며, 도구 이름을 이력에 남기지 않는다.
 
 ## 4. 커밋
 

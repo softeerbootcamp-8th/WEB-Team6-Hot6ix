@@ -11,8 +11,8 @@ Claude 전용 표현은 다음처럼 Codex에 맞게 해석한다.
 - `$ARGUMENTS`는 사용자가 함께 제공한 커밋 힌트다.
 - `Read`, `Write`, `Grep`, `Glob`, `Bash`는 Codex의 동등한 파일·검색·셸
   도구를 뜻한다.
-- AI 공동 작성자 trailer가 필요하면 Claude 이름을 복사하지 말고
-  `Co-Authored-By: Codex <noreply@openai.com>`을 사용한다.
+- **`Co-Authored-By` 등 AI 공동 작성자 trailer를 붙이지 않는다.**
+  커밋 author는 실제 작업자이며, 도구 이름을 이력에 남기지 않는다.
 
 실제 diff를 읽고, 현재 브랜치가 `main` 또는 `dev`면 중단하며, 의도한
 경로만 스테이징한다. 커밋 메시지는 임시 파일과 `git commit -F`를 사용한다.
