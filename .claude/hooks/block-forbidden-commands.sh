@@ -81,16 +81,35 @@ match 'flyway[:_-]?clean([^[:alnum:]]|$)' &&
 # 문서 작성, grep, SQL 파일 편집이 전부 막힌다.
 DBCLIENT='(^|[;&|([:space:]])(mysql|mysqlsh|mysqladmin|mysqldump|mariadb|psql|sqlite3)([[:space:]]|$)'
 
-# 나아가 -e / -c / --execute / --command 로 넘기는 SQL 인자 안에 있을 때만
-# 잡는다. 같은 줄의 무관한 문자열(echo 등)에 걸리지 않는다.
-SQLARG='(-e|-c|--execute|--command)[[:space:]]*["'"'"'][^"'"'"']*'
+# 나아가 따옴표로 감싼 인자 안에 있을 때만 잡는다. SQL을 넘기는 방식이
+# 여러 가지라 플래그를 기준으로 삼으면 우회된다. 아래가 모두 잡혀야 한다.
+#   mysql -e "DROP TABLE x"        (공백 + 플래그)
+#   mysql --execute="DROP TABLE x" (등호)
+#   mysql -e="DROP TABLE x"        (등호, 단축 플래그)
+#   sqlite3 db.sqlite "DROP TABLE x" (플래그 없이 위치 인자)
+# 따옴표 시작 지점부터 검사하므로 세 형태 모두 동일하게 걸린다.
+SQLQ='["'"'"'][^"'"'"']*'
 
-if match "$DBCLIENT"; then
-  match "${SQLARG}drop[[:space:]]+(table|database|schema|index|view|user|role)" &&
+# 셸 연산자로 나눈 세그먼트마다, "그 세그먼트 안에서" DB 클라이언트를
+# 호출하면서 파괴적 SQL을 넘기는지 본다. 명령 전체를 한 덩어리로 보면
+#   mysql --version; echo "DROP TABLE 금지"
+# 처럼 무관한 문자열이 함께 있을 때 오탐한다.
+check_sql_segment() {
+  local seg="$1"
+  printf '%s' "$seg" | grep -Eiq "$DBCLIENT" || return 0
+
+  printf '%s' "$seg" | grep -Eiq "${SQLQ}drop[[:space:]]+(table|database|schema|index|view|user|role)" &&
     deny "CLAUDE.md 금지 명령: DROP. DB schema 변경은 팀 확인 후 사람이 직접 실행한다."
 
-  match "${SQLARG}truncate[[:space:]]+(table|[[:alnum:]_\`]+)" &&
+  printf '%s' "$seg" | grep -Eiq "${SQLQ}truncate[[:space:]]+(table|[[:alnum:]_\`]+)" &&
     deny "CLAUDE.md 금지 명령: TRUNCATE. 데이터 삭제는 팀 확인 후 사람이 직접 실행한다."
-fi
+  return 0
+}
+
+while IFS= read -r seg; do
+  check_sql_segment "$seg"
+done <<EOF
+$(printf '%s' "$cmd" | awk '{gsub(/\|\||&&|;|\||&/, "\n"); print}')
+EOF
 
 exit 0
