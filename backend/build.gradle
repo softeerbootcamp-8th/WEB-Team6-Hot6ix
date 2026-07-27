@@ -29,6 +29,10 @@ dependencies {
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 
+	// Database
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
 	// Test
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testCompileOnly 'org.projectlombok:lombok'
