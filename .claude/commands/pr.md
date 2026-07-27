@@ -1,7 +1,7 @@
 ---
 description: 지정한 커밋부터 현재까지의 변경사항으로 팀 컨벤션에 맞는 PR을 생성한다
 argument-hint: <시작 커밋 SHA> [assignee 지정 시 함께 언급]
-allowed-tools: Bash(gh pr:*), Bash(gh label:*), Bash(gh api:*), Bash(gh auth:*), Bash(git log:*), Bash(git diff:*), Bash(git show:*), Bash(git status:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git push:*), Read, Write, Grep, Glob
+allowed-tools: Bash(gh pr:*), Bash(gh label:*), Bash(gh auth:*), Bash(git log:*), Bash(git diff:*), Bash(git show:*), Bash(git status:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git push:*), Read, Write, Grep, Glob
 ---
 
 # PR 생성
@@ -101,17 +101,9 @@ allowed-tools: Bash(gh pr:*), Bash(gh label:*), Bash(gh api:*), Bash(gh auth:*),
 
 **assignee** — 사용자가 지정하지 않으면 본인으로 한다. `--assignee @me`
 
-**리뷰어** — 팀원 전원을 지정한다. 목록은 하드코딩하지 말고 조회한다.
-팀원이 바뀌어도 따라간다.
-
-    ME=$(gh api user --jq .login)
-    gh api "repos/{owner}/{repo}/collaborators" --paginate --jq '.[].login'
-
-조회 결과에서 **본인을 제외**한다. GitHub는 PR 작성자를 리뷰어로 지정할 수
-없고, 포함하면 명령 전체가 실패한다.
-
-조회가 실패하면(권한 부족 등) 리뷰어 없이 PR을 만들고 그 사실을 알린다.
-PR 생성 자체를 막지 않는다.
+**리뷰어** — **자동으로 지정하지 않는다.** 이 저장소는 부트캠프 조직에
+속해 있어 collaborator 목록에 팀원이 아닌 사람까지 포함된다. 잘못 지정하면
+관계없는 사람에게 리뷰 요청이 간다. 사용자가 명시한 경우에만 지정한다.
 
 **label** — 저장소에 실제 존재하는 것 중에서 고른다.
 
@@ -130,20 +122,20 @@ PR 생성 자체를 막지 않는다.
 따옴표 처리가 깨지기 쉽고, 금지 명령어 차단 hook의 오탐도 유발한다.
 
     gh pr create --base dev --title "{제목}" --body-file {임시파일} \
-      --assignee @me \
-      --reviewer "{본인 제외 팀원 쉼표 구분}" \
-      --label "{label1},{label2}"
+      --assignee @me --label "{label1},{label2}"
 
 **base는 `dev`** 다 (`main ← dev ← 기능 브랜치`). `main`으로 열지 않는다.
 현재 브랜치가 `dev`나 `main`이면 PR을 만들 수 없으므로 중단하고 알린다.
 
-리뷰어·label 지정이 실패해도 **PR 본체는 살린다.** 실패하면 PR을 먼저
-만든 뒤 `gh pr edit`으로 재시도하고, 그래도 안 되면 사실대로 알린다.
-
-    gh pr edit {번호} --add-reviewer {아이디},{아이디}
+label 지정이 실패해도 **PR 본체는 살린다.** 실패하면 PR을 먼저 만든 뒤
+`gh pr edit`으로 재시도하고, 그래도 안 되면 사실대로 알린다.
 
 ## 9. 보고
 
-PR URL과 함께 **지정된 assignee·리뷰어·label**을 알린다.
-리뷰어가 2명 미만이면 팀 컨벤션(최소 리뷰 2명)을 못 채운다는 점을 알린다.
+PR URL과 함께 지정된 assignee·label을 알린다.
 label을 못 붙였으면 이유를 알린다.
+
+**리뷰어는 지정하지 않았음을 알리고, 직접 지정하도록 안내한다.**
+팀 컨벤션상 최소 2명의 리뷰가 필요하다.
+
+    gh pr edit {번호} --add-reviewer {아이디},{아이디}
