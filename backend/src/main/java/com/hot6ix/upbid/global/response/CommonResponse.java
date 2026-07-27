@@ -14,12 +14,12 @@ public record CommonResponse<T>(
         String message,
         List<ValidationError> errors
 ) {
-    public static <T> CommonResponse<T> ok(T data) {
-        return new CommonResponse<>(true, data, null, null, null);
+    public static <T> CommonResponse<T> ok(T data, String message) {
+        return new CommonResponse<>(true, data, null, message, null);
     }
 
-    public static CommonResponse<Void> ok() {
-        return new CommonResponse<>(true, null, null, null, null);
+    public static CommonResponse<Void> ok(String message) {
+        return new CommonResponse<>(true, null, null, message, null);
     }
 
     public static CommonResponse<Void> error(ErrorType errorType) {
