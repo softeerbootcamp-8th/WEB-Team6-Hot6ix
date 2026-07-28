@@ -4,11 +4,11 @@ import java.util.List;
 
 public record CursorPageResponse<T>(
         List<T> content,
-        String nextCursor,
+        Long nextCursor,
         boolean hasNext,
         int size
 ) {
-    public static <T> CursorPageResponse<T> of(List<T> content, String nextCursor) {
+    public static <T> CursorPageResponse<T> of(List<T> content, Long nextCursor) {
         return new CursorPageResponse<>(content, nextCursor, nextCursor != null, content.size());
     }
 }
