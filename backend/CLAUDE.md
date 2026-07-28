@@ -24,6 +24,8 @@ Hot6ix는 링크·QR로 참여하는 SNS 연계 실시간 경매 서비스다.
 - `ApplicationException`, 도메인별 `ErrorType`, `GlobalExceptionHandler`를 사용한다.
 - 생성자 주입을 사용한다.
 - API Method, Path, 응답, 권한, DB schema, 이벤트 payload를 임의 변경하지 않는다.
+- DB 연결이 필요한 테스트(`@DataJpaTest` 등)는 로컬 개발 DB를 직접 쓰지 않고
+  Testcontainers로 격리한다. 자세한 내용은 backend.md의 "테스트" 절 참고.
 
 ## 금지
 

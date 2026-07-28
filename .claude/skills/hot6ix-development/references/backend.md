@@ -43,6 +43,21 @@ Repository는 영속성 접근만 담당한다.
 - 테스트 메서드명은 한글
 - 권한, 입찰 단위, 마감 후 입찰, 동시 입찰, 3개 병렬 제한,
   Soft Close, 이벤트 발행 시점, 낙찰 멱등성, 예외 응답을 우선 검증한다.
+- **`@DataJpaTest`(DB 연결이 필요한 테스트)는 개발자 로컬 MySQL이 아니라 Testcontainers로
+  띄운 별도 MySQL 컨테이너를 써서 개발 DB와 격리한다.** Docker만 켜져 있으면 로컬·CI
+  (GitHub Actions `ubuntu-latest`는 Docker 기본 설치) 모두 같은 방식으로 동작한다.
+  `backend/src/test/java/.../global/support/AbstractMySqlContainerTest.java`를 상속하면
+  `@ServiceConnection`으로 컨테이너가 자동 연결된다 — 개별 테스트에서 datasource 설정을
+  직접 건드리지 않는다.
+  컨테이너 이미지는 로컬 `docker-compose.yml`의 MySQL 버전과 동일하게 고정한다.
+
+  ```java
+  @DataJpaTest
+  @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+  class FooRepositoryTest extends AbstractMySqlContainerTest {
+      ...
+  }
+  ```
 
 ## 금지
 
