@@ -16,11 +16,11 @@ public record SellerProfileCreateRequestDto(
         )
         String storeName,
 
-        @NotBlank(message = "가게 사진 URL은 필수 값입니다.")
+        @Pattern(regexp = ".*\\S.*", message = "가게 사진 URL은 빈 값일 수 없습니다.")
         @URL(message = "가게 사진 URL 형식이 올바르지 않습니다.")
         String storeImageUrl,
 
-        @NotBlank(message = "SNS 링크는 필수 값입니다.")
+        @Pattern(regexp = ".*\\S.*", message = "SNS 링크는 빈 값일 수 없습니다.")
         @URL(message = "SNS 링크 URL 형식이 올바르지 않습니다.")
         String snsUrl,
 

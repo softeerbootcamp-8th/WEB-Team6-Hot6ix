@@ -14,9 +14,11 @@ public record SellerProfileUpdateRequestDto(
         )
         String storeName,
 
+        @Pattern(regexp = ".*\\S.*", message = "가게 사진 URL은 빈 값일 수 없습니다.")
         @URL(message = "가게 사진 URL 형식이 올바르지 않습니다.")
         String storeImageUrl,
 
+        @Pattern(regexp = ".*\\S.*", message = "SNS 링크는 빈 값일 수 없습니다.")
         @URL(message = "SNS 링크 URL 형식이 올바르지 않습니다.")
         String snsUrl,
 

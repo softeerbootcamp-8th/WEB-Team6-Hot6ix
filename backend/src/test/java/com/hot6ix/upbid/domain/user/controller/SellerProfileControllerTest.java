@@ -76,6 +76,43 @@ class SellerProfileControllerTest {
     }
 
     @Test
+    @DisplayName("가게 사진·SNS 링크 없이도 판매자 프로필을 등록할 수 있다")
+    void create_withoutOptionalUrls() throws Exception {
+
+        SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
+                .storeName("승민상점")
+                .build();
+
+        when(sellerProfileService.create(eq(1L), any(SellerProfileCreateRequestDto.class)))
+                .thenReturn(sampleResponse());
+
+        mockMvc.perform(post("/api/v1/seller-profiles")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("가게 사진 URL이 빈 문자열이면 등록 시 400을 반환한다")
+    void create_blankStoreImageUrl() throws Exception {
+
+        SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
+                .storeName("승민상점")
+                .storeImageUrl("")
+                .build();
+
+        mockMvc.perform(post("/api/v1/seller-profiles")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002));
+    }
+
+    @Test
     @DisplayName("가게 이름 형식이 올바르지 않으면 등록 시 400을 반환한다")
     void create_invalidStoreName() throws Exception {
 
@@ -137,6 +174,23 @@ class SellerProfileControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("SNS 링크를 빈 문자열로 수정하려 하면 400을 반환한다")
+    void update_blankSnsUrl() throws Exception {
+
+        SellerProfileUpdateRequestDto request = SellerProfileUpdateRequestDto.builder()
+                .snsUrl("")
+                .build();
+
+        mockMvc.perform(patch("/api/v1/seller-profiles/me")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002));
     }
 
     @Test
