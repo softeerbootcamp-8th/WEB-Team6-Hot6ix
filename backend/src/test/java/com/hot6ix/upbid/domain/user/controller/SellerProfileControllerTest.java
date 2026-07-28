@@ -41,21 +41,27 @@ class SellerProfileControllerTest {
     private SellerProfileService sellerProfileService;
 
     private SellerProfileResponseDto sampleResponse() {
-        return new SellerProfileResponseDto(
-                1L, "승민상점", "https://cdn.hot6ix.com/store.png",
-                "https://instagram.com/hot6ix", "02-1234-5678", "안녕하세요",
-                null, null
-        );
+        return SellerProfileResponseDto.builder()
+                .sellerProfileId(1L)
+                .storeName("승민상점")
+                .storeImageUrl("https://cdn.hot6ix.com/store.png")
+                .snsUrl("https://instagram.com/hot6ix")
+                .storePhoneNumber("02-1234-5678")
+                .storeDescription("안녕하세요")
+                .build();
     }
 
     @Test
     @DisplayName("판매자 프로필을 등록하면 201과 등록된 정보를 반환한다")
     void create() throws Exception {
 
-        SellerProfileCreateRequestDto request = new SellerProfileCreateRequestDto(
-                "승민상점", "https://cdn.hot6ix.com/store.png", "https://instagram.com/hot6ix",
-                "02-1234-5678", "안녕하세요"
-        );
+        SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
+                .storeName("승민상점")
+                .storeImageUrl("https://cdn.hot6ix.com/store.png")
+                .snsUrl("https://instagram.com/hot6ix")
+                .storePhoneNumber("02-1234-5678")
+                .storeDescription("안녕하세요")
+                .build();
 
         when(sellerProfileService.create(eq(1L), any(SellerProfileCreateRequestDto.class)))
                 .thenReturn(sampleResponse());
@@ -73,10 +79,11 @@ class SellerProfileControllerTest {
     @DisplayName("가게 이름 형식이 올바르지 않으면 등록 시 400을 반환한다")
     void create_invalidStoreName() throws Exception {
 
-        SellerProfileCreateRequestDto request = new SellerProfileCreateRequestDto(
-                "이", "https://cdn.hot6ix.com/store.png", "https://instagram.com/hot6ix",
-                null, null
-        );
+        SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
+                .storeName("이")
+                .storeImageUrl("https://cdn.hot6ix.com/store.png")
+                .snsUrl("https://instagram.com/hot6ix")
+                .build();
 
         mockMvc.perform(post("/api/v1/seller-profiles")
                         .header("X-User-Id", "1")
@@ -117,9 +124,9 @@ class SellerProfileControllerTest {
     @DisplayName("판매자 프로필의 일부 필드를 수정한다")
     void update() throws Exception {
 
-        SellerProfileUpdateRequestDto request = new SellerProfileUpdateRequestDto(
-                "새로운상점", null, null, null, null
-        );
+        SellerProfileUpdateRequestDto request = SellerProfileUpdateRequestDto.builder()
+                .storeName("새로운상점")
+                .build();
 
         when(sellerProfileService.update(eq(1L), any(SellerProfileUpdateRequestDto.class)))
                 .thenReturn(sampleResponse());

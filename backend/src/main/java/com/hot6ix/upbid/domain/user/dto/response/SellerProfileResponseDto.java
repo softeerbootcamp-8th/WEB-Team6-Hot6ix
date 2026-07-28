@@ -2,7 +2,9 @@ package com.hot6ix.upbid.domain.user.dto.response;
 
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import java.time.LocalDateTime;
+import lombok.Builder;
 
+@Builder
 public record SellerProfileResponseDto(
         Long sellerProfileId,
         String storeName,
@@ -14,15 +16,15 @@ public record SellerProfileResponseDto(
         LocalDateTime updatedAt
 ) {
     public static SellerProfileResponseDto from(SellerProfile sellerProfile) {
-        return new SellerProfileResponseDto(
-                sellerProfile.getSellerProfileId(),
-                sellerProfile.getStoreName(),
-                sellerProfile.getStoreImageUrl(),
-                sellerProfile.getSnsUrl(),
-                sellerProfile.getStorePhoneNumber(),
-                sellerProfile.getStoreDescription(),
-                sellerProfile.getCreatedAt(),
-                sellerProfile.getUpdatedAt()
-        );
+        return SellerProfileResponseDto.builder()
+                .sellerProfileId(sellerProfile.getSellerProfileId())
+                .storeName(sellerProfile.getStoreName())
+                .storeImageUrl(sellerProfile.getStoreImageUrl())
+                .snsUrl(sellerProfile.getSnsUrl())
+                .storePhoneNumber(sellerProfile.getStorePhoneNumber())
+                .storeDescription(sellerProfile.getStoreDescription())
+                .createdAt(sellerProfile.getCreatedAt())
+                .updatedAt(sellerProfile.getUpdatedAt())
+                .build();
     }
 }

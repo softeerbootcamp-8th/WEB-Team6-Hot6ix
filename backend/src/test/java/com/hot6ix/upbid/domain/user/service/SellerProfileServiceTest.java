@@ -64,10 +64,13 @@ class SellerProfileServiceTest {
     void create() {
 
         User user = newUser();
-        SellerProfileCreateRequestDto request = new SellerProfileCreateRequestDto(
-                "승민상점", "https://cdn.hot6ix.com/store.png", "https://instagram.com/hot6ix",
-                "02-1234-5678", "안녕하세요"
-        );
+        SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
+                .storeName("승민상점")
+                .storeImageUrl("https://cdn.hot6ix.com/store.png")
+                .snsUrl("https://instagram.com/hot6ix")
+                .storePhoneNumber("02-1234-5678")
+                .storeDescription("안녕하세요")
+                .build();
 
         when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
@@ -86,10 +89,11 @@ class SellerProfileServiceTest {
     void create_raceCondition() {
 
         User user = newUser();
-        SellerProfileCreateRequestDto request = new SellerProfileCreateRequestDto(
-                "승민상점", "https://cdn.hot6ix.com/store.png", "https://instagram.com/hot6ix",
-                null, null
-        );
+        SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
+                .storeName("승민상점")
+                .storeImageUrl("https://cdn.hot6ix.com/store.png")
+                .snsUrl("https://instagram.com/hot6ix")
+                .build();
 
         when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
@@ -106,10 +110,11 @@ class SellerProfileServiceTest {
     @DisplayName("이미 등록된 판매자 프로필이 있으면 등록 시 예외가 발생한다")
     void create_duplicate() {
 
-        SellerProfileCreateRequestDto request = new SellerProfileCreateRequestDto(
-                "승민상점", "https://cdn.hot6ix.com/store.png", "https://instagram.com/hot6ix",
-                null, null
-        );
+        SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
+                .storeName("승민상점")
+                .storeImageUrl("https://cdn.hot6ix.com/store.png")
+                .snsUrl("https://instagram.com/hot6ix")
+                .build();
 
         when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(true);
 
@@ -126,10 +131,11 @@ class SellerProfileServiceTest {
     @DisplayName("존재하지 않는 회원이면 등록 시 예외가 발생한다")
     void create_userNotFound() {
 
-        SellerProfileCreateRequestDto request = new SellerProfileCreateRequestDto(
-                "승민상점", "https://cdn.hot6ix.com/store.png", "https://instagram.com/hot6ix",
-                null, null
-        );
+        SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
+                .storeName("승민상점")
+                .storeImageUrl("https://cdn.hot6ix.com/store.png")
+                .snsUrl("https://instagram.com/hot6ix")
+                .build();
 
         when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
         when(userRepository.findById(1L)).thenReturn(Optional.empty());
@@ -174,9 +180,9 @@ class SellerProfileServiceTest {
     void update_partial() {
 
         SellerProfile sellerProfile = newSellerProfile(newUser());
-        SellerProfileUpdateRequestDto request = new SellerProfileUpdateRequestDto(
-                "새로운상점", null, null, null, null
-        );
+        SellerProfileUpdateRequestDto request = SellerProfileUpdateRequestDto.builder()
+                .storeName("새로운상점")
+                .build();
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.of(sellerProfile));
@@ -194,9 +200,9 @@ class SellerProfileServiceTest {
     @DisplayName("수정 대상 프로필이 없으면 예외가 발생한다")
     void update_notFound() {
 
-        SellerProfileUpdateRequestDto request = new SellerProfileUpdateRequestDto(
-                "새로운상점", null, null, null, null
-        );
+        SellerProfileUpdateRequestDto request = SellerProfileUpdateRequestDto.builder()
+                .storeName("새로운상점")
+                .build();
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.empty());
