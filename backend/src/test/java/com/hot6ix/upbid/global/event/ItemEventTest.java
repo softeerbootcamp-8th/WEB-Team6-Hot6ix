@@ -42,20 +42,14 @@ class ItemEventTest {
         }
 
         @Test
-        @DisplayName("finalPrice는 유찰 대비 null을 허용한다")
-        void allowsNullFinalPrice() {
-            ItemEnded event = ItemEnded.of(ROOM_ID, ITEM_ID, null, OCCURRED_AT);
-
-            assertThat(event.finalPrice()).isNull();
-        }
-
-        @Test
         @DisplayName("필수 필드가 null이면 NullPointerException이 발생한다")
         void rejectsNullRequiredFields() {
             assertThatNullPointerException()
                     .isThrownBy(() -> ItemEnded.of(null, ITEM_ID, 5000L, OCCURRED_AT));
             assertThatNullPointerException()
                     .isThrownBy(() -> ItemEnded.of(ROOM_ID, null, 5000L, OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> ItemEnded.of(ROOM_ID, ITEM_ID, null, OCCURRED_AT));
             assertThatNullPointerException()
                     .isThrownBy(() -> ItemEnded.of(ROOM_ID, ITEM_ID, 5000L, null));
         }

@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
 
-// 물품 경매 마감 이벤트
+// 물품 최종 낙찰 이벤트
 public record ItemEnded(
         String eventId,
         EventType type,
@@ -20,6 +20,7 @@ public record ItemEnded(
         Objects.requireNonNull(roomId, "roomId");
         Objects.requireNonNull(itemId, "itemId");
         Objects.requireNonNull(occurredAt, "occurredAt");
+        Objects.requireNonNull(finalPrice, "finalPrice");
     }
 
     public static ItemEnded of(Long roomId, Long itemId, Long finalPrice, LocalDateTime occurredAt) {
