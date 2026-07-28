@@ -25,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @ExtendWith(MockitoExtension.class)
 class SellerProfileServiceTest {
@@ -70,14 +71,35 @@ class SellerProfileServiceTest {
 
         when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-        when(sellerProfileRepository.save(any(SellerProfile.class)))
+        when(sellerProfileRepository.saveAndFlush(any(SellerProfile.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         SellerProfileResponseDto response = sellerProfileService.create(1L, request);
 
         assertThat(response.storeName()).isEqualTo("승민상점");
         assertThat(response.snsUrl()).isEqualTo("https://instagram.com/hot6ix");
-        verify(sellerProfileRepository, times(1)).save(any(SellerProfile.class));
+        verify(sellerProfileRepository, times(1)).saveAndFlush(any(SellerProfile.class));
+    }
+
+    @Test
+    @DisplayName("동시 요청으로 유니크 제약을 위반하면 등록 시 예외가 발생한다")
+    void create_raceCondition() {
+
+        User user = newUser();
+        SellerProfileCreateRequestDto request = new SellerProfileCreateRequestDto(
+                "승민상점", "https://cdn.hot6ix.com/store.png", "https://instagram.com/hot6ix",
+                null, null
+        );
+
+        when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(sellerProfileRepository.saveAndFlush(any(SellerProfile.class)))
+                .thenThrow(new DataIntegrityViolationException("unique constraint violated"));
+
+        assertThatThrownBy(() -> sellerProfileService.create(1L, request))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
     }
 
     @Test
@@ -97,7 +119,7 @@ class SellerProfileServiceTest {
                 .isEqualTo(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
 
         verify(userRepository, never()).findById(any());
-        verify(sellerProfileRepository, never()).save(any());
+        verify(sellerProfileRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -117,7 +139,7 @@ class SellerProfileServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(CommonErrorType.RESOURCE_NOT_FOUND);
 
-        verify(sellerProfileRepository, never()).save(any());
+        verify(sellerProfileRepository, never()).saveAndFlush(any());
     }
 
     @Test
