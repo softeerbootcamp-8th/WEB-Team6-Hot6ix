@@ -1,10 +1,12 @@
 package com.hot6ix.upbid.domain.user.repository;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,5 +55,21 @@ class SellerProfileRepositoryTest {
 
         assertThatThrownBy(() -> sellerProfileRepository.saveAndFlush(duplicate))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("필드를 수정하고 flush하면 updatedAt이 실제로 갱신된다")
+    void updatedAt_refreshed_afterFlush() throws InterruptedException {
+
+        User user = newUser("seller2@hot6ix.com");
+        SellerProfile sellerProfile = sellerProfileRepository.saveAndFlush(newSellerProfile(user));
+
+        LocalDateTime before = sellerProfile.getUpdatedAt();
+        Thread.sleep(10);
+
+        sellerProfile.update("새로운상점", null, null, null, null);
+        sellerProfileRepository.flush();
+
+        assertThat(sellerProfile.getUpdatedAt()).isAfter(before);
     }
 }

@@ -94,6 +94,9 @@ public class SellerProfileService {
                 request.storePhoneNumber(),
                 request.storeDescription()
         );
+        // @LastModifiedDate는 flush 시점(@PreUpdate)에야 갱신된다. 여기서 flush하지 않으면
+        // 아래 응답 DTO에 담기는 updatedAt이 이번 수정 전의 값이 되어버린다.
+        sellerProfileRepository.flush();
 
         return SellerProfileResponseDto.from(sellerProfile);
     }

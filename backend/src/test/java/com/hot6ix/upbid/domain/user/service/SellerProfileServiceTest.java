@@ -187,6 +187,7 @@ class SellerProfileServiceTest {
         assertThat(response.storeImageUrl()).isEqualTo("https://cdn.hot6ix.com/store.png");
         assertThat(response.snsUrl()).isEqualTo("https://instagram.com/hot6ix");
         assertThat(response.storeDescription()).isEqualTo("기존 소개");
+        verify(sellerProfileRepository).flush();
     }
 
     @Test
