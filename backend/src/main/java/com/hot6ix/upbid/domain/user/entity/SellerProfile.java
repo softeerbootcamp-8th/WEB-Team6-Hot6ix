@@ -27,10 +27,10 @@ public class SellerProfile extends BaseEntity {
     private Long sellerProfileId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", unique = true)
+    @JoinColumn(name = "user_id", unique = true, nullable = false)
     private User user;
 
-    @Column(name = "store_name", length = 30)
+    @Column(name = "store_name", length = 30, nullable = false)
     private String storeName;
 
     @Column(name = "store_image_url", columnDefinition = "TEXT")

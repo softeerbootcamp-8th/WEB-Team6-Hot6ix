@@ -58,6 +58,35 @@ class SellerProfileRepositoryTest {
     }
 
     @Test
+    @DisplayName("storeName 없이 저장하면 예외가 발생한다")
+    void storeName_notNull_violated() {
+
+        User user = newUser("seller3@hot6ix.com");
+        SellerProfile sellerProfile = SellerProfile.builder()
+                .user(user)
+                .storeImageUrl("https://cdn.hot6ix.com/store.png")
+                .snsUrl("https://instagram.com/hot6ix")
+                .build();
+
+        assertThatThrownBy(() -> sellerProfileRepository.saveAndFlush(sellerProfile))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("user 없이 저장하면 예외가 발생한다")
+    void user_notNull_violated() {
+
+        SellerProfile sellerProfile = SellerProfile.builder()
+                .storeName("승민상점")
+                .storeImageUrl("https://cdn.hot6ix.com/store.png")
+                .snsUrl("https://instagram.com/hot6ix")
+                .build();
+
+        assertThatThrownBy(() -> sellerProfileRepository.saveAndFlush(sellerProfile))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
     @DisplayName("필드를 수정하고 flush하면 updatedAt이 실제로 갱신된다")
     void updatedAt_refreshed_afterFlush() throws InterruptedException {
 
