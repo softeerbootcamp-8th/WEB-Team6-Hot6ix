@@ -3,10 +3,9 @@
 ## 구조
 
 - Java 21, Spring Boot 4.x
-- **JPA·MySQL은 아직 미도입이다.** `build.gradle`에 data-jpa·MySQL 드라이버가
-  없고 `application.yaml`에 datasource 설정이 없다. 아래 JPA 규칙과
-  `spring.jpa.open-in-view=false`는 **도입 시점에 함께 반영할 대상**이다.
-  현재 코드에 없다고 해서 규칙 위반이 아니다.
+- **JPA·MySQL이 도입되어 있다.** `build.gradle`에 data-jpa·MySQL 드라이버가 있고
+  `application.yaml`에 datasource 설정과 `spring.jpa.open-in-view=false`가
+  반영되어 있다. 아래 JPA 규칙은 지금부터 적용 대상이다.
 - Redis는 자동 도입하지 않고, 목적·TTL·fallback을 명시할 때만 파생 상태 저장소로 사용
 - 도메인형 패키지
 - `Controller → Service → Repository`

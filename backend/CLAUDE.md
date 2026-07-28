@@ -7,10 +7,10 @@ Hot6ix는 링크·QR로 참여하는 SNS 연계 실시간 경매 서비스다.
 ## 기술과 구조
 
 - Java 21, Spring Boot 4.x, JUnit 5를 기본 스택으로 사용한다.
-- **영속성 계층은 아직 도입 전이다.** `build.gradle`에 `spring-boot-starter-data-jpa`와
-  MySQL 드라이버가 없고, `application.yaml`에도 datasource 설정이 없다.
-  JPA·MySQL 도입 시 `spring.jpa.open-in-view=false`를 **함께 반영한다.**
-  아래 JPA 관련 규칙은 도입 이후에 적용된다.
+- **영속성 계층(JPA·MySQL)이 도입되어 있다.** `build.gradle`에
+  `spring-boot-starter-data-jpa`와 MySQL 드라이버가 있고, `application.yaml`에
+  datasource 설정과 `spring.jpa.open-in-view=false`가 반영되어 있다.
+  아래 JPA 관련 규칙은 지금부터 적용 대상이다.
 <!-- - Redis는 자동 도입하지 않는다. 캐싱·rate limiting 등 목적, TTL, 장애 시 fallback을 명시할 때만 파생 상태 저장소로 도입한다. -->
 - 도메인형 패키지와 `Controller → Service → Repository` 구조를 따른다.
 - 트랜잭션은 Service에서만 관리한다.
