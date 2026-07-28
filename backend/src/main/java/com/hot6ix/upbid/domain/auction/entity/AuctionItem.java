@@ -70,14 +70,14 @@ public class AuctionItem extends BaseTimeEntity {
 
     @Builder
     private AuctionItem(AuctionRoom auctionRoom, User leaderUser, Product product, Long startingPrice,
-                        Long bidIncrement, Long currentPrice, AuctionItemStatus status, LocalDateTime startedAt,
+                        Long bidIncrement, AuctionItemStatus status, LocalDateTime startedAt,
                         LocalDateTime originalEndAt, LocalDateTime endAt, Integer totalExtensionSeconds) {
         this.auctionRoom = auctionRoom;
         this.leaderUser = leaderUser;
         this.product = product;
         this.startingPrice = startingPrice;
         this.bidIncrement = bidIncrement;
-        this.currentPrice = currentPrice;
+        this.currentPrice = startingPrice;
         this.status = status != null ? status : AuctionItemStatus.READY;
         this.startedAt = startedAt;
         this.originalEndAt = originalEndAt;
