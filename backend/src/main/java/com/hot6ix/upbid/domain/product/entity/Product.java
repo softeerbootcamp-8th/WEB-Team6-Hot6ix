@@ -28,10 +28,10 @@ public class Product extends BaseEntity {
     private Long productId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "seller_profile_id")
+    @JoinColumn(name = "seller_profile_id", nullable = false)
     private SellerProfile sellerProfile;
 
-    @Column(name = "name", length = 30)
+    @Column(name = "name", length = 30, nullable = false)
     private String name;
 
     @Column(name = "description", length = 100)
