@@ -316,4 +316,75 @@ class ProductServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
     }
+
+    @Test
+    @DisplayName("경매방이 시작된 적 없으면 상품이 soft delete 된다")
+    void delete() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        Product product = newProduct(sellerProfile);
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+                .thenReturn(Optional.of(product));
+        when(auctionItemRepository.existsByProduct_ProductIdAndStatusNot(any(), eq(AuctionItemStatus.READY)))
+                .thenReturn(false);
+
+        productService.delete(1L, 10L);
+
+        assertThat(product.isDeleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("경매방이 시작된 적 있으면 삭제 시 예외가 발생한다")
+    void delete_auctionAlreadyStarted() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        Product product = newProduct(sellerProfile);
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+                .thenReturn(Optional.of(product));
+        when(auctionItemRepository.existsByProduct_ProductIdAndStatusNot(any(), eq(AuctionItemStatus.READY)))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> productService.delete(1L, 10L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED);
+
+        assertThat(product.isDeleted()).isFalse();
+    }
+
+    @Test
+    @DisplayName("상품이 없거나 본인 소유가 아니면 삭제 시 예외가 발생한다")
+    void delete_productNotFound() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.delete(1L, 10L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(ProductErrorType.PRODUCT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 삭제 시 예외가 발생한다")
+    void delete_sellerProfileNotFound() {
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.delete(1L, 10L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+    }
 }

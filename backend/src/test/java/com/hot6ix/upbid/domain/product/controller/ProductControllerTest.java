@@ -2,7 +2,9 @@ package com.hot6ix.upbid.domain.product.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -320,6 +322,42 @@ class ProductControllerTest {
                         .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(5002));
+    }
+
+    @Test
+    @DisplayName("상품을 삭제한다")
+    void deleteProduct() throws Exception {
+
+        mockMvc.perform(delete("/api/v1/products/1").header("X-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("상품이 없거나 본인 소유가 아니면 삭제 시 404와 에러코드를 반환한다")
+    void delete_productNotFound() throws Exception {
+
+        doThrow(new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND))
+                .when(productService).delete(eq(1L), eq(999L));
+
+        mockMvc.perform(delete("/api/v1/products/999").header("X-User-Id", "1"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(5001));
+    }
+
+    @Test
+    @DisplayName("경매방이 시작된 적 있는 상품은 삭제 시 409와 에러코드를 반환한다")
+    void delete_auctionAlreadyStarted() throws Exception {
+
+        doThrow(new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED))
+                .when(productService).delete(eq(1L), eq(1L));
+
+        mockMvc.perform(delete("/api/v1/products/1").header("X-User-Id", "1"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(5002));

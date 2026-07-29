@@ -15,6 +15,7 @@ import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.response.CursorPageResponse;
+import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -81,14 +82,31 @@ public class ProductService {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         Product product = findOwnedProduct(sellerProfile, productId);
-
-        if (auctionItemRepository.existsByProduct_ProductIdAndStatusNot(productId, AuctionItemStatus.READY)) {
-            throw new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED);
-        }
+        assertAuctionNotStarted(productId);
 
         product.update(request);
 
         return ProductResponseDto.from(product);
+    }
+
+    /**
+     * 로그인한 판매자 본인 소유의 상품을 soft delete 한다.
+     * 경매방이 한 번이라도 시작된(READY가 아닌 AuctionItem이 있는) 상품은 삭제할 수 없다.
+     *
+     * @param userId    삭제를 요청한 회원의 ID
+     * @param productId 삭제할 상품의 ID
+     * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
+     *                               상품이 없거나 본인 소유가 아닐 때(PRODUCT_NOT_FOUND),
+     *                               경매방이 시작된 적 있을 때(PRODUCT_AUCTION_ALREADY_STARTED)
+     */
+    @Transactional
+    public void delete(Long userId, Long productId) {
+
+        SellerProfile sellerProfile = findActiveSellerProfile(userId);
+        Product product = findOwnedProduct(sellerProfile, productId);
+        assertAuctionNotStarted(productId);
+
+        product.softDelete(LocalDateTime.now());
     }
 
     /**
@@ -129,5 +147,11 @@ public class ProductService {
         return productRepository
                 .findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(productId, sellerProfile.getSellerProfileId())
                 .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
+    }
+
+    private void assertAuctionNotStarted(Long productId) {
+        if (auctionItemRepository.existsByProduct_ProductIdAndStatusNot(productId, AuctionItemStatus.READY)) {
+            throw new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED);
+        }
     }
 }

@@ -12,6 +12,7 @@ import com.hot6ix.upbid.global.response.CursorPageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -64,5 +65,14 @@ public class ProductController implements ProductApi {
         ProductResponseDto response = productService.update(userId, productId, request);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "상품이 수정되었습니다."));
+    }
+
+    @DeleteMapping("/{productId}")
+    @Override
+    public ResponseEntity<CommonResponse<Void>> delete(Long userId, Long productId) {
+
+        productService.delete(userId, productId);
+
+        return ResponseEntity.ok(CommonResponse.ok("상품이 삭제되었습니다."));
     }
 }
