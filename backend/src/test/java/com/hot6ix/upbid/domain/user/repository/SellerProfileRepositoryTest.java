@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
+import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,7 +19,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(JpaConfig.class)
-class SellerProfileRepositoryTest {
+class SellerProfileRepositoryTest extends AbstractMySqlContainerTest {
 
     @Autowired
     private SellerProfileRepository sellerProfileRepository;
