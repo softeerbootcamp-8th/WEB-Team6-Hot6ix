@@ -32,7 +32,7 @@ public class AuctionItem extends BaseTimeEntity {
     private Long auctionItemId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "auction_room_id")
+    @JoinColumn(name = "auction_room_id", nullable = false)
     private AuctionRoom auctionRoom;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -40,20 +40,20 @@ public class AuctionItem extends BaseTimeEntity {
     private User leaderUser;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id")
+    @JoinColumn(name = "product_id", nullable = false)
     private Product product;
 
-    @Column(name = "starting_price")
+    @Column(name = "starting_price", nullable = false)
     private Long startingPrice;
 
-    @Column(name = "bid_increment")
+    @Column(name = "bid_increment", nullable = false)
     private Long bidIncrement;
 
-    @Column(name = "current_price")
+    @Column(name = "current_price", nullable = false)
     private Long currentPrice;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", length = 20)
+    @Column(name = "status", length = 20, nullable = false)
     private AuctionItemStatus status;
 
     @Column(name = "started_at")
@@ -65,7 +65,7 @@ public class AuctionItem extends BaseTimeEntity {
     @Column(name = "end_at")
     private LocalDateTime endAt;
 
-    @Column(name = "total_extension_seconds")
+    @Column(name = "total_extension_seconds", nullable = false)
     private Integer totalExtensionSeconds;
 
     @Builder
