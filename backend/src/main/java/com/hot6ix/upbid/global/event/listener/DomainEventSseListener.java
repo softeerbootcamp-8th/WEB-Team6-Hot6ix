@@ -1,5 +1,7 @@
-package com.hot6ix.upbid.global.event;
+package com.hot6ix.upbid.global.event.listener;
 
+import com.hot6ix.upbid.global.event.DomainEvent;
+import com.hot6ix.upbid.global.event.message.EventChannels;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;

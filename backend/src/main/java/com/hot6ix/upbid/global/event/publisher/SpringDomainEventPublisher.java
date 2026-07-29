@@ -1,5 +1,6 @@
-package com.hot6ix.upbid.global.event;
+package com.hot6ix.upbid.global.event.publisher;
 
+import com.hot6ix.upbid.global.event.DomainEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;

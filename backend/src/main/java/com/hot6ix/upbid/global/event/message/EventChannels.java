@@ -1,5 +1,8 @@
-package com.hot6ix.upbid.global.event;
+package com.hot6ix.upbid.global.event.message;
 
+import com.hot6ix.upbid.global.event.DomainEvent;
+import com.hot6ix.upbid.global.event.ItemEvent;
+import com.hot6ix.upbid.global.event.RoomEvent;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
