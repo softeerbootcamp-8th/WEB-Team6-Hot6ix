@@ -8,7 +8,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
+import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
@@ -38,6 +41,9 @@ class ProductServiceTest {
 
     @Mock
     private SellerProfileRepository sellerProfileRepository;
+
+    @Mock
+    private AuctionItemRepository auctionItemRepository;
 
     @InjectMocks
     private ProductService productService;
@@ -214,6 +220,98 @@ class ProductServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> productService.getList(1L, null, null, null, null))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("경매방이 시작된 적 없으면 요청 값으로 상품이 전체 교체된다")
+    void update() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        Product product = newProduct(sellerProfile);
+        ProductUpdateRequestDto request = ProductUpdateRequestDto.builder()
+                .name("새 이름")
+                .description("새 설명")
+                .imageUrl("https://cdn.hot6ix.com/new.png")
+                .referenceUrl("https://example.com/new")
+                .build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+                .thenReturn(Optional.of(product));
+        when(auctionItemRepository.existsByProduct_ProductIdAndStatusNot(any(), eq(AuctionItemStatus.READY)))
+                .thenReturn(false);
+
+        ProductResponseDto response = productService.update(1L, 10L, request);
+
+        assertThat(response.name()).isEqualTo("새 이름");
+        assertThat(response.description()).isEqualTo("새 설명");
+        assertThat(response.imageUrl()).isEqualTo("https://cdn.hot6ix.com/new.png");
+        assertThat(response.referenceUrl()).isEqualTo("https://example.com/new");
+    }
+
+    @Test
+    @DisplayName("경매방이 시작된 적 있으면 수정 시 예외가 발생한다")
+    void update_auctionAlreadyStarted() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        Product product = newProduct(sellerProfile);
+        ProductUpdateRequestDto request = ProductUpdateRequestDto.builder()
+                .name("새 이름")
+                .build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+                .thenReturn(Optional.of(product));
+        when(auctionItemRepository.existsByProduct_ProductIdAndStatusNot(any(), eq(AuctionItemStatus.READY)))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> productService.update(1L, 10L, request))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED);
+
+        assertThat(product.getName()).isEqualTo("승민의 노트북");
+    }
+
+    @Test
+    @DisplayName("상품이 없거나 본인 소유가 아니면 수정 시 예외가 발생한다")
+    void update_productNotFound() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        ProductUpdateRequestDto request = ProductUpdateRequestDto.builder()
+                .name("새 이름")
+                .build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.update(1L, 10L, request))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(ProductErrorType.PRODUCT_NOT_FOUND);
+
+        verify(auctionItemRepository, never()).existsByProduct_ProductIdAndStatusNot(any(), any());
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 수정 시 예외가 발생한다")
+    void update_sellerProfileNotFound() {
+
+        ProductUpdateRequestDto request = ProductUpdateRequestDto.builder()
+                .name("새 이름")
+                .build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.update(1L, 10L, request))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);

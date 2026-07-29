@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auction.repository;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
@@ -11,6 +12,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> {
+
+    /**
+     * 이 상품이 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는지 확인한다
+     * (진행중·낙찰·유찰 전부 포함). Product 수정·삭제 시 "경매방이 시작된 적 있는 상품은
+     * 이후로도 계속 수정·삭제 불가" 규칙을 검증하는 데 쓰인다.
+     */
+    boolean existsByProduct_ProductIdAndStatusNot(Long productId, AuctionItemStatus status);
 
     /**
      * 목록 정렬 순위를 만드는 식. 진행중 → 대기 → 낙찰 → 유찰 순이며

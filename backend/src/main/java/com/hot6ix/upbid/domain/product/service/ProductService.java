@@ -1,6 +1,9 @@
 package com.hot6ix.upbid.domain.product.service;
 
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
+import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
@@ -24,6 +27,7 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
+    private final AuctionItemRepository auctionItemRepository;
 
     /**
      * 로그인한 판매자의 상품을 등록한다.
@@ -55,11 +59,34 @@ public class ProductService {
     public ProductResponseDto getDetail(Long userId, Long productId) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
+        Product product = findOwnedProduct(sellerProfile, productId);
 
-        Product product = productRepository
-                .findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-                        productId, sellerProfile.getSellerProfileId())
-                .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
+        return ProductResponseDto.from(product);
+    }
+
+    /**
+     * 로그인한 판매자 본인 소유의 상품을 요청 값으로 전체 교체한다.
+     * 경매방이 한 번이라도 시작된(READY가 아닌 AuctionItem이 있는) 상품은 수정할 수 없다.
+     *
+     * @param userId    수정을 요청한 회원의 ID
+     * @param productId 수정할 상품의 ID
+     * @param request   교체할 상품 정보
+     * @return 수정된 상품
+     * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
+     *                               상품이 없거나 본인 소유가 아닐 때(PRODUCT_NOT_FOUND),
+     *                               경매방이 시작된 적 있을 때(PRODUCT_AUCTION_ALREADY_STARTED)
+     */
+    @Transactional
+    public ProductResponseDto update(Long userId, Long productId, ProductUpdateRequestDto request) {
+
+        SellerProfile sellerProfile = findActiveSellerProfile(userId);
+        Product product = findOwnedProduct(sellerProfile, productId);
+
+        if (auctionItemRepository.existsByProduct_ProductIdAndStatusNot(productId, AuctionItemStatus.READY)) {
+            throw new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED);
+        }
+
+        product.update(request);
 
         return ProductResponseDto.from(product);
     }
@@ -96,5 +123,11 @@ public class ProductService {
     private SellerProfile findActiveSellerProfile(Long userId) {
         return sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
+    }
+
+    private Product findOwnedProduct(SellerProfile sellerProfile, Long productId) {
+        return productRepository
+                .findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(productId, sellerProfile.getSellerProfileId())
+                .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
     }
 }

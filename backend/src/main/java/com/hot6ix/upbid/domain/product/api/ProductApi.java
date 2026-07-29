@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.product.api;
 
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
+import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
@@ -74,4 +75,23 @@ public interface ProductApi {
             @RequestParam(required = false) Long cursor,
             @Parameter(description = "페이지 크기, 기본값 20")
             @RequestParam(required = false) Integer size);
+
+    @Operation(
+            summary = "상품 수정",
+            description = "로그인한 판매자 본인 소유의 상품을 요청 값으로 전체 교체한다. 경매방이 한 번이라도 "
+                    + "시작된 적 있는 상품(READY가 아닌 AuctionItem이 하나라도 있으면)은 이후로도 계속 수정할 수 없다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "수정 성공"),
+            @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
+            @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
+                    + "상품이 없거나 본인 소유가 아님 (code 5001)"),
+            @ApiResponse(responseCode = "409", description = "경매방이 시작된 적 있는 상품 (code 5002)")
+    })
+    ResponseEntity<CommonResponse<ProductResponseDto>> update(
+            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
+            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(description = "수정할 상품 ID", required = true)
+            @PathVariable Long productId,
+            @Valid @RequestBody ProductUpdateRequestDto request);
 }

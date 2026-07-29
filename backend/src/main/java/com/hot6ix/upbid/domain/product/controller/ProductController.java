@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.product.controller;
 
 import com.hot6ix.upbid.domain.product.api.ProductApi;
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
+import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -52,5 +54,15 @@ public class ProductController implements ProductApi {
                 productService.getList(userId, keyword, status, cursor, size);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "상품 목록 조회에 성공했습니다."));
+    }
+
+    @PutMapping("/{productId}")
+    @Override
+    public ResponseEntity<CommonResponse<ProductResponseDto>> update(
+            Long userId, Long productId, ProductUpdateRequestDto request) {
+
+        ProductResponseDto response = productService.update(userId, productId, request);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "상품이 수정되었습니다."));
     }
 }

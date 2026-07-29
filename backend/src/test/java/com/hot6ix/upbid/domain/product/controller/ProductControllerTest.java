@@ -5,10 +5,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
+import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
@@ -243,5 +245,83 @@ class ProductControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    @Test
+    @DisplayName("상품을 수정하면 200과 수정된 정보를 반환한다")
+    void update() throws Exception {
+
+        ProductUpdateRequestDto request = ProductUpdateRequestDto.builder()
+                .name("새 이름")
+                .build();
+
+        when(productService.update(eq(1L), eq(1L), any(ProductUpdateRequestDto.class)))
+                .thenReturn(sampleResponse());
+
+        mockMvc.perform(put("/api/v1/products/1")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("승민의 노트북"));
+    }
+
+    @Test
+    @DisplayName("상품명이 없으면 수정 시 400을 반환한다")
+    void update_blankName() throws Exception {
+
+        ProductUpdateRequestDto request = ProductUpdateRequestDto.builder()
+                .name("")
+                .build();
+
+        mockMvc.perform(put("/api/v1/products/1")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("name"));
+    }
+
+    @Test
+    @DisplayName("상품이 없거나 본인 소유가 아니면 수정 시 404와 에러코드를 반환한다")
+    void update_productNotFound() throws Exception {
+
+        ProductUpdateRequestDto request = ProductUpdateRequestDto.builder()
+                .name("새 이름")
+                .build();
+
+        when(productService.update(eq(1L), eq(999L), any(ProductUpdateRequestDto.class)))
+                .thenThrow(new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
+
+        mockMvc.perform(put("/api/v1/products/999")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(5001));
+    }
+
+    @Test
+    @DisplayName("경매방이 시작된 적 있는 상품은 수정 시 409와 에러코드를 반환한다")
+    void update_auctionAlreadyStarted() throws Exception {
+
+        ProductUpdateRequestDto request = ProductUpdateRequestDto.builder()
+                .name("새 이름")
+                .build();
+
+        when(productService.update(eq(1L), eq(1L), any(ProductUpdateRequestDto.class)))
+                .thenThrow(new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED));
+
+        mockMvc.perform(put("/api/v1/products/1")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(5002));
     }
 }
