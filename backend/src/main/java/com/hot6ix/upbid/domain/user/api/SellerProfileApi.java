@@ -47,7 +47,8 @@ public interface SellerProfileApi {
 
     @Operation(
             summary = "판매자 프로필 수정",
-            description = "로그인한 회원의 판매자 프로필 중 전달된 필드만 부분 수정한다. null인 필드는 변경하지 않는다."
+            description = "로그인한 회원의 판매자 프로필을 요청 값으로 전체 교체한다. storeName은 필수이며, "
+                    + "나머지 선택 필드를 생략하면 null로 지워진다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),

@@ -176,8 +176,34 @@ class SellerProfileServiceTest {
     }
 
     @Test
-    @DisplayName("전달된 필드만 부분 수정된다")
-    void update_partial() {
+    @DisplayName("요청 값으로 프로필 전체가 교체된다")
+    void update_fullReplace() {
+
+        SellerProfile sellerProfile = newSellerProfile(newUser());
+        SellerProfileUpdateRequestDto request = SellerProfileUpdateRequestDto.builder()
+                .storeName("새로운상점")
+                .storeImageUrl("https://cdn.hot6ix.com/new-store.png")
+                .snsUrl("https://youtube.com/@newstore")
+                .storePhoneNumber("02-9999-9999")
+                .storeDescription("새로운 소개")
+                .build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+
+        SellerProfileResponseDto response = sellerProfileService.update(1L, request);
+
+        assertThat(response.storeName()).isEqualTo("새로운상점");
+        assertThat(response.storeImageUrl()).isEqualTo("https://cdn.hot6ix.com/new-store.png");
+        assertThat(response.snsUrl()).isEqualTo("https://youtube.com/@newstore");
+        assertThat(response.storePhoneNumber()).isEqualTo("02-9999-9999");
+        assertThat(response.storeDescription()).isEqualTo("새로운 소개");
+        verify(sellerProfileRepository).flush();
+    }
+
+    @Test
+    @DisplayName("생략된 선택 필드는 null로 지워진다")
+    void update_clearsOmittedOptionalFields() {
 
         SellerProfile sellerProfile = newSellerProfile(newUser());
         SellerProfileUpdateRequestDto request = SellerProfileUpdateRequestDto.builder()
@@ -190,10 +216,10 @@ class SellerProfileServiceTest {
         SellerProfileResponseDto response = sellerProfileService.update(1L, request);
 
         assertThat(response.storeName()).isEqualTo("새로운상점");
-        assertThat(response.storeImageUrl()).isEqualTo("https://cdn.hot6ix.com/store.png");
-        assertThat(response.snsUrl()).isEqualTo("https://instagram.com/hot6ix");
-        assertThat(response.storeDescription()).isEqualTo("기존 소개");
-        verify(sellerProfileRepository).flush();
+        assertThat(response.storeImageUrl()).isNull();
+        assertThat(response.snsUrl()).isNull();
+        assertThat(response.storePhoneNumber()).isNull();
+        assertThat(response.storeDescription()).isNull();
     }
 
     @Test

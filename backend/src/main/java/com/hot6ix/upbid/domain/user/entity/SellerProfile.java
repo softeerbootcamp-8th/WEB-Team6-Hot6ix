@@ -70,20 +70,10 @@ public class SellerProfile extends BaseEntity {
 
     public void update(String storeName, String storeImageUrl, String snsUrl,
                         String storePhoneNumber, String storeDescription) {
-        if (storeName != null) {
-            this.storeName = storeName;
-        }
-        if (storeImageUrl != null) {
-            this.storeImageUrl = storeImageUrl;
-        }
-        if (snsUrl != null) {
-            this.snsUrl = snsUrl;
-        }
-        if (storePhoneNumber != null) {
-            this.storePhoneNumber = storePhoneNumber;
-        }
-        if (storeDescription != null) {
-            this.storeDescription = storeDescription;
-        }
+        this.storeName = storeName;
+        this.storeImageUrl = storeImageUrl;
+        this.snsUrl = snsUrl;
+        this.storePhoneNumber = storePhoneNumber;
+        this.storeDescription = storeDescription;
     }
 }

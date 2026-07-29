@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.user.dto.request;
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Builder;
@@ -8,6 +9,7 @@ import org.hibernate.validator.constraints.URL;
 @Builder
 public record SellerProfileUpdateRequestDto(
 
+        @NotBlank(message = "가게 이름은 필수 값입니다.")
         @Pattern(
                 regexp = "^[^<>\"'\\\\;]{2,30}$",
                 message = "가게 이름은 2~30자이며 <, >, \", ', \\, ; 문자를 포함할 수 없습니다."

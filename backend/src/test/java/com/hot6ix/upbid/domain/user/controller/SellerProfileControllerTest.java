@@ -5,8 +5,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -158,7 +158,7 @@ class SellerProfileControllerTest {
     }
 
     @Test
-    @DisplayName("판매자 프로필의 일부 필드를 수정한다")
+    @DisplayName("판매자 프로필을 요청 값으로 전체 수정한다")
     void update() throws Exception {
 
         SellerProfileUpdateRequestDto request = SellerProfileUpdateRequestDto.builder()
@@ -168,7 +168,7 @@ class SellerProfileControllerTest {
         when(sellerProfileService.update(eq(1L), any(SellerProfileUpdateRequestDto.class)))
                 .thenReturn(sampleResponse());
 
-        mockMvc.perform(patch("/api/v1/seller-profiles/me")
+        mockMvc.perform(put("/api/v1/seller-profiles/me")
                         .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -177,14 +177,33 @@ class SellerProfileControllerTest {
     }
 
     @Test
+    @DisplayName("가게 이름 없이 수정하면 400을 반환한다")
+    void update_withoutStoreName() throws Exception {
+
+        SellerProfileUpdateRequestDto request = SellerProfileUpdateRequestDto.builder()
+                .snsUrl("https://instagram.com/hot6ix")
+                .build();
+
+        mockMvc.perform(put("/api/v1/seller-profiles/me")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("storeName"));
+    }
+
+    @Test
     @DisplayName("SNS 링크를 빈 문자열로 수정하려 하면 400을 반환한다")
     void update_blankSnsUrl() throws Exception {
 
         SellerProfileUpdateRequestDto request = SellerProfileUpdateRequestDto.builder()
+                .storeName("새로운상점")
                 .snsUrl("")
                 .build();
 
-        mockMvc.perform(patch("/api/v1/seller-profiles/me")
+        mockMvc.perform(put("/api/v1/seller-profiles/me")
                         .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
