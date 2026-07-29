@@ -97,6 +97,11 @@ allowed-tools: Bash(gh pr:*), Bash(gh label:*), Bash(gh auth:*), Bash(git log:*)
 **리뷰 요청**에는 검증하지 못한 부분과 남은 위험을 반드시 포함한다
 (`references/workflow.md` 완료 보고 기준).
 
+**글쓰기 톤** — 쉬운 말로 짧게 쓴다. 시맨틱·트레이드오프·원자성처럼
+불필요하게 어려운 용어나 AI가 쓴 티 나는 표현은 피하고, 팀원이 한 번
+읽고 바로 핵심을 파악할 수 있게 쓴다. 이미 리뷰로 해결된 내용을
+장황하게 설명하지 않는다.
+
 ## 7. assignee · 리뷰어 · label
 
 **assignee** — 사용자가 지정하지 않으면 본인으로 한다. `--assignee @me`
