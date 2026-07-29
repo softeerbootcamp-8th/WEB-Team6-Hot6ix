@@ -46,14 +46,7 @@ public class SellerProfileService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
 
-        SellerProfile sellerProfile = SellerProfile.of(
-                user,
-                request.storeName(),
-                request.storeImageUrl(),
-                request.snsUrl(),
-                request.storePhoneNumber(),
-                request.storeDescription()
-        );
+        SellerProfile sellerProfile = SellerProfile.from(user, request);
 
         try {
             // save() 대신 saveAndFlush()를 써서 유니크 제약 위반이 이 메서드 안에서(트랜잭션 커밋 전에) 터지게 한다.

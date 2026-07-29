@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.user.entity;
 
+import com.hot6ix.upbid.domain.user.dto.request.SellerProfileCreateRequestDto;
 import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -56,15 +57,14 @@ public class SellerProfile extends BaseEntity {
         this.storeDescription = storeDescription;
     }
 
-    public static SellerProfile of(User user, String storeName, String storeImageUrl, String snsUrl,
-                                    String storePhoneNumber, String storeDescription) {
+    public static SellerProfile from(User user, SellerProfileCreateRequestDto request) {
         return SellerProfile.builder()
                 .user(user)
-                .storeName(storeName)
-                .storeImageUrl(storeImageUrl)
-                .snsUrl(snsUrl)
-                .storePhoneNumber(storePhoneNumber)
-                .storeDescription(storeDescription)
+                .storeName(request.storeName())
+                .storeImageUrl(request.storeImageUrl())
+                .snsUrl(request.snsUrl())
+                .storePhoneNumber(request.storePhoneNumber())
+                .storeDescription(request.storeDescription())
                 .build();
     }
 
