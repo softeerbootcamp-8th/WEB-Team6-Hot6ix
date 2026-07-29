@@ -25,12 +25,6 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
      * productId로 고정해 커서가 안정적으로 동작하게 하고, 파생 상태(등록 여부·경매 상태)는
      * 정렬이 아니라 필터로만 사용한다. 한 상품에 연결된 AuctionItem이 여러 건이어도
      * 가장 최근 것(auctionItemId 최댓값) 하나만 상태 판정에 사용한다.
-     */
-    /**
-     * 판매자 본인 상품 목록을 productId 최신순으로 조회한다. 정렬 키를 항상 불변인
-     * productId로 고정해 커서가 안정적으로 동작하게 하고, 파생 상태(등록 여부·경매 상태)는
-     * 정렬이 아니라 필터로만 사용한다. 한 상품에 연결된 AuctionItem이 여러 건이어도
-     * 가장 최근 것(auctionItemId 최댓값) 하나만 상태 판정에 사용한다.
      *
      * <p>{@code status} 필터는 커스텀 enum({@link ProductListingStatus})을 그대로 바인드하면
      * Hibernate가 파라미터의 값 매핑을 추론하지 못해 예외가 나므로(엔티티에 매핑된 속성이
