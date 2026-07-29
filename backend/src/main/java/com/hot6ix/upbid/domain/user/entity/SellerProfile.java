@@ -56,6 +56,18 @@ public class SellerProfile extends BaseEntity {
         this.storeDescription = storeDescription;
     }
 
+    public static SellerProfile of(User user, String storeName, String storeImageUrl, String snsUrl,
+                                    String storePhoneNumber, String storeDescription) {
+        return SellerProfile.builder()
+                .user(user)
+                .storeName(storeName)
+                .storeImageUrl(storeImageUrl)
+                .snsUrl(snsUrl)
+                .storePhoneNumber(storePhoneNumber)
+                .storeDescription(storeDescription)
+                .build();
+    }
+
     public void update(String storeName, String storeImageUrl, String snsUrl,
                         String storePhoneNumber, String storeDescription) {
         if (storeName != null) {
