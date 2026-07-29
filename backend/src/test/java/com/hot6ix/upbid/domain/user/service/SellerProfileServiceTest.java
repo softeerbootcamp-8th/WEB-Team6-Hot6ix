@@ -73,7 +73,7 @@ class SellerProfileServiceTest {
                 .build();
 
         when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
         when(sellerProfileRepository.saveAndFlush(any(SellerProfile.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -96,7 +96,7 @@ class SellerProfileServiceTest {
                 .build();
 
         when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
         when(sellerProfileRepository.saveAndFlush(any(SellerProfile.class)))
                 .thenThrow(new DataIntegrityViolationException("unique constraint violated"));
 
@@ -123,12 +123,12 @@ class SellerProfileServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
 
-        verify(userRepository, never()).findById(any());
+        verify(userRepository, never()).findByUserIdAndDeletedAtIsNull(any());
         verify(sellerProfileRepository, never()).saveAndFlush(any());
     }
 
     @Test
-    @DisplayName("존재하지 않는 회원이면 등록 시 예외가 발생한다")
+    @DisplayName("존재하지 않거나 탈퇴한 회원이면 등록 시 예외가 발생한다")
     void create_userNotFound() {
 
         SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
@@ -138,7 +138,7 @@ class SellerProfileServiceTest {
                 .build();
 
         when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
-        when(userRepository.findById(1L)).thenReturn(Optional.empty());
+        when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> sellerProfileService.create(1L, request))
                 .isInstanceOf(ApplicationException.class)

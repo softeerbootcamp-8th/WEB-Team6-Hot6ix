@@ -31,7 +31,7 @@ public class SellerProfileService {
      * @param request 등록할 판매자 프로필 정보
      * @return 등록된 판매자 프로필
      * @throws ApplicationException 이미 프로필이 존재하거나(DUPLICATE_SELLER_PROFILE),
-     *                               회원이 존재하지 않을 때(RESOURCE_NOT_FOUND)
+     *                               회원이 존재하지 않거나 탈퇴한 회원일 때(RESOURCE_NOT_FOUND)
      */
     @Transactional
     public SellerProfileResponseDto create(Long userId, SellerProfileCreateRequestDto request) {
@@ -43,7 +43,7 @@ public class SellerProfileService {
             throw new ApplicationException(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
         }
 
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
 
         SellerProfile sellerProfile = SellerProfile.from(user, request);
