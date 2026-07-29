@@ -1,0 +1,17 @@
+package com.hot6ix.upbid.domain.auction.exception;
+
+import com.hot6ix.upbid.global.exception.ErrorType;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+
+@Getter
+@RequiredArgsConstructor
+public enum AuctionItemErrorType implements ErrorType {
+
+    AUCTION_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, 4001, "존재하지 않는 경매 물품입니다.");
+
+    private final HttpStatus httpStatus;
+    private final Integer errorCode;
+    private final String message;
+}
