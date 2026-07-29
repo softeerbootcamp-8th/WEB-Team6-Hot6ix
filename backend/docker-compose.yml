@@ -1,0 +1,29 @@
+# 로컬 개발용 MySQL 실행 파일이다. (배포용 아님)
+#
+#   docker compose up -d      # MySQL 기동
+#   ./gradlew bootRun         # application.yaml 기본값(localhost:3306/upbid/root/1234)으로 바로 접속
+#
+#   docker compose down       # 중지 (데이터는 volume에 남음)
+#   docker compose down -v    # 데이터까지 완전 삭제 (팀 규칙상 임의 실행 금지)
+
+
+services:
+  mysql:
+    image: mysql:8.4.9
+    container_name: upbid-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-1234}
+      MYSQL_DATABASE: ${DB_NAME:-upbid}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - upbid-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-1234}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  upbid-mysql-data:

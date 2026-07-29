@@ -1,0 +1,129 @@
+[config]
+model = "gemini/gemini-3.5-flash"
+
+fallback_models = []
+
+response_language = "ko-KR"
+
+restricted_mode = true
+
+ai_timeout = 300
+
+max_model_tokens = 64000
+
+large_patch_policy = "clip"
+
+repo_context_files = []
+
+ignore_pr_title = [
+    "^\\[Auto\\]",
+    "^Auto",
+    "^chore\\(deps\\)",
+    "^Bump "
+]
+
+ignore_pr_target_branches = [
+    "^main$"
+]
+
+ignore_pr_labels = [
+    "skip-review",
+    "dependencies",
+    "release"
+]
+
+ignore_pr_authors = [
+    "dependabot[bot]",
+    "renovate[bot]"
+]
+
+extract_issue_from_branch = true
+
+
+[ignore]
+glob = [
+    "**/build/**",
+    "**/target/**",
+    "**/out/**",
+    "**/dist/**",
+    "**/node_modules/**",
+
+    "**/generated/**",
+    "**/generated-sources/**",
+    "**/src/api/generated/**",
+
+    "gradle/wrapper/gradle-wrapper.jar",
+
+    "**/pnpm-lock.yaml",
+    "**/package-lock.json",
+    "**/yarn.lock",
+
+    "**/*.svg"
+]
+
+
+[pr_reviewer]
+num_max_findings = 3
+
+publish_output_no_suggestions = true
+
+persistent_comment = true
+
+enable_intro_text = true
+enable_help_text = false
+
+require_tests_review = true
+require_security_review = true
+
+require_estimate_effort_to_review = false
+require_estimate_contribution_time_cost = false
+require_can_be_split_review = false
+require_ticket_analysis_review = false
+require_score_review = false
+
+enable_review_labels_effort = false
+enable_review_labels_security = false
+
+extra_instructions = """
+[Review principles]
+- Report only issues that have a high likelihood of causing an actual bug, service failure, data corruption, security vulnerability, or significant performance problem.
+- Do not report speculative issues when there is insufficient evidence.
+- Do not comment on naming preferences, formatting, import order, comment style, or subjective coding preferences.
+- Focus on the changed diff, but inspect relevant surrounding context when necessary to verify an issue.
+- Do not assume that an unshown component is implemented incorrectly.
+- Prioritize correctness over the number of findings.
+
+[Backend: Java and Spring Boot]
+- Check transaction boundaries, Spring proxy self-invocation, incorrect readOnly usage, and external operations performed inside long-running transactions.
+- Check whether events, cache updates, or external notifications may occur before the database transaction is successfully committed.
+- Check for N+1 queries, database calls inside loops, lazy-loading access outside a persistence context, and unintended cascade or orphanRemoval behavior.
+- For concurrent updates, verify that consistency is protected by an appropriate mechanism such as atomic database updates, constraints, version checks, locking, or idempotency controls.
+- Check authentication, authorization, and resource ownership validation.
+- Check for swallowed exceptions, overly broad catch blocks, and predictable client or domain errors incorrectly resulting in HTTP 500 responses.
+- Check for missing tests covering new branches, failure paths, boundary values, and concurrency-sensitive behavior.
+
+[Frontend: TypeScript and React]
+- Check for inconsistencies between server state and UI state.
+- Check TanStack Query cache invalidation, mutation synchronization, and rollback behavior for optimistic updates.
+- Check type safety, error handling, stale state, duplicate requests, and race conditions caused by asynchronous operations.
+- Check whether generated API client code is being edited directly instead of modifying its source specification or generator configuration.
+- Check that loading, empty, error, and retry states are handled when relevant.
+
+[Real-time auction domain]
+- Verify that bids cannot be accepted after an auction has ended.
+- Verify that bids at or below the current price, or bids that violate the configured increment rule, are rejected.
+- Verify that concurrent bid requests cannot create inconsistencies among the current price, highest bidder, and bid history.
+- Verify that duplicate requests and retries are handled idempotently where required.
+- Verify that auction expiration is determined using authoritative server-side time.
+- Verify that successful outcomes are not exposed before the related transaction is committed.
+- Verify that validation and state transitions are enforced by the server rather than relying only on the client.
+
+[Output requirements]
+- Report at most three high-impact findings, ordered by severity.
+- For each finding, explain:
+  1. what the problem is,
+  2. under what condition it occurs,
+  3. how it should be fixed.
+- Reference the relevant file and line whenever possible.
+- Write the final review in concise Korean.
+"""

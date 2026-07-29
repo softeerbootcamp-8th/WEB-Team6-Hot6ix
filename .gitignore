@@ -32,3 +32,11 @@ gradle-app.setting
 # End of https://www.toptal.com/developers/gitignore/api/gradle
 
 .DS_Store
+
+### AI coding agents ###
+# 개인 전용 지침·설정은 커밋하지 않는다. 공용 규칙만 저장소에 둔다.
+CLAUDE.local.md
+**/CLAUDE.local.md
+.claude/settings.local.json
+AGENTS.override.md
+**/AGENTS.override.md

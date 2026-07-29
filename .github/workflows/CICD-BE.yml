@@ -1,0 +1,86 @@
+name: CICD - Backend
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'backend/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+
+jobs:
+  # CI: main, dev로 향하는 PR에서 빌드 및 테스트
+  build-and-test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+      - run: chmod +x ./gradlew
+      - run: ./gradlew --no-daemon build
+
+  # CD: main push 시 jar 빌드(테스트는 PR 단계에서 이미 검증됨) 후, 같은 job 안에서 바로 이미지로 만들어 push.
+  build-and-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+      - run: chmod +x ./gradlew
+      - run: ./gradlew --no-daemon bootJar
+      - name: 빌드 산출물을 app.jar로 고정해 docker build context 루트로 이동
+        run: mv build/libs/*.jar app.jar
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          platforms: linux/arm64
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/upbid-app:${{ github.sha }}
+
+  # CD 3단계: NAT를 경유해 private EC2에 배포
+  deploy:
+    needs: build-and-push
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: NAT를 경유해 private EC2 배포
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_PRIVATE_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          proxy_host: ${{ secrets.NAT_HOST }}
+          proxy_username: ${{ secrets.NAT_USERNAME }}
+          proxy_key: ${{ secrets.NAT_SSH_KEY }}
+          envs: IMAGE_TAG
+          script: |
+            export IMAGE_TAG=${{ github.sha }}
+            cd /home/ubuntu/app
+            docker compose pull app
+            docker compose up -d
+            docker image prune -f
