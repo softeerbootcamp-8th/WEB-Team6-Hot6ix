@@ -38,6 +38,9 @@ oauth:
     token-uri: https://kauth.kakao.com/oauth/token
     user-info-uri: https://kapi.kakao.com/v2/user/me
 
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:8080}
+
 logging:
   level:
     org.hibernate.SQL: debug
