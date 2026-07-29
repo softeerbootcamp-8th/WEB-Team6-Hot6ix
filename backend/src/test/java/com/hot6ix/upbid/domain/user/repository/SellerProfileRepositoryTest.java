@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.user.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.hot6ix.upbid.domain.user.dto.request.SellerProfileUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
@@ -97,7 +98,9 @@ class SellerProfileRepositoryTest extends AbstractMySqlContainerTest {
         LocalDateTime before = sellerProfile.getUpdatedAt();
         Thread.sleep(10);
 
-        sellerProfile.update("새로운상점", null, null, null, null);
+        sellerProfile.update(SellerProfileUpdateRequestDto.builder()
+                .storeName("새로운상점")
+                .build());
         sellerProfileRepository.flush();
 
         assertThat(sellerProfile.getUpdatedAt()).isAfter(before);

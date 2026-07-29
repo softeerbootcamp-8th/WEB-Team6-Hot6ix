@@ -81,13 +81,7 @@ public class SellerProfileService {
     public SellerProfileResponseDto update(Long userId, SellerProfileUpdateRequestDto request) {
 
         SellerProfile sellerProfile = findActiveByUserId(userId);
-        sellerProfile.update(
-                request.storeName(),
-                request.storeImageUrl(),
-                request.snsUrl(),
-                request.storePhoneNumber(),
-                request.storeDescription()
-        );
+        sellerProfile.update(request);
 
         return SellerProfileResponseDto.from(sellerProfile);
     }
