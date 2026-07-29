@@ -1,5 +1,7 @@
 package com.hot6ix.upbid.domain.user.entity;
 
+import com.hot6ix.upbid.domain.user.dto.request.SellerProfileCreateRequestDto;
+import com.hot6ix.upbid.domain.user.dto.request.SellerProfileUpdateRequestDto;
 import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -27,10 +29,10 @@ public class SellerProfile extends BaseEntity {
     private Long sellerProfileId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id")
+    @JoinColumn(name = "user_id", unique = true, nullable = false)
     private User user;
 
-    @Column(name = "store_name", length = 30)
+    @Column(name = "store_name", length = 30, nullable = false)
     private String storeName;
 
     @Column(name = "store_image_url", columnDefinition = "TEXT")
@@ -54,5 +56,24 @@ public class SellerProfile extends BaseEntity {
         this.snsUrl = snsUrl;
         this.storePhoneNumber = storePhoneNumber;
         this.storeDescription = storeDescription;
+    }
+
+    public static SellerProfile from(User user, SellerProfileCreateRequestDto request) {
+        return SellerProfile.builder()
+                .user(user)
+                .storeName(request.storeName())
+                .storeImageUrl(request.storeImageUrl())
+                .snsUrl(request.snsUrl())
+                .storePhoneNumber(request.storePhoneNumber())
+                .storeDescription(request.storeDescription())
+                .build();
+    }
+
+    public void update(SellerProfileUpdateRequestDto request) {
+        this.storeName = request.storeName();
+        this.storeImageUrl = request.storeImageUrl();
+        this.snsUrl = request.snsUrl();
+        this.storePhoneNumber = request.storePhoneNumber();
+        this.storeDescription = request.storeDescription();
     }
 }
