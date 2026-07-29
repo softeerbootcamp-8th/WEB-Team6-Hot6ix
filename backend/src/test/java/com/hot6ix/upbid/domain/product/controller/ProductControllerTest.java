@@ -10,11 +10,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
+import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
+import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.service.ProductService;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
+import com.hot6ix.upbid.global.response.CursorPageResponse;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -200,5 +204,44 @@ class ProductControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(5001));
+    }
+
+    @Test
+    @DisplayName("상품 목록을 조회하면 200과 목록·다음 커서를 반환한다")
+    void getList() throws Exception {
+
+        ProductSummaryResponseDto summary = ProductSummaryResponseDto.builder()
+                .productId(2L)
+                .name("승민의 노트북")
+                .status(ProductListingStatus.UNLISTED)
+                .build();
+
+        when(productService.getList(eq(1L), eq("노트북"), eq(ProductListingStatus.UNLISTED), eq(3L), eq(10)))
+                .thenReturn(CursorPageResponse.of(List.of(summary), 2L));
+
+        mockMvc.perform(get("/api/v1/products")
+                        .header("X-User-Id", "1")
+                        .param("keyword", "노트북")
+                        .param("status", "UNLISTED")
+                        .param("cursor", "3")
+                        .param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.content[0].name").value("승민의 노트북"))
+                .andExpect(jsonPath("$.data.nextCursor").value(2))
+                .andExpect(jsonPath("$.data.hasNext").value(true));
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 목록 조회 시 404와 에러코드를 반환한다")
+    void getList_sellerProfileNotFound() throws Exception {
+
+        when(productService.getList(eq(1L), any(), any(), any(), any()))
+                .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/products").header("X-User-Id", "1"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(3002));
     }
 }

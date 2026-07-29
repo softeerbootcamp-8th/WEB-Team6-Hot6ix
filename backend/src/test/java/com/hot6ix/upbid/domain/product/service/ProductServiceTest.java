@@ -3,13 +3,16 @@ package com.hot6ix.upbid.domain.product.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
+import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
+import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -17,6 +20,8 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import com.hot6ix.upbid.global.response.CursorPageResponse;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -151,5 +156,66 @@ class ProductServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(ProductErrorType.PRODUCT_NOT_FOUND);
+    }
+
+    private ProductSummaryResponseDto newSummary(Long productId) {
+        return ProductSummaryResponseDto.builder()
+                .productId(productId)
+                .name("상품" + productId)
+                .status(ProductListingStatus.UNLISTED)
+                .build();
+    }
+
+    @Test
+    @DisplayName("요청한 크기만큼 결과가 오면 다음 페이지가 없다")
+    void getList_noNextPage() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.search(any(), any(), any(), any(), eq(2)))
+                .thenReturn(List.of(newSummary(3L), newSummary(2L)));
+
+        CursorPageResponse<ProductSummaryResponseDto> response =
+                productService.getList(1L, null, null, null, 2);
+
+        assertThat(response.content()).extracting(ProductSummaryResponseDto::productId)
+                .containsExactly(3L, 2L);
+        assertThat(response.hasNext()).isFalse();
+        assertThat(response.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("요청한 크기보다 하나 더 오면 다음 페이지 커서를 잘라서 반환한다")
+    void getList_hasNextPage() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.search(any(), any(), any(), any(), eq(2)))
+                .thenReturn(List.of(newSummary(3L), newSummary(2L), newSummary(1L)));
+
+        CursorPageResponse<ProductSummaryResponseDto> response =
+                productService.getList(1L, null, null, null, 2);
+
+        assertThat(response.content()).extracting(ProductSummaryResponseDto::productId)
+                .containsExactly(3L, 2L);
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.nextCursor()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 목록 조회 시 예외가 발생한다")
+    void getList_sellerProfileNotFound() {
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.getList(1L, null, null, null, null))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
     }
 }
