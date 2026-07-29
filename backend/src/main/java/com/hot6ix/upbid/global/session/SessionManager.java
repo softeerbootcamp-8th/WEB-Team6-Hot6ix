@@ -9,13 +9,11 @@ import java.util.Optional;
 @Component
 public class SessionManager {
 
-    private static final String USER_ID = "userId";
-
     public void create(HttpServletRequest request, Long userId) {
 
         HttpSession session = request.getSession(true);
         request.changeSessionId();
-        session.setAttribute(USER_ID, userId);
+        session.setAttribute(SessionKeys.USER_ID, userId);
     }
 
     public Optional<Long> findUserId(HttpServletRequest request) {
@@ -25,7 +23,7 @@ public class SessionManager {
             return Optional.empty();
         }
 
-        return Optional.ofNullable((Long) session.getAttribute(USER_ID));
+        return Optional.ofNullable((Long) session.getAttribute(SessionKeys.USER_ID));
     }
 
     public void invalidate(HttpServletRequest request) {
