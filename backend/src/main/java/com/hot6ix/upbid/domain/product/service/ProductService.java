@@ -32,8 +32,7 @@ public class ProductService {
     @Transactional
     public ProductResponseDto create(Long userId, ProductCreateRequestDto request) {
 
-        SellerProfile sellerProfile = sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(userId)
-                .orElseThrow(() -> new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
+        SellerProfile sellerProfile = findActiveSellerProfile(userId);
 
         Product product = Product.from(sellerProfile, request);
 
@@ -51,12 +50,18 @@ public class ProductService {
      */
     public ProductResponseDto getDetail(Long userId, Long productId) {
 
-        SellerProfile sellerProfile = sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(userId)
-                .orElseThrow(() -> new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
+        SellerProfile sellerProfile = findActiveSellerProfile(userId);
 
-        Product product = productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(productId, sellerProfile.getSellerProfileId())
+        Product product = productRepository
+                .findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                        productId, sellerProfile.getSellerProfileId())
                 .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
 
         return ProductResponseDto.from(product);
+    }
+
+    private SellerProfile findActiveSellerProfile(Long userId) {
+        return sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
     }
 }
