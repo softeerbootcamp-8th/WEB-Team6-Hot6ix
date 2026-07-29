@@ -12,8 +12,7 @@ public record SellerProfileResponseDto(
         String snsUrl,
         String storePhoneNumber,
         String storeDescription,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime createdAt
 ) {
     public static SellerProfileResponseDto from(SellerProfile sellerProfile) {
         return SellerProfileResponseDto.builder()
@@ -24,7 +23,6 @@ public record SellerProfileResponseDto(
                 .storePhoneNumber(sellerProfile.getStorePhoneNumber())
                 .storeDescription(sellerProfile.getStoreDescription())
                 .createdAt(sellerProfile.getCreatedAt())
-                .updatedAt(sellerProfile.getUpdatedAt())
                 .build();
     }
 }

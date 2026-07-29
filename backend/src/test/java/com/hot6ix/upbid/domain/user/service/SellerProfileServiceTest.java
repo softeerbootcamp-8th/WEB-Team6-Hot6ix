@@ -198,7 +198,6 @@ class SellerProfileServiceTest {
         assertThat(response.snsUrl()).isEqualTo("https://youtube.com/@newstore");
         assertThat(response.storePhoneNumber()).isEqualTo("02-9999-9999");
         assertThat(response.storeDescription()).isEqualTo("새로운 소개");
-        verify(sellerProfileRepository).flush();
     }
 
     @Test
