@@ -86,6 +86,18 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.errors[0].message").value("path id는 양수여야 합니다."));
     }
 
+    @Test
+    @DisplayName("경로 변수 타입이 맞지 않으면 400 에러 응답을 반환한다")
+    void pathVariableTypeMismatch() throws Exception {
+
+        mockMvc.perform(get("/test/path/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(CommonErrorType.INVALID_REQUEST.getErrorCode()))
+                .andExpect(jsonPath("$.message").value(CommonErrorType.INVALID_REQUEST.getMessage()))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
     @RestController
     @RequestMapping("/test")
     static class TestController {
@@ -107,6 +119,10 @@ class GlobalExceptionHandlerTest {
         @PostMapping("/path/{pathId}")
         public void pathValidationException(
                 @PathVariable @Positive(message = "path id는 양수여야 합니다.") Long pathId) {
+        }
+
+        @GetMapping("/path/{pathId}")
+        public void pathTypeMismatch(@PathVariable Long pathId) {
         }
     }
 

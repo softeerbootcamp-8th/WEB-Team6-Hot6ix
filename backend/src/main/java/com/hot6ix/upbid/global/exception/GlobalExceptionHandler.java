@@ -13,6 +13,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
@@ -77,6 +78,17 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(CommonErrorType.METHOD_NOT_ALLOWED.getHttpStatus())
                 .body(CommonResponse.error(CommonErrorType.METHOD_NOT_ALLOWED));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<CommonResponse<Void>> handleMethodArgumentTypeMismatchException(
+            MethodArgumentTypeMismatchException e, HttpServletRequest request) {
+
+        log.warn("경로 변수 타입 불일치 - [{}] {} name={} value={}",
+                request.getMethod(), request.getRequestURI(), e.getName(), e.getValue());
+
+        return ResponseEntity.status(CommonErrorType.INVALID_REQUEST.getHttpStatus())
+                .body(CommonResponse.error(CommonErrorType.INVALID_REQUEST));
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
