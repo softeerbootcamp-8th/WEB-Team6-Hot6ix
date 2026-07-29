@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
@@ -30,4 +31,20 @@ public interface ProductApi {
             @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody ProductCreateRequestDto request);
+
+    @Operation(
+            summary = "상품 상세 조회",
+            description = "로그인한 판매자 본인 소유의 상품을 상세 조회한다. 본인 소유가 아니거나 존재하지 않는 상품은 "
+                    + "동일하게 404로 응답해 다른 판매자의 상품 존재 여부를 노출하지 않는다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
+                    + "상품이 없거나 본인 소유가 아님 (code 5001)")
+    })
+    ResponseEntity<CommonResponse<ProductResponseDto>> getDetail(
+            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
+            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(description = "조회할 상품 ID", required = true)
+            @PathVariable Long productId);
 }

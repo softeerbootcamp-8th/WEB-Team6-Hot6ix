@@ -82,13 +82,14 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
-    @DisplayName("활성 상품을 productId로 조회한다")
-    void findByProductIdAndDeletedAtIsNull_found() {
+    @DisplayName("소유자의 활성 상품을 productId로 조회한다")
+    void findByProductIdAndSellerProfile_found() {
 
         SellerProfile sellerProfile = newSellerProfile("seller2@hot6ix.com");
         Product product = productRepository.saveAndFlush(newProduct(sellerProfile));
 
-        Optional<Product> found = productRepository.findByProductIdAndDeletedAtIsNull(product.getProductId());
+        Optional<Product> found = productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                product.getProductId(), sellerProfile.getSellerProfileId());
 
         assertThat(found).isPresent();
         assertThat(found.get().getName()).isEqualTo("승민의 노트북");
@@ -96,14 +97,29 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
 
     @Test
     @DisplayName("soft delete된 상품은 조회되지 않는다")
-    void findByProductIdAndDeletedAtIsNull_excludesDeleted() {
+    void findByProductIdAndSellerProfile_excludesDeleted() {
 
         SellerProfile sellerProfile = newSellerProfile("seller3@hot6ix.com");
         Product product = productRepository.saveAndFlush(newProduct(sellerProfile));
         product.softDelete(LocalDateTime.now());
         productRepository.flush();
 
-        Optional<Product> found = productRepository.findByProductIdAndDeletedAtIsNull(product.getProductId());
+        Optional<Product> found = productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                product.getProductId(), sellerProfile.getSellerProfileId());
+
+        assertThat(found).isEmpty();
+    }
+
+    @Test
+    @DisplayName("다른 판매자의 상품은 조회되지 않는다")
+    void findByProductIdAndSellerProfile_excludesOtherOwner() {
+
+        SellerProfile owner = newSellerProfile("seller4@hot6ix.com");
+        SellerProfile other = newSellerProfile("seller5@hot6ix.com");
+        Product product = productRepository.saveAndFlush(newProduct(owner));
+
+        Optional<Product> found = productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                product.getProductId(), other.getSellerProfileId());
 
         assertThat(found).isEmpty();
     }

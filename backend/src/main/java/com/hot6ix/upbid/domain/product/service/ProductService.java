@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.product.service;
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
+import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -37,5 +38,25 @@ public class ProductService {
         Product product = Product.from(sellerProfile, request);
 
         return ProductResponseDto.from(productRepository.save(product));
+    }
+
+    /**
+     * 로그인한 판매자 본인 소유의 상품을 상세 조회한다.
+     *
+     * @param userId    조회를 요청한 회원의 ID
+     * @param productId 조회할 상품의 ID
+     * @return 조회된 상품
+     * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
+     *                               상품이 없거나 본인 소유가 아닐 때(PRODUCT_NOT_FOUND)
+     */
+    public ProductResponseDto getDetail(Long userId, Long productId) {
+
+        SellerProfile sellerProfile = sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
+
+        Product product = productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(productId, sellerProfile.getSellerProfileId())
+                .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
+
+        return ProductResponseDto.from(product);
     }
 }

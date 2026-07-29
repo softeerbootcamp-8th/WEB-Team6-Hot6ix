@@ -3,12 +3,14 @@ package com.hot6ix.upbid.domain.product.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
+import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.service.ProductService;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -160,5 +162,43 @@ class ProductControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    @Test
+    @DisplayName("본인 소유 상품을 상세 조회하면 200과 상품 정보를 반환한다")
+    void getDetail() throws Exception {
+
+        when(productService.getDetail(eq(1L), eq(1L))).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/products/1").header("X-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("승민의 노트북"));
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 상세 조회 시 404와 에러코드를 반환한다")
+    void getDetail_sellerProfileNotFound() throws Exception {
+
+        when(productService.getDetail(eq(1L), eq(1L)))
+                .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/products/1").header("X-User-Id", "1"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    @Test
+    @DisplayName("상품이 없거나 본인 소유가 아니면 상세 조회 시 404와 에러코드를 반환한다")
+    void getDetail_productNotFound() throws Exception {
+
+        when(productService.getDetail(eq(1L), eq(999L)))
+                .thenThrow(new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/products/999").header("X-User-Id", "1"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(5001));
     }
 }

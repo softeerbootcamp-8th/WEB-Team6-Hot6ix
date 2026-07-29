@@ -8,6 +8,7 @@ import com.hot6ix.upbid.global.response.CommonResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -28,5 +29,14 @@ public class ProductController implements ProductApi {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(CommonResponse.ok(response, "상품이 등록되었습니다."));
+    }
+
+    @GetMapping("/{productId}")
+    @Override
+    public ResponseEntity<CommonResponse<ProductResponseDto>> getDetail(Long userId, Long productId) {
+
+        ProductResponseDto response = productService.getDetail(userId, productId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "상품 상세 조회에 성공했습니다."));
     }
 }

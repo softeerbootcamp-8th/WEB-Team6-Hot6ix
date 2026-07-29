@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
+import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
@@ -47,6 +48,14 @@ class ProductServiceTest {
         return SellerProfile.builder()
                 .user(user)
                 .storeName("승민상점")
+                .build();
+    }
+
+    private Product newProduct(SellerProfile sellerProfile) {
+        return Product.builder()
+                .sellerProfile(sellerProfile)
+                .name("승민의 노트북")
+                .description("깨끗합니다")
                 .build();
     }
 
@@ -92,5 +101,55 @@ class ProductServiceTest {
                 .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
 
         verify(productRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("본인 소유 상품을 상세 조회한다")
+    void getDetail() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        Product product = newProduct(sellerProfile);
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+                .thenReturn(Optional.of(product));
+
+        ProductResponseDto response = productService.getDetail(1L, 10L);
+
+        assertThat(response.name()).isEqualTo("승민의 노트북");
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 상세 조회 시 예외가 발생한다")
+    void getDetail_sellerProfileNotFound() {
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.getDetail(1L, 10L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+
+        verify(productRepository, never())
+                .findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any());
+    }
+
+    @Test
+    @DisplayName("상품이 없거나 본인 소유가 아니면 상세 조회 시 예외가 발생한다")
+    void getDetail_productNotFound() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> productService.getDetail(1L, 10L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(ProductErrorType.PRODUCT_NOT_FOUND);
     }
 }
