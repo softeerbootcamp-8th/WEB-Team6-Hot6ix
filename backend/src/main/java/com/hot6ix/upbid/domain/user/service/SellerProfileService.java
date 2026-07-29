@@ -36,9 +36,6 @@ public class SellerProfileService {
     @Transactional
     public SellerProfileResponseDto create(Long userId, SellerProfileCreateRequestDto request) {
 
-        // 아래 exists 체크와 저장 사이에는 원자성이 없어 동시 요청 시 둘 다 통과할 수 있다.
-        // 실제 방어는 seller_profiles.user_id의 DB 유니크 제약과 아래 catch가 담당하고,
-        // 이 체크는 정상 상황에서 더 빠르고 친절한 에러를 주기 위한 것이다.
         if (sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(userId)) {
             throw new ApplicationException(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
         }
@@ -49,8 +46,7 @@ public class SellerProfileService {
         SellerProfile sellerProfile = SellerProfile.from(user, request);
 
         try {
-            // save() 대신 saveAndFlush()를 써서 유니크 제약 위반이 이 메서드 안에서(트랜잭션 커밋 전에) 터지게 한다.
-            // 그래야 동시 요청으로 인한 위반도 여기서 잡아 DUPLICATE_SELLER_PROFILE로 변환할 수 있다.
+            // saveAndFlush로 즉시 flush해야 유니크 제약 위반을 여기서 잡아 변환할 수 있다.
             return SellerProfileResponseDto.from(sellerProfileRepository.saveAndFlush(sellerProfile));
         } catch (DataIntegrityViolationException e) {
             throw new ApplicationException(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
