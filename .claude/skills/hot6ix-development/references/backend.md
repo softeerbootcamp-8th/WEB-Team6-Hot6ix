@@ -3,10 +3,9 @@
 ## 구조
 
 - Java 21, Spring Boot 4.x
-- **JPA·MySQL은 아직 미도입이다.** `build.gradle`에 data-jpa·MySQL 드라이버가
-  없고 `application.yaml`에 datasource 설정이 없다. 아래 JPA 규칙과
-  `spring.jpa.open-in-view=false`는 **도입 시점에 함께 반영할 대상**이다.
-  현재 코드에 없다고 해서 규칙 위반이 아니다.
+- **JPA·MySQL이 도입되어 있다.** `build.gradle`에 data-jpa·MySQL 드라이버가 있고
+  `application.yaml`에 datasource 설정과 `spring.jpa.open-in-view=false`가
+  반영되어 있다. 아래 JPA 규칙은 지금부터 적용 대상이다.
 - Redis는 자동 도입하지 않고, 목적·TTL·fallback을 명시할 때만 파생 상태 저장소로 사용
 - 도메인형 패키지
 - `Controller → Service → Repository`
@@ -43,6 +42,21 @@ Repository는 영속성 접근만 담당한다.
 - 테스트 메서드명은 한글
 - 권한, 입찰 단위, 마감 후 입찰, 동시 입찰, 3개 병렬 제한,
   Soft Close, 이벤트 발행 시점, 낙찰 멱등성, 예외 응답을 우선 검증한다.
+- **`@DataJpaTest`(DB 연결이 필요한 테스트)는 개발자 로컬 MySQL이 아니라 Testcontainers로
+  띄운 별도 MySQL 컨테이너를 써서 개발 DB와 격리한다.** Docker만 켜져 있으면 로컬·CI
+  (GitHub Actions `ubuntu-latest`는 Docker 기본 설치) 모두 같은 방식으로 동작한다.
+  `backend/src/test/java/.../global/support/AbstractMySqlContainerTest.java`를 상속하면
+  `@ServiceConnection`으로 컨테이너가 자동 연결된다 — 개별 테스트에서 datasource 설정을
+  직접 건드리지 않는다.
+  컨테이너 이미지는 로컬 `docker-compose.yml`의 MySQL 버전과 동일하게 고정한다.
+
+  ```java
+  @DataJpaTest
+  @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+  class FooRepositoryTest extends AbstractMySqlContainerTest {
+      ...
+  }
+  ```
 
 ## 금지
 

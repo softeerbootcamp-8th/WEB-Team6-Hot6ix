@@ -8,4 +8,10 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByProviderId(String providerId);
+import java.util.Optional;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+
+    Optional<User> findByUserIdAndDeletedAtIsNull(Long userId);
 }
