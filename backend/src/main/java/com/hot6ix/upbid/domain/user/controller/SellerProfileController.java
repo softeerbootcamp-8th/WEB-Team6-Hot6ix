@@ -9,14 +9,21 @@ import com.hot6ix.upbid.global.response.CommonResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@RequestMapping("/api/v1/seller-profiles")
 @RequiredArgsConstructor
 public class SellerProfileController implements SellerProfileApi {
 
     private final SellerProfileService sellerProfileService;
 
+    @PostMapping
     @Override
     public ResponseEntity<CommonResponse<SellerProfileResponseDto>> create(
             Long userId, SellerProfileCreateRequestDto request) {
@@ -27,6 +34,7 @@ public class SellerProfileController implements SellerProfileApi {
                 .body(CommonResponse.ok(response, "판매자 프로필이 등록되었습니다."));
     }
 
+    @GetMapping("/me")
     @Override
     public ResponseEntity<CommonResponse<SellerProfileResponseDto>> getMyProfile(Long userId) {
 
@@ -35,6 +43,7 @@ public class SellerProfileController implements SellerProfileApi {
         return ResponseEntity.ok(CommonResponse.ok(response, "판매자 프로필 조회에 성공했습니다."));
     }
 
+    @PatchMapping("/me")
     @Override
     public ResponseEntity<CommonResponse<SellerProfileResponseDto>> update(
             Long userId, SellerProfileUpdateRequestDto request) {
@@ -44,6 +53,7 @@ public class SellerProfileController implements SellerProfileApi {
         return ResponseEntity.ok(CommonResponse.ok(response, "판매자 프로필이 수정되었습니다."));
     }
 
+    @DeleteMapping("/me")
     @Override
     public ResponseEntity<CommonResponse<Void>> delete(Long userId) {
 

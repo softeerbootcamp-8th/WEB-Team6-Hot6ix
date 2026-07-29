@@ -11,16 +11,10 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
 
 @Tag(name = "판매자 프로필", description = "판매자 프로필 등록·조회·수정·삭제(soft delete) API")
-@RequestMapping("/api/v1/seller-profiles")
 public interface SellerProfileApi {
 
     @Operation(
@@ -34,7 +28,6 @@ public interface SellerProfileApi {
             @ApiResponse(responseCode = "404", description = "존재하지 않는 회원 (code 2003)"),
             @ApiResponse(responseCode = "409", description = "이미 등록된 판매자 프로필이 있음 (code 3001)")
     })
-    @PostMapping
     ResponseEntity<CommonResponse<SellerProfileResponseDto>> create(
             @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
             @RequestHeader("X-User-Id") Long userId,
@@ -48,7 +41,6 @@ public interface SellerProfileApi {
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필을 찾을 수 없음 (code 3002)")
     })
-    @GetMapping("/me")
     ResponseEntity<CommonResponse<SellerProfileResponseDto>> getMyProfile(
             @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
             @RequestHeader("X-User-Id") Long userId);
@@ -62,7 +54,6 @@ public interface SellerProfileApi {
             @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필을 찾을 수 없음 (code 3002)")
     })
-    @PatchMapping("/me")
     ResponseEntity<CommonResponse<SellerProfileResponseDto>> update(
             @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
             @RequestHeader("X-User-Id") Long userId,
@@ -76,7 +67,6 @@ public interface SellerProfileApi {
             @ApiResponse(responseCode = "200", description = "삭제 성공"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필을 찾을 수 없음 (code 3002)")
     })
-    @DeleteMapping("/me")
     ResponseEntity<CommonResponse<Void>> delete(
             @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
             @RequestHeader("X-User-Id") Long userId);
