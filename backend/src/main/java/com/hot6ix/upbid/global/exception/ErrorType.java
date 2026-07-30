@@ -11,13 +11,13 @@ import org.springframework.http.HttpStatus;
  * <pre>
  *   2xxx  공통          CommonErrorType
  *   3xxx  판매자 프로필  SellerProfileErrorType
- *   4xxx  경매 물품      AuctionItemErrorType
+ *   4xxx  경매 물품·경매방  AuctionErrorType
  *   6xxx  거래·낙찰      DealErrorType
  * </pre>
  *
  * <p>새 도메인은 위에 없는 천 번대를 잡고 이 목록에 추가한다. 같은 뜻의 에러를 도메인마다
  * 다시 정의하지 않고 기존 것을 재사용한다 — 예를 들어 물품이 없을 때는 거래 쪽에서도
- * {@code AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND}를 쓴다.
+ * {@code AuctionErrorType.AUCTION_ITEM_NOT_FOUND}를 쓴다.
  */
 public interface ErrorType {
 

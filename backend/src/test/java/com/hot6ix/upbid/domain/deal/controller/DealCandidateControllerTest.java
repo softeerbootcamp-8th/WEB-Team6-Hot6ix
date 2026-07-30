@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.hot6ix.upbid.domain.auction.exception.AuctionItemErrorType;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.deal.exception.DealErrorType;
 import com.hot6ix.upbid.domain.deal.service.DealCandidateService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -93,7 +93,7 @@ class DealCandidateControllerTest {
     @DisplayName("물품이 없으면 404와 code 4001을 반환한다")
     void completeReturnsNotFoundWhenItemMissing() throws Exception {
 
-        doThrow(new ApplicationException(AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND))
+        doThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND))
                 .when(dealCandidateService).complete(anyLong(), anyLong(), anyLong());
 
         mockMvc.perform(post(COMPLETE_URL).header("X-User-Id", "7"))

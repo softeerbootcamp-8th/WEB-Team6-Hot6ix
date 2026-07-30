@@ -9,7 +9,7 @@ import org.springframework.http.HttpStatus;
  * 거래·낙찰 도메인 에러. 코드 블록은 6xxx다.
  *
  * <p>물품이 없을 때는 여기에 정의하지 않고
- * {@code AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND}(4001)를 재사용한다.
+ * {@code AuctionErrorType.AUCTION_ITEM_NOT_FOUND}(4001)를 재사용한다.
  */
 @Getter
 @RequiredArgsConstructor
