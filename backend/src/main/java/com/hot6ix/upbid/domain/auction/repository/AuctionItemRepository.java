@@ -21,6 +21,11 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     boolean existsByProduct_ProductIdAndStatusNot(Long productId, AuctionItemStatus status);
 
     /**
+     * 경매방에 등록된 물품 개수를 센다. 경매방 응답 DTO의 itemCount에 쓰인다.
+     */
+    long countByAuctionRoom_AuctionRoomId(Long auctionRoomId);
+
+    /**
      * 목록 정렬 순위를 만드는 식. 진행중 → 대기 → 낙찰 → 유찰 순이며
      * {@code AuctionItemStatus} 선언 순서와 다르므로 식으로 계산한다.
      * 별칭 {@code ai}에 묶여 있으므로 다른 별칭을 쓰는 쿼리에 그대로 가져다 쓸 수 없다.

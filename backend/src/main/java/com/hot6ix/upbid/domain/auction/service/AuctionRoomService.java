@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auction.service;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -27,6 +28,7 @@ public class AuctionRoomService {
     private final SecureRandom secureRandom = new SecureRandom();
 
     private final AuctionRoomRepository auctionRoomRepository;
+    private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
 
     /**
@@ -43,8 +45,9 @@ public class AuctionRoomService {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = saveWithUniqueShareCode(sellerProfile, request);
+        long itemCount = auctionItemRepository.countByAuctionRoom_AuctionRoomId(auctionRoom.getAuctionRoomId());
 
-        return AuctionRoomResponseDto.from(auctionRoom);
+        return AuctionRoomResponseDto.from(auctionRoom, itemCount);
     }
 
     private AuctionRoom saveWithUniqueShareCode(SellerProfile sellerProfile, AuctionRoomCreateRequestDto request) {

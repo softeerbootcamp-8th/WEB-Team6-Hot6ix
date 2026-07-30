@@ -18,12 +18,11 @@ public record AuctionRoomResponseDto(
         String sellerStoreName,
         String sellerStoreImageUrl,
         LocalDateTime createdAt,
-        // itemCount는 이 PR 후속 커밋에서 채운다. participantCount는 입찰 도메인 담당자가
-        // 별도로 채울 필드라 여기서는 항상 null이다.
         Long itemCount,
+        // 입찰 도메인 담당자가 별도로 채울 필드라 여기서는 항상 null이다.
         Long participantCount
 ) {
-    public static AuctionRoomResponseDto from(AuctionRoom auctionRoom) {
+    public static AuctionRoomResponseDto from(AuctionRoom auctionRoom, Long itemCount) {
         return AuctionRoomResponseDto.builder()
                 .auctionRoomId(auctionRoom.getAuctionRoomId())
                 .name(auctionRoom.getName())
@@ -36,6 +35,7 @@ public record AuctionRoomResponseDto(
                 .sellerStoreName(auctionRoom.getSellerProfile().getStoreName())
                 .sellerStoreImageUrl(auctionRoom.getSellerProfile().getStoreImageUrl())
                 .createdAt(auctionRoom.getCreatedAt())
+                .itemCount(itemCount)
                 .build();
     }
 }

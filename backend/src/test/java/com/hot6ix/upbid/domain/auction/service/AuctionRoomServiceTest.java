@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
+import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
@@ -31,6 +32,9 @@ class AuctionRoomServiceTest {
 
     @Mock
     private AuctionRoomRepository auctionRoomRepository;
+
+    @Mock
+    private AuctionItemRepository auctionItemRepository;
 
     @Mock
     private SellerProfileRepository sellerProfileRepository;
@@ -79,7 +83,7 @@ class AuctionRoomServiceTest {
         assertThat(response.name()).isEqualTo("승민의 경매방");
         assertThat(response.status()).isEqualTo(AuctionRoomStatus.BEFORE);
         assertThat(response.sellerStoreName()).isEqualTo("승민상점");
-        assertThat(response.itemCount()).isNull();
+        assertThat(response.itemCount()).isZero();
         assertThat(response.participantCount()).isNull();
         verify(auctionRoomRepository, times(1)).saveAndFlush(any());
     }
