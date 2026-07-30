@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Builder;
 import org.hibernate.validator.constraints.URL;
 
+/** 경매방 설정 부분 수정(PATCH /api/v1/auction-rooms/{roomId}) 요청 바디. 생략한 필드는 기존 값 유지. */
 @Builder
 public record AuctionRoomUpdateRequestDto(
 

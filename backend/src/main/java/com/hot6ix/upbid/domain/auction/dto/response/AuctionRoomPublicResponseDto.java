@@ -5,6 +5,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import java.time.LocalDateTime;
 import lombok.Builder;
 
+/** 누구나 보는 경매방 단독 페이지 정보. 생성 응답(POST) + 공개 조회(GET /{roomId})가 공용으로 쓴다. */
 @Builder
 public record AuctionRoomPublicResponseDto(
         Long auctionRoomId,

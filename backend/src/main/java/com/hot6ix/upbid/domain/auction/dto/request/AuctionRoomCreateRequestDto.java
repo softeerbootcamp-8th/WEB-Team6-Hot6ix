@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Builder;
 import org.hibernate.validator.constraints.URL;
 
+/** 경매방 생성(POST /api/v1/auction-rooms) 요청 바디. */
 @Builder
 public record AuctionRoomCreateRequestDto(
 
