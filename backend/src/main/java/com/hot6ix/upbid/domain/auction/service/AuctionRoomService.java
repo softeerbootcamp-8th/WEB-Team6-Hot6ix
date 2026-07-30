@@ -13,7 +13,6 @@ import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
-import java.security.SecureRandom;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -27,15 +26,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Transactional(readOnly = true)
 public class AuctionRoomService {
 
-    private static final String SHARE_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-    private static final int SHARE_CODE_LENGTH = 16;
     private static final int SHARE_CODE_MAX_ATTEMPTS = 5;
-
-    private final SecureRandom secureRandom = new SecureRandom();
 
     private final AuctionRoomRepository auctionRoomRepository;
     private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
+    private final AuctionRoomShareService auctionRoomShareService;
     private final PlatformTransactionManager transactionManager;
 
     /**
@@ -127,7 +123,8 @@ public class AuctionRoomService {
         newTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 
         for (int attempt = 0; attempt < SHARE_CODE_MAX_ATTEMPTS; attempt++) {
-            AuctionRoom auctionRoom = AuctionRoom.from(sellerProfile, request, generateShareCode());
+            AuctionRoom auctionRoom = AuctionRoom.from(
+                    sellerProfile, request, auctionRoomShareService.generateCandidateShareCode());
             try {
                 return newTransactionTemplate.execute(status -> auctionRoomRepository.saveAndFlush(auctionRoom));
             } catch (DataIntegrityViolationException e) {
@@ -135,14 +132,6 @@ public class AuctionRoomService {
             }
         }
         throw new ApplicationException(CommonErrorType.INTERNAL_SERVER_ERROR);
-    }
-
-    private String generateShareCode() {
-        StringBuilder code = new StringBuilder(SHARE_CODE_LENGTH);
-        for (int i = 0; i < SHARE_CODE_LENGTH; i++) {
-            code.append(SHARE_CODE_ALPHABET.charAt(secureRandom.nextInt(SHARE_CODE_ALPHABET.length())));
-        }
-        return code.toString();
     }
 
     private SellerProfile findActiveSellerProfile(Long userId) {

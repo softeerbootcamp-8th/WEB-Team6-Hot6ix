@@ -45,6 +45,9 @@ class AuctionRoomServiceTest {
     private SellerProfileRepository sellerProfileRepository;
 
     @Mock
+    private AuctionRoomShareService auctionRoomShareService;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     @InjectMocks
@@ -84,6 +87,7 @@ class AuctionRoomServiceTest {
         AuctionRoomCreateRequestDto request = newCreateRequest();
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomShareService.generateCandidateShareCode()).thenReturn("FAKESHARECODE1234");
         when(auctionRoomRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AuctionRoomPublicResponseDto response = auctionRoomService.create(1L, request);
@@ -104,6 +108,7 @@ class AuctionRoomServiceTest {
         AuctionRoomCreateRequestDto request = newCreateRequest();
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomShareService.generateCandidateShareCode()).thenReturn("FAKESHARECODE1234");
         when(auctionRoomRepository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("share_code unique constraint violated"))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -122,6 +127,7 @@ class AuctionRoomServiceTest {
         AuctionRoomCreateRequestDto request = newCreateRequest();
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomShareService.generateCandidateShareCode()).thenReturn("FAKESHARECODE1234");
         when(auctionRoomRepository.saveAndFlush(any()))
                 .thenThrow(new DataIntegrityViolationException("share_code unique constraint violated"));
 
