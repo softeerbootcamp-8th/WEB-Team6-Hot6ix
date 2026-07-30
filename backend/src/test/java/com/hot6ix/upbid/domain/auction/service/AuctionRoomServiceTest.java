@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
@@ -173,6 +174,64 @@ class AuctionRoomServiceTest {
         when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> auctionRoomService.getRoom(999L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("소유자·경매방이 확인돼도 이번 PR에서는 항상 AUCTION_ROOM_ALREADY_STARTED로 거절된다")
+    void update_alwaysRejectedInThisPr() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .sellerProfile(sellerProfile)
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .name("새로운 경매방 이름")
+                .build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                10L, sellerProfile.getSellerProfileId())).thenReturn(Optional.of(auctionRoom));
+
+        assertThatThrownBy(() -> auctionRoomService.update(1L, 10L, request))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_ALREADY_STARTED);
+
+        assertThat(auctionRoom.getName()).isEqualTo("승민의 경매방");
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 수정 시 예외가 발생한다")
+    void update_sellerProfileNotFound() {
+
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder().name("새 이름").build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionRoomService.update(1L, 10L, request))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("경매방이 없거나 본인 소유가 아니면 수정 시 예외가 발생한다")
+    void update_roomNotFoundOrNotOwned() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder().name("새 이름").build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                10L, sellerProfile.getSellerProfileId())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionRoomService.update(1L, 10L, request))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);

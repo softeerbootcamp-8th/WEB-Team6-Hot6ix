@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.entity;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
@@ -90,5 +91,29 @@ public class AuctionRoom extends BaseEntity {
                 .softCloseTriggerSeconds(request.softCloseTriggerSeconds())
                 .softCloseExtendSeconds(request.softCloseExtendSeconds())
                 .build();
+    }
+
+    /**
+     * 요청에서 값이 온 필드만 부분 병합한다. 생략된(null) 필드는 기존 값을 그대로 유지한다.
+     */
+    public void update(AuctionRoomUpdateRequestDto request) {
+        if (request.name() != null) {
+            this.name = request.name();
+        }
+        if (request.coverImageUrl() != null) {
+            this.coverImageUrl = request.coverImageUrl();
+        }
+        if (request.description() != null) {
+            this.description = request.description();
+        }
+        if (request.liveUrl() != null) {
+            this.liveUrl = request.liveUrl();
+        }
+        if (request.softCloseTriggerSeconds() != null) {
+            this.softCloseTriggerSeconds = request.softCloseTriggerSeconds();
+        }
+        if (request.softCloseExtendSeconds() != null) {
+            this.softCloseExtendSeconds = request.softCloseExtendSeconds();
+        }
     }
 }

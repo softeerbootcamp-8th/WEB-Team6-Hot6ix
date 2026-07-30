@@ -4,11 +4,13 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
@@ -216,5 +218,83 @@ class AuctionRoomControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    @Test
+    @DisplayName("경매방을 수정하면 200과 수정된 정보를 반환한다")
+    void update() throws Exception {
+
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .name("새로운 경매방 이름")
+                .build();
+
+        when(auctionRoomService.update(eq(1L), eq(1L), any(AuctionRoomUpdateRequestDto.class)))
+                .thenReturn(sampleResponse());
+
+        mockMvc.perform(patch("/api/v1/auction-rooms/1")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("승민의 경매방"));
+    }
+
+    @Test
+    @DisplayName("경매방 이름에 금지 문자가 포함되면 수정 시 400을 반환한다")
+    void update_invalidName() throws Exception {
+
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .name("<script>")
+                .build();
+
+        mockMvc.perform(patch("/api/v1/auction-rooms/1")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("name"));
+    }
+
+    @Test
+    @DisplayName("경매방이 없거나 본인 소유가 아니면 수정 시 404를 반환한다")
+    void update_roomNotFound() throws Exception {
+
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .name("새로운 경매방 이름")
+                .build();
+
+        when(auctionRoomService.update(eq(1L), eq(999L), any(AuctionRoomUpdateRequestDto.class)))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(patch("/api/v1/auction-rooms/999")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    @Test
+    @DisplayName("경매가 시작된 것으로 간주되면 수정 시 409를 반환한다")
+    void update_alreadyStarted() throws Exception {
+
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .name("새로운 경매방 이름")
+                .build();
+
+        when(auctionRoomService.update(eq(1L), eq(1L), any(AuctionRoomUpdateRequestDto.class)))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_ALREADY_STARTED));
+
+        mockMvc.perform(patch("/api/v1/auction-rooms/1")
+                        .header("X-User-Id", "1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4003));
     }
 }
