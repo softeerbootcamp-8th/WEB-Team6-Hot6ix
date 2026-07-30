@@ -30,7 +30,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.transaction.PlatformTransactionManager;
 
 @ExtendWith(MockitoExtension.class)
 class AuctionRoomServiceTest {
@@ -46,9 +45,6 @@ class AuctionRoomServiceTest {
 
     @Mock
     private AuctionRoomShareService auctionRoomShareService;
-
-    @Mock
-    private PlatformTransactionManager transactionManager;
 
     @InjectMocks
     private AuctionRoomService auctionRoomService;

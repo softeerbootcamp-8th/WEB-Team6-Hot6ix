@@ -16,10 +16,8 @@ import com.hot6ix.upbid.global.exception.CommonErrorType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -32,18 +30,23 @@ public class AuctionRoomService {
     private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final AuctionRoomShareService auctionRoomShareService;
-    private final PlatformTransactionManager transactionManager;
 
     /**
      * 판매자의 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며(충돌 시 재시도),
      * 이를 노출하는 API는 이 서비스가 아닌 별도 PR 소관이다.
+     * <p>이 메서드 자체는 트랜잭션으로 감싸지 않는다({@code NOT_SUPPORTED}) — {@link #saveWithUniqueShareCode}가
+     * 시도마다 {@code saveAndFlush()}를 호출하는데, 감싸는 트랜잭션이 있으면 모든 시도가 같은
+     * Hibernate 세션을 공유하게 되고, 첫 충돌 이후에는 세션이 오염돼 재시도가 항상 깨진다
+     * (자세한 이유는 {@link #saveWithUniqueShareCode} 참고). 트랜잭션이 없으면 각
+     * {@code saveAndFlush()} 호출이 Spring Data 리포지토리 기본 동작으로 자기만의 트랜잭션을
+     * 얻어서, 이전 시도의 실패가 다음 시도에 영향을 주지 않는다.
      *
      * @param userId  생성을 요청한 회원의 ID
      * @param request 생성할 경매방 정보
      * @return 생성된 경매방
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND)
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AuctionRoomPublicResponseDto create(Long userId, AuctionRoomCreateRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
@@ -111,22 +114,20 @@ public class AuctionRoomService {
     }
 
     /**
-     * share_code가 충돌하면(극히 드묾) 새 코드로 재시도한다. IDENTITY 전략은 save() 시점에
-     * 바로 INSERT가 나가므로, 실패한 시도와 같은 세션에서 그냥 다시 저장을 시도하면
-     * Hibernate가 "예외 발생 후에는 세션을 다시 flush하면 안 된다"는 자체 규칙에 걸려
-     * DataIntegrityViolationException이 아닌 AssertionFailure를 던지며 재시도가 통째로
-     * 깨진다. 그래서 시도 하나당 완전히 새로운 트랜잭션(REQUIRES_NEW)에서 저장해, 이전
-     * 시도의 실패가 다음 시도의 세션에 영향을 주지 않게 한다.
+     * share_code가 충돌하면(극히 드묾) 새 코드로 재시도한다. {@link #create}가 트랜잭션 없이
+     * 호출하므로, 이 반복문의 매 {@code saveAndFlush()}가 각각 자기만의 트랜잭션·세션을 얻는다
+     * — 그래서 한 시도의 충돌·실패가 다음 시도에 영향을 주지 않는다. (IDENTITY 전략은 save()
+     * 시점에 바로 INSERT가 나가는데, 만약 같은 세션에서 재시도했다면 Hibernate가 "예외 발생
+     * 후에는 세션을 다시 flush하면 안 된다"는 규칙에 걸려 DataIntegrityViolationException이
+     * 아닌 AssertionFailure를 던지며 재시도가 통째로 깨진다 — Testcontainers로 확인된 실제
+     * 버그였다.)
      */
     private AuctionRoom saveWithUniqueShareCode(SellerProfile sellerProfile, AuctionRoomCreateRequestDto request) {
-        TransactionTemplate newTransactionTemplate = new TransactionTemplate(transactionManager);
-        newTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-
         for (int attempt = 0; attempt < SHARE_CODE_MAX_ATTEMPTS; attempt++) {
             AuctionRoom auctionRoom = AuctionRoom.from(
                     sellerProfile, request, auctionRoomShareService.generateCandidateShareCode());
             try {
-                return newTransactionTemplate.execute(status -> auctionRoomRepository.saveAndFlush(auctionRoom));
+                return auctionRoomRepository.saveAndFlush(auctionRoom);
             } catch (DataIntegrityViolationException e) {
                 // share_code 충돌 — 다음 시도에서 새 코드로 재시도
             }
