@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -22,7 +23,12 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 @Getter
 @Entity
-@Table(name = "bids")
+@Table(
+        name = "bids",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_bids_item_amount",
+                columnNames = {"auction_item_id", "amount"})
+)
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Bid {
@@ -33,18 +39,18 @@ public class Bid {
     private Long bidId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "auction_item_id")
+    @JoinColumn(name = "auction_item_id", nullable = false)
     private AuctionItem auctionItem;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bidder_user_id")
+    @JoinColumn(name = "bidder_user_id", nullable = false)
     private User bidder;
 
-    @Column(name = "amount")
+    @Column(name = "amount", nullable = false)
     private Long amount;
 
     @CreatedDate
-    @Column(name = "accepted_at", updatable = false)
+    @Column(name = "accepted_at", updatable = false, nullable = false)
     private LocalDateTime acceptedAt;
 
     @Builder
