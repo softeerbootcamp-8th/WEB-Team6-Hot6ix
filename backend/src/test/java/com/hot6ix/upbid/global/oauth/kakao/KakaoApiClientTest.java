@@ -7,10 +7,10 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.hot6ix.upbid.domain.oauth.kakao.KakaoApiClient;
-import com.hot6ix.upbid.domain.oauth.kakao.config.KakaoProperties;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoTokenResponse;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoUserInfoResponse;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.KakaoApiClient;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.config.KakaoProperties;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoTokenResponse;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoUserInfoResponse;
 import java.io.IOException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

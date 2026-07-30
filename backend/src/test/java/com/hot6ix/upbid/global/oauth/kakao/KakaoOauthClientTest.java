@@ -4,15 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-import com.hot6ix.upbid.domain.oauth.kakao.KakaoApiClient;
-import com.hot6ix.upbid.domain.oauth.kakao.KakaoOauthClient;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.KakaoApiClient;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.KakaoOauthClient;
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import com.hot6ix.upbid.domain.oauth.OAuthUserInfo;
-import com.hot6ix.upbid.domain.oauth.exception.OauthErrorType;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoTokenResponse;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoUserInfoResponse;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoUserInfoResponse.KakaoAccount;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoUserInfoResponse.Profile;
+import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
+import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoTokenResponse;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoUserInfoResponse;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoUserInfoResponse.KakaoAccount;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoUserInfoResponse.Profile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,7 +53,7 @@ class KakaoOauthClientTest {
         assertThatThrownBy(() -> kakaoOauthClient.getUserInfo("code"))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(OauthErrorType.KAKAO_PHONE_NUMBER_REQUIRED);
+                .isEqualTo(AuthErrorType.KAKAO_PHONE_NUMBER_REQUIRED);
     }
 
     @Test
@@ -64,7 +64,7 @@ class KakaoOauthClientTest {
         assertThatThrownBy(() -> kakaoOauthClient.getUserInfo("code"))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(OauthErrorType.KAKAO_TOKEN_REQUEST_FAILED);
+                .isEqualTo(AuthErrorType.KAKAO_TOKEN_REQUEST_FAILED);
     }
 
     @Test
@@ -78,6 +78,6 @@ class KakaoOauthClientTest {
         assertThatThrownBy(() -> kakaoOauthClient.getUserInfo("code"))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(OauthErrorType.KAKAO_USER_INFO_REQUEST_FAILED);
+                .isEqualTo(AuthErrorType.KAKAO_USER_INFO_REQUEST_FAILED);
     }
 }

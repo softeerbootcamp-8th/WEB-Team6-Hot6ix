@@ -2,9 +2,9 @@ package com.hot6ix.upbid.domain.auth.service;
 
 import com.hot6ix.upbid.domain.auth.dto.AuthLoginResponseDto;
 import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
-import com.hot6ix.upbid.domain.oauth.OAuthUserInfo;
-import com.hot6ix.upbid.domain.oauth.OauthClientManager;
-import com.hot6ix.upbid.domain.oauth.OauthProvider;
+import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
+import com.hot6ix.upbid.domain.auth.oauth.service.OauthClientManager;
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.user.service.UserService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import lombok.RequiredArgsConstructor;

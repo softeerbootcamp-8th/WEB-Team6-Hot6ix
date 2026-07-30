@@ -5,12 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.hot6ix.upbid.domain.oauth.OAuthUserInfo;
-import com.hot6ix.upbid.domain.oauth.OauthClientManager;
-import com.hot6ix.upbid.domain.oauth.OauthProvider;
+import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
+import com.hot6ix.upbid.domain.auth.oauth.service.OauthClientManager;
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import com.hot6ix.upbid.domain.oauth.exception.OauthErrorType;
-import com.hot6ix.upbid.domain.oauth.kakao.KakaoOauthClient;
+import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.KakaoOauthClient;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,6 +44,6 @@ class OauthClientManagerTest {
         assertThatThrownBy(() -> manager.getUserInfo(null, "code"))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(OauthErrorType.UNSUPPORTED_OAUTH_PROVIDER);
+                .isEqualTo(AuthErrorType.UNSUPPORTED_OAUTH_PROVIDER);
     }
 }

@@ -1,8 +1,8 @@
-package com.hot6ix.upbid.domain.oauth.kakao;
+package com.hot6ix.upbid.domain.auth.oauth.kakao;
 
-import com.hot6ix.upbid.domain.oauth.kakao.config.KakaoProperties;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoTokenResponse;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoUserInfoResponse;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.config.KakaoProperties;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoTokenResponse;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoUserInfoResponse;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;

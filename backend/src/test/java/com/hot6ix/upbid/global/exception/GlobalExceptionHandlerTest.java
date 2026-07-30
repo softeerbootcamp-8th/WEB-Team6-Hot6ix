@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.global.exception;
 
+import com.hot6ix.upbid.global.session.SessionManager;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -13,6 +14,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,6 +26,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({GlobalExceptionHandlerTest.TestController.class, GlobalExceptionHandler.class})
 class GlobalExceptionHandlerTest {
 
+    @MockitoBean
+    private SessionManager sessionManager;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -34,7 +39,7 @@ class GlobalExceptionHandlerTest {
         mockMvc.perform(get("/test/application"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value(3001))
+                .andExpect(jsonPath("$.code").value(1001))
                 .andExpect(jsonPath("$.message").value("테스트 예외입니다."))
                 .andExpect(jsonPath("$.data").doesNotExist())
                 .andExpect(jsonPath("$.errors").doesNotExist());
@@ -114,7 +119,7 @@ class GlobalExceptionHandlerTest {
     @RequiredArgsConstructor
     enum TestErrorType implements ErrorType {
 
-        TEST_EXCEPTION(HttpStatus.CONFLICT, 3001, "테스트 예외입니다.");
+        TEST_EXCEPTION(HttpStatus.CONFLICT, 1001, "테스트 예외입니다.");
 
         private final HttpStatus httpStatus;
         private final Integer errorCode;

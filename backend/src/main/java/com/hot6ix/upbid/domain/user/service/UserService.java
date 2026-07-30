@@ -1,7 +1,7 @@
 package com.hot6ix.upbid.domain.user.service;
 
 import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
-import com.hot6ix.upbid.domain.oauth.OAuthUserInfo;
+import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
 import com.hot6ix.upbid.domain.user.dto.UserOAuthLoginDto;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;

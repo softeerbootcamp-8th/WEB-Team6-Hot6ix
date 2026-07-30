@@ -1,12 +1,12 @@
-package com.hot6ix.upbid.domain.oauth.kakao;
+package com.hot6ix.upbid.domain.auth.oauth.kakao;
 
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import com.hot6ix.upbid.domain.oauth.OAuthClient;
-import com.hot6ix.upbid.domain.oauth.OAuthUserInfo;
-import com.hot6ix.upbid.domain.oauth.exception.OauthErrorType;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoTokenResponse;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoUserInfoResponse;
-import com.hot6ix.upbid.domain.oauth.kakao.dto.KakaoUserInfoResponse.KakaoAccount;
+import com.hot6ix.upbid.domain.auth.oauth.service.OAuthClient;
+import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
+import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoTokenResponse;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoUserInfoResponse;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoUserInfoResponse.KakaoAccount;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +31,7 @@ public class KakaoOauthClient implements OAuthClient {
         String phoneNumber = Optional.ofNullable(kakaoAccount)
                 .map(KakaoAccount::phoneNumber)
                 .filter(StringUtils::hasText)
-                .orElseThrow(() -> new ApplicationException(OauthErrorType.KAKAO_PHONE_NUMBER_REQUIRED));
+                .orElseThrow(() -> new ApplicationException(AuthErrorType.KAKAO_PHONE_NUMBER_REQUIRED));
 
         String email = Optional.ofNullable(kakaoAccount)
                 .map(KakaoAccount::email)
@@ -50,7 +50,7 @@ public class KakaoOauthClient implements OAuthClient {
             return kakaoApiClient.issueToken(authorizationCode);
         } catch (RestClientException e) {
             log.warn("카카오 토큰 발급 실패 - {}", e.getMessage());
-            throw new ApplicationException(OauthErrorType.KAKAO_TOKEN_REQUEST_FAILED);
+            throw new ApplicationException(AuthErrorType.KAKAO_TOKEN_REQUEST_FAILED);
         }
     }
 
@@ -59,7 +59,7 @@ public class KakaoOauthClient implements OAuthClient {
             return kakaoApiClient.getUserInfo(accessToken);
         } catch (RestClientException e) {
             log.warn("카카오 사용자 정보 조회 실패 - {}", e.getMessage());
-            throw new ApplicationException(OauthErrorType.KAKAO_USER_INFO_REQUEST_FAILED);
+            throw new ApplicationException(AuthErrorType.KAKAO_USER_INFO_REQUEST_FAILED);
         }
     }
 }

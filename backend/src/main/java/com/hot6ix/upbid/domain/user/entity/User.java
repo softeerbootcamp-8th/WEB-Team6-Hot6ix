@@ -1,6 +1,6 @@
 package com.hot6ix.upbid.domain.user.entity;
 
-import com.hot6ix.upbid.domain.oauth.OAuthUserInfo;
+import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
 import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

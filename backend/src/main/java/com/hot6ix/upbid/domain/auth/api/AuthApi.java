@@ -17,7 +17,7 @@ public interface AuthApi {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "로그아웃 성공"),
-            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 6001)")
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)")
     })
     ResponseEntity<CommonResponse<Void>> logout(HttpServletRequest request);
 }

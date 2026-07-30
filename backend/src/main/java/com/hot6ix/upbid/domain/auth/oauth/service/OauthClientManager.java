@@ -1,8 +1,10 @@
-package com.hot6ix.upbid.domain.oauth;
+package com.hot6ix.upbid.domain.auth.oauth.service;
 
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
+import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import com.hot6ix.upbid.domain.oauth.exception.OauthErrorType;
-import com.hot6ix.upbid.domain.oauth.kakao.KakaoOauthClient;
+import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
+import com.hot6ix.upbid.domain.auth.oauth.kakao.KakaoOauthClient;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
@@ -19,7 +21,7 @@ public class OauthClientManager {
     public OAuthUserInfo getUserInfo(OauthProvider provider, String authorizationCode) {
         OAuthClient client = Optional.ofNullable(provider)
                 .map(clients::get)
-                .orElseThrow(() -> new ApplicationException(OauthErrorType.UNSUPPORTED_OAUTH_PROVIDER));
+                .orElseThrow(() -> new ApplicationException(AuthErrorType.UNSUPPORTED_OAUTH_PROVIDER));
         return client.getUserInfo(authorizationCode);
     }
 }

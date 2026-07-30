@@ -1,4 +1,4 @@
-package com.hot6ix.upbid.domain.oauth.kakao.config;
+package com.hot6ix.upbid.domain.auth.oauth.kakao.config;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
