@@ -1,5 +1,7 @@
-package com.hot6ix.upbid.global.event;
+package com.hot6ix.upbid.global.event.payload;
 
+import com.hot6ix.upbid.global.event.EventType;
+import com.hot6ix.upbid.global.event.ItemEvent;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
