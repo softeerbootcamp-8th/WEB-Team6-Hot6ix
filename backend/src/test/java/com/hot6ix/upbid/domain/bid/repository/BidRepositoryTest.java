@@ -203,4 +203,78 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
     void findTopBiddersReturnsEmptyWhenNoBid() {
         assertThat(findTopBidders()).isEmpty();
     }
+
+    @Test
+    @DisplayName("보충 조회는 제외한 회원을 빼고 다음 순위를 돌려준다")
+    void findTopBiddersExcludingSkipsExcludedBidders() {
+
+        User first = newUser("first@hot6ix.com", "일등");
+        User second = newUser("second@hot6ix.com", "이등");
+        User third = newUser("third@hot6ix.com", "삼등");
+
+        newBid(auctionItem, first, 15_000L);
+        newBid(auctionItem, second, 13_000L);
+        newBid(auctionItem, third, 12_000L);
+        entityManager.flush();
+
+        List<BidderRankProjection> ranks = bidRepository.findTopBiddersExcluding(
+                auctionItem.getAuctionItemId(), List.of(first.getUserId(), second.getUserId()),
+                TOP_BIDDER_LIMIT);
+
+        assertThat(ranks).hasSize(1);
+        assertThat(ranks.getFirst().getBidderUserId()).isEqualTo(third.getUserId());
+        assertThat(ranks.getFirst().getAmount()).isEqualTo(12_000L);
+    }
+
+    @Test
+    @DisplayName("보충 조회에 남은 입찰자가 없으면 빈 목록을 돌려준다")
+    void findTopBiddersExcludingReturnsEmptyWhenAllExcluded() {
+
+        User only = newUser("only@hot6ix.com", "유일");
+        newBid(auctionItem, only, 15_000L);
+        entityManager.flush();
+
+        List<BidderRankProjection> ranks = bidRepository.findTopBiddersExcluding(
+                auctionItem.getAuctionItemId(), List.of(only.getUserId()), TOP_BIDDER_LIMIT);
+
+        assertThat(ranks).isEmpty();
+    }
+
+    @Test
+    @DisplayName("탈퇴한 회원의 입찰은 순위에 포함되지 않는다")
+    void findTopBiddersExcludesDeletedBidder() {
+
+        User active = newUser("active@hot6ix.com", "탈퇴안함");
+        User withdrawn = newUser("withdrawn@hot6ix.com", "탈퇴함");
+        withdrawn.softDelete(LocalDateTime.of(2026, 7, 29, 20, 0));
+
+        newBid(auctionItem, active, 11_000L);
+        newBid(auctionItem, withdrawn, 99_000L);
+
+        List<BidderRankProjection> ranks = findTopBidders();
+
+        assertThat(ranks).hasSize(1);
+        assertThat(ranks.getFirst().getBidderUserId()).isEqualTo(active.getUserId());
+    }
+
+    /** 순위 산정 뒤에 걸러내면 상한을 못 채운다. 남은 사람들로 채워지는지 확인한다. */
+    @Test
+    @DisplayName("탈퇴 회원을 제외하고도 상한만큼 순위가 채워진다")
+    void findTopBiddersFillsLimitAfterExcludingDeleted() {
+
+        User topBidder = newUser("top@hot6ix.com", "최고가탈퇴");
+        topBidder.softDelete(LocalDateTime.of(2026, 7, 29, 20, 0));
+        newBid(auctionItem, topBidder, 99_000L);
+
+        for (int i = 1; i <= TOP_BIDDER_LIMIT; i++) {
+            newBid(auctionItem, newUser("bidder" + i + "@hot6ix.com", "입찰자" + i), 10_000L + i * 1_000L);
+        }
+
+        List<BidderRankProjection> ranks = findTopBidders();
+
+        assertThat(ranks).hasSize(TOP_BIDDER_LIMIT);
+        assertThat(ranks)
+                .extracting(BidderRankProjection::getAmount)
+                .containsExactly(15_000L, 14_000L, 13_000L, 12_000L, 11_000L);
+    }
 }
