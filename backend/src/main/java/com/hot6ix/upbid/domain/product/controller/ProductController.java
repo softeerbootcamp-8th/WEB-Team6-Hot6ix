@@ -28,13 +28,11 @@ public class ProductController implements ProductApi {
 
     @PostMapping
     @Override
-    public ResponseEntity<CommonResponse<ProductResponseDto>> create(
-            Long userId, ProductCreateRequestDto request) {
+    public ResponseEntity<CommonResponse<ProductResponseDto>> create(Long userId, ProductCreateRequestDto request) {
 
         ProductResponseDto response = productService.create(userId, request);
 
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(CommonResponse.ok(response, "상품이 등록되었습니다."));
+        return ResponseEntity.status(HttpStatus.CREATED).body(CommonResponse.ok(response, "상품이 등록되었습니다."));
     }
 
     @GetMapping("/{productId}")
@@ -51,8 +49,7 @@ public class ProductController implements ProductApi {
     public ResponseEntity<CommonResponse<CursorPageResponse<ProductSummaryResponseDto>>> getList(
             Long userId, String keyword, ProductListingStatus status, Long cursor, Integer size) {
 
-        CursorPageResponse<ProductSummaryResponseDto> response =
-                productService.getList(userId, keyword, status, cursor, size);
+        CursorPageResponse<ProductSummaryResponseDto> response = productService.getList(userId, keyword, status, cursor, size);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "상품 목록 조회에 성공했습니다."));
     }

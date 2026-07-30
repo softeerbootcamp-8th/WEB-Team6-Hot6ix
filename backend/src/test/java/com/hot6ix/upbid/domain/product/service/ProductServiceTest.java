@@ -168,7 +168,7 @@ class ProductServiceTest {
         return ProductSummaryResponseDto.builder()
                 .productId(productId)
                 .name("상품" + productId)
-                .status(ProductListingStatus.UNLISTED)
+                .status(ProductListingStatus.UNREGISTERED)
                 .build();
     }
 

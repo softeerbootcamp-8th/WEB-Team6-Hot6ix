@@ -116,7 +116,7 @@ public class ProductService {
      *
      * @param userId  조회를 요청한 회원의 ID
      * @param keyword 상품명 검색어(옵션)
-     * @param status  파생 상태 필터(옵션) — UNLISTED/READY/IN_PROGRESS/ENDED
+     * @param status  파생 상태 필터(옵션) — UNREGISTERED/READY/IN_PROGRESS/ENDED
      * @param cursor  이전 페이지 마지막 상품의 productId(옵션, 없으면 첫 페이지)
      * @param size    페이지 크기(옵션, 기본 {@value ProductRepository#DEFAULT_PAGE_SIZE})
      * @return 상품 요약 목록과 다음 페이지 커서

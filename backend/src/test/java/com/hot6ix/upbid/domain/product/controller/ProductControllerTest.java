@@ -217,16 +217,16 @@ class ProductControllerTest {
         ProductSummaryResponseDto summary = ProductSummaryResponseDto.builder()
                 .productId(2L)
                 .name("승민의 노트북")
-                .status(ProductListingStatus.UNLISTED)
+                .status(ProductListingStatus.UNREGISTERED)
                 .build();
 
-        when(productService.getList(eq(1L), eq("노트북"), eq(ProductListingStatus.UNLISTED), eq(3L), eq(10)))
+        when(productService.getList(eq(1L), eq("노트북"), eq(ProductListingStatus.UNREGISTERED), eq(3L), eq(10)))
                 .thenReturn(CursorPageResponse.of(List.of(summary), 2L));
 
         mockMvc.perform(get("/api/v1/products")
                         .header("X-User-Id", "1")
                         .param("keyword", "노트북")
-                        .param("status", "UNLISTED")
+                        .param("status", "UNREGISTERED")
                         .param("cursor", "3")
                         .param("size", "10"))
                 .andExpect(status().isOk())
@@ -247,6 +247,26 @@ class ProductControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    @Test
+    @DisplayName("size가 0 이하면 목록 조회 시 400을 반환한다")
+    void getList_sizeNotPositive() throws Exception {
+
+        mockMvc.perform(get("/api/v1/products").header("X-User-Id", "1").param("size", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002));
+    }
+
+    @Test
+    @DisplayName("cursor가 0 이하면 목록 조회 시 400을 반환한다")
+    void getList_cursorNotPositive() throws Exception {
+
+        mockMvc.perform(get("/api/v1/products").header("X-User-Id", "1").param("cursor", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002));
     }
 
     @Test

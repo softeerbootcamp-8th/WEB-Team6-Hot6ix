@@ -161,8 +161,8 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
-    @DisplayName("연결된 AuctionItem이 없으면 UNLISTED로 조회된다")
-    void search_unlisted() {
+    @DisplayName("연결된 AuctionItem이 없으면 UNREGISTERED로 조회된다")
+    void search_unregistered() {
 
         SellerProfile sellerProfile = newSellerProfile("seller6@hot6ix.com");
         newProduct(sellerProfile, "미등록상품");
@@ -171,7 +171,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
                 productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
 
         assertThat(results).extracting(ProductSummaryResponseDto::status)
-                .containsExactly(ProductListingStatus.UNLISTED);
+                .containsExactly(ProductListingStatus.UNREGISTERED);
     }
 
     @Test

@@ -1,7 +1,7 @@
 package com.hot6ix.upbid.domain.product.entity;
 
 public enum ProductListingStatus {
-    UNLISTED,
+    UNREGISTERED,
     READY,
     IN_PROGRESS,
     ENDED

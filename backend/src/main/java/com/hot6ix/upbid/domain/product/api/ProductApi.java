@@ -13,6 +13,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -68,13 +70,13 @@ public interface ProductApi {
             @RequestHeader("X-User-Id") Long userId,
             @Parameter(description = "상품명 검색어")
             @RequestParam(required = false) String keyword,
-            @Parameter(description = "파생 상태 필터 — 연결된 AuctionItem이 없으면 UNLISTED, "
+            @Parameter(description = "파생 상태 필터 — 연결된 AuctionItem이 없으면 UNREGISTERED, "
                     + "있으면 그 상태에 따라 READY/IN_PROGRESS/ENDED(낙찰·유찰 병합)")
             @RequestParam(required = false) ProductListingStatus status,
             @Parameter(description = "이전 페이지 마지막 상품의 productId, 없으면 첫 페이지")
-            @RequestParam(required = false) Long cursor,
+            @RequestParam(required = false) @Positive(message = "cursor는 양수여야 합니다.") Long cursor,
             @Parameter(description = "페이지 크기, 기본값 20")
-            @RequestParam(required = false) Integer size);
+            @RequestParam(required = false) @Min(value = 1, message = "size는 1 이상이어야 합니다.") Integer size);
 
     @Operation(
             summary = "상품 수정",

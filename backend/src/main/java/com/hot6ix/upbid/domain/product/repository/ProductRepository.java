@@ -34,21 +34,21 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     default List<ProductSummaryResponseDto> search(
             Long sellerProfileId, String keyword, ProductListingStatus status, Long cursor, Integer size) {
         int limit = (size != null) ? size : DEFAULT_PAGE_SIZE;
-        Boolean matchUnlisted = (status == ProductListingStatus.UNLISTED) ? Boolean.TRUE : null;
+        Boolean matchUnregistered = (status == ProductListingStatus.UNREGISTERED) ? Boolean.TRUE : null;
         List<AuctionItemStatus> matchAuctionStatuses = (status == null) ? null : switch (status) {
-            case UNLISTED -> null;
+            case UNREGISTERED -> null;
             case READY -> List.of(AuctionItemStatus.READY);
             case IN_PROGRESS -> List.of(AuctionItemStatus.IN_PROGRESS);
             case ENDED -> List.of(AuctionItemStatus.SOLD, AuctionItemStatus.FAILED);
         };
-        return searchByLimit(sellerProfileId, keyword, matchUnlisted, matchAuctionStatuses, cursor,
+        return searchByLimit(sellerProfileId, keyword, matchUnregistered, matchAuctionStatuses, cursor,
                 Limit.of(limit + 1));
     }
 
     @Query("select new com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto("
             + "  p.productId, p.name, p.imageUrl, "
             + "  case"
-            + "    when ai.auctionItemId is null then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.UNLISTED"
+            + "    when ai.auctionItemId is null then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.UNREGISTERED"
             + "    when ai.status = com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.READY"
             + "      then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.READY"
             + "    when ai.status = com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.IN_PROGRESS"
@@ -63,13 +63,13 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             + "  and p.deletedAt is null "
             + "  and (:keyword is null or p.name like concat('%', :keyword, '%')) "
             + "  and (:cursor is null or p.productId < :cursor) "
-            + "  and (:matchUnlisted is null or ai.auctionItemId is null) "
+            + "  and (:matchUnregistered is null or ai.auctionItemId is null) "
             + "  and (:matchAuctionStatuses is null or ai.status in :matchAuctionStatuses) "
             + "order by p.productId desc")
     List<ProductSummaryResponseDto> searchByLimit(
             @Param("sellerProfileId") Long sellerProfileId,
             @Param("keyword") String keyword,
-            @Param("matchUnlisted") Boolean matchUnlisted,
+            @Param("matchUnregistered") Boolean matchUnregistered,
             @Param("matchAuctionStatuses") List<AuctionItemStatus> matchAuctionStatuses,
             @Param("cursor") Long cursor,
             Limit limit);
