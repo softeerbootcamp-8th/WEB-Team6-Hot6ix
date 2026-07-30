@@ -3,6 +3,9 @@ package com.hot6ix.upbid.global.event;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.hot6ix.upbid.global.event.payload.ItemEnded;
+import com.hot6ix.upbid.global.event.payload.ItemPassed;
+import com.hot6ix.upbid.global.event.payload.WinnerDecided;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -19,13 +22,15 @@ class ItemEventTest {
     class ItemEndedTest {
 
         @Test
-        @DisplayName("of는 전달한 식별자와 마감가를 그대로 담고 ITEM_ENDED 타입을 설정한다")
+        @DisplayName("of는 전달한 식별자·물품명·낙찰가·낙찰자를 그대로 담고 ITEM_ENDED 타입을 설정한다")
         void of_setsFieldsAndType() {
-            ItemEnded event = ItemEnded.of(ROOM_ID, ITEM_ID, 5000L, OCCURRED_AT);
+            ItemEnded event = ItemEnded.of(ROOM_ID, ITEM_ID, "상품", 5000L, "철수", OCCURRED_AT);
 
             assertThat(event.roomId()).isEqualTo(ROOM_ID);
             assertThat(event.itemId()).isEqualTo(ITEM_ID);
+            assertThat(event.itemName()).isEqualTo("상품");
             assertThat(event.finalPrice()).isEqualTo(5000L);
+            assertThat(event.winnerNickname()).isEqualTo("철수");
             assertThat(event.occurredAt()).isEqualTo(OCCURRED_AT);
             assertThat(event.type()).isEqualTo(EventType.ITEM_ENDED);
             assertThat(event).isInstanceOf(ItemEvent.class);
@@ -34,8 +39,8 @@ class ItemEventTest {
         @Test
         @DisplayName("of는 호출마다 서로 다른 null 아닌 eventId를 만든다")
         void of_generatesUniqueEventId() {
-            ItemEnded first = ItemEnded.of(ROOM_ID, ITEM_ID, 5000L, OCCURRED_AT);
-            ItemEnded second = ItemEnded.of(ROOM_ID, ITEM_ID, 5000L, OCCURRED_AT);
+            ItemEnded first = ItemEnded.of(ROOM_ID, ITEM_ID, "상품", 5000L, "철수", OCCURRED_AT);
+            ItemEnded second = ItemEnded.of(ROOM_ID, ITEM_ID, "상품", 5000L, "철수", OCCURRED_AT);
 
             assertThat(first.eventId()).isNotNull();
             assertThat(first.eventId()).isNotEqualTo(second.eventId());
@@ -45,13 +50,17 @@ class ItemEventTest {
         @DisplayName("필수 필드가 null이면 NullPointerException이 발생한다")
         void rejectsNullRequiredFields() {
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemEnded.of(null, ITEM_ID, 5000L, OCCURRED_AT));
+                    .isThrownBy(() -> ItemEnded.of(null, ITEM_ID, "상품", 5000L, "철수", OCCURRED_AT));
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemEnded.of(ROOM_ID, null, 5000L, OCCURRED_AT));
+                    .isThrownBy(() -> ItemEnded.of(ROOM_ID, null, "상품", 5000L, "철수", OCCURRED_AT));
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemEnded.of(ROOM_ID, ITEM_ID, null, OCCURRED_AT));
+                    .isThrownBy(() -> ItemEnded.of(ROOM_ID, ITEM_ID, null, 5000L, "철수", OCCURRED_AT));
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemEnded.of(ROOM_ID, ITEM_ID, 5000L, null));
+                    .isThrownBy(() -> ItemEnded.of(ROOM_ID, ITEM_ID, "상품", null, "철수", OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> ItemEnded.of(ROOM_ID, ITEM_ID, "상품", 5000L, null, OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> ItemEnded.of(ROOM_ID, ITEM_ID, "상품", 5000L, "철수", null));
         }
     }
 
