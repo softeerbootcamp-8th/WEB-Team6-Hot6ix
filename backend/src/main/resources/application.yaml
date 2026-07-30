@@ -4,6 +4,9 @@ spring:
   config:
     import: optional:file:.env[.properties]
 
+  profiles:
+    default: local
+
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:upbid}?characterEncoding=UTF-8
     username: ${DB_USERNAME:root}
@@ -12,7 +15,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create
+      ddl-auto: update
     properties:
       hibernate:
         format_sql: true
@@ -40,8 +43,3 @@ oauth:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:8080}
-
-logging:
-  level:
-    org.hibernate.SQL: debug
-    org.hibernate.orm.jdbc.bind: trace
