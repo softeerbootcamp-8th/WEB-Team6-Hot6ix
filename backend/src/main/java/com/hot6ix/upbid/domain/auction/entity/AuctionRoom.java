@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.entity;
 
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
@@ -76,5 +77,18 @@ public class AuctionRoom extends BaseEntity {
         this.softCloseTriggerSeconds = softCloseTriggerSeconds;
         this.softCloseExtendSeconds = softCloseExtendSeconds;
         this.closedAt = closedAt;
+    }
+
+    public static AuctionRoom from(SellerProfile sellerProfile, AuctionRoomCreateRequestDto request, String shareCode) {
+        return AuctionRoom.builder()
+                .sellerProfile(sellerProfile)
+                .name(request.name())
+                .coverImageUrl(request.coverImageUrl())
+                .description(request.description())
+                .liveUrl(request.liveUrl())
+                .shareCode(shareCode)
+                .softCloseTriggerSeconds(request.softCloseTriggerSeconds())
+                .softCloseExtendSeconds(request.softCloseExtendSeconds())
+                .build();
     }
 }
