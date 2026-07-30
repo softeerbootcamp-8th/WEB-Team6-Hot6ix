@@ -1,0 +1,20 @@
+# 운영 배포용이다. (로컬 개발용 MySQL은 backend/docker-compose.yml)
+#
+# 이 파일은 CD가 배포할 때마다 EC2의 /home/ubuntu/app으로 복사해 덮어쓴다.
+# 서버에서 직접 고치면 다음 배포에 사라지므로, 수정은 이 파일에서 한다.
+#
+# ${} 참조 값은 모두 같은 디렉터리의 .env에서 온다.
+# .env도 CD가 배포할 때마다 생성한다 (IMAGE_TAG는 커밋 sha, 나머지는 GitHub Secrets).
+
+services:
+  app:
+    image: ${DOCKERHUB_USERNAME}/upbid-app:${IMAGE_TAG}
+    ports:
+      - "8080:8080"
+    mem_limit: 700m
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:mysql://${RDS_ENDPOINT}:3306/upbid
+      - SPRING_DATASOURCE_USERNAME=${RDS_USERNAME}
+      - SPRING_DATASOURCE_PASSWORD=${RDS_PASSWORD}
+      - SPRING_PROFILES_ACTIVE=prod
+    restart: unless-stopped

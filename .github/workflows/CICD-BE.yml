@@ -12,6 +12,9 @@ on:
       - main
     paths:
       - 'backend/**'
+  # 커밋 없이 재배포할 때 쓴다 (EC2 재시작 후, 배포 재시도 등).
+  # Actions 탭의 버튼은 기본 브랜치의 워크플로 파일을 기준으로 노출된다.
+  workflow_dispatch:
 
 jobs:
   # CI: main, dev로 향하는 PR에서 빌드 및 테스트
@@ -31,9 +34,10 @@ jobs:
       - run: chmod +x ./gradlew
       - run: ./gradlew --no-daemon build
 
-  # CD: main push 시 jar 빌드(테스트는 PR 단계에서 이미 검증됨) 후, 같은 job 안에서 바로 이미지로 만들어 push.
+  # CD: main push 또는 수동 실행 시 jar 빌드(테스트는 PR 단계에서 이미 검증됨) 후,
+  # 같은 job 안에서 바로 이미지로 만들어 push.
   build-and-push:
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -62,13 +66,32 @@ jobs:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/upbid-app:${{ github.sha }}
 
-  # CD 3단계: NAT를 경유해 private EC2에 배포
+  # CD 3단계: NAT를 경유해 private EC2에 배포.
+  # compose 파일과 .env는 서버에 두지 않고 배포할 때마다 새로 만들어 올린다.
   deploy:
     needs: build-and-push
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: NAT를 경유해 private EC2 배포
+      # scp-action이 러너 디스크에서 파일을 읽으므로 checkout이 필요하다
+      - uses: actions/checkout@v4
+
+      - name: 배포용 compose 파일 전송
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.EC2_PRIVATE_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          proxy_host: ${{ secrets.NAT_HOST }}
+          proxy_username: ${{ secrets.NAT_USERNAME }}
+          proxy_key: ${{ secrets.NAT_SSH_KEY }}
+          source: backend/deploy/docker-compose.yml
+          target: /home/ubuntu/app
+          # backend/deploy/ 두 단계를 잘라내 /home/ubuntu/app 바로 아래 놓는다.
+          # 경로가 어긋나면 compose 프로젝트 이름이 바뀌어 기존 컨테이너를 교체하지 못한다.
+          strip_components: 2
+
+      - name: .env 생성 후 배포
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_PRIVATE_HOST }}
@@ -77,10 +100,19 @@ jobs:
           proxy_host: ${{ secrets.NAT_HOST }}
           proxy_username: ${{ secrets.NAT_USERNAME }}
           proxy_key: ${{ secrets.NAT_SSH_KEY }}
-          envs: IMAGE_TAG
+          # heredoc의 따옴표(<<'EOF')를 빼면 비밀번호 안의 $나 백틱을
+          # 원격 셸이 변수로 해석해 값이 깨진다.
           script: |
-            export IMAGE_TAG=${{ github.sha }}
+            set -e
             cd /home/ubuntu/app
+            umask 077
+            cat > .env <<'EOF'
+            IMAGE_TAG=${{ github.sha }}
+            DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
+            RDS_ENDPOINT=${{ secrets.RDS_ENDPOINT }}
+            RDS_USERNAME=${{ secrets.RDS_USERNAME }}
+            RDS_PASSWORD=${{ secrets.RDS_PASSWORD }}
+            EOF
             docker compose pull app
             docker compose up -d
             docker image prune -f
