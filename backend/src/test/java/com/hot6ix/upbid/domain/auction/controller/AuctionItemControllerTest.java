@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
-import com.hot6ix.upbid.domain.auction.exception.AuctionItemErrorType;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
@@ -72,6 +72,21 @@ class AuctionItemControllerTest {
     }
 
     @Test
+    @DisplayName("없는 경매방의 물품 목록을 조회하면 404와 4002를 반환한다")
+    void getSummariesRoomNotFound() throws Exception {
+
+        when(auctionItemService.getSummaries(999L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/999/auction-items"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002))
+                .andExpect(jsonPath("$.message").value("존재하지 않는 경매방입니다."))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
     @DisplayName("물품 상세를 조회하면 200과 물품 정보를 반환한다")
     void getDetail() throws Exception {
 
@@ -103,7 +118,7 @@ class AuctionItemControllerTest {
     void getDetailNotFound() throws Exception {
 
         when(auctionItemService.getDetail(999L))
-                .thenThrow(new ApplicationException(AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND));
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/auction-items/999"))
                 .andExpect(status().isNotFound())

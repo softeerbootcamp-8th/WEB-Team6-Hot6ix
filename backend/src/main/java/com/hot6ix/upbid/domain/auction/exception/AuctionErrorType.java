@@ -7,9 +7,10 @@ import org.springframework.http.HttpStatus;
 
 @Getter
 @RequiredArgsConstructor
-public enum AuctionItemErrorType implements ErrorType {
+public enum AuctionErrorType implements ErrorType {
 
-    AUCTION_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, 4001, "존재하지 않는 경매 물품입니다.");
+    AUCTION_ITEM_NOT_FOUND(HttpStatus.NOT_FOUND, 4001, "존재하지 않는 경매 물품입니다."),
+    AUCTION_ROOM_NOT_FOUND(HttpStatus.NOT_FOUND, 4002, "존재하지 않는 경매방입니다.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;
