@@ -20,6 +20,7 @@
 - [핵심 기능](#핵심-기능)
 - [서비스 흐름](#서비스-흐름)
 - [기술 스택](#기술-스택)
+- [아키텍처](#아키텍처)
 - [팀원 소개](#팀원-소개)
 - [팀 문화](#팀-문화)
 - [프로젝트 일정](#프로젝트-일정)
@@ -80,6 +81,12 @@ QR로 들어오는 **실시간 경매방**을 얹어서, 입찰과 낙찰을 서
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS |
 | Infra | AWS(EC2, RDS, S3), Docker Compose, GitHub Actions |
 | Test | JUnit 5 |
+
+<br>
+
+## 아키텍처
+
+![아키텍처](https://github.com/user-attachments/assets/db9c92d0-460d-421d-9b8c-4ab16ec2f4ea)
 
 <br>
 
