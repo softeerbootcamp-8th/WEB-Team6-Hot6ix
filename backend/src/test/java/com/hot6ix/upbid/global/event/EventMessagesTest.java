@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.hot6ix.upbid.global.event.message.EventMessages;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
+import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
@@ -35,10 +36,10 @@ class EventMessagesTest {
     }
 
     @Test
-    @DisplayName("ItemEnded는 낙찰 확정 문구와 금액 포맷을 만든다")
+    @DisplayName("ItemEnded는 1순위 확정 문구와 금액 포맷을 만든다")
     void itemEnded() {
         assertThat(EventMessages.of(ItemEnded.of(1L, 2L, "한정판 조던", 45000L, "철수", OCCURRED_AT)))
-                .contains("한정판 조던 낙찰 확정 · 45,000원 (철수님)");
+                .contains("한정판 조던 낙찰 1순위 확정 · 45,000원 (철수님)");
     }
 
     @Test
@@ -73,6 +74,16 @@ class EventMessagesTest {
     @DisplayName("WinnerDecided는 화면에 띄우지 않으므로 예외 없이 빈 값을 돌려준다")
     void winnerDecidedHasNoMessage() {
         assertThat(EventMessages.of(WinnerDecided.of(1L, 2L, 99L, 45000L, OCCURRED_AT)))
+                .isEmpty();
+    }
+
+    /**
+     * 거래 진행 상황은 방 전체에 뿌리지 않는다. 누가 거래에 실패했는지 공개할 이유가 없다.
+     */
+    @Test
+    @DisplayName("DealRightAssigned는 방에 뿌리지 않으므로 빈 값을 돌려준다")
+    void dealRightAssignedHasNoMessage() {
+        assertThat(EventMessages.of(DealRightAssigned.of(1L, 2L, 55L, 2, 99L, 45000L, OCCURRED_AT)))
                 .isEmpty();
     }
 }
