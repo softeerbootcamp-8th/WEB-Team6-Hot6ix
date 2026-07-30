@@ -3,6 +3,7 @@ package com.hot6ix.upbid.global.event;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
+import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.WinnerDecided;
@@ -109,26 +110,33 @@ class ItemEventTest {
     }
 
     @Nested
-    @DisplayName("ItemPassed")
-    class ItemPassedTest {
+    @DisplayName("DealRightAssigned")
+    class DealRightAssignedTest {
 
         @Test
-        @DisplayName("of는 전달한 식별자를 그대로 담고 ITEM_PASSED 타입을 설정한다")
+        @DisplayName("of는 후보 식별자·순위·입찰자·금액을 그대로 담고 DEAL_RIGHT_ASSIGNED 타입을 설정한다")
         void of_setsFieldsAndType() {
-            ItemPassed event = ItemPassed.of(ROOM_ID, ITEM_ID, OCCURRED_AT);
+            DealRightAssigned event =
+                    DealRightAssigned.of(ROOM_ID, ITEM_ID, 55L, 2, 99L, 7000L, OCCURRED_AT);
 
             assertThat(event.roomId()).isEqualTo(ROOM_ID);
             assertThat(event.itemId()).isEqualTo(ITEM_ID);
+            assertThat(event.dealCandidateId()).isEqualTo(55L);
+            assertThat(event.candidateRank()).isEqualTo(2);
+            assertThat(event.bidderUserId()).isEqualTo(99L);
+            assertThat(event.bidAmount()).isEqualTo(7000L);
             assertThat(event.occurredAt()).isEqualTo(OCCURRED_AT);
-            assertThat(event.type()).isEqualTo(EventType.ITEM_PASSED);
+            assertThat(event.type()).isEqualTo(EventType.DEAL_RIGHT_ASSIGNED);
             assertThat(event).isInstanceOf(ItemEvent.class);
         }
 
         @Test
         @DisplayName("of는 호출마다 서로 다른 null 아닌 eventId를 만든다")
         void of_generatesUniqueEventId() {
-            ItemPassed first = ItemPassed.of(ROOM_ID, ITEM_ID, OCCURRED_AT);
-            ItemPassed second = ItemPassed.of(ROOM_ID, ITEM_ID, OCCURRED_AT);
+            DealRightAssigned first =
+                    DealRightAssigned.of(ROOM_ID, ITEM_ID, 55L, 2, 99L, 7000L, OCCURRED_AT);
+            DealRightAssigned second =
+                    DealRightAssigned.of(ROOM_ID, ITEM_ID, 55L, 2, 99L, 7000L, OCCURRED_AT);
 
             assertThat(first.eventId()).isNotNull();
             assertThat(first.eventId()).isNotEqualTo(second.eventId());
@@ -138,11 +146,60 @@ class ItemEventTest {
         @DisplayName("필수 필드가 null이면 NullPointerException이 발생한다")
         void rejectsNullRequiredFields() {
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemPassed.of(null, ITEM_ID, OCCURRED_AT));
+                    .isThrownBy(() -> DealRightAssigned.of(null, ITEM_ID, 55L, 2, 99L, 7000L, OCCURRED_AT));
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, null, OCCURRED_AT));
+                    .isThrownBy(() -> DealRightAssigned.of(ROOM_ID, null, 55L, 2, 99L, 7000L, OCCURRED_AT));
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, ITEM_ID, null));
+                    .isThrownBy(() -> DealRightAssigned.of(ROOM_ID, ITEM_ID, null, 2, 99L, 7000L, OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> DealRightAssigned.of(ROOM_ID, ITEM_ID, 55L, null, 99L, 7000L, OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> DealRightAssigned.of(ROOM_ID, ITEM_ID, 55L, 2, null, 7000L, OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> DealRightAssigned.of(ROOM_ID, ITEM_ID, 55L, 2, 99L, null, OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> DealRightAssigned.of(ROOM_ID, ITEM_ID, 55L, 2, 99L, 7000L, null));
+        }
+    }
+
+    @Nested
+    @DisplayName("ItemPassed")
+    class ItemPassedTest {
+
+        @Test
+        @DisplayName("of는 전달한 식별자·물품명을 그대로 담고 ITEM_PASSED 타입을 설정한다")
+        void of_setsFieldsAndType() {
+            ItemPassed event = ItemPassed.of(ROOM_ID, ITEM_ID, "상품", OCCURRED_AT);
+
+            assertThat(event.roomId()).isEqualTo(ROOM_ID);
+            assertThat(event.itemId()).isEqualTo(ITEM_ID);
+            assertThat(event.itemName()).isEqualTo("상품");
+            assertThat(event.occurredAt()).isEqualTo(OCCURRED_AT);
+            assertThat(event.type()).isEqualTo(EventType.ITEM_PASSED);
+            assertThat(event).isInstanceOf(ItemEvent.class);
+        }
+
+        @Test
+        @DisplayName("of는 호출마다 서로 다른 null 아닌 eventId를 만든다")
+        void of_generatesUniqueEventId() {
+            ItemPassed first = ItemPassed.of(ROOM_ID, ITEM_ID, "상품", OCCURRED_AT);
+            ItemPassed second = ItemPassed.of(ROOM_ID, ITEM_ID, "상품", OCCURRED_AT);
+
+            assertThat(first.eventId()).isNotNull();
+            assertThat(first.eventId()).isNotEqualTo(second.eventId());
+        }
+
+        @Test
+        @DisplayName("필수 필드가 null이면 NullPointerException이 발생한다")
+        void rejectsNullRequiredFields() {
+            assertThatNullPointerException()
+                    .isThrownBy(() -> ItemPassed.of(null, ITEM_ID, "상품", OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, null, "상품", OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, ITEM_ID, null, OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, ITEM_ID, "상품", null));
         }
     }
 }
