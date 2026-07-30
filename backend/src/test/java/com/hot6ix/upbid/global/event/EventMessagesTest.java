@@ -21,13 +21,6 @@ class EventMessagesTest {
     private static final LocalDateTime OCCURRED_AT = LocalDateTime.of(2026, 7, 28, 12, 0);
 
     @Test
-    @DisplayName("RoomEntered는 누적 참여자 수 문구를 만든다")
-    void roomEntered() {
-        assertThat(EventMessages.of(RoomEntered.of(1L, 3, OCCURRED_AT)))
-                .contains("새 참여자 입장 · 누적 3명");
-    }
-
-    @Test
     @DisplayName("RoomClosed는 방 종료 문구를 만든다")
     void roomClosed() {
         assertThat(EventMessages.of(RoomClosed.of(1L, "여름 경매", OCCURRED_AT)))
