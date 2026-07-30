@@ -1,7 +1,7 @@
 package com.hot6ix.upbid.domain.auction.entity;
 
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
-import com.hot6ix.upbid.global.common.BaseTimeEntity;
+import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -23,7 +23,7 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(name = "auction_rooms")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class AuctionRoom extends BaseTimeEntity {
+public class AuctionRoom extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -46,7 +46,7 @@ public class AuctionRoom extends BaseTimeEntity {
     @Column(name = "live_url", columnDefinition = "TEXT")
     private String liveUrl;
 
-    @Column(name = "share_code", length = 32)
+    @Column(name = "share_code", length = 32, unique = true)
     private String shareCode;
 
     @Enumerated(EnumType.STRING)
