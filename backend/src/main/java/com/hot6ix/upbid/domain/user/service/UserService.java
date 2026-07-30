@@ -27,9 +27,7 @@ public class UserService {
             return UserOAuthLoginDto.of(verifyNotWithdrawn(found.get()), false);
         }
 
-        User created = userRepository.save(
-                User.ofOAuth(userInfo.providerId(), userInfo.email(), userInfo.phoneNumber())
-        );
+        User created = userRepository.save(User.ofOAuth(userInfo));
 
         return UserOAuthLoginDto.of(created, true);
     }

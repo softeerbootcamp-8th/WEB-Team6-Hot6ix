@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.user.entity;
 
+import com.hot6ix.upbid.domain.oauth.OAuthUserInfo;
 import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -30,6 +31,8 @@ public class User extends BaseEntity {
     @Column(name = "user_id")
     private Long userId;
 
+    private String provider;
+
     @Column(name = "provider_id", length = 100)
     private String providerId;
 
@@ -49,8 +52,9 @@ public class User extends BaseEntity {
     private String profileImageUrl;
 
     @Builder
-    private User(String providerId, String email, String password,
+    private User(String provider, String providerId, String email, String password,
                  String nickname, String phoneNumber, String profileImageUrl) {
+        this.provider = provider;
         this.providerId = providerId;
         this.email = email;
         this.password = password;
@@ -59,15 +63,13 @@ public class User extends BaseEntity {
         this.profileImageUrl = profileImageUrl;
     }
 
-    /**
-     * 소셜 로그인 최초 진입 시 회원을 생성한다.
-     * 닉네임은 OAuth에서 내려오지 않으므로 이후 온보딩에서 입력받는다.
-     */
-    public static User ofOAuth(String providerId, String email, String phoneNumber) {
+    public static User ofOAuth(OAuthUserInfo userInfo) {
         return User.builder()
-                .providerId(providerId)
-                .email(email)
-                .phoneNumber(phoneNumber)
+                .provider(userInfo.provider())
+                .providerId(userInfo.providerId())
+                .nickname(userInfo.name())
+                .email(userInfo.email())
+                .phoneNumber(userInfo.phoneNumber())
                 .build();
     }
 }
