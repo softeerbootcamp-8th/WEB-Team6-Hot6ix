@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
@@ -180,8 +181,8 @@ class AuctionRoomServiceTest {
     }
 
     @Test
-    @DisplayName("소유자·경매방이 확인돼도 이번 PR에서는 항상 AUCTION_ROOM_ALREADY_STARTED로 거절된다")
-    void update_alwaysRejectedInThisPr() {
+    @DisplayName("물품이 하나도 시작되지 않았으면 경매방 설정을 수정할 수 있다")
+    void update_succeedsWhenNoItemStarted() {
 
         SellerProfile sellerProfile = newSellerProfile();
         AuctionRoom auctionRoom = AuctionRoom.builder()
@@ -197,6 +198,35 @@ class AuctionRoomServiceTest {
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
         when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
                 10L, sellerProfile.getSellerProfileId())).thenReturn(Optional.of(auctionRoom));
+        when(auctionItemRepository.existsByAuctionRoom_AuctionRoomIdAndStatusNot(10L, AuctionItemStatus.READY))
+                .thenReturn(false);
+
+        AuctionRoomPublicResponseDto response = auctionRoomService.update(1L, 10L, request);
+
+        assertThat(response.name()).isEqualTo("새로운 경매방 이름");
+        assertThat(auctionRoom.getName()).isEqualTo("새로운 경매방 이름");
+    }
+
+    @Test
+    @DisplayName("물품 중 하나라도 시작된 적 있으면 경매방 설정 수정 시 예외가 발생한다")
+    void update_throwsWhenItemAlreadyStarted() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .sellerProfile(sellerProfile)
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .name("새로운 경매방 이름")
+                .build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                10L, sellerProfile.getSellerProfileId())).thenReturn(Optional.of(auctionRoom));
+        when(auctionItemRepository.existsByAuctionRoom_AuctionRoomIdAndStatusNot(10L, AuctionItemStatus.READY))
+                .thenReturn(true);
 
         assertThatThrownBy(() -> auctionRoomService.update(1L, 10L, request))
                 .isInstanceOf(ApplicationException.class)

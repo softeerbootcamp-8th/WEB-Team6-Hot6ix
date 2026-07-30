@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auction.service;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
@@ -69,9 +70,8 @@ public class AuctionRoomService {
 
     /**
      * 소유자 본인의 경매방 설정을 부분 수정한다. 요청에서 생략된(null) 필드는 기존 값을 유지한다.
-     * "경매 시작 전"만 허용하는데, 이번 PR에서는 방 생성 즉시 "시작"으로 간주하므로 존재·권한
-     * 확인까지는 정상 동작하되 이후 단계에서 항상 거절된다. 실제 조건부 허용 로직은
-     * [x06-물품-시작] PR에서 재정의한다.
+     * 이 방의 물품 중 하나라도 READY가 아닌 상태로 경매에 올라간 적이 있으면(=경매가 시작된
+     * 적 있으면) 이후로도 계속 수정할 수 없다.
      *
      * @param userId        수정을 요청한 회원의 ID
      * @param auctionRoomId 수정할 경매방의 ID
@@ -79,14 +79,14 @@ public class AuctionRoomService {
      * @return 수정된 경매방
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
      *                               경매방이 없거나 본인 소유가 아닐 때(AUCTION_ROOM_NOT_FOUND),
-     *                               (이번 PR에서는 항상) 경매 시작으로 간주될 때(AUCTION_ROOM_ALREADY_STARTED)
+     *                               경매가 시작된 적 있을 때(AUCTION_ROOM_ALREADY_STARTED)
      */
     @Transactional
     public AuctionRoomPublicResponseDto update(Long userId, Long auctionRoomId, AuctionRoomUpdateRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
-        assertNotStarted();
+        assertNotStarted(auctionRoomId);
 
         auctionRoom.update(request);
 
@@ -100,9 +100,10 @@ public class AuctionRoomService {
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
     }
 
-    private void assertNotStarted() {
-        // 이번 PR에서는 방 생성 즉시 "시작"으로 간주 — 실제 조건부 판정은 x06-물품-시작에서 재정의
-        throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_ALREADY_STARTED);
+    private void assertNotStarted(Long auctionRoomId) {
+        if (auctionItemRepository.existsByAuctionRoom_AuctionRoomIdAndStatusNot(auctionRoomId, AuctionItemStatus.READY)) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_ALREADY_STARTED);
+        }
     }
 
     private long countItems(Long auctionRoomId) {
