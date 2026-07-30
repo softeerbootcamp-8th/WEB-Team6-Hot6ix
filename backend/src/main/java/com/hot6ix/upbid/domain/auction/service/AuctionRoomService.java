@@ -17,7 +17,10 @@ import java.security.SecureRandom;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +36,7 @@ public class AuctionRoomService {
     private final AuctionRoomRepository auctionRoomRepository;
     private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
+    private final PlatformTransactionManager transactionManager;
 
     /**
      * 판매자의 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며(충돌 시 재시도),
@@ -110,11 +114,22 @@ public class AuctionRoomService {
         return auctionItemRepository.countByAuctionRoom_AuctionRoomId(auctionRoomId);
     }
 
+    /**
+     * share_code가 충돌하면(극히 드묾) 새 코드로 재시도한다. IDENTITY 전략은 save() 시점에
+     * 바로 INSERT가 나가므로, 실패한 시도와 같은 세션에서 그냥 다시 저장을 시도하면
+     * Hibernate가 "예외 발생 후에는 세션을 다시 flush하면 안 된다"는 자체 규칙에 걸려
+     * DataIntegrityViolationException이 아닌 AssertionFailure를 던지며 재시도가 통째로
+     * 깨진다. 그래서 시도 하나당 완전히 새로운 트랜잭션(REQUIRES_NEW)에서 저장해, 이전
+     * 시도의 실패가 다음 시도의 세션에 영향을 주지 않게 한다.
+     */
     private AuctionRoom saveWithUniqueShareCode(SellerProfile sellerProfile, AuctionRoomCreateRequestDto request) {
+        TransactionTemplate newTransactionTemplate = new TransactionTemplate(transactionManager);
+        newTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
         for (int attempt = 0; attempt < SHARE_CODE_MAX_ATTEMPTS; attempt++) {
             AuctionRoom auctionRoom = AuctionRoom.from(sellerProfile, request, generateShareCode());
             try {
-                return auctionRoomRepository.saveAndFlush(auctionRoom);
+                return newTransactionTemplate.execute(status -> auctionRoomRepository.saveAndFlush(auctionRoom));
             } catch (DataIntegrityViolationException e) {
                 // share_code 충돌 — 다음 시도에서 새 코드로 재시도
             }
