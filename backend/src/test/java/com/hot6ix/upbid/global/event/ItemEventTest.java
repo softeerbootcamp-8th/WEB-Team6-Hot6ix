@@ -113,12 +113,13 @@ class ItemEventTest {
     class ItemPassedTest {
 
         @Test
-        @DisplayName("of는 전달한 식별자를 그대로 담고 ITEM_PASSED 타입을 설정한다")
+        @DisplayName("of는 전달한 식별자·물품명을 그대로 담고 ITEM_PASSED 타입을 설정한다")
         void of_setsFieldsAndType() {
-            ItemPassed event = ItemPassed.of(ROOM_ID, ITEM_ID, OCCURRED_AT);
+            ItemPassed event = ItemPassed.of(ROOM_ID, ITEM_ID, "상품", OCCURRED_AT);
 
             assertThat(event.roomId()).isEqualTo(ROOM_ID);
             assertThat(event.itemId()).isEqualTo(ITEM_ID);
+            assertThat(event.itemName()).isEqualTo("상품");
             assertThat(event.occurredAt()).isEqualTo(OCCURRED_AT);
             assertThat(event.type()).isEqualTo(EventType.ITEM_PASSED);
             assertThat(event).isInstanceOf(ItemEvent.class);
@@ -127,8 +128,8 @@ class ItemEventTest {
         @Test
         @DisplayName("of는 호출마다 서로 다른 null 아닌 eventId를 만든다")
         void of_generatesUniqueEventId() {
-            ItemPassed first = ItemPassed.of(ROOM_ID, ITEM_ID, OCCURRED_AT);
-            ItemPassed second = ItemPassed.of(ROOM_ID, ITEM_ID, OCCURRED_AT);
+            ItemPassed first = ItemPassed.of(ROOM_ID, ITEM_ID, "상품", OCCURRED_AT);
+            ItemPassed second = ItemPassed.of(ROOM_ID, ITEM_ID, "상품", OCCURRED_AT);
 
             assertThat(first.eventId()).isNotNull();
             assertThat(first.eventId()).isNotEqualTo(second.eventId());
@@ -138,11 +139,13 @@ class ItemEventTest {
         @DisplayName("필수 필드가 null이면 NullPointerException이 발생한다")
         void rejectsNullRequiredFields() {
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemPassed.of(null, ITEM_ID, OCCURRED_AT));
+                    .isThrownBy(() -> ItemPassed.of(null, ITEM_ID, "상품", OCCURRED_AT));
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, null, OCCURRED_AT));
+                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, null, "상품", OCCURRED_AT));
             assertThatNullPointerException()
-                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, ITEM_ID, null));
+                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, ITEM_ID, null, OCCURRED_AT));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> ItemPassed.of(ROOM_ID, ITEM_ID, "상품", null));
         }
     }
 }
