@@ -2,7 +2,7 @@ package com.hot6ix.upbid.domain.auction.api;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
-import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -30,7 +30,7 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002)")
     })
-    ResponseEntity<CommonResponse<AuctionRoomResponseDto>> create(
+    ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> create(
             @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody AuctionRoomCreateRequestDto request);
@@ -45,7 +45,7 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "400", description = "경로 변수가 숫자가 아니라면 code 2002"),
             @ApiResponse(responseCode = "404", description = "존재하지 않거나 삭제된 경매방 (code 4002)")
     })
-    ResponseEntity<CommonResponse<AuctionRoomResponseDto>> getRoom(
+    ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(
             @Parameter(description = "조회할 경매방 ID", required = true)
             @PathVariable Long roomId);
 
@@ -63,7 +63,7 @@ public interface AuctionRoomApi {
                     + "경매방이 없거나 본인 소유가 아님 (code 4002)"),
             @ApiResponse(responseCode = "409", description = "경매가 시작된 것으로 간주되어 수정 불가 (code 4003)")
     })
-    ResponseEntity<CommonResponse<AuctionRoomResponseDto>> update(
+    ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> update(
             @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
             @RequestHeader("X-User-Id") Long userId,
             @Parameter(description = "수정할 경매방 ID", required = true)

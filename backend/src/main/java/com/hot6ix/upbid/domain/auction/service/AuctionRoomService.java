@@ -2,7 +2,7 @@ package com.hot6ix.upbid.domain.auction.service;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
-import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
@@ -43,12 +43,12 @@ public class AuctionRoomService {
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND)
      */
     @Transactional
-    public AuctionRoomResponseDto create(Long userId, AuctionRoomCreateRequestDto request) {
+    public AuctionRoomPublicResponseDto create(Long userId, AuctionRoomCreateRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = saveWithUniqueShareCode(sellerProfile, request);
 
-        return AuctionRoomResponseDto.from(auctionRoom, countItems(auctionRoom.getAuctionRoomId()));
+        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoom.getAuctionRoomId()));
     }
 
     /**
@@ -59,12 +59,12 @@ public class AuctionRoomService {
      * @return 조회된 경매방
      * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    public AuctionRoomResponseDto getRoom(Long auctionRoomId) {
+    public AuctionRoomPublicResponseDto getRoom(Long auctionRoomId) {
 
         AuctionRoom auctionRoom = auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
-        return AuctionRoomResponseDto.from(auctionRoom, countItems(auctionRoomId));
+        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId));
     }
 
     /**
@@ -82,7 +82,7 @@ public class AuctionRoomService {
      *                               (이번 PR에서는 항상) 경매 시작으로 간주될 때(AUCTION_ROOM_ALREADY_STARTED)
      */
     @Transactional
-    public AuctionRoomResponseDto update(Long userId, Long auctionRoomId, AuctionRoomUpdateRequestDto request) {
+    public AuctionRoomPublicResponseDto update(Long userId, Long auctionRoomId, AuctionRoomUpdateRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
@@ -90,7 +90,7 @@ public class AuctionRoomService {
 
         auctionRoom.update(request);
 
-        return AuctionRoomResponseDto.from(auctionRoom, countItems(auctionRoomId));
+        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId));
     }
 
     private AuctionRoom findOwnedRoom(SellerProfile sellerProfile, Long auctionRoomId) {

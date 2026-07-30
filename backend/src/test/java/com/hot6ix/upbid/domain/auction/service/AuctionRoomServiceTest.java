@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
-import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
@@ -81,7 +81,7 @@ class AuctionRoomServiceTest {
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
         when(auctionRoomRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        AuctionRoomResponseDto response = auctionRoomService.create(1L, request);
+        AuctionRoomPublicResponseDto response = auctionRoomService.create(1L, request);
 
         assertThat(response.name()).isEqualTo("승민의 경매방");
         assertThat(response.status()).isEqualTo(AuctionRoomStatus.BEFORE);
@@ -103,7 +103,7 @@ class AuctionRoomServiceTest {
                 .thenThrow(new DataIntegrityViolationException("share_code unique constraint violated"))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        AuctionRoomResponseDto response = auctionRoomService.create(1L, request);
+        AuctionRoomPublicResponseDto response = auctionRoomService.create(1L, request);
 
         assertThat(response.name()).isEqualTo("승민의 경매방");
         verify(auctionRoomRepository, times(2)).saveAndFlush(any());
@@ -159,7 +159,7 @@ class AuctionRoomServiceTest {
         when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(auctionRoom));
         when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(10L)).thenReturn(3L);
 
-        AuctionRoomResponseDto response = auctionRoomService.getRoom(10L);
+        AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(10L);
 
         assertThat(response.name()).isEqualTo("승민의 경매방");
         assertThat(response.status()).isEqualTo(AuctionRoomStatus.BEFORE);

@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import lombok.Builder;
 
 @Builder
-public record AuctionRoomResponseDto(
+public record AuctionRoomPublicResponseDto(
         Long auctionRoomId,
         String name,
         String coverImageUrl,
@@ -22,8 +22,8 @@ public record AuctionRoomResponseDto(
         // 입찰 도메인 담당자가 별도로 채울 필드라 여기서는 항상 null이다.
         Long participantCount
 ) {
-    public static AuctionRoomResponseDto from(AuctionRoom auctionRoom, Long itemCount) {
-        return AuctionRoomResponseDto.builder()
+    public static AuctionRoomPublicResponseDto from(AuctionRoom auctionRoom, Long itemCount) {
+        return AuctionRoomPublicResponseDto.builder()
                 .auctionRoomId(auctionRoom.getAuctionRoomId())
                 .name(auctionRoom.getName())
                 .coverImageUrl(auctionRoom.getCoverImageUrl())

@@ -11,7 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
-import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
@@ -52,8 +52,8 @@ class AuctionRoomControllerTest {
                 .build();
     }
 
-    private AuctionRoomResponseDto sampleResponse() {
-        return AuctionRoomResponseDto.builder()
+    private AuctionRoomPublicResponseDto sampleResponse() {
+        return AuctionRoomPublicResponseDto.builder()
                 .auctionRoomId(1L)
                 .name("승민의 경매방")
                 .status(AuctionRoomStatus.BEFORE)
