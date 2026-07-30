@@ -15,50 +15,60 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Optional<Product> findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(Long productId, Long sellerProfileId);
 
-    /**
-     * 목록 조회 기본 페이지 크기.
-     */
     int DEFAULT_PAGE_SIZE = 20;
 
     /**
-     * 판매자 본인 상품 목록을 productId 최신순으로 조회한다. 정렬 키를 항상 불변인
-     * productId로 고정해 커서가 안정적으로 동작하게 하고, 파생 상태(등록 여부·경매 상태)는
-     * 정렬이 아니라 필터로만 사용한다. 한 상품에 연결된 AuctionItem이 여러 건이어도
-     * 가장 최근 것(auctionItemId 최댓값) 하나만 상태 판정에 사용한다.
-     *
-     * <p>{@code status} 필터는 커스텀 enum({@link ProductListingStatus})을 그대로 바인드하면
-     * Hibernate가 파라미터의 값 매핑을 추론하지 못해 예외가 나므로(엔티티에 매핑된 속성이
-     * 아니라서), 여기서 매핑된 속성({@code ai.auctionItemId}, {@code ai.status})과 직접
-     * 비교 가능한 형태로 미리 변환해 하위 쿼리에 넘긴다.
+     * 상품당 AuctionItem이 여러 건이어도 가장 최근 것(auctionItemId 최댓값) 하나만 쓴다.
+     */
+    String LATEST_AUCTION_ITEM_JOIN = "left join AuctionItem ai on ai.product = p and ai.auctionItemId = ("
+            + "  select max(ai2.auctionItemId) from AuctionItem ai2 where ai2.product = p)";
+
+    /**
+     * SOLD·FAILED는 ENDED로 합친다. {@link #LATEST_AUCTION_ITEM_JOIN}의 별칭 {@code ai}에 묶여 있다.
+     */
+    String DERIVED_STATUS_CASE = "case"
+            + "  when ai.auctionItemId is null then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.UNREGISTERED"
+            + "  when ai.status = com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.READY"
+            + "    then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.READY"
+            + "  when ai.status = com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.IN_PROGRESS"
+            + "    then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.IN_PROGRESS"
+            + "  else com.hot6ix.upbid.domain.product.entity.ProductListingStatus.ENDED"
+            + "  end";
+
+    /**
+     * 정렬 키를 productId로 고정해 커서를 안정적으로 만든다. 상태는 정렬이 아니라 필터로만 쓴다.
      */
     default List<ProductSummaryResponseDto> search(
             Long sellerProfileId, String keyword, ProductListingStatus status, Long cursor, Integer size) {
         int limit = (size != null) ? size : DEFAULT_PAGE_SIZE;
-        Boolean matchUnregistered = (status == ProductListingStatus.UNREGISTERED) ? Boolean.TRUE : null;
-        List<AuctionItemStatus> matchAuctionStatuses = (status == null) ? null : switch (status) {
+        return searchByLimit(sellerProfileId, keyword,
+                toMatchUnregistered(status), toMatchAuctionStatuses(status),
+                cursor, Limit.of(limit + 1));
+    }
+
+    // ProductListingStatus를 JPQL 파라미터로 그대로 바인드하면 Hibernate가 값 매핑을 못 찾아
+    // 예외가 난다(엔티티 매핑 속성이 아니라서). 그래서 ai.auctionItemId/ai.status와 직접
+    // 비교 가능한 형태로 미리 변환한다.
+    private Boolean toMatchUnregistered(ProductListingStatus status) {
+        return (status == ProductListingStatus.UNREGISTERED) ? Boolean.TRUE : null;
+    }
+
+    private List<AuctionItemStatus> toMatchAuctionStatuses(ProductListingStatus status) {
+        if (status == null) {
+            return null;
+        }
+        return switch (status) {
             case UNREGISTERED -> null;
             case READY -> List.of(AuctionItemStatus.READY);
             case IN_PROGRESS -> List.of(AuctionItemStatus.IN_PROGRESS);
             case ENDED -> List.of(AuctionItemStatus.SOLD, AuctionItemStatus.FAILED);
         };
-        return searchByLimit(sellerProfileId, keyword, matchUnregistered, matchAuctionStatuses, cursor,
-                Limit.of(limit + 1));
     }
 
     @Query("select new com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto("
-            + "  p.productId, p.name, p.imageUrl, "
-            + "  case"
-            + "    when ai.auctionItemId is null then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.UNREGISTERED"
-            + "    when ai.status = com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.READY"
-            + "      then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.READY"
-            + "    when ai.status = com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.IN_PROGRESS"
-            + "      then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.IN_PROGRESS"
-            + "    else com.hot6ix.upbid.domain.product.entity.ProductListingStatus.ENDED"
-            + "  end, "
-            + "  p.createdAt) "
+            + "  p.productId, p.name, p.imageUrl, " + DERIVED_STATUS_CASE + ", p.createdAt) "
             + "from Product p "
-            + "left join AuctionItem ai on ai.product = p and ai.auctionItemId = ("
-            + "  select max(ai2.auctionItemId) from AuctionItem ai2 where ai2.product = p) "
+            + LATEST_AUCTION_ITEM_JOIN + " "
             + "where p.sellerProfile.sellerProfileId = :sellerProfileId "
             + "  and p.deletedAt is null "
             + "  and (:keyword is null or p.name like concat('%', :keyword, '%')) "
