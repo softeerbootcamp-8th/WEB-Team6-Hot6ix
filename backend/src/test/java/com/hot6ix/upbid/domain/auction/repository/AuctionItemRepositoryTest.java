@@ -12,6 +12,7 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -198,5 +199,32 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 product.getProductId(), AuctionItemStatus.READY);
 
         assertThat(started).isFalse();
+    }
+
+    /**
+     * 트랜잭션이 둘 필요해 락의 실제 차단은 볼 수 없어 락 모드만 단정한다. {@code clear()}가
+     * 필요한 이유는 같은 트랜잭션에서 INSERT한 엔티티가 이미 쓰기 상태로 표시돼 있기 때문이다.
+     */
+    @Test
+    @DisplayName("락 조회는 물품에 쓰기 락을 걸고 그대로 돌려준다")
+    void findByIdForUpdateLocksItem() {
+
+        AuctionItem item = newAuctionItem(newAuctionRoom("승민상점 경매방"), "낙찰물품", AuctionItemStatus.SOLD);
+        Long auctionItemId = item.getAuctionItemId();
+        entityManager.flush();
+        entityManager.clear();
+
+        AuctionItem locked = auctionItemRepository.findByIdForUpdate(auctionItemId).orElseThrow();
+
+        assertThat(locked.getAuctionItemId()).isEqualTo(auctionItemId);
+        assertThat(locked.getStatus()).isEqualTo(AuctionItemStatus.SOLD);
+        assertThat(entityManager.getEntityManager().getLockMode(locked))
+                .isEqualTo(LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    @Test
+    @DisplayName("없는 물품을 락 조회하면 빈 값을 돌려준다")
+    void findByIdForUpdateReturnsEmptyWhenNotFound() {
+        assertThat(auctionItemRepository.findByIdForUpdate(999L)).isEmpty();
     }
 }

@@ -4,10 +4,12 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -70,4 +72,13 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
             + "join ai.product p "
             + "where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItemDetailResponseDto> findDetail(@Param("auctionItemId") Long auctionItemId);
+
+    /**
+     * 물품 행에 쓰기 락을 걸고 조회한다. 거래 상태 변경은 읽고 검사한 뒤 쓰는 흐름이라 상태
+     * 검사만으로는 동시 요청을 막지 못한다. 트랜잭션 안에서만 호출해야 한다.
+     * fetch join하지 않는 이유는 MySQL {@code FOR UPDATE}가 조인된 행까지 잠그기 때문이다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")
+    Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
 }
