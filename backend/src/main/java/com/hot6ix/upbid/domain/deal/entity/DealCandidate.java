@@ -20,6 +20,19 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/**
+ * 물품 마감 시점에 확정한 낙찰 후보. 상위 입찰자를 순위대로 스냅샷으로 남겨,
+ * 판매자가 현재 낙찰자와 거래하지 못할 때 차순위로 권한을 넘길 수 있게 한다.
+ *
+ * <p><b>현재 낙찰 권한자 = 해당 물품의 {@code WAITING} 후보 중 {@code candidateRank}가
+ * 가장 낮은 1행</b>으로 정의한다. 그래서 "지금 낙찰자"를 가리키는 별도 상태값이나 플래그가
+ * 없다. 1순위가 {@code FAILED}가 되면 2순위가 자동으로 현재 낙찰자가 되므로 승격 UPDATE도
+ * 필요 없다. 단 {@code COMPLETED} 후보가 있으면 거래가 끝난 것이므로 남은 {@code WAITING}
+ * 행은 무시해야 한다.
+ *
+ * <p>한 물품에 같은 순위가 둘 생기지 않는 것은 <b>스냅샷 생성 시
+ * {@code auction_items} 행에 거는 비관적 락</b>이 보장한다.
+ */
 @Getter
 @Entity
 @Table(name = "deal_candidates")
@@ -39,6 +52,19 @@ public class DealCandidate extends BaseTimeEntity {
     @JoinColumn(name = "bidder_user_id")
     private User bidder;
 
+    /**
+     * 낙찰 순위. 1이 최초 낙찰자다. {@code rank}는 MySQL 8.0+ 예약어라 컬럼명을 바꿔 썼다.
+     */
+    @Column(name = "candidate_rank", nullable = false)
+    private Integer candidateRank;
+
+    /**
+     * 이 후보의 최고 입찰가 스냅샷. 차순위로 권한이 넘어가면 이 값이 그대로 새 낙찰가가 되므로,
+     * 이전할 때마다 {@code bids}를 다시 조회하지 않아도 된다.
+     */
+    @Column(name = "bid_amount", nullable = false)
+    private Long bidAmount;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", length = 20)
     private DealCandidateStatus status;
@@ -50,12 +76,36 @@ public class DealCandidate extends BaseTimeEntity {
     private LocalDateTime failedAt;
 
     @Builder
-    private DealCandidate(AuctionItem auctionItem, User bidder, DealCandidateStatus status,
-                          LocalDateTime completedAt, LocalDateTime failedAt) {
+    private DealCandidate(AuctionItem auctionItem, User bidder, Integer candidateRank, Long bidAmount,
+                          DealCandidateStatus status, LocalDateTime completedAt, LocalDateTime failedAt) {
         this.auctionItem = auctionItem;
         this.bidder = bidder;
+        this.candidateRank = candidateRank;
+        this.bidAmount = bidAmount;
         this.status = status != null ? status : DealCandidateStatus.WAITING;
         this.completedAt = completedAt;
+        this.failedAt = failedAt;
+    }
+
+    /**
+     * 거래 성사를 확정한다. 호출 가능한 상태인지({@code WAITING}), 요청자가 판매자인지는
+     * Service에서 검증한다.
+     *
+     * @param completedAt 성사 확정 시각
+     */
+    public void complete(LocalDateTime completedAt) {
+        this.status = DealCandidateStatus.COMPLETED;
+        this.completedAt = completedAt;
+    }
+
+    /**
+     * 거래 실패를 기록한다. 이 후보가 빠지면 차순위가 자동으로 현재 낙찰자가 되므로
+     * 여기서 다음 후보를 손대지 않는다.
+     *
+     * @param failedAt 실패 확정 시각
+     */
+    public void fail(LocalDateTime failedAt) {
+        this.status = DealCandidateStatus.FAILED;
         this.failedAt = failedAt;
     }
 }
