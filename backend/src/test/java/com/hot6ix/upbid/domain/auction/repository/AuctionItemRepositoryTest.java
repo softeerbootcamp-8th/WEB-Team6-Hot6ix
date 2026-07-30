@@ -75,9 +75,13 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     private AuctionItem newAuctionItem(AuctionRoom auctionRoom, String productName, AuctionItemStatus status) {
+        return newAuctionItem(auctionRoom, newProduct(productName), status);
+    }
+
+    private AuctionItem newAuctionItem(AuctionRoom auctionRoom, Product product, AuctionItemStatus status) {
         return entityManager.persist(AuctionItem.builder()
                 .auctionRoom(auctionRoom)
-                .product(newProduct(productName))
+                .product(product)
                 .startingPrice(10_000L)
                 .bidIncrement(1_000L)
                 .status(status)
@@ -151,5 +155,48 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(detail.bidIncrement()).isEqualTo(1_000L);
         assertThat(detail.status()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
         assertThat(detail.endAt()).isEqualTo(LocalDateTime.of(2026, 7, 29, 21, 0));
+    }
+
+    @Test
+    @DisplayName("READY 상태의 AuctionItem만 있으면 시작된 적 없는 것으로 본다")
+    void existsByProductAndStatusNot_false_whenOnlyReady() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        Product product = newProduct("대기상품");
+        newAuctionItem(auctionRoom, product, AuctionItemStatus.READY);
+        entityManager.flush();
+
+        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
+                product.getProductId(), AuctionItemStatus.READY);
+
+        assertThat(started).isFalse();
+    }
+
+    @Test
+    @DisplayName("READY가 아닌 AuctionItem이 하나라도 있으면 시작된 적 있는 것으로 본다")
+    void existsByProductAndStatusNot_true_whenNotReady() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        Product product = newProduct("낙찰상품");
+        newAuctionItem(auctionRoom, product, AuctionItemStatus.SOLD);
+        entityManager.flush();
+
+        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
+                product.getProductId(), AuctionItemStatus.READY);
+
+        assertThat(started).isTrue();
+    }
+
+    @Test
+    @DisplayName("연결된 AuctionItem이 없으면 시작된 적 없는 것으로 본다")
+    void existsByProductAndStatusNot_false_whenNoAuctionItem() {
+
+        Product product = newProduct("미등록상품");
+        entityManager.flush();
+
+        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
+                product.getProductId(), AuctionItemStatus.READY);
+
+        assertThat(started).isFalse();
     }
 }

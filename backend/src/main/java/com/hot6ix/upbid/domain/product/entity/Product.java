@@ -1,5 +1,7 @@
 package com.hot6ix.upbid.domain.product.entity;
 
+import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
+import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
@@ -28,10 +30,10 @@ public class Product extends BaseEntity {
     private Long productId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "seller_profile_id")
+    @JoinColumn(name = "seller_profile_id", nullable = false)
     private SellerProfile sellerProfile;
 
-    @Column(name = "name", length = 30)
+    @Column(name = "name", length = 30, nullable = false)
     private String name;
 
     @Column(name = "description", length = 100)
@@ -51,5 +53,22 @@ public class Product extends BaseEntity {
         this.description = description;
         this.imageUrl = imageUrl;
         this.referenceUrl = referenceUrl;
+    }
+
+    public static Product from(SellerProfile sellerProfile, ProductCreateRequestDto request) {
+        return Product.builder()
+                .sellerProfile(sellerProfile)
+                .name(request.name())
+                .description(request.description())
+                .imageUrl(request.imageUrl())
+                .referenceUrl(request.referenceUrl())
+                .build();
+    }
+
+    public void update(ProductUpdateRequestDto request) {
+        this.name = request.name();
+        this.description = request.description();
+        this.imageUrl = request.imageUrl();
+        this.referenceUrl = request.referenceUrl();
     }
 }
