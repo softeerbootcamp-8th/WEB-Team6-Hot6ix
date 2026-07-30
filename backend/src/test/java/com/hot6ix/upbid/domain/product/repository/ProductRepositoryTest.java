@@ -272,6 +272,21 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
+    @DisplayName("size를 지정하면 실제로 size+1건까지만 조회된다")
+    void search_limitsBySizePlusOne() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller14@hot6ix.com");
+        newProduct(sellerProfile, "상품A");
+        newProduct(sellerProfile, "상품B");
+        newProduct(sellerProfile, "상품C");
+
+        List<ProductSummaryResponseDto> results =
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, 1);
+
+        assertThat(results).hasSize(2);
+    }
+
+    @Test
     @DisplayName("다른 판매자의 상품과 soft delete된 상품은 목록에 포함되지 않는다")
     void search_excludesOtherOwnersAndDeleted() {
 
