@@ -202,9 +202,8 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     /**
-     * 락이 실제로 다른 트랜잭션을 막는지는 트랜잭션이 둘 필요해 여기서 볼 수 없어, 락 모드가
-     * 걸렸는지까지만 단정한다. {@code clear()}가 필요한 이유는 같은 트랜잭션에서 INSERT한
-     * 엔티티를 Hibernate가 이미 쓰기 상태로 표시해둬 우리 쿼리의 락과 구분되지 않기 때문이다.
+     * 트랜잭션이 둘 필요해 락의 실제 차단은 볼 수 없어 락 모드만 단정한다. {@code clear()}가
+     * 필요한 이유는 같은 트랜잭션에서 INSERT한 엔티티가 이미 쓰기 상태로 표시돼 있기 때문이다.
      */
     @Test
     @DisplayName("락 조회는 물품에 쓰기 락을 걸고 그대로 돌려준다")

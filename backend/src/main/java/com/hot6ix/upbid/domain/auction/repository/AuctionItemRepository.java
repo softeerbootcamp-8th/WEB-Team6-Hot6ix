@@ -74,15 +74,9 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     Optional<AuctionItemDetailResponseDto> findDetail(@Param("auctionItemId") Long auctionItemId);
 
     /**
-     * 물품 행에 쓰기 락을 걸고 조회한다. 거래 상태 변경은 후보를 읽고 검사한 뒤 쓰는
-     * 흐름이라, 상태 검사만으로는 동시 요청을 막지 못한다 — 실패와 성사가 함께 들어오면
-     * 성사된 거래가 뒤집힌다. 트랜잭션 안에서만 호출해야 한다.
-     *
-     * <p>연관 엔티티를 fetch join하지 않는다. MySQL {@code FOR UPDATE}는 조인된 행까지
-     * 잠가서 같은 판매자의 다른 물품 거래 처리끼리 막힌다.
-     *
-     * @param auctionItemId 잠글 물품 ID
-     * @return 물품. 없으면 빈 값
+     * 물품 행에 쓰기 락을 걸고 조회한다. 거래 상태 변경은 읽고 검사한 뒤 쓰는 흐름이라 상태
+     * 검사만으로는 동시 요청을 막지 못한다. 트랜잭션 안에서만 호출해야 한다.
+     * fetch join하지 않는 이유는 MySQL {@code FOR UPDATE}가 조인된 행까지 잠그기 때문이다.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")

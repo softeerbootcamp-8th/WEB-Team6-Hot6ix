@@ -21,17 +21,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 물품 마감 시점에 확정한 낙찰 후보. 상위 입찰자를 순위대로 스냅샷으로 남겨,
- * 판매자가 현재 낙찰자와 거래하지 못할 때 차순위로 권한을 넘길 수 있게 한다.
- *
- * <p><b>현재 낙찰 권한자 = 해당 물품의 {@code WAITING} 후보 중 {@code candidateRank}가
- * 가장 낮은 1행</b>으로 정의한다. 그래서 "지금 낙찰자"를 가리키는 별도 상태값이나 플래그가
- * 없다. 1순위가 {@code FAILED}가 되면 2순위가 자동으로 현재 낙찰자가 되므로 승격 UPDATE도
- * 필요 없다. 단 {@code COMPLETED} 후보가 있으면 거래가 끝난 것이므로 남은 {@code WAITING}
- * 행은 무시해야 한다.
- *
- * <p>한 물품에 같은 순위가 둘 생기지 않는 것은 <b>스냅샷 생성 시
- * {@code auction_items} 행에 거는 비관적 락</b>이 보장한다.
+ * 마감 시점에 확정한 낙찰 후보 스냅샷. 거래가 깨지면 차순위로 권한을 넘긴다.
+ * <b>현재 낙찰 권한자 = {@code WAITING} 후보 중 {@code candidateRank}가 가장 낮은 1행</b>
+ * 으로 정의하므로 별도 플래그나 승격 UPDATE가 없다. {@code COMPLETED} 후보가 있으면 거래가
+ * 끝난 것이므로 남은 {@code WAITING}은 무시한다. 순위 중복은 물품 행 비관적 락이 막는다.
  */
 @Getter
 @Entity

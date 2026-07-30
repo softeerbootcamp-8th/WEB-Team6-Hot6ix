@@ -40,10 +40,7 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
     private SellerProfile sellerProfile;
     private AuctionItem auctionItem;
 
-    /**
-     * 후보 하나를 넣으려면 User → SellerProfile → Product·AuctionRoom → AuctionItem이
-     * 먼저 있어야 한다. 후보는 마감된 물품에만 생기므로 물품 상태는 SOLD로 둔다.
-     */
+    /** 후보는 마감된 물품에만 생기므로 물품 상태는 SOLD로 둔다. */
     @BeforeEach
     void setUp() {
         User seller = newUser("seller@hot6ix.com", "승민");
