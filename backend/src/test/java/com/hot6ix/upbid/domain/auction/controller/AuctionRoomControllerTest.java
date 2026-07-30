@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auction.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -10,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -188,5 +190,31 @@ class AuctionRoomControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    @Test
+    @DisplayName("경매방 정보를 조회하면 200과 공개 정보를 반환한다")
+    void getRoom() throws Exception {
+
+        when(auctionRoomService.getRoom(1L)).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("승민의 경매방"))
+                .andExpect(jsonPath("$.data.status").value("BEFORE"));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 경매방을 조회하면 404를 반환한다")
+    void getRoom_notFound() throws Exception {
+
+        when(auctionRoomService.getRoom(999L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
     }
 }

@@ -9,7 +9,9 @@ import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -139,5 +141,40 @@ class AuctionRoomServiceTest {
                 .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
 
         verify(auctionRoomRepository, times(0)).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("경매방 공개 정보를 조회한다")
+    void getRoom() {
+
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .status(AuctionRoomStatus.BEFORE)
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+
+        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(auctionRoom));
+        when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(10L)).thenReturn(3L);
+
+        AuctionRoomResponseDto response = auctionRoomService.getRoom(10L);
+
+        assertThat(response.name()).isEqualTo("승민의 경매방");
+        assertThat(response.status()).isEqualTo(AuctionRoomStatus.BEFORE);
+        assertThat(response.sellerStoreName()).isEqualTo("승민상점");
+        assertThat(response.itemCount()).isEqualTo(3L);
+    }
+
+    @Test
+    @DisplayName("존재하지 않거나 삭제된 경매방을 조회하면 예외가 발생한다")
+    void getRoom_notFound() {
+
+        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionRoomService.getRoom(999L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
     }
 }

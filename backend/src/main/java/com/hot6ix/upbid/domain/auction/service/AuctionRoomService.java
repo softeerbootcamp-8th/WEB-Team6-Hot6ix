@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auction.service;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -45,9 +46,28 @@ public class AuctionRoomService {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = saveWithUniqueShareCode(sellerProfile, request);
-        long itemCount = auctionItemRepository.countByAuctionRoom_AuctionRoomId(auctionRoom.getAuctionRoomId());
 
-        return AuctionRoomResponseDto.from(auctionRoom, itemCount);
+        return AuctionRoomResponseDto.from(auctionRoom, countItems(auctionRoom.getAuctionRoomId()));
+    }
+
+    /**
+     * 경매방 공개 정보를 조회한다. 인증이 필요 없으며, BEFORE를 포함한 모든 상태에서
+     * 동일하게 노출한다(상태별 분기 없음).
+     *
+     * @param auctionRoomId 조회할 경매방의 ID
+     * @return 조회된 경매방
+     * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
+     */
+    public AuctionRoomResponseDto getRoom(Long auctionRoomId) {
+
+        AuctionRoom auctionRoom = auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        return AuctionRoomResponseDto.from(auctionRoom, countItems(auctionRoomId));
+    }
+
+    private long countItems(Long auctionRoomId) {
+        return auctionItemRepository.countByAuctionRoom_AuctionRoomId(auctionRoomId);
     }
 
     private AuctionRoom saveWithUniqueShareCode(SellerProfile sellerProfile, AuctionRoomCreateRequestDto request) {

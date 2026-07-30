@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 
@@ -31,4 +32,18 @@ public interface AuctionRoomApi {
             @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody AuctionRoomCreateRequestDto request);
+
+    @Operation(
+            summary = "경매방 정보 조회",
+            description = "경매방의 공개 정보를 조회한다. 인증이 필요 없으며, 경매 시작 전(BEFORE)을 포함한 "
+                    + "모든 상태에서 동일하게 노출한다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "400", description = "경로 변수가 숫자가 아니라면 code 2002"),
+            @ApiResponse(responseCode = "404", description = "존재하지 않거나 삭제된 경매방 (code 4002)")
+    })
+    ResponseEntity<CommonResponse<AuctionRoomResponseDto>> getRoom(
+            @Parameter(description = "조회할 경매방 ID", required = true)
+            @PathVariable Long roomId);
 }
