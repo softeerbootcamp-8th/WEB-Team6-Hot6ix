@@ -148,4 +148,4 @@ main
 | GitHub Wiki | https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki |
 | API 명세 (Swagger UI) | https://api.upbid.store/swagger-ui/index.html |
 | ERD | https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY |
-| 디자인 (Figma) | https://www.figma.com/design/DVDS1Ie2YqLU25HW7HPXZB/Hot6ix |
+| 디자인 (Figma) | https://www.figma.com/design/DVDS1Ie2YqLU25HW7HPXZB/Hot6ix?node-id=26-46&t=8AKsdweyGXJdhfSk-1 |

@@ -38,6 +38,20 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 LocalDateTime.of(2026, 7, 29, 21, 0));
     }
 
+    private AuctionItemDetailResponseDto sampleDetail() {
+        return new AuctionItemDetailResponseDto(
+                1L,
+                10L,
+                "한정판 피규어",
+                "미개봉 정품",
+                "https://cdn.hot6ix.com/item.png",
+                "https://instagram.com/hot6ix",
+                50_000L,
+                1_000L,
+                AuctionItemStatus.IN_PROGRESS,
+                LocalDateTime.of(2026, 7, 29, 21, 0));
+    }
+
     @Test
     @DisplayName("경매방 물품 목록을 조회하면 200과 물품 배열을 반환한다")
     void getSummaries() throws Exception {
@@ -86,19 +100,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("물품 상세를 조회하면 200과 물품 정보를 반환한다")
     void getDetail() throws Exception {
 
-        AuctionItemDetailResponseDto detail = new AuctionItemDetailResponseDto(
-                1L,
-                10L,
-                "한정판 피규어",
-                "미개봉 정품",
-                "https://cdn.hot6ix.com/item.png",
-                "https://instagram.com/hot6ix",
-                50_000L,
-                1_000L,
-                AuctionItemStatus.IN_PROGRESS,
-                LocalDateTime.of(2026, 7, 29, 21, 0));
-
-        when(auctionItemService.getDetail(1L)).thenReturn(detail);
+        when(auctionItemService.getDetail(1L)).thenReturn(sampleDetail());
 
         mockMvc.perform(get("/api/v1/auction-items/1"))
                 .andExpect(status().isOk())
@@ -107,6 +109,30 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.data.auctionItemId").value(1))
                 .andExpect(jsonPath("$.data.auctionRoomId").value(10))
                 .andExpect(jsonPath("$.data.bidIncrement").value(1000));
+    }
+
+    @Test
+    @DisplayName("비로그인 사용자도 경매방 물품 목록을 조회할 수 있다")
+    void getSummariesAllowsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+        when(auctionItemService.getSummaries(10L)).thenReturn(List.of(sampleSummary()));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/10/auction-items"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("비로그인 사용자도 물품 상세를 조회할 수 있다")
+    void getDetailAllowsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+        when(auctionItemService.getDetail(1L)).thenReturn(sampleDetail());
+
+        mockMvc.perform(get("/api/v1/auction-items/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
     }
 
     @Test

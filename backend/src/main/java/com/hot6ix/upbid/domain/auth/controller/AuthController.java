@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auth.controller;
 
 import com.hot6ix.upbid.domain.auth.api.AuthApi;
+import com.hot6ix.upbid.global.interceptor.GuestAllowed;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import com.hot6ix.upbid.global.session.SessionManager;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,6 +20,7 @@ public class AuthController implements AuthApi {
 
     @Override
     @PostMapping("/logout")
+    @GuestAllowed
     public ResponseEntity<CommonResponse<Void>> logout(HttpServletRequest request) {
 
         sessionManager.invalidate(request);

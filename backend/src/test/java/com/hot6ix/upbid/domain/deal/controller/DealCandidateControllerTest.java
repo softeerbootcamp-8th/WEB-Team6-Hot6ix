@@ -36,13 +36,13 @@ class DealCandidateControllerTest extends AbstractControllerTest {
 
         doNothing().when(dealCandidateService).fail(anyLong(), anyLong(), anyLong());
 
-        mockMvc.perform(post(FAIL_URL).header("X-User-Id", "7"))
+        mockMvc.perform(post(FAIL_URL))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("거래 실패를 처리했습니다."))
                 .andExpect(jsonPath("$.data").doesNotExist());
 
-        verify(dealCandidateService).fail(2L, 101L, 7L);
+        verify(dealCandidateService).fail(2L, 101L, LOGIN_USER_ID);
     }
 
     @Test
@@ -51,13 +51,13 @@ class DealCandidateControllerTest extends AbstractControllerTest {
 
         doNothing().when(dealCandidateService).complete(anyLong(), anyLong(), anyLong());
 
-        mockMvc.perform(post(COMPLETE_URL).header("X-User-Id", "7"))
+        mockMvc.perform(post(COMPLETE_URL))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("거래 성사를 확정했습니다."))
                 .andExpect(jsonPath("$.data").doesNotExist());
 
-        verify(dealCandidateService).complete(2L, 101L, 7L);
+        verify(dealCandidateService).complete(2L, 101L, LOGIN_USER_ID);
     }
 
     @Test
@@ -67,7 +67,7 @@ class DealCandidateControllerTest extends AbstractControllerTest {
         doThrow(new ApplicationException(DealErrorType.NOT_DEAL_OWNER))
                 .when(dealCandidateService).fail(anyLong(), anyLong(), anyLong());
 
-        mockMvc.perform(post(FAIL_URL).header("X-User-Id", "8"))
+        mockMvc.perform(post(FAIL_URL))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(6001));
@@ -80,7 +80,7 @@ class DealCandidateControllerTest extends AbstractControllerTest {
         doThrow(new ApplicationException(DealErrorType.DEAL_CANDIDATE_NOT_ACTIVE))
                 .when(dealCandidateService).fail(anyLong(), anyLong(), anyLong());
 
-        mockMvc.perform(post(FAIL_URL).header("X-User-Id", "7"))
+        mockMvc.perform(post(FAIL_URL))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(6005));
     }
@@ -92,7 +92,7 @@ class DealCandidateControllerTest extends AbstractControllerTest {
         doThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND))
                 .when(dealCandidateService).complete(anyLong(), anyLong(), anyLong());
 
-        mockMvc.perform(post(COMPLETE_URL).header("X-User-Id", "7"))
+        mockMvc.perform(post(COMPLETE_URL))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(4001));
     }
@@ -101,7 +101,7 @@ class DealCandidateControllerTest extends AbstractControllerTest {
     @DisplayName("경로 변수가 숫자가 아니면 400과 code 2002를 반환한다")
     void failReturnsBadRequestWhenPathVariableIsNotNumber() throws Exception {
 
-        mockMvc.perform(post("/api/v1/auction-items/abc/deal-candidates/101/fail").header("X-User-Id", "7"))
+        mockMvc.perform(post("/api/v1/auction-items/abc/deal-candidates/101/fail"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(2002));
     }
