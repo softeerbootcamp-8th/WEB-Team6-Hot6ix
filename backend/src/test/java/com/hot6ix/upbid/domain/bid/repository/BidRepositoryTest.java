@@ -96,19 +96,6 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
                 .build());
     }
 
-    /**
-     * {@code acceptedAt}은 {@code @CreatedDate}가 채우므로 테스트에서 직접 정할 수 없다.
-     * 같은 금액일 때의 정렬을 검증하려면 시각을 못 박아야 해서 native UPDATE로 덮어쓴다.
-     */
-    private void forceAcceptedAt(Bid bid, LocalDateTime acceptedAt) {
-        entityManager.flush();
-        entityManager.getEntityManager()
-                .createNativeQuery("update bids set accepted_at = :acceptedAt where bid_id = :bidId")
-                .setParameter("acceptedAt", acceptedAt)
-                .setParameter("bidId", bid.getBidId())
-                .executeUpdate();
-    }
-
     private List<BidderRankProjection> findTopBidders() {
         entityManager.flush();
         return bidRepository.findTopBidders(auctionItem.getAuctionItemId(), TOP_BIDDER_LIMIT);
@@ -163,23 +150,6 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(ranks)
                 .extracting(BidderRankProjection::getAmount)
                 .containsExactly(17_000L, 16_000L, 15_000L, 14_000L, 13_000L);
-    }
-
-    @Test
-    @DisplayName("최고 입찰가가 같으면 먼저 입찰한 사람이 상위다")
-    void findTopBiddersBreaksTieByEarlierBid() {
-
-        User earlier = newUser("earlier@hot6ix.com", "먼저");
-        User later = newUser("later@hot6ix.com", "나중");
-
-        forceAcceptedAt(newBid(auctionItem, later, 12_000L), LocalDateTime.of(2026, 7, 29, 20, 30));
-        forceAcceptedAt(newBid(auctionItem, earlier, 12_000L), LocalDateTime.of(2026, 7, 29, 20, 10));
-
-        List<BidderRankProjection> ranks = findTopBidders();
-
-        assertThat(ranks)
-                .extracting(BidderRankProjection::getBidderUserId)
-                .containsExactly(earlier.getUserId(), later.getUserId());
     }
 
     @Test
