@@ -2,7 +2,7 @@ package com.hot6ix.upbid.domain.deal.service;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
-import com.hot6ix.upbid.domain.auction.exception.AuctionItemErrorType;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.bid.dto.BidderRankProjection;
 import com.hot6ix.upbid.domain.bid.repository.BidRepository;
@@ -50,7 +50,7 @@ public class DealCandidateService {
     public void award(ItemEnded event) {
 
         AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(event.itemId())
-                .orElseThrow(() -> new ApplicationException(AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND));
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         if (dealCandidateRepository.existsByAuctionItem_AuctionItemId(event.itemId())) {
             return;
@@ -151,7 +151,7 @@ public class DealCandidateService {
     private AuctionItem lockSoldItemOwnedBy(Long auctionItemId, Long sellerUserId) {
 
         AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(auctionItemId)
-                .orElseThrow(() -> new ApplicationException(AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND));
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         Long ownerUserId = auctionItem.getAuctionRoom().getSellerProfile().getUser().getUserId();
         if (!ownerUserId.equals(sellerUserId)) {

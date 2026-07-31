@@ -19,12 +19,12 @@ public interface AuctionItemApi {
             summary = "경매방 물품 목록 조회",
             description = "경매방의 물품을 진행중 → 대기 → 낙찰 → 유찰 순으로 조회한다. "
                     + "페이지네이션이 없으며 한 응답에 최대 100건까지 담긴다. "
-                    + "지금은 경매방 존재 여부는 확인하지 않으므로(나중에 추가할 예정입니다.), 없는 경매방도 빈 배열로 응답한다. "
                     + "비로그인으로 조회할 수 있다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공. 물품이 없으면 빈 배열"),
-            @ApiResponse(responseCode = "400", description = "경로 변수가 숫자가 아니라면 code 2002 반환")
+            @ApiResponse(responseCode = "400", description = "경로 변수가 숫자가 아니라면 code 2002 반환"),
+            @ApiResponse(responseCode = "404", description = "존재하지 않거나 삭제된 경매방이라면 code 4002")
     })
     ResponseEntity<CommonResponse<List<AuctionItemSummaryResponseDto>>> getSummaries(
             @Parameter(description = "조회할 경매방 ID", required = true)

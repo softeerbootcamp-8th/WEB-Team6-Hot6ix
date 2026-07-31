@@ -15,7 +15,7 @@ import static org.mockito.Mockito.when;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
-import com.hot6ix.upbid.domain.auction.exception.AuctionItemErrorType;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.bid.dto.BidderRankProjection;
 import com.hot6ix.upbid.domain.bid.repository.BidRepository;
@@ -258,7 +258,7 @@ class DealCandidateServiceTest {
 
         assertThatThrownBy(() -> dealCandidateService.award(itemEnded()))
                 .isInstanceOf(ApplicationException.class)
-                .hasFieldOrPropertyWithValue("errorType", AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND);
+                .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
     }
 
     @Test
