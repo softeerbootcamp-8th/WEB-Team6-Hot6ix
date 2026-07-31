@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
-import com.hot6ix.upbid.domain.auction.exception.AuctionItemErrorType;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.entity.Bid;
@@ -269,7 +269,7 @@ class BidServiceTest {
         assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, STARTING_PRICE))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
-                .isEqualTo(AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND);
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
     }
 
     @Test

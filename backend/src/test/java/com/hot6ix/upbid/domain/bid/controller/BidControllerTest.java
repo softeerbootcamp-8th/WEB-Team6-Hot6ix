@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.hot6ix.upbid.domain.auction.exception.AuctionItemErrorType;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
 import com.hot6ix.upbid.domain.bid.service.BidService;
@@ -96,7 +96,7 @@ class BidControllerTest {
     void returnsNotFoundWhenItemMissing() throws Exception {
 
         when(bidService.place(anyLong(), anyLong(), anyLong()))
-                .thenThrow(new ApplicationException(AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND));
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         mockMvc.perform(post(URL)
                         .header("X-User-Id", "7")

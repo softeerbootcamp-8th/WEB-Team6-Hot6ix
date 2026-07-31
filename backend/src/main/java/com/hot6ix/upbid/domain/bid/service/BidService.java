@@ -2,7 +2,7 @@ package com.hot6ix.upbid.domain.bid.service;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
-import com.hot6ix.upbid.domain.auction.exception.AuctionItemErrorType;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.entity.Bid;
@@ -53,7 +53,7 @@ public class BidService {
 
         // 락 시작
         AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(auctionItemId)
-                .orElseThrow(() -> new ApplicationException(AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND));
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         validateBiddable(auctionItem, bidder);
         validateAmount(auctionItem, amount);
