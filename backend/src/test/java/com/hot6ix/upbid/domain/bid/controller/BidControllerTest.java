@@ -14,24 +14,20 @@ import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
 import com.hot6ix.upbid.domain.bid.service.BidService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
+import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(controllers = BidController.class)
 @Import(GlobalExceptionHandler.class)
-class BidControllerTest {
+class BidControllerTest extends AbstractControllerTest {
 
     private static final String URL = "/api/v1/auction-items/2/bids";
-
-    @Autowired
-    private MockMvc mockMvc;
 
     @MockitoBean
     private BidService bidService;
