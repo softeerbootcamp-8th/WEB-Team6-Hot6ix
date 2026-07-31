@@ -5,6 +5,7 @@ import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import com.hot6ix.upbid.global.response.CursorPageResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,7 +19,6 @@ import jakarta.validation.constraints.Positive;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 
 @Tag(name = "상품", description = "판매자 상품 등록·조회·수정·삭제 API")
@@ -26,17 +26,16 @@ public interface ProductApi {
 
     @Operation(
             summary = "상품 등록",
-            description = "판매자가 경매에 낼 상품을 등록한다. 인증 인프라가 아직 없어 X-User-Id 헤더로 회원을 임시 식별하며, "
-                    + "세션 인증이 도입되면 교체돼야 한다."
+            description = "판매자가 경매에 낼 상품을 등록한다. 로그인 세션의 회원으로 등록한다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "등록 성공"),
             @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002)")
     })
     ResponseEntity<CommonResponse<ProductResponseDto>> create(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Valid @RequestBody ProductCreateRequestDto request);
 
     @Operation(
@@ -46,12 +45,12 @@ public interface ProductApi {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
                     + "상품이 없거나 본인 소유가 아님 (code 5001)")
     })
     ResponseEntity<CommonResponse<ProductResponseDto>> getDetail(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "조회할 상품 ID", required = true)
             @PathVariable Long productId);
 
@@ -63,11 +62,11 @@ public interface ProductApi {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002)")
     })
     ResponseEntity<CommonResponse<CursorPageResponse<ProductSummaryResponseDto>>> getList(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "상품명 검색어")
             @RequestParam(required = false) String keyword,
             @Parameter(description = "파생 상태 필터 — 연결된 AuctionItem이 없으면 UNREGISTERED, "
@@ -86,13 +85,13 @@ public interface ProductApi {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
             @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
                     + "상품이 없거나 본인 소유가 아님 (code 5001)"),
             @ApiResponse(responseCode = "409", description = "경매방이 시작된 적 있는 상품 (code 5002)")
     })
     ResponseEntity<CommonResponse<ProductResponseDto>> update(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "수정할 상품 ID", required = true)
             @PathVariable Long productId,
             @Valid @RequestBody ProductUpdateRequestDto request);
@@ -104,13 +103,13 @@ public interface ProductApi {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "삭제 성공"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
                     + "상품이 없거나 본인 소유가 아님 (code 5001)"),
             @ApiResponse(responseCode = "409", description = "경매방이 시작된 적 있는 상품 (code 5002)")
     })
     ResponseEntity<CommonResponse<Void>> delete(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "삭제할 상품 ID", required = true)
             @PathVariable Long productId);
 }

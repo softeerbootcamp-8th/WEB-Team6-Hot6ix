@@ -41,4 +41,13 @@ public abstract class AbstractControllerTest {
         when(sessionManager.findUserId(any(HttpServletRequest.class)))
                 .thenReturn(Optional.of(LOGIN_USER_ID));
     }
+
+    /**
+     * 기본 스텁(로그인 상태)을 덮어써 세션이 없는 상태로 만든다.
+     * {@code @GuestAllowed}가 붙은 공개 엔드포인트가 비로그인 요청을 통과시키는지 검증할 때 쓴다.
+     */
+    protected void 비로그인_상태로_바꾼다() {
+        when(sessionManager.findUserId(any(HttpServletRequest.class)))
+                .thenReturn(Optional.empty());
+    }
 }

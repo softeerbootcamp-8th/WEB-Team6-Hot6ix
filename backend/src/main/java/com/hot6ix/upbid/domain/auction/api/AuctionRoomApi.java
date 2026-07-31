@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auction.api;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -13,7 +14,6 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 
 
 @Tag(name = "경매방", description = "경매방 생성·조회·수정 API")
@@ -22,17 +22,16 @@ public interface AuctionRoomApi {
     @Operation(
             summary = "경매방 생성",
             description = "판매자가 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며, 이를 노출하는 API는 "
-                    + "별도로 제공된다. 인증 인프라가 아직 없어 X-User-Id 헤더로 회원을 임시 식별하며, "
-                    + "세션 인증이 도입되면 교체돼야 한다."
+                    + "별도로 제공된다. 로그인 세션의 회원으로 생성한다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "생성 성공"),
             @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002)")
     })
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> create(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Valid @RequestBody AuctionRoomCreateRequestDto request);
 
     @Operation(
@@ -53,18 +52,18 @@ public interface AuctionRoomApi {
             summary = "경매방 설정 수정",
             description = "소유자가 경매방 설정을 부분 수정한다. 요청에서 생략된 필드는 기존 값을 유지한다. "
                     + "이 방의 물품 중 하나라도 READY가 아닌 상태로 경매에 올라간 적 있으면(=경매가 시작된 적 있으면) "
-                    + "이후로도 계속 수정할 수 없다. 인증 인프라가 아직 없어 X-User-Id 헤더로 회원을 임시 식별한다."
+                    + "이후로도 계속 수정할 수 없다. 로그인 세션의 회원을 소유자로 확인한다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
             @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
                     + "경매방이 없거나 본인 소유가 아님 (code 4002)"),
             @ApiResponse(responseCode = "409", description = "경매방이 시작된 적 있는 물품을 포함해 수정 불가 (code 4003)")
     })
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> update(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "수정할 경매방 ID", required = true)
             @PathVariable Long roomId,
             @Valid @RequestBody AuctionRoomUpdateRequestDto request);

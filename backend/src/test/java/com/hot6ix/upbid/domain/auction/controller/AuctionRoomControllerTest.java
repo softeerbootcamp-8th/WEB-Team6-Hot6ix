@@ -63,7 +63,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(newCreateRequest())))
                 .andExpect(status().isCreated())
@@ -84,7 +83,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -104,7 +102,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -125,7 +122,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -142,7 +138,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -161,7 +156,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -178,7 +172,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(newCreateRequest())))
                 .andExpect(status().isNotFound())
@@ -197,6 +190,18 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.name").value("승민의 경매방"))
                 .andExpect(jsonPath("$.data.status").value("BEFORE"));
+    }
+
+    @Test
+    @DisplayName("비로그인 사용자도 경매방 정보를 조회할 수 있다")
+    void getRoom_allowsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+        when(auctionRoomService.getRoom(1L)).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
     }
 
     @Test
@@ -224,7 +229,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(patch("/api/v1/auction-rooms/1")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -241,7 +245,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(patch("/api/v1/auction-rooms/1")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -262,7 +265,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         mockMvc.perform(patch("/api/v1/auction-rooms/999")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound())
@@ -282,7 +284,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_ALREADY_STARTED));
 
         mockMvc.perform(patch("/api/v1/auction-rooms/1")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
