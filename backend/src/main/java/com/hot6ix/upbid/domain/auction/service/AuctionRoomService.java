@@ -52,7 +52,9 @@ public class AuctionRoomService {
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = saveWithUniqueShareCode(sellerProfile, request);
 
-        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoom.getAuctionRoomId()));
+        // 물품 추가는 별도 PR([x05-경매방-물품-구성])에서 기존 방에만 할 수 있어서, 생성 직후엔
+        // itemCount가 항상 0이다 — 조회 없이 바로 0을 넣는다.
+        return AuctionRoomPublicResponseDto.from(auctionRoom, 0L);
     }
 
     /**
