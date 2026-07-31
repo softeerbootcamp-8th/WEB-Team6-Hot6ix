@@ -17,6 +17,7 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import org.hibernate.Hibernate;
 import org.hibernate.exception.ConstraintViolationException;
@@ -98,10 +99,18 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
                 .build());
     }
 
+    /**
+     * 저장 결과를 확인하려고 쓰는 헬퍼다. 후보 목록 조회는 프로덕션에 없어서(#44에서
+     * 페이지네이션과 함께 만든다) 여기서 물품으로 걸러 순위대로 정렬한다.
+     */
     private List<DealCandidate> findAll() {
         entityManager.flush();
         entityManager.clear();
-        return dealCandidateRepository.findAllByAuctionItemId(auctionItem.getAuctionItemId());
+        return dealCandidateRepository.findAll().stream()
+                .filter(candidate -> candidate.getAuctionItem().getAuctionItemId()
+                        .equals(auctionItem.getAuctionItemId()))
+                .sorted(Comparator.comparing(DealCandidate::getCandidateRank))
+                .toList();
     }
 
     private Bid newBid(AuctionItem item, User bidder, long amount) {
@@ -119,71 +128,12 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
-    @DisplayName("후보는 저장 순서와 무관하게 순위 오름차순으로 조회된다")
-    void findAllByAuctionItemIdOrdersByRankAsc() {
-
-        newCandidate(auctionItem, "third@hot6ix.com", 3, 12_000L);
-        newCandidate(auctionItem, "first@hot6ix.com", 1, 15_000L);
-        newCandidate(auctionItem, "second@hot6ix.com", 2, 13_000L);
-
-        List<DealCandidate> candidates = findAll();
-
-        assertThat(candidates)
-                .extracting(DealCandidate::getCandidateRank)
-                .containsExactly(1, 2, 3);
-        assertThat(candidates)
-                .extracting(DealCandidate::getBidAmount)
-                .containsExactly(15_000L, 13_000L, 12_000L);
-    }
-
-    /**
-     * 값만 비교하면 LAZY 프록시가 뒤늦게 초기화돼도 통과해 fetch join이 빠진 것을 못 잡는다.
-     */
-    @Test
-    @DisplayName("조회한 후보의 입찰자는 fetch join으로 함께 로딩된다")
-    void findAllByAuctionItemIdFetchesBidder() {
-
-        User bidder = newUser("bidder@hot6ix.com", "원기");
-        entityManager.persist(DealCandidate.builder()
-                .auctionItem(auctionItem)
-                .bidder(bidder)
-                .candidateRank(1)
-                .bidAmount(15_000L)
-                .build());
-
-        List<DealCandidate> candidates = findAll();
-
-        assertThat(candidates).hasSize(1);
-        assertThat(Hibernate.isInitialized(candidates.getFirst().getBidder())).isTrue();
-        assertThat(candidates.getFirst().getBidder().getUserId()).isEqualTo(bidder.getUserId());
-    }
-
-    @Test
     @DisplayName("후보는 WAITING 상태로 저장된다")
     void newCandidateStartsWaiting() {
 
         newCandidate(auctionItem, "bidder@hot6ix.com", 1, 15_000L);
 
         assertThat(findAll().getFirst().getStatus()).isEqualTo(DealCandidateStatus.WAITING);
-    }
-
-    @Test
-    @DisplayName("다른 물품의 후보는 조회되지 않는다")
-    void findAllByAuctionItemIdExcludesOtherItems() {
-
-        newCandidate(auctionItem, "mine@hot6ix.com", 1, 15_000L);
-        newCandidate(newAuctionItem("다른물품"), "others@hot6ix.com", 1, 99_000L);
-
-        List<DealCandidate> candidates = findAll();
-
-        assertThat(candidates).hasSize(1);
-        assertThat(candidates.getFirst().getBidAmount()).isEqualTo(15_000L);
-    }
-
-    @Test
-    @DisplayName("후보가 없으면 빈 목록을 돌려준다")
-    void findAllByAuctionItemIdReturnsEmptyWhenNoCandidate() {
-        assertThat(findAll()).isEmpty();
     }
 
     @Test
@@ -194,7 +144,7 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         assertThat(dealCandidateRepository
-                .existsByAuctionItem_AuctionItemId(auctionItem.getAuctionItemId())).isTrue();
+                .existsCandidate(auctionItem.getAuctionItemId())).isTrue();
     }
 
     @Test
@@ -205,7 +155,7 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         assertThat(dealCandidateRepository
-                .existsByAuctionItem_AuctionItemId(auctionItem.getAuctionItemId())).isFalse();
+                .existsCandidate(auctionItem.getAuctionItemId())).isFalse();
     }
 
     @Test
@@ -332,14 +282,12 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         Long auctionItemId = auctionItem.getAuctionItemId();
-        assertThat(dealCandidateRepository.existsByAuctionItem_AuctionItemIdAndStatus(
-                auctionItemId, DealCandidateStatus.COMPLETED)).isFalse();
+        assertThat(dealCandidateRepository.existsCompletedCandidate(auctionItemId)).isFalse();
 
         candidate.complete(LocalDateTime.of(2026, 7, 30, 10, 0));
         entityManager.flush();
 
-        assertThat(dealCandidateRepository.existsByAuctionItem_AuctionItemIdAndStatus(
-                auctionItemId, DealCandidateStatus.COMPLETED)).isTrue();
+        assertThat(dealCandidateRepository.existsCompletedCandidate(auctionItemId)).isTrue();
     }
 
     @Test
@@ -354,8 +302,7 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.clear();
 
         DealCandidate current = dealCandidateRepository
-                .findFirstByAuctionItem_AuctionItemIdAndStatusOrderByCandidateRankAsc(
-                        auctionItem.getAuctionItemId(), DealCandidateStatus.WAITING)
+                .findCurrentWinner(auctionItem.getAuctionItemId())
                 .orElseThrow();
 
         assertThat(current.getCandidateRank()).isEqualTo(2);
@@ -373,17 +320,41 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
 
         Long auctionItemId = auctionItem.getAuctionItemId();
 
-        assertThat(dealCandidateRepository
-                .findFirstByAuctionItem_AuctionItemIdAndStatusAndCandidateRankGreaterThanOrderByCandidateRankAsc(
-                        auctionItemId, DealCandidateStatus.WAITING, 1))
+        assertThat(dealCandidateRepository.findNextWaitingCandidate(auctionItemId, 1))
                 .get()
                 .extracting(DealCandidate::getCandidateRank)
                 .isEqualTo(2);
 
+        assertThat(dealCandidateRepository.findNextWaitingCandidate(auctionItemId, 2)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("앞 순번이 대기 중인지로 지금 차례인지를 판단한다")
+    void existsWaitingCandidateBeforeDetectsEarlierWaiting() {
+
+        newCandidate(auctionItem, "first@hot6ix.com", 1, 15_000L);
+        newCandidate(auctionItem, "second@hot6ix.com", 2, 13_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Long auctionItemId = auctionItem.getAuctionItemId();
+
+        assertThat(dealCandidateRepository.existsWaitingCandidateBefore(auctionItemId, 2)).isTrue();
+        assertThat(dealCandidateRepository.existsWaitingCandidateBefore(auctionItemId, 1)).isFalse();
+    }
+
+    @Test
+    @DisplayName("앞 순번이 이미 처리됐으면 지금이 그 다음 차례다")
+    void existsWaitingCandidateBeforeIgnoresResolvedRanks() {
+
+        newCandidate(auctionItem, "first@hot6ix.com", 1, 15_000L)
+                .fail(LocalDateTime.of(2026, 7, 30, 10, 0));
+        newCandidate(auctionItem, "second@hot6ix.com", 2, 13_000L);
+        entityManager.flush();
+        entityManager.clear();
+
         assertThat(dealCandidateRepository
-                .findFirstByAuctionItem_AuctionItemIdAndStatusAndCandidateRankGreaterThanOrderByCandidateRankAsc(
-                        auctionItemId, DealCandidateStatus.WAITING, 2))
-                .isEmpty();
+                .existsWaitingCandidateBefore(auctionItem.getAuctionItemId(), 2)).isFalse();
     }
 
     @Test
@@ -397,9 +368,9 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
 
         Long auctionItemId = auctionItem.getAuctionItemId();
 
-        assertThat(dealCandidateRepository.findByDealCandidateIdAndAuctionItem_AuctionItemId(
-                mine.getDealCandidateId(), auctionItemId)).isPresent();
-        assertThat(dealCandidateRepository.findByDealCandidateIdAndAuctionItem_AuctionItemId(
-                others.getDealCandidateId(), auctionItemId)).isEmpty();
+        assertThat(dealCandidateRepository.findCandidate(auctionItemId, mine.getDealCandidateId()))
+                .isPresent();
+        assertThat(dealCandidateRepository.findCandidate(auctionItemId, others.getDealCandidateId()))
+                .isEmpty();
     }
 }
