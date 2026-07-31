@@ -16,6 +16,7 @@ import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,8 +35,18 @@ public class DealCandidateService {
      * DB가 원본이다.
      * {@code REQUIRES_NEW}인 이유는 {@code AFTER_COMMIT} 리스너에서 호출되기 때문이다.
      * 기본 전파로는 완료 처리 중인 마감 트랜잭션에 참여해 커밋되지 않을 수 있다.
+     *
+     * <p><b>{@code READ_COMMITTED}인 이유는 {@code INSERT ... SELECT} 때문이다.</b>
+     * REPEATABLE READ에서는 InnoDB가 읽는 쪽 테이블에 공유 넥스트키 락을 걸어,
+     * {@code bids}와 {@code users}의 행이 <b>입찰자 수에 비례해</b> 커밋까지 잠긴다. 그러면
+     * 그 경매와 무관한 회원의 프로필 수정까지 대기한다. READ COMMITTED에서는 SELECT 부분이
+     * 일관된 읽기로 처리돼 원천 테이블에 락을 걸지 않는다.
+     *
+     * <p>대신 statement 실행 중 커밋된 입찰은 후보에 들어오지 않는다. 이 메서드는 마감이
+     * 커밋된 뒤에 돌아 물품이 이미 낙찰 상태이므로 새 입찰이 들어올 수 없다.
+     * 멱등성은 격리 수준과 무관하다 — 물품 행의 배타 락이 존재 검사와 삽입을 직렬화한다.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public void award(ItemEnded event) {
 
         auctionItemRepository.findByIdForUpdate(event.itemId())
