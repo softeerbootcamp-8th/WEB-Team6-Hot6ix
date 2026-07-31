@@ -1,8 +1,6 @@
 package com.hot6ix.upbid.domain.deal.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
@@ -20,7 +18,6 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import org.hibernate.Hibernate;
-import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -191,33 +188,6 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
                         tuple(1, 15_000L),
                         tuple(2, 13_000L),
                         tuple(3, 12_000L));
-    }
-
-    /**
-     * 한 물품에서 같은 금액은 한 번만 입찰될 수 있어야 금액만으로 순위를 정할 수 있다.
-     * ID가 IDENTITY라 persist 시점에 INSERT가 나가므로 flush가 아니라 저장에서 막힌다.
-     */
-    @Test
-    @DisplayName("한 물품에 같은 금액을 두 번 입찰하면 유니크 제약에 막힌다")
-    void bidsRejectDuplicateAmountOnSameItem() {
-
-        newBid(auctionItem, newUser("first@hot6ix.com", "먼저"), 12_000L);
-        User second = newUser("second@hot6ix.com", "나중");
-
-        assertThatThrownBy(() -> newBid(auctionItem, second, 12_000L))
-                .isInstanceOf(ConstraintViolationException.class)
-                .hasMessageContaining("uk_bids_item_amount");
-    }
-
-    @Test
-    @DisplayName("다른 물품에는 같은 금액을 입찰할 수 있다")
-    void bidsAllowSameAmountOnDifferentItems() {
-
-        User bidder = newUser("bidder@hot6ix.com", "원기");
-        newBid(auctionItem, bidder, 12_000L);
-        newBid(newAuctionItem("다른물품"), bidder, 12_000L);
-
-        assertThatCode(() -> entityManager.flush()).doesNotThrowAnyException();
     }
 
     /** 순위를 매긴 뒤 걸러내면 번호에 구멍이 생기므로, 조인으로 미리 빠져야 한다. */

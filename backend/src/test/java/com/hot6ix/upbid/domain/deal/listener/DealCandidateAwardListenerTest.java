@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 
-import com.hot6ix.upbid.domain.auction.exception.AuctionItemErrorType;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.deal.service.DealCandidateService;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -41,7 +41,7 @@ class DealCandidateAwardListenerTest {
     @DisplayName("후보 생성이 실패해도 예외를 발행 측으로 전파하지 않는다")
     void swallowsFailure() {
 
-        doThrow(new ApplicationException(AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND))
+        doThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND))
                 .when(dealCandidateService).award(event);
 
         assertThatCode(() -> dealCandidateAwardListener.on(event)).doesNotThrowAnyException();

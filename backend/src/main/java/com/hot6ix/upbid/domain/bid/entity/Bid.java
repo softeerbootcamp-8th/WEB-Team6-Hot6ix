@@ -47,18 +47,18 @@ public class Bid {
     private Long bidId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "auction_item_id")
+    @JoinColumn(name = "auction_item_id", nullable = false)
     private AuctionItem auctionItem;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bidder_user_id")
+    @JoinColumn(name = "bidder_user_id", nullable = false)
     private User bidder;
 
-    @Column(name = "amount")
+    @Column(name = "amount", nullable = false)
     private Long amount;
 
     @CreatedDate
-    @Column(name = "accepted_at", updatable = false)
+    @Column(name = "accepted_at", updatable = false, nullable = false)
     private LocalDateTime acceptedAt;
 
     @Builder
