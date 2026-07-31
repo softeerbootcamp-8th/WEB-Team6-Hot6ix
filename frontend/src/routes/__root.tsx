@@ -1,10 +1,8 @@
-import {
-  createRootRouteWithContext,
-  Link,
-  Outlet,
-} from '@tanstack/react-router'
+import { createRootRouteWithContext, Outlet } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
 import { lazy, Suspense } from 'react'
+
+import { DevSessionSwitcher } from '@/components/dev/session-switcher'
 
 interface RouterContext {
   queryClient: QueryClient
@@ -23,22 +21,18 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
 })
 
+/**
+ * 상단 크롬은 화면마다 다르므로(로그인·게스트·라이브) 루트가 아니라
+ * `AppShell` / `GuestShell` 에서 그린다. 루트는 Outlet 과 개발 도구만 둔다.
+ */
 function RootLayout() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b">
-        <nav className="mx-auto flex max-w-5xl items-center gap-4 px-6 py-4">
-          <Link to="/" className="font-semibold [&.active]:text-primary">
-            upbid
-          </Link>
-        </nav>
-      </header>
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        <Outlet />
-      </main>
+    <>
+      <Outlet />
+      <DevSessionSwitcher />
       <Suspense>
         <TanStackRouterDevtools />
       </Suspense>
-    </div>
+    </>
   )
 }

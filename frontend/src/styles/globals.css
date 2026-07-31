@@ -4,56 +4,98 @@
 @custom-variant dark (&:is(.dark *));
 
 /* -------------------------------------------------------------------------- */
-/* 디자인 토큰 (라이트)                                                        */
-/* HSL 형태의 값을 CSS 변수로 정의하고 @theme 에서 Tailwind 색상으로 매핑한다.  */
+/* 디자인 토큰                                                                 */
+/* 출처: Figma `디자인 시스템 · UpBid` 프레임 (01 핵심 색상 / 03 타이포그래피 / */
+/*       05 라운딩·보더). 값을 바꾸려면 Figma 를 먼저 확인한다.                */
 /* -------------------------------------------------------------------------- */
 :root {
-  --radius: 0.625rem;
+  /* Primary · 토스 블루 — 브랜드·현재가·입찰·활성 상태 */
+  --brand-50: #eff6ff; /* Surface */
+  --brand-100: #eaf3ff; /* Info */
+  --brand-200: #e5f0ff; /* Faint */
+  --brand-400: #5c9bff;
+  --brand-500: #3182f6; /* 기본 */
+  --brand-600: #1f6feb;
 
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(240 10% 3.9%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(240 10% 3.9%);
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(240 10% 3.9%);
-  --primary: hsl(240 5.9% 10%);
-  --primary-foreground: hsl(0 0% 98%);
-  --secondary: hsl(240 4.8% 95.9%);
-  --secondary-foreground: hsl(240 5.9% 10%);
-  --muted: hsl(240 4.8% 95.9%);
-  --muted-foreground: hsl(240 3.8% 46.1%);
-  --accent: hsl(240 4.8% 95.9%);
-  --accent-foreground: hsl(240 5.9% 10%);
-  --destructive: hsl(0 84.2% 60.2%);
-  --destructive-foreground: hsl(0 0% 98%);
-  --border: hsl(240 5.9% 90%);
-  --input: hsl(240 5.9% 90%);
-  --ring: hsl(240 5.9% 10%);
+  /* Semantic — 라이브/성공/안내. 아껴 쓸수록 강해진다 */
+  --live: #e5484d;
+  --live-surface: #fdeced;
+  --success: #15a67a;
+  --success-surface: #e7f7ef;
+  --notice: #b7791f;
+  --notice-surface: #fff3e0;
+
+  /* Neutral · 쿨 그레이 */
+  --neutral-strong: #191f28;
+  --neutral-secondary: #4e5968;
+  --neutral-tertiary: #6b7684;
+  --neutral-muted: #8b95a1;
+  --neutral-border-strong: #d9e0e8;
+  --neutral-border: #e5e8eb;
+  --neutral-fill: #f2f4f6;
+
+  /* 페이지 배경 — 카드(흰색)와 대비되는 옅은 블루그레이 */
+  --page: #f4f7fc;
+
+  /* 서브 배경 — 패널 위에 얹는 카드 (가치 카드 등) */
+  --surface-subtle: #f9fafc;
+
+  /* 카카오 브랜드색. 우리 팔레트가 아니라 카카오 로그인 규격을 그대로 따른다. */
+  --kakao: #fee500;
+  --kakao-foreground: rgba(0, 0, 0, 0.85);
+
+  /* shadcn 시맨틱 매핑 */
+  --background: var(--page);
+  --foreground: var(--neutral-strong);
+  --card: #ffffff;
+  --card-foreground: var(--neutral-strong);
+  --popover: #ffffff;
+  --popover-foreground: var(--neutral-strong);
+  --primary: var(--brand-500);
+  --primary-foreground: #ffffff;
+  --secondary: var(--neutral-fill);
+  --secondary-foreground: var(--neutral-secondary);
+  --muted: var(--neutral-fill);
+  --muted-foreground: var(--neutral-tertiary);
+  --accent: var(--brand-50);
+  --accent-foreground: var(--brand-600);
+  --destructive: var(--live);
+  --destructive-foreground: #ffffff;
+  --border: var(--neutral-border);
+  --input: var(--neutral-border-strong);
+  --ring: var(--brand-500);
+
+  /* 라운딩 — 기준값 10px(소형 컨트롤·칩)에서 파생 */
+  --radius: 10px;
 }
 
+/*
+ * 다크 모드는 Figma 에 정의된 화면이 없다. shadcn 컴포넌트가 깨지지 않도록
+ * 같은 팔레트에서 파생한 임시값이며, 디자인 확정 시 교체한다.
+ */
 .dark {
-  --background: hsl(240 10% 3.9%);
-  --foreground: hsl(0 0% 98%);
-  --card: hsl(240 10% 3.9%);
-  --card-foreground: hsl(0 0% 98%);
-  --popover: hsl(240 10% 3.9%);
-  --popover-foreground: hsl(0 0% 98%);
-  --primary: hsl(0 0% 98%);
-  --primary-foreground: hsl(240 5.9% 10%);
-  --secondary: hsl(240 3.7% 15.9%);
-  --secondary-foreground: hsl(0 0% 98%);
-  --muted: hsl(240 3.7% 15.9%);
-  --muted-foreground: hsl(240 5% 64.9%);
-  --accent: hsl(240 3.7% 15.9%);
-  --accent-foreground: hsl(0 0% 98%);
-  --destructive: hsl(0 62.8% 30.6%);
-  --destructive-foreground: hsl(0 0% 98%);
-  --border: hsl(240 3.7% 15.9%);
-  --input: hsl(240 3.7% 15.9%);
-  --ring: hsl(240 4.9% 83.9%);
+  --background: #16181d;
+  --foreground: #f2f4f6;
+  --card: #1f2229;
+  --card-foreground: #f2f4f6;
+  --popover: #1f2229;
+  --popover-foreground: #f2f4f6;
+  --primary: var(--brand-400);
+  --primary-foreground: #101216;
+  --secondary: #2a2e37;
+  --secondary-foreground: #d9e0e8;
+  --muted: #2a2e37;
+  --muted-foreground: #8b95a1;
+  --accent: #23303f;
+  --accent-foreground: var(--brand-400);
+  --destructive: var(--live);
+  --destructive-foreground: #ffffff;
+  --border: #2f343d;
+  --input: #3a4049;
+  --ring: var(--brand-400);
 }
 
-/* CSS 변수를 Tailwind 유틸리티(bg-background, text-foreground 등)로 노출 */
+/* CSS 변수를 Tailwind 유틸리티로 노출 */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -75,10 +117,91 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  /* 브랜드 스케일 — bg-brand-50, text-brand-600 등 */
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+
+  /* 상태색 — text-live, bg-live-surface 등 */
+  --color-live: var(--live);
+  --color-live-surface: var(--live-surface);
+  --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-notice: var(--notice);
+  --color-notice-surface: var(--notice-surface);
+
+  /* 중립색 — 시맨틱 토큰으로 부족할 때만 직접 사용 */
+  --color-neutral-strong: var(--neutral-strong);
+  --color-neutral-secondary: var(--neutral-secondary);
+  --color-neutral-tertiary: var(--neutral-tertiary);
+  --color-neutral-muted: var(--neutral-muted);
+  --color-border-strong: var(--neutral-border-strong);
+  --color-fill: var(--neutral-fill);
+  --color-surface-subtle: var(--surface-subtle);
+
+  --color-kakao: var(--kakao);
+  --color-kakao-foreground: var(--kakao-foreground);
+
+  /*
+   * 라운딩 — Figma 대응
+   * sm 6 미니 배지 · md 8 하이라이트 행 · lg 10 소형 컨트롤·칩 · xl 12 입력
+   * 2xl 14 메인 CTA · 3xl 16 카드 · 4xl 20 패널 · full 999 pill
+   */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 2px);
+  --radius-2xl: calc(var(--radius) + 4px);
+  --radius-3xl: calc(var(--radius) + 6px);
+  --radius-4xl: calc(var(--radius) + 10px);
+
+  /*
+   * 타이포 — Figma 등록 텍스트 스타일 10종 (전부 Pretendard).
+   * 크기·행간·굵기를 함께 묶어 text-* 유틸 하나로 적용한다.
+   */
+  --text-logo: 22px;
+  --text-logo--line-height: 1.2;
+
+  --text-price: 18px;
+  --text-price--line-height: 1.2;
+
+  --text-room-title: 17px;
+  --text-room-title--line-height: 1.3;
+
+  --text-card-title: 15px;
+  --text-card-title--line-height: 1.35;
+
+  --text-body-strong: 14px;
+  --text-body-strong--line-height: 1.5;
+
+  --text-body: 14px;
+  --text-body--line-height: 1.5;
+
+  --text-label: 13px;
+  --text-label--line-height: 1.4;
+
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+
+  --text-timer: 12px;
+  --text-timer--line-height: 1.4;
+
+  --text-badge: 11px;
+  --text-badge--line-height: 1.3;
+
+  --font-sans:
+    'Pretendard Variable', Pretendard, ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+
+  /*
+   * 모션 — 빠르게 시작해 부드럽게 멎는 곡선을 기본으로 쓴다.
+   * 화면 전환은 240ms, 작은 상태 변화는 160ms.
+   */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-soft: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @layer base {
@@ -90,17 +213,39 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
-    font-family:
-      ui-sans-serif,
-      system-ui,
-      -apple-system,
-      'Segoe UI',
-      Roboto,
-      'Helvetica Neue',
-      Arial,
-      'Apple SD Gothic Neo',
-      'Noto Sans KR',
-      sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
+
+  /* 움직임을 줄이도록 설정한 사용자에게는 전환을 걷어낸다. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility ease-soft {
+  transition-timing-function: var(--ease-out-soft);
+}
+
+/* 목록 항목이 아래에서 살짝 올라오며 나타난다. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-rise {
+  animation: rise-in 260ms var(--ease-out-soft) both;
 }
