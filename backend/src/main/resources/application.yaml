@@ -1,6 +1,8 @@
 spring:
   application:
     name: upbid
+  config:
+    import: optional:file:.env[.properties]
 
   profiles:
     default: local
@@ -22,3 +24,22 @@ spring:
 
 server:
   forward-headers-strategy: framework
+  servlet:
+    session:
+      timeout: ${SESSION_TIMEOUT:2h}
+      cookie:
+        name: SESSION
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:false}
+        same-site: ${SESSION_COOKIE_SAME_SITE:lax}
+
+oauth:
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    redirect-uri: ${KAKAO_REDIRECT_URI}
+    token-uri: https://kauth.kakao.com/oauth/token
+    user-info-uri: https://kapi.kakao.com/v2/user/me
+
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:8080}
