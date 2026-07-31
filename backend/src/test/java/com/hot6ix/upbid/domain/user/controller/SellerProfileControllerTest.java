@@ -17,25 +17,17 @@ import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.service.SellerProfileService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
+import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
-import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(controllers = SellerProfileController.class)
 @Import(GlobalExceptionHandler.class)
-class SellerProfileControllerTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ObjectMapper objectMapper;
+class SellerProfileControllerTest extends AbstractControllerTest {
 
     @MockitoBean
     private SellerProfileService sellerProfileService;

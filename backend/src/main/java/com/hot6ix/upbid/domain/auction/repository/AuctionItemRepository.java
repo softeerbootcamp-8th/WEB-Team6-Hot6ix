@@ -3,14 +3,36 @@ package com.hot6ix.upbid.domain.auction.repository;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> {
+
+    /**
+     * 이 상품이 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는지 확인한다
+     * (진행중·낙찰·유찰 전부 포함). Product 수정·삭제 시 "경매방이 시작된 적 있는 상품은
+     * 이후로도 계속 수정·삭제 불가" 규칙을 검증하는 데 쓰인다.
+     */
+    boolean existsByProduct_ProductIdAndStatusNot(Long productId, AuctionItemStatus status);
+
+    /**
+     * 이 경매방에 속한 물품 중 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는 게
+     * 있는지 확인한다. 경매방 설정 수정(PATCH) 시 "경매 시작 전"만 허용하는 규칙을
+     * 검증하는 데 쓰인다.
+     */
+    boolean existsByAuctionRoom_AuctionRoomIdAndStatusNot(Long auctionRoomId, AuctionItemStatus status);
+
+    /**
+     * 경매방에 등록된 물품 개수를 센다. 경매방 응답 DTO의 itemCount에 쓰인다.
+     */
+    long countByAuctionRoom_AuctionRoomId(Long auctionRoomId);
 
     /**
      * 목록 정렬 순위를 만드는 식. 진행중 → 대기 → 낙찰 → 유찰 순이며
@@ -62,4 +84,13 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
             + "join ai.product p "
             + "where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItemDetailResponseDto> findDetail(@Param("auctionItemId") Long auctionItemId);
+
+    /**
+     * 물품 행에 쓰기 락을 걸고 조회한다. 거래 상태 변경은 읽고 검사한 뒤 쓰는 흐름이라 상태
+     * 검사만으로는 동시 요청을 막지 못한다. 트랜잭션 안에서만 호출해야 한다.
+     * fetch join하지 않는 이유는 MySQL {@code FOR UPDATE}가 조인된 행까지 잠그기 때문이다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")
+    Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
 }

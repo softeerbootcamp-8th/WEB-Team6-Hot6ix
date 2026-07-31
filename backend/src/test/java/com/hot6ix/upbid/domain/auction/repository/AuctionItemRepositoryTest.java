@@ -12,6 +12,7 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,9 +76,13 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     private AuctionItem newAuctionItem(AuctionRoom auctionRoom, String productName, AuctionItemStatus status) {
+        return newAuctionItem(auctionRoom, newProduct(productName), status);
+    }
+
+    private AuctionItem newAuctionItem(AuctionRoom auctionRoom, Product product, AuctionItemStatus status) {
         return entityManager.persist(AuctionItem.builder()
                 .auctionRoom(auctionRoom)
-                .product(newProduct(productName))
+                .product(product)
                 .startingPrice(10_000L)
                 .bidIncrement(1_000L)
                 .status(status)
@@ -151,5 +156,75 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(detail.bidIncrement()).isEqualTo(1_000L);
         assertThat(detail.status()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
         assertThat(detail.endAt()).isEqualTo(LocalDateTime.of(2026, 7, 29, 21, 0));
+    }
+
+    @Test
+    @DisplayName("READY 상태의 AuctionItem만 있으면 시작된 적 없는 것으로 본다")
+    void existsByProductAndStatusNot_false_whenOnlyReady() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        Product product = newProduct("대기상품");
+        newAuctionItem(auctionRoom, product, AuctionItemStatus.READY);
+        entityManager.flush();
+
+        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
+                product.getProductId(), AuctionItemStatus.READY);
+
+        assertThat(started).isFalse();
+    }
+
+    @Test
+    @DisplayName("READY가 아닌 AuctionItem이 하나라도 있으면 시작된 적 있는 것으로 본다")
+    void existsByProductAndStatusNot_true_whenNotReady() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        Product product = newProduct("낙찰상품");
+        newAuctionItem(auctionRoom, product, AuctionItemStatus.SOLD);
+        entityManager.flush();
+
+        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
+                product.getProductId(), AuctionItemStatus.READY);
+
+        assertThat(started).isTrue();
+    }
+
+    @Test
+    @DisplayName("연결된 AuctionItem이 없으면 시작된 적 없는 것으로 본다")
+    void existsByProductAndStatusNot_false_whenNoAuctionItem() {
+
+        Product product = newProduct("미등록상품");
+        entityManager.flush();
+
+        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
+                product.getProductId(), AuctionItemStatus.READY);
+
+        assertThat(started).isFalse();
+    }
+
+    /**
+     * 트랜잭션이 둘 필요해 락의 실제 차단은 볼 수 없어 락 모드만 단정한다. {@code clear()}가
+     * 필요한 이유는 같은 트랜잭션에서 INSERT한 엔티티가 이미 쓰기 상태로 표시돼 있기 때문이다.
+     */
+    @Test
+    @DisplayName("락 조회는 물품에 쓰기 락을 걸고 그대로 돌려준다")
+    void findByIdForUpdateLocksItem() {
+
+        AuctionItem item = newAuctionItem(newAuctionRoom("승민상점 경매방"), "낙찰물품", AuctionItemStatus.SOLD);
+        Long auctionItemId = item.getAuctionItemId();
+        entityManager.flush();
+        entityManager.clear();
+
+        AuctionItem locked = auctionItemRepository.findByIdForUpdate(auctionItemId).orElseThrow();
+
+        assertThat(locked.getAuctionItemId()).isEqualTo(auctionItemId);
+        assertThat(locked.getStatus()).isEqualTo(AuctionItemStatus.SOLD);
+        assertThat(entityManager.getEntityManager().getLockMode(locked))
+                .isEqualTo(LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    @Test
+    @DisplayName("없는 물품을 락 조회하면 빈 값을 돌려준다")
+    void findByIdForUpdateReturnsEmptyWhenNotFound() {
+        assertThat(auctionItemRepository.findByIdForUpdate(999L)).isEmpty();
     }
 }

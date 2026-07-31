@@ -84,4 +84,15 @@ public class AuctionItem extends BaseTimeEntity {
         this.endAt = endAt;
         this.totalExtensionSeconds = totalExtensionSeconds != null ? totalExtensionSeconds : 0;
     }
+
+    /**
+     * 입찰을 반영해 현재가와 최고 입찰자를 갱신한다.
+     *
+     * @param bidder 입찰자
+     * @param amount 입찰 금액. Service에서 검증을 마친 값
+     */
+    public void applyBid(User bidder, Long amount) {
+        this.leaderUser = bidder;
+        this.currentPrice = amount;
+    }
 }

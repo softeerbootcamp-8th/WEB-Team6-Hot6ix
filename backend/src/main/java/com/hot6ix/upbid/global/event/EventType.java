@@ -14,6 +14,7 @@ public enum EventType {
     SOFT_CLOSE_EXTENDED,
 
     // 낙찰
+    DEAL_RIGHT_ASSIGNED,
     WINNER_DECIDED,
     ITEM_PASSED
 }

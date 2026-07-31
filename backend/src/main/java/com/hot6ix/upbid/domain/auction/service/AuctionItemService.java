@@ -2,8 +2,9 @@ package com.hot6ix.upbid.domain.auction.service;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
-import com.hot6ix.upbid.domain.auction.exception.AuctionItemErrorType;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -16,16 +17,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuctionItemService {
 
     private final AuctionItemRepository auctionItemRepository;
+    private final AuctionRoomRepository auctionRoomRepository;
 
     /**
      * 경매방의 물품 목록을 상태 우선 순서로 조회한다.
-     * 경매방 존재 여부는 확인하지 않으므로, 없는 경매방과 물품이 0개인 경매방이
-     * 모두 빈 목록으로 나간다. 이 구분은 경매방 Repository 도입 후 추가한다.
      *
      * @param auctionRoomId 조회할 경매방의 ID
      * @return 물품 요약 목록. 물품이 없으면 빈 목록
+     * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
     public List<AuctionItemSummaryResponseDto> getSummaries(Long auctionRoomId) {
+        if (!auctionRoomRepository.existsByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+        }
         return auctionItemRepository.findSummaries(auctionRoomId);
     }
 
@@ -38,6 +42,6 @@ public class AuctionItemService {
      */
     public AuctionItemDetailResponseDto getDetail(Long auctionItemId) {
         return auctionItemRepository.findDetail(auctionItemId)
-                .orElseThrow(() -> new ApplicationException(AuctionItemErrorType.AUCTION_ITEM_NOT_FOUND));
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
     }
 }
