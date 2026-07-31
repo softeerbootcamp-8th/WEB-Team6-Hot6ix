@@ -13,23 +13,19 @@ import com.hot6ix.upbid.domain.deal.exception.DealErrorType;
 import com.hot6ix.upbid.domain.deal.service.DealCandidateService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
+import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(controllers = DealCandidateController.class)
 @Import(GlobalExceptionHandler.class)
-class DealCandidateControllerTest {
+class DealCandidateControllerTest extends AbstractControllerTest {
 
     private static final String FAIL_URL = "/api/v1/auction-items/2/deal-candidates/101/fail";
     private static final String COMPLETE_URL = "/api/v1/auction-items/2/deal-candidates/101/complete";
-
-    @Autowired
-    private MockMvc mockMvc;
 
     @MockitoBean
     private DealCandidateService dealCandidateService;
