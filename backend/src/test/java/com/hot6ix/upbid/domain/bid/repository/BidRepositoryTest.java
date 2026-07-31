@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.bid.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
@@ -23,6 +24,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jpa.test.autoconfigure.AutoConfigureTestEntityManager;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -96,19 +98,6 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
                 .build());
     }
 
-    /**
-     * {@code acceptedAt}은 {@code @CreatedDate}가 채우므로 테스트에서 직접 정할 수 없다.
-     * 같은 금액일 때의 정렬을 검증하려면 시각을 못 박아야 해서 native UPDATE로 덮어쓴다.
-     */
-    private void forceAcceptedAt(Bid bid, LocalDateTime acceptedAt) {
-        entityManager.flush();
-        entityManager.getEntityManager()
-                .createNativeQuery("update bids set accepted_at = :acceptedAt where bid_id = :bidId")
-                .setParameter("acceptedAt", acceptedAt)
-                .setParameter("bidId", bid.getBidId())
-                .executeUpdate();
-    }
-
     private List<BidderRankProjection> findTopBidders() {
         entityManager.flush();
         return bidRepository.findTopBidders(auctionItem.getAuctionItemId(), TOP_BIDDER_LIMIT);
@@ -166,20 +155,32 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
-    @DisplayName("최고 입찰가가 같으면 먼저 입찰한 사람이 상위다")
-    void findTopBiddersBreaksTieByEarlierBid() {
+    @DisplayName("같은 물품에 같은 금액으로 두 번 저장하면 unique 제약에 걸린다")
+    void rejectsSameAmountOnSameItem() {
 
-        User earlier = newUser("earlier@hot6ix.com", "먼저");
-        User later = newUser("later@hot6ix.com", "나중");
+        User first = newUser("first@hot6ix.com", "먼저");
+        User second = newUser("second@hot6ix.com", "나중");
 
-        forceAcceptedAt(newBid(auctionItem, later, 12_000L), LocalDateTime.of(2026, 7, 29, 20, 30));
-        forceAcceptedAt(newBid(auctionItem, earlier, 12_000L), LocalDateTime.of(2026, 7, 29, 20, 10));
+        bidRepository.saveAndFlush(Bid.builder()
+                .auctionItem(auctionItem).bidder(first).amount(12_000L).build());
 
-        List<BidderRankProjection> ranks = findTopBidders();
+        assertThatThrownBy(() -> bidRepository.saveAndFlush(Bid.builder()
+                .auctionItem(auctionItem).bidder(second).amount(12_000L).build()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
 
-        assertThat(ranks)
-                .extracting(BidderRankProjection::getBidderUserId)
-                .containsExactly(earlier.getUserId(), later.getUserId());
+    @Test
+    @DisplayName("물품이 다르면 같은 금액이어도 저장된다")
+    void allowsSameAmountOnDifferentItems() {
+
+        User bidder = newUser("bidder@hot6ix.com", "입찰자");
+
+        bidRepository.saveAndFlush(Bid.builder()
+                .auctionItem(auctionItem).bidder(bidder).amount(12_000L).build());
+        Bid saved = bidRepository.saveAndFlush(Bid.builder()
+                .auctionItem(newAuctionItem("다른물품")).bidder(bidder).amount(12_000L).build());
+
+        assertThat(saved.getBidId()).isNotNull();
     }
 
     @Test

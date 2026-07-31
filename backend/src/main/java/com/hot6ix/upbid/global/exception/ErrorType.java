@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
  *   3xxx  판매자 프로필  SellerProfileErrorType
  *   4xxx  경매 물품      AuctionItemErrorType
  *   6xxx  거래·낙찰      DealErrorType
+ *   7xxx  입찰          BidErrorType
  * </pre>
  *
  * <p>새 도메인은 위에 없는 천 번대를 잡고 이 목록에 추가한다. 같은 뜻의 에러를 도메인마다
