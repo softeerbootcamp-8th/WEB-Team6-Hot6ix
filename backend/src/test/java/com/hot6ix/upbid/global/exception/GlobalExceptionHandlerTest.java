@@ -1,6 +1,6 @@
 package com.hot6ix.upbid.global.exception;
 
-import com.hot6ix.upbid.global.session.SessionManager;
+import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -9,13 +9,10 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.*;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -24,13 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @WebMvcTest(controllers = GlobalExceptionHandlerTest.TestController.class)
 @Import({GlobalExceptionHandlerTest.TestController.class, GlobalExceptionHandler.class})
-class GlobalExceptionHandlerTest {
-
-    @MockitoBean
-    private SessionManager sessionManager;
-
-    @Autowired
-    private MockMvc mockMvc;
+class GlobalExceptionHandlerTest extends AbstractControllerTest {
 
     @Test
     @DisplayName("ApplicationException 발생 시 에러 응답을 반환한다")
