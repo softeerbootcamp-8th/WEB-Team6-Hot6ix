@@ -114,7 +114,4 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
 
         assertThat(saved.getBidId()).isNotNull();
     }
-
-    /** 순위 산정 뒤에 걸러내면 상한을 못 채운다. 남은 사람들로 채워지는지 확인한다. */
-
 }

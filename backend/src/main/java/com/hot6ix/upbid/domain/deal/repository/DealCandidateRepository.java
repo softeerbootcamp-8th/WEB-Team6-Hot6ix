@@ -8,14 +8,12 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+/**
+ * 상태는 쿼리 문자열에 박지 않고 파라미터로 넘긴다. 문자열로 두면 enum 상수명이 바뀌어도
+ * 컴파일러가 잡지 못한다. 대신 상태를 고정한 {@code default} 메서드를 앞에 둬서 호출부에서는
+ * 무엇을 찾는 조회인지 이름만으로 드러나게 한다.
+ */
 public interface DealCandidateRepository extends JpaRepository<DealCandidate, Long> {
-
-    /**
-     * JPQL은 enum을 정규화된 이름으로 써야 한다. 여러 쿼리가 공유하므로 상수로 뺀다.
-     * {@link DealCandidateStatus} 상수명을 바꾸면 여기도 함께 고쳐야 한다.
-     */
-    String WAITING = "com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus.WAITING";
-    String COMPLETED = "com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus.COMPLETED";
 
     /**
      * 같은 마감 이벤트를 두 번 받아도 후보가 한 번만 생기게 하는 멱등 검사다. 순위 유니크
@@ -35,11 +33,12 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
      *
      * <p>탈퇴 회원은 순위를 매기기 전에 조인으로 빼야 순위 번호에 구멍이 생기지 않는다.
      *
-     * <p>{@code status}를 문자열로 박으므로 {@link DealCandidateStatus} 상수명을 바꾸면 이 SQL이
-     * 조용히 깨진다.
-     *
      * @return 삽입된 행 수. <b>0이면 순위에 들 입찰이 없었다는 뜻</b>이다
      */
+    default int insertCandidatesFromBids(Long auctionItemId) {
+        return insertCandidatesFromBids(auctionItemId, DealCandidateStatus.WAITING.name());
+    }
+
     @Modifying
     @Query(value = """
             INSERT INTO deal_candidates
@@ -48,7 +47,7 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
                    t.bidder_user_id,
                    ROW_NUMBER() OVER (ORDER BY t.amount DESC, t.bidder_user_id ASC),
                    t.amount,
-                   'WAITING'
+                   :status
               FROM (SELECT b.bidder_user_id,
                            MAX(b.amount) AS amount
                       FROM bids b
@@ -58,42 +57,63 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
                      WHERE b.auction_item_id = :auctionItemId
                      GROUP BY b.bidder_user_id) t
             """, nativeQuery = true)
-    int insertCandidatesFromBids(@Param("auctionItemId") Long auctionItemId);
+    int insertCandidatesFromBids(@Param("auctionItemId") Long auctionItemId,
+                                 @Param("status") String status);
 
     /** 거래가 이미 끝났는지 판단한다. {@code COMPLETED} 후보가 있으면 더 바꿀 수 없다. */
+    default boolean existsCompletedCandidate(Long auctionItemId) {
+        return existsByStatus(auctionItemId, DealCandidateStatus.COMPLETED);
+    }
+
     @Query("select count(dc) > 0 from DealCandidate dc "
             + "where dc.auctionItem.auctionItemId = :auctionItemId "
-            + "and dc.status = " + COMPLETED)
-    boolean existsCompletedCandidate(@Param("auctionItemId") Long auctionItemId);
+            + "and dc.status = :status")
+    boolean existsByStatus(@Param("auctionItemId") Long auctionItemId,
+                           @Param("status") DealCandidateStatus status);
 
     /**
      * 현재 낙찰 권한자를 조회한다. {@code WAITING} 중 순위가 가장 낮은 1행이라는 정의를 쿼리로
      * 옮긴 것이다. 후보 전체를 읽어 메모리에서 고르면 후보 수만큼 비용이 늘어난다.
      */
+    default Optional<DealCandidate> findCurrentWinner(Long auctionItemId) {
+        return findFirstByStatus(auctionItemId, DealCandidateStatus.WAITING);
+    }
+
     @Query("select dc from DealCandidate dc "
             + "join fetch dc.bidder "
             + "where dc.auctionItem.auctionItemId = :auctionItemId "
-            + "and dc.status = " + WAITING + " "
+            + "and dc.status = :status "
             + "order by dc.candidateRank asc limit 1")
-    Optional<DealCandidate> findCurrentWinner(@Param("auctionItemId") Long auctionItemId);
+    Optional<DealCandidate> findFirstByStatus(@Param("auctionItemId") Long auctionItemId,
+                                              @Param("status") DealCandidateStatus status);
 
     /** 대상보다 앞 순번의 후보가 아직 기다리고 있으면, 지금은 그 후보의 차례다. */
+    default boolean existsWaitingCandidateBefore(Long auctionItemId, Integer candidateRank) {
+        return existsByStatusBeforeRank(auctionItemId, DealCandidateStatus.WAITING, candidateRank);
+    }
+
     @Query("select count(dc) > 0 from DealCandidate dc "
             + "where dc.auctionItem.auctionItemId = :auctionItemId "
-            + "and dc.status = " + WAITING + " "
+            + "and dc.status = :status "
             + "and dc.candidateRank < :candidateRank")
-    boolean existsWaitingCandidateBefore(@Param("auctionItemId") Long auctionItemId,
-                                         @Param("candidateRank") Integer candidateRank);
+    boolean existsByStatusBeforeRank(@Param("auctionItemId") Long auctionItemId,
+                                     @Param("status") DealCandidateStatus status,
+                                     @Param("candidateRank") Integer candidateRank);
 
     /** 실패한 후보 다음으로 차례가 넘어갈 후보를 찾는다. */
+    default Optional<DealCandidate> findNextWaitingCandidate(Long auctionItemId, Integer candidateRank) {
+        return findFirstByStatusAfterRank(auctionItemId, DealCandidateStatus.WAITING, candidateRank);
+    }
+
     @Query("select dc from DealCandidate dc "
             + "join fetch dc.bidder "
             + "where dc.auctionItem.auctionItemId = :auctionItemId "
-            + "and dc.status = " + WAITING + " "
+            + "and dc.status = :status "
             + "and dc.candidateRank > :candidateRank "
             + "order by dc.candidateRank asc limit 1")
-    Optional<DealCandidate> findNextWaitingCandidate(@Param("auctionItemId") Long auctionItemId,
-                                                     @Param("candidateRank") Integer candidateRank);
+    Optional<DealCandidate> findFirstByStatusAfterRank(@Param("auctionItemId") Long auctionItemId,
+                                                       @Param("status") DealCandidateStatus status,
+                                                       @Param("candidateRank") Integer candidateRank);
 
     /** 경로로 받은 물품에 속한 후보만 찾는다. 다른 물품의 후보 ID로는 조회되지 않는다. */
     @Query("select dc from DealCandidate dc "
