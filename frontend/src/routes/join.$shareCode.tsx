@@ -1,4 +1,4 @@
-import { AlertTriangle, LinkIcon } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
@@ -7,7 +7,6 @@ import { GuestShell } from '@/components/layout/page-shell'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { StatusBadge } from '@/components/status-badge'
-import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
 import { useCurrentUser } from '@/lib/session'
 
@@ -102,106 +101,81 @@ function JoinRoomPage() {
     >
       <section className="overflow-hidden rounded-4xl border bg-card">
         {/*
-         * 방 정보를 브랜드면 위에 얹어 "이 방에 들어간다"를 먼저 보여준다.
-         * 예전에는 흰 카드 안에 작은 썸네일과 글자만 있어 무엇을 확인하고
-         * 동의하는지가 눈에 들어오지 않았다.
+         * 상단은 다른 화면의 카드와 같은 결로 둔다.
+         * 그라데이션·배지·큰 제목을 얹었더니 이 화면만 튀어 보였다.
+         * 썸네일 + 제목 + 판매자 한 줄, 그리고 물품은 세로 목록으로 정리한다.
          */}
-        <div className="bg-gradient-to-b from-brand-50 to-card px-6 pt-7 pb-6 md:px-8">
-          <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-brand-200 bg-card px-3 text-[11px] font-extrabold tracking-[0.04em] text-brand-600">
-            <LinkIcon aria-hidden className="size-3" />
-            초대 링크로 입장
-          </span>
-
-          <div className="mt-4 flex items-center gap-4">
+        <div className="border-b px-5 py-5 md:px-7 md:py-6">
+          <div className="flex items-center gap-3.5">
             <ProductThumbnail
               name={room.title}
-              size={280}
-              className="flex size-[96px] shrink-0 items-center justify-center rounded-2xl border border-brand-200 bg-card text-neutral-muted shadow-sm"
+              size={240}
+              className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-fill text-neutral-muted"
             />
 
-            <div className="min-w-0">
-              <StatusBadge tone="live" dot>
-                LIVE
-              </StatusBadge>
-              <h1 className="mt-2 truncate text-[22px] font-extrabold text-foreground">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <StatusBadge tone="live" dot>
+                  LIVE
+                </StatusBadge>
+                <span className="truncate text-[11px] font-medium text-neutral-muted">
+                  참여 {room.participantCount}명
+                </span>
+              </div>
+
+              <h1 className="mt-1.5 truncate text-[17px] font-bold text-foreground">
                 {room.title}
               </h1>
-              <p className="mt-1.5 truncate text-[13px] font-medium text-neutral-tertiary">
-                {room.sellerName} · 참여 {room.participantCount}명
+              <p className="mt-1 truncate text-[12px] font-medium text-neutral-tertiary">
+                {room.sellerName}
               </p>
             </div>
           </div>
+        </div>
 
-          {/* 무엇이 올라와 있는지 먼저 보여준다. 링크만 받고 들어온 사람에게 제일 궁금한 것. */}
-          {room.items.length > 0 && (
-            <ul className="mt-5 flex gap-2 overflow-x-auto pb-1">
-              {room.items.slice(0, 4).map((item) => (
-                <li
-                  key={item.id}
-                  className="flex w-[120px] shrink-0 flex-col rounded-2xl border bg-card p-2"
-                >
+        {/* 무엇이 올라와 있는지. 가로 스크롤 대신 목록으로 쌓는다. */}
+        {room.items.length > 0 && (
+          <div className="border-b px-5 py-4 md:px-7">
+            <div className="flex items-baseline justify-between">
+              <p className="text-[12px] font-bold text-neutral-tertiary">
+                올라온 물품
+              </p>
+              <p className="text-[11px] font-medium text-neutral-muted">
+                총 {room.items.length}개
+              </p>
+            </div>
+
+            <ul className="mt-2.5 space-y-2">
+              {room.items.slice(0, 3).map((item) => (
+                <li key={item.id} className="flex items-center gap-3">
                   <ProductThumbnail
                     name={item.name}
-                    size={200}
+                    size={160}
                     iconClassName="size-4"
-                    className="flex h-[68px] w-full items-center justify-center rounded-xl bg-fill text-neutral-muted"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
                   />
-                  <span className="mt-2 truncate text-[12px] font-bold text-foreground">
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
                     {item.name}
                   </span>
-                  <span className="mt-0.5 text-[11px] font-semibold tabular-nums text-brand-500">
+                  <span className="shrink-0 text-[13px] font-bold tabular-nums text-brand-500">
                     {formatWon(item.currentPrice)}
                   </span>
                 </li>
               ))}
             </ul>
-          )}
-        </div>
 
-        <div className="px-6 pt-6 pb-7 md:px-8 md:pb-8">
-          <p className="text-[14px] leading-[1.6] font-medium text-neutral-secondary">
+            {room.items.length > 3 && (
+              <p className="mt-2.5 text-[11px] font-medium text-neutral-muted">
+                외 {room.items.length - 3}개는 입장 후 볼 수 있어요
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="px-5 pt-5 pb-6 md:px-7 md:pb-7">
+          <p className="text-[13px] leading-[1.6] font-medium text-neutral-secondary">
             {room.description}
           </p>
-
-          <dl className="mt-5 grid grid-cols-3 gap-2">
-            {[
-              {
-                label: '물품',
-                value: `${room.items.length}개`,
-                bg: 'bg-brand-50',
-                color: 'text-brand-500',
-              },
-              {
-                label: '참여',
-                value: `${room.participantCount}명`,
-                bg: 'bg-result-idle-surface',
-                color: 'text-result-idle',
-              },
-              {
-                label: '상태',
-                value: '진행 중',
-                bg: 'bg-result-failed-surface',
-                color: 'text-live',
-              },
-            ].map((stat) => (
-              <div
-                key={stat.label}
-                className={cn('rounded-2xl px-3 py-3 text-center', stat.bg)}
-              >
-                <dd
-                  className={cn(
-                    'text-[16px] font-extrabold tabular-nums',
-                    stat.color,
-                  )}
-                >
-                  {stat.value}
-                </dd>
-                <dt className="mt-1 text-[11px] font-semibold text-neutral-secondary">
-                  {stat.label}
-                </dt>
-              </div>
-            ))}
-          </dl>
 
           {isGuest ? (
             <>
