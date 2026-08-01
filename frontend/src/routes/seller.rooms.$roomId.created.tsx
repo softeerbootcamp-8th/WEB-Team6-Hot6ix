@@ -1,12 +1,17 @@
-import { Check, Copy, QrCode } from 'lucide-react'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { QrCode } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/page-shell'
-import { Button } from '@/components/ui/button'
 import { MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { requireMember } from '@/lib/route-guards'
+import { toast } from '@/lib/toast'
 
+/**
+ * 경매방 생성 완료 (Figma `WEB-10 · 판매자 · 경매방 생성 완료`, 713:4131).
+ *
+ * 640×540 카드 한 장. 제목·설명 아래 참여 링크 줄(440 링크 + 16 간격 +
+ * 120 복사 버튼), 그 아래 160 QR, 맨 아래 576 CTA다.
+ */
 export const Route = createFileRoute('/seller/rooms/$roomId/created')({
   beforeLoad: requireMember,
   component: AuctionRoomCreatedPage,
@@ -14,93 +19,61 @@ export const Route = createFileRoute('/seller/rooms/$roomId/created')({
 
 function AuctionRoomCreatedPage() {
   const { roomId } = Route.useParams()
-  const [copied, setCopied] = useState(false)
 
   const shareUrl = `${window.location.origin}/join/${MOCK_ROOM_DETAIL.shareCode}`
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
+      toast.success('참여 링크를 복사했어요', { description: shareUrl })
     } catch {
-      // 클립보드 권한이 없으면 사용자가 직접 복사할 수 있게 둔다.
-      setCopied(false)
+      // 클립보드 권한이 없으면 직접 복사할 수 있게 링크를 그대로 둔다.
+      toast.error('링크를 복사하지 못했어요', {
+        description: '주소를 길게 눌러 직접 복사해 주세요.',
+      })
     }
   }
 
   return (
-    <AppShell title="경매방 생성 완료" className="max-w-[608px]">
-      <section className="rounded-4xl border bg-card p-6 text-center md:p-10">
-        <span
-          aria-hidden
-          className="mx-auto flex size-20 items-center justify-center rounded-full bg-success-surface"
-        >
-          <Check className="size-9 text-success" strokeWidth={3} />
-        </span>
-
-        <h1 className="mt-7 text-[22px] font-extrabold text-foreground md:text-[24px]">
+    <AppShell title="경매방 생성 완료" className="max-w-[1280px]">
+      <section className="mx-auto w-full max-w-[640px] rounded-[24px] border bg-card px-8 pt-12 pb-[58px]">
+        <h1 className="text-center text-[26px] font-extrabold text-foreground">
           경매방이 만들어졌어요
         </h1>
-        <p className="mt-3 text-body font-medium text-neutral-tertiary">
-          아래 링크나 QR을 SNS에 공유하면 바로 참여할 수 있어요.
+        <p className="mt-3 text-center text-[14px] font-medium text-neutral-tertiary">
+          참여 링크를 공유하거나 경매방으로 바로 이동하세요.
         </p>
 
-        <div className="mt-8 rounded-3xl bg-surface-subtle p-5 text-left">
-          <p className="text-caption font-semibold text-neutral-secondary">
-            참여 링크
+        {/* 참여 링크 — 440 + 16 + 120 */}
+        <div className="mt-8 flex gap-4">
+          <p className="flex h-[60px] min-w-0 flex-1 items-center truncate rounded-[20px] border bg-surface-subtle px-5 text-[14px] font-semibold text-foreground">
+            {shareUrl}
           </p>
-          <div className="mt-2 flex gap-2">
-            <input
-              readOnly
-              value={shareUrl}
-              aria-label="참여 링크"
-              className="h-12 min-w-0 flex-1 rounded-xl border border-input bg-card px-4 text-label font-medium text-neutral-secondary outline-none"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={copy}
-              className="h-12 shrink-0 gap-1.5 rounded-xl px-4 text-label font-bold"
-            >
-              <Copy aria-hidden className="size-4" />
-              {copied ? '복사됨' : '복사'}
-            </Button>
-          </div>
-          <p
-            aria-live="polite"
-            className="mt-2 text-caption font-normal text-neutral-muted"
+          <button
+            type="button"
+            onClick={copy}
+            className="ease-soft h-[60px] w-[120px] shrink-0 rounded-[14px] bg-brand-50 text-[13px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-200 active:scale-95"
           >
-            {copied
-              ? '링크를 복사했어요.'
-              : '링크만 있으면 누구나 둘러볼 수 있어요.'}
-          </p>
+            링크 복사
+          </button>
+        </div>
 
-          <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl bg-card p-6">
-            <span
-              aria-hidden
-              className="flex size-32 items-center justify-center rounded-2xl bg-fill text-neutral-muted"
-            >
-              <QrCode className="size-14" />
-            </span>
-            <p className="text-caption font-normal text-neutral-tertiary">
-              QR 코드 · 오프라인에서 바로 공유
-            </p>
-          </div>
+        {/* QR — 160×160. TODO: 실제 QR 생성은 별도 이슈. */}
+        <div className="mt-6 flex justify-center">
+          <span
+            aria-label="경매방 참여 QR 코드"
+            className="flex size-40 items-center justify-center rounded-[20px] border bg-card text-neutral-muted"
+          >
+            <QrCode aria-hidden className="size-20" />
+          </span>
         </div>
 
         <Link
           to="/rooms/$roomId"
           params={{ roomId }}
-          className="mt-8 block rounded-2xl bg-primary py-4 text-card-title font-bold text-primary-foreground transition-opacity hover:opacity-90"
+          className="ease-soft mt-11 flex h-14 w-full items-center justify-center rounded-[14px] bg-brand-500 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
         >
           경매방으로 이동
-        </Link>
-        <Link
-          to="/rooms"
-          className="mt-3 block text-label font-bold text-neutral-tertiary hover:text-neutral-secondary"
-        >
-          내 경매방 목록으로
         </Link>
       </section>
     </AppShell>

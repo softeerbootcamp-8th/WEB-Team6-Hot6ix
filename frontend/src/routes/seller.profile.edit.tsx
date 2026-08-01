@@ -6,6 +6,7 @@ import { SellerProfileForm } from '@/features/seller/components/seller-profile-f
 import { requireMember } from '@/lib/route-guards'
 import { sessionStore, useCurrentUser } from '@/lib/session'
 
+/** 판매자 프로필 수정 (Figma `WEB-04 · 판매자 · 프로필 수정`, 713:3760). */
 export const Route = createFileRoute('/seller/profile/edit')({
   beforeLoad: requireMember,
   component: SellerProfileEditPage,
@@ -18,7 +19,7 @@ function SellerProfileEditPage() {
 
   if (!profile) {
     return (
-      <AppShell title="판매자 프로필" back className="max-w-[608px]">
+      <AppShell title="판매자 프로필" back className="max-w-[1280px]">
         <EmptyState
           title="등록된 판매자 프로필이 없어요"
           description="먼저 프로필을 등록해주세요."
@@ -28,31 +29,27 @@ function SellerProfileEditPage() {
   }
 
   return (
-    <AppShell title="판매자 프로필 수정" back className="max-w-[608px]">
+    <AppShell title="판매자 프로필 수정" back className="max-w-[1280px]">
       <PageHeader
         title="판매자 프로필 수정"
-        description="변경한 내용은 구매자에게 바로 보입니다."
+        description="구매자에게 공개되는 정보를 관리하세요."
       />
 
-      <section className="mt-6 rounded-4xl border bg-card p-6 md:p-8">
+      <div className="mt-4">
         <SellerProfileForm
           initial={profile}
-          submitLabel="저장하기"
+          submitLabel="수정 내용 저장"
+          uploadText="프로필 이미지 변경"
           onSubmit={(values) => {
             // TODO: PUT /api/v1/seller-profiles/me 연동 (현재 목업)
             if (user) {
               sessionStore.signIn({ ...user, sellerProfile: values })
             }
-          }}
-          onDelete={() => {
-            // TODO: DELETE /api/v1/seller-profiles/me 연동 (현재 목업)
-            if (user) {
-              sessionStore.signIn({ ...user, sellerProfile: null })
-            }
+            // 저장했으면 원래 보던 판매자 정보로 돌아간다.
             void navigate({ to: '/seller' })
           }}
         />
-      </section>
+      </div>
     </AppShell>
   )
 }

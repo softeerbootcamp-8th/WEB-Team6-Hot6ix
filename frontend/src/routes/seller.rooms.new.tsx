@@ -5,9 +5,8 @@ import { useState, type FormEvent } from 'react'
 import { AppShell } from '@/components/layout/page-shell'
 import { EmptyState, PageHeader } from '@/components/page-header'
 import { MOCK_PRODUCTS } from '@/mocks/data'
-import { Modal } from '@/components/ui/modal'
-import { cn } from '@/lib/utils'
-import { formatWon } from '@/lib/format'
+import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
+import { NumberField, TextAreaField, TextField } from '@/components/ui/field'
 import { requireMember } from '@/lib/route-guards'
 import { useCurrentUser } from '@/lib/session'
 
@@ -90,9 +89,6 @@ function AuctionRoomNewPage() {
     }, 700)
   }
 
-  const fieldClass =
-    'h-13 w-full rounded-[14px] border bg-card px-4 text-[14px] font-medium outline-none placeholder:font-medium placeholder:text-neutral-muted focus-visible:border-brand-400'
-
   return (
     <AppShell title="경매방 만들기" back className="max-w-[1280px]">
       <PageHeader
@@ -108,33 +104,20 @@ function AuctionRoomNewPage() {
               기본 정보
             </h2>
 
-            <label
-              htmlFor="room-title"
-              className="mt-6 block text-[14px] font-bold text-foreground"
-            >
-              경매방 이름
-            </label>
-            <input
-              id="room-title"
-              value={title}
-              placeholder="예: 7월 한정 라이브 경매"
-              onChange={(event) => {
-                setTitle(event.target.value)
-                setTitleError(null)
-              }}
-              aria-invalid={titleError !== null}
-              aria-describedby="room-title-help"
-              className={cn('mt-2.5', fieldClass)}
-            />
-            <p
-              id="room-title-help"
-              className={cn(
-                'mt-2 text-[12px] font-medium',
-                titleError ? 'text-live' : 'text-neutral-muted',
-              )}
-            >
-              {titleError ?? '참여자에게 보이는 이름이에요.'}
-            </p>
+            <div className="mt-6">
+              <TextField
+                label="경매방 이름"
+                required
+                hint="참여자에게 보이는 이름이에요."
+                error={titleError ?? undefined}
+                value={title}
+                placeholder="예: 7월 한정 라이브 경매"
+                onChange={(event) => {
+                  setTitle(event.target.value)
+                  setTitleError(null)
+                }}
+              />
+            </div>
 
             <div className="mt-6 grid gap-6 sm:grid-cols-[240px_minmax(0,1fr)]">
               <div>
@@ -153,18 +136,12 @@ function AuctionRoomNewPage() {
               </div>
 
               <div>
-                <label
-                  htmlFor="room-intro"
-                  className="block text-[14px] font-bold text-foreground"
-                >
-                  소개
-                </label>
-                <textarea
-                  id="room-intro"
+                <TextAreaField
+                  label="소개"
                   value={intro}
+                  className="h-[184px]"
                   placeholder="경매방을 간단히 소개해 주세요."
                   onChange={(event) => setIntro(event.target.value)}
-                  className="mt-2.5 h-[184px] w-full resize-none rounded-[14px] border bg-card px-4 py-3.5 text-[14px] font-medium outline-none placeholder:text-neutral-muted focus-visible:border-brand-400"
                 />
               </div>
             </div>
@@ -176,21 +153,18 @@ function AuctionRoomNewPage() {
               입찰 규칙
             </h2>
 
-            <label
-              htmlFor="bid-unit"
-              className="mt-6 block text-[14px] font-bold text-foreground"
-            >
-              입찰 단위
-            </label>
-            <input
-              id="bid-unit"
-              inputMode="numeric"
-              value={`${bidUnit.toLocaleString('ko-KR')}원`}
-              onChange={(event) =>
-                setBidUnit(Number(event.target.value.replace(/\D/g, '')) || 0)
-              }
-              className={cn('mt-2.5 font-semibold', fieldClass)}
-            />
+            <div className="mt-6">
+              <NumberField
+                label="입찰 단위"
+                unit="원"
+                required
+                hint="첫 입찰은 시작가 + 입찰 단위부터 가능해요."
+                steps={[1000, 5000, 10000]}
+                min={1000}
+                value={bidUnit}
+                onValueChange={setBidUnit}
+              />
+            </div>
 
             <h3 className="mt-8 text-[14px] font-bold text-foreground">
               마감 연장
@@ -200,44 +174,22 @@ function AuctionRoomNewPage() {
             </p>
 
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="threshold"
-                  className="block text-[13px] font-semibold text-foreground"
-                >
-                  마감 임박 기준
-                </label>
-                <input
-                  id="threshold"
-                  inputMode="numeric"
-                  value={`${thresholdMinutes}분`}
-                  onChange={(event) =>
-                    setThresholdMinutes(
-                      Number(event.target.value.replace(/\D/g, '')) || 0,
-                    )
-                  }
-                  className={cn('mt-2.5 font-semibold', fieldClass)}
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="extend"
-                  className="block text-[13px] font-semibold text-foreground"
-                >
-                  연장 시간
-                </label>
-                <input
-                  id="extend"
-                  inputMode="numeric"
-                  value={`${extendMinutes}분`}
-                  onChange={(event) =>
-                    setExtendMinutes(
-                      Number(event.target.value.replace(/\D/g, '')) || 0,
-                    )
-                  }
-                  className={cn('mt-2.5 font-semibold', fieldClass)}
-                />
-              </div>
+              <NumberField
+                label="마감 임박 기준"
+                unit="분"
+                steps={[1]}
+                min={1}
+                value={thresholdMinutes}
+                onValueChange={setThresholdMinutes}
+              />
+              <NumberField
+                label="연장 시간"
+                unit="분"
+                steps={[1]}
+                min={1}
+                value={extendMinutes}
+                onValueChange={setExtendMinutes}
+              />
             </div>
 
             <p className="mt-6 rounded-[14px] bg-brand-50 px-4 py-4 text-[13px] font-semibold text-brand-500">
@@ -281,34 +233,39 @@ function AuctionRoomNewPage() {
                       {product.name}
                     </p>
 
-                    <div className="w-[220px] shrink-0">
+                    <div className="w-full shrink-0 sm:w-[220px]">
                       <label
                         htmlFor={`start-price-${item.productId}`}
                         className="block text-[11px] font-semibold text-neutral-tertiary"
                       >
                         시작가
                       </label>
-                      <input
-                        id={`start-price-${item.productId}`}
-                        inputMode="numeric"
-                        value={`${item.startPrice.toLocaleString('ko-KR')}원`}
-                        onChange={(event) =>
-                          setItems((prev) =>
-                            prev.map((candidate) =>
-                              candidate.productId === item.productId
-                                ? {
-                                    ...candidate,
-                                    startPrice:
-                                      Number(
-                                        event.target.value.replace(/\D/g, ''),
-                                      ) || 0,
-                                  }
-                                : candidate,
-                            ),
-                          )
-                        }
-                        className="mt-1.5 h-10 w-full rounded-xl border border-brand-200 bg-card px-4 text-[14px] font-bold outline-none focus-visible:border-brand-400"
-                      />
+                      <div className="mt-1 flex items-center gap-2">
+                        <input
+                          id={`start-price-${item.productId}`}
+                          inputMode="numeric"
+                          value={item.startPrice.toLocaleString('ko-KR')}
+                          onChange={(event) =>
+                            setItems((prev) =>
+                              prev.map((candidate) =>
+                                candidate.productId === item.productId
+                                  ? {
+                                      ...candidate,
+                                      startPrice:
+                                        Number(
+                                          event.target.value.replace(/\D/g, ''),
+                                        ) || 0,
+                                    }
+                                  : candidate,
+                              ),
+                            )
+                          }
+                          className="h-11 min-w-0 flex-1 rounded-xl border bg-card px-3 text-right text-[14px] font-semibold outline-none focus-visible:border-brand-400"
+                        />
+                        <span className="shrink-0 text-[13px] font-semibold text-neutral-tertiary">
+                          원
+                        </span>
+                      </div>
                     </div>
 
                     <button
@@ -356,75 +313,22 @@ function AuctionRoomNewPage() {
         </button>
       </form>
 
-      {/* 물품 추가 — 등록한 상품 고르기 */}
-      <Modal
+      {/* 물품 추가 — 등록한 상품 고르기 (WEB-09) */}
+      <ItemPickerModal
         open={picking}
         onClose={() => setPicking(false)}
-        labelledBy="pick-item-title"
-        className="max-w-[480px]"
-      >
-        <h2
-          id="pick-item-title"
-          className="text-[17px] font-bold text-foreground"
-        >
-          물품 추가
-        </h2>
-        <p className="mt-1.5 text-[13px] font-medium text-neutral-tertiary">
-          등록한 상품에서 골라주세요.
-        </p>
-
-        {availableProducts.length === 0 ? (
-          <p className="mt-5 rounded-2xl bg-surface-subtle px-4 py-8 text-center text-[13px] font-medium text-neutral-muted">
-            추가할 수 있는 상품이 없어요.{' '}
-            <Link
-              to="/seller/products/new"
-              className="font-bold text-brand-500 hover:underline"
-            >
-              상품 등록하기
-            </Link>
-          </p>
-        ) : (
-          <ul className="mt-5 max-h-[320px] space-y-2 overflow-y-auto">
-            {availableProducts.map((product) => (
-              <li key={product.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setItems((prev) => [
-                      ...prev,
-                      { productId: product.id, startPrice: 10000 },
-                    ])
-                    setPicking(false)
-                  }}
-                  className="ease-soft flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all duration-150 hover:border-border-strong active:scale-[0.99]"
-                >
-                  <span
-                    aria-hidden
-                    className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
-                  >
-                    <ImagePlus className="size-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[14px] font-bold text-foreground">
-                      {product.name}
-                    </span>
-                    <span className="block text-[12px] font-medium text-neutral-muted">
-                      {product.category}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-[13px] font-bold text-brand-500">
-                    추가
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <p className="mt-5 text-center text-[12px] font-medium text-neutral-muted">
-          첫 입찰은 시작가 + {formatWon(bidUnit)}부터 가능해요.
-        </p>
-      </Modal>
+        products={availableProducts}
+        onConfirm={(productIds) =>
+          setItems((prev) => [
+            ...prev,
+            // 시작가는 Figma 안내대로 이 화면에서 정한다.
+            ...productIds.map((productId) => ({
+              productId,
+              startPrice: 10000,
+            })),
+          ])
+        }
+      />
     </AppShell>
   )
 }

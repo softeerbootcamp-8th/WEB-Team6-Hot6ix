@@ -1,13 +1,14 @@
-import { ImagePlus } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
+import { SelectField, TextAreaField, TextField } from '@/components/ui/field'
+import { ImageUploadField } from '@/features/seller/components/image-upload-field'
 import type { Product } from '@/mocks/types'
 
-export type ProductDraft = Pick<Product, 'name' | 'category' | 'description'>
+export type ProductDraft = Pick<
+  Product,
+  'name' | 'category' | 'description' | 'productUrl'
+>
 
 const CATEGORIES = [
   '스니커즈',
@@ -16,46 +17,80 @@ const CATEGORIES = [
   '시계',
   '가방',
   '잡화',
+  '카메라',
   '기타',
 ] as const
 
 interface FieldErrors {
   name?: string
   category?: string
+  productUrl?: string
   description?: string
 }
 
 function validate(values: ProductDraft): FieldErrors {
   const errors: FieldErrors = {}
+
   if (!values.name.trim()) errors.name = '상품명을 입력해주세요.'
   else if (values.name.trim().length > 40)
     errors.name = '상품명은 40자 이하로 입력해주세요.'
+
   if (!values.category) errors.category = '분류를 선택해주세요.'
+
+  const url = values.productUrl?.trim() ?? ''
+  if (url && !/^https?:\/\//.test(url))
+    errors.productUrl = 'http:// 또는 https:// 로 시작하는 주소를 입력해주세요.'
+
   if (!values.description.trim())
     errors.description = '상태와 구성품을 적어주면 입찰이 잘 붙어요.'
+
   return errors
 }
 
-/** 상품 등록·수정 공용 폼. */
+/**
+ * 상품 등록·수정 공용 폼.
+ *
+ * - `WEB-06 · 판매자 · 상품 등록` (713:3862)
+ * - `WEB-07 · 판매자 · 상품 수정` (713:3883)
+ *
+ * 1216×560 카드 한 장. 왼쪽 360 이미지 업로드 + 40 간격 + 오른쪽 752 입력 열
+ * (상품명 52 / 참고 링크 52 / 상품 설명 126 / 버튼 56)이다. 두 프레임은
+ * 문구와 채워진 값만 다르고 레이아웃은 같다.
+ *
+ * **분류는 Figma 두 프레임 어디에도 없다.** 그런데 상품 관리(WEB-05)가
+ * 상품명 아래에 분류를 보여주므로 값을 받을 곳이 필요해 남겨 두었다.
+ */
 export function ProductForm({
   initial,
   submitLabel,
+  uploadText,
   onSubmit,
-  onDelete,
-  deletable = false,
 }: {
   initial?: ProductDraft
   submitLabel: string
+  /** 이미지 칸 문구. 등록은 "이미지 업로드", 수정은 "상품 이미지 변경". */
+  uploadText: string
   onSubmit: (values: ProductDraft) => void
-  onDelete?: () => void
-  /** 경매가 시작된 상품은 수정·삭제할 수 없다. */
-  deletable?: boolean
 }) {
   const [values, setValues] = useState<ProductDraft>(
-    initial ?? { name: '', category: '', description: '' },
+    initial ?? { name: '', category: '', description: '', productUrl: '' },
   )
   const [errors, setErrors] = useState<FieldErrors>({})
   const [saving, setSaving] = useState(false)
+
+  // 저장 성공 시 화면을 떠나므로, 남은 목업 타이머는 언마운트 때 정리한다.
+  const saveTimer = useRef<number | null>(null)
+  useEffect(
+    () => () => {
+      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current)
+    },
+    [],
+  )
+
+  const update = (key: keyof ProductDraft) => (value: string) => {
+    setValues((prev) => ({ ...prev, [key]: value }))
+    setErrors((prev) => ({ ...prev, [key]: undefined }))
+  }
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -65,136 +100,90 @@ export function ProductForm({
 
     setSaving(true)
     // TODO: POST/PUT /api/v1/products 연동 (현재 목업)
-    window.setTimeout(() => {
+    saveTimer.current = window.setTimeout(() => {
       setSaving(false)
       onSubmit(values)
     }, 500)
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <span className="text-caption font-semibold text-neutral-secondary">
-          상품 이미지
-        </span>
-        <button
-          type="button"
-          className="flex h-[160px] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed bg-surface-subtle text-neutral-muted transition-colors hover:border-border-strong hover:text-neutral-tertiary"
-        >
-          <ImagePlus aria-hidden className="size-6" />
-          <span className="text-caption font-medium">
-            이미지를 올려주세요 (최대 5장)
-          </span>
-        </button>
-      </div>
+    <form
+      onSubmit={handleSubmit}
+      className="grid gap-8 rounded-[20px] border bg-card p-8 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-10"
+    >
+      <ImageUploadField
+        label="상품 이미지"
+        uploadText={uploadText}
+        maxWidth={360}
+      />
 
-      <div className="flex flex-col gap-2">
-        <Label
-          htmlFor="product-name"
-          className="text-caption font-semibold text-neutral-secondary"
-        >
-          상품명
-        </Label>
-        <Input
-          id="product-name"
-          value={values.name}
-          placeholder="예) 한정판 조던 스니커즈"
-          onChange={(event) => {
-            setValues((prev) => ({ ...prev, name: event.target.value }))
-            setErrors((prev) => ({ ...prev, name: undefined }))
-          }}
-          aria-invalid={errors.name !== undefined}
-          aria-describedby="product-name-help"
-        />
-        <p
-          id="product-name-help"
-          className={cn(
-            'text-caption font-normal',
-            errors.name ? 'text-live' : 'text-neutral-muted',
-          )}
-        >
-          {errors.name ?? '구매자에게 보이는 이름이에요. 40자까지 가능합니다.'}
-        </p>
-      </div>
-
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 text-caption font-semibold text-neutral-secondary">
-          분류
-        </legend>
-        <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((category) => (
-            <button
-              key={category}
-              type="button"
-              aria-pressed={values.category === category}
-              onClick={() => {
-                setValues((prev) => ({ ...prev, category }))
-                setErrors((prev) => ({ ...prev, category: undefined }))
-              }}
-              className={cn(
-                'rounded-lg border px-3.5 py-2 text-label font-bold transition-colors',
-                values.category === category
-                  ? 'border-brand-400 bg-brand-50 text-brand-600'
-                  : 'font-medium text-neutral-secondary hover:border-border-strong',
-              )}
-            >
-              {category}
-            </button>
-          ))}
+      <div className="flex flex-col">
+        <div className="mb-6">
+          <TextField
+            label="상품명"
+            required
+            hint="구매자에게 보이는 이름이에요. 40자까지 가능합니다."
+            error={errors.name}
+            value={values.name}
+            placeholder="상품명을 입력해 주세요"
+            onChange={(event) => update('name')(event.target.value)}
+          />
         </div>
-        {errors.category && (
-          <p className="text-caption font-normal text-live">
-            {errors.category}
-          </p>
-        )}
-      </fieldset>
 
-      <div className="flex flex-col gap-2">
-        <Label
-          htmlFor="product-description"
-          className="text-caption font-semibold text-neutral-secondary"
-        >
-          상품 설명
-        </Label>
-        <textarea
-          id="product-description"
-          rows={5}
-          value={values.description}
-          placeholder="사이즈, 사용감, 구성품처럼 입찰에 필요한 정보를 적어주세요."
-          onChange={(event) => {
-            setValues((prev) => ({ ...prev, description: event.target.value }))
-            setErrors((prev) => ({ ...prev, description: undefined }))
-          }}
-          aria-invalid={errors.description !== undefined}
-          aria-describedby="product-description-help"
-          className="w-full rounded-xl border border-input bg-transparent px-4 py-3 text-body font-medium outline-none focus-visible:border-ring"
-        />
-        <p
-          id="product-description-help"
-          className={cn(
-            'text-caption font-normal',
-            errors.description ? 'text-live' : 'text-neutral-muted',
-          )}
-        >
-          {errors.description ?? '자세할수록 입찰이 잘 붙어요.'}
-        </p>
-      </div>
+        {/* Figma 에 없는 칸. 상품 관리 표가 분류를 보여줘서 값을 받아둔다. */}
+        <div className="mb-6">
+          <SelectField
+            label="분류"
+            required
+            error={errors.category}
+            value={values.category}
+            onChange={(event) => update('category')(event.target.value)}
+          >
+            <option value="">분류를 선택해 주세요</option>
+            {CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </SelectField>
+        </div>
 
-      <Button type="submit" size="cta" disabled={saving}>
-        {saving ? '저장 중…' : submitLabel}
-      </Button>
+        <div className="mb-6">
+          <TextField
+            label="참고 링크"
+            hint="상품 정보를 확인할 수 있는 주소가 있으면 적어주세요. (선택)"
+            error={errors.productUrl}
+            type="url"
+            value={values.productUrl ?? ''}
+            placeholder="상품 정보를 확인할 수 있는 URL"
+            onChange={(event) => update('productUrl')(event.target.value)}
+          />
+        </div>
 
-      {onDelete && (
+        <div className="mb-6">
+          <TextAreaField
+            label="상품 설명"
+            required
+            hint="자세할수록 입찰이 잘 붙어요."
+            error={errors.description}
+            rows={4}
+            className="h-[126px]"
+            value={values.description}
+            placeholder="상품의 상태와 특징을 입력해 주세요."
+            onChange={(event) => update('description')(event.target.value)}
+          />
+        </div>
+
         <Button
-          type="button"
-          variant="ghost"
-          disabled={!deletable}
-          onClick={onDelete}
-          className="h-11 text-label font-bold text-live hover:bg-live-surface hover:text-live"
+          type="submit"
+          variant="brand"
+          size="cta"
+          className="mt-auto"
+          disabled={saving}
         >
-          {deletable ? '상품 삭제' : '경매 진행 중인 상품은 삭제할 수 없어요'}
+          {saving ? '저장 중…' : submitLabel}
         </Button>
-      )}
+      </div>
     </form>
   )
 }
