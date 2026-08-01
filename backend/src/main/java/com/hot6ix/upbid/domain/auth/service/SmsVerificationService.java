@@ -1,7 +1,7 @@
 package com.hot6ix.upbid.domain.auth.service;
 
 import com.hot6ix.upbid.domain.auth.exception.SmsVerificationErrorType;
-import com.hot6ix.upbid.domain.auth.sms.coolsms.CoolSmsClient;
+import com.hot6ix.upbid.domain.auth.sms.naversens.NaverSmsClient;
 import com.hot6ix.upbid.domain.auth.sms.store.VerificationCodeStore;
 import com.hot6ix.upbid.domain.auth.sms.store.VerificationEntry;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -40,7 +40,7 @@ public class SmsVerificationService {
      */
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private final CoolSmsClient coolSmsClient;
+    private final NaverSmsClient naverSmsClient;
     private final VerificationCodeStore codeStore;
 
     /**
@@ -50,7 +50,7 @@ public class SmsVerificationService {
      * <ol>
      *   <li>발송 횟수 제한 검증 (쿨다운, 시간당, 일당)</li>
      *   <li>6자리 인증번호 생성</li>
-     *   <li>CoolSMS API 호출 — 실패 시 예외를 던지고 저장하지 않는다</li>
+     *   <li>SENS API 호출 — 실패 시 예외를 던지고 저장하지 않는다</li>
      *   <li>발송 성공 후 store에 저장 (기존 인증번호 덮어쓰기)</li>
      *   <li>발송 이력 기록</li>
      * </ol>
@@ -62,7 +62,7 @@ public class SmsVerificationService {
         LocalDateTime now = LocalDateTime.now();
         VerificationEntry entry = new VerificationEntry(code, now, now.plusMinutes(CODE_EXPIRE_MINUTES), 0);
 
-        coolSmsClient.sendVerificationCode(phoneNumber, code);
+        naverSmsClient.sendVerificationCode(phoneNumber, code);
 
         codeStore.save(phoneNumber, entry);
         codeStore.recordSend(phoneNumber);

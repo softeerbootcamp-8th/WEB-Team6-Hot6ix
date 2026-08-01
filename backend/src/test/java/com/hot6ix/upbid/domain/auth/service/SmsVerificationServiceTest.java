@@ -1,7 +1,7 @@
 package com.hot6ix.upbid.domain.auth.service;
 
 import com.hot6ix.upbid.domain.auth.exception.SmsVerificationErrorType;
-import com.hot6ix.upbid.domain.auth.sms.coolsms.CoolSmsClient;
+import com.hot6ix.upbid.domain.auth.sms.naversens.NaverSmsClient;
 import com.hot6ix.upbid.domain.auth.sms.store.VerificationCodeStore;
 import com.hot6ix.upbid.domain.auth.sms.store.VerificationEntry;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -28,7 +28,7 @@ import static org.mockito.Mockito.when;
 class SmsVerificationServiceTest {
 
     @Mock
-    private CoolSmsClient coolSmsClient;
+    private NaverSmsClient naverSmsClient;
 
     @Mock
     private VerificationCodeStore codeStore;
@@ -84,11 +84,11 @@ class SmsVerificationServiceTest {
         when(codeStore.find(PHONE_NUMBER)).thenReturn(Optional.empty());
         when(codeStore.countSendsWithinHour(PHONE_NUMBER)).thenReturn(0L);
         when(codeStore.countSendsWithinDay(PHONE_NUMBER)).thenReturn(0L);
-        doNothing().when(coolSmsClient).sendVerificationCode(eq(PHONE_NUMBER), any());
+        doNothing().when(naverSmsClient).sendVerificationCode(eq(PHONE_NUMBER), any());
 
         smsVerificationService.sendCode(PHONE_NUMBER);
 
-        verify(coolSmsClient).sendVerificationCode(eq(PHONE_NUMBER), any());
+        verify(naverSmsClient).sendVerificationCode(eq(PHONE_NUMBER), any());
         verify(codeStore).save(eq(PHONE_NUMBER), any());
         verify(codeStore).recordSend(PHONE_NUMBER);
     }
@@ -103,7 +103,7 @@ class SmsVerificationServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SmsVerificationErrorType.SEND_COOLDOWN);
 
-        verify(coolSmsClient, never()).sendVerificationCode(any(), any());
+        verify(naverSmsClient, never()).sendVerificationCode(any(), any());
     }
 
     @Test
@@ -117,7 +117,7 @@ class SmsVerificationServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SmsVerificationErrorType.SEND_HOURLY_LIMIT_EXCEEDED);
 
-        verify(coolSmsClient, never()).sendVerificationCode(any(), any());
+        verify(naverSmsClient, never()).sendVerificationCode(any(), any());
     }
 
     @Test
@@ -132,7 +132,7 @@ class SmsVerificationServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SmsVerificationErrorType.SEND_DAILY_LIMIT_EXCEEDED);
 
-        verify(coolSmsClient, never()).sendVerificationCode(any(), any());
+        verify(naverSmsClient, never()).sendVerificationCode(any(), any());
     }
 
     @Test
@@ -142,7 +142,7 @@ class SmsVerificationServiceTest {
         when(codeStore.countSendsWithinHour(PHONE_NUMBER)).thenReturn(0L);
         when(codeStore.countSendsWithinDay(PHONE_NUMBER)).thenReturn(0L);
         doThrow(new ApplicationException(SmsVerificationErrorType.SMS_SEND_FAILED))
-                .when(coolSmsClient).sendVerificationCode(eq(PHONE_NUMBER), any());
+                .when(naverSmsClient).sendVerificationCode(eq(PHONE_NUMBER), any());
 
         assertThatThrownBy(() -> smsVerificationService.sendCode(PHONE_NUMBER))
                 .isInstanceOf(ApplicationException.class)
