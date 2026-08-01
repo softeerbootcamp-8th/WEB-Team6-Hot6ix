@@ -7,12 +7,13 @@ Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다.
 화면은 Figma 기준으로 한 번에 맞춰 둔 상태입니다. 규칙을 모르고 고치면
 이미 해결한 문제가 그대로 되살아납니다. **작업 종류에 맞는 문서를 먼저 읽으세요.**
 
-| 하려는 일                        | 먼저 읽을 문서                                       |
-| -------------------------------- | ---------------------------------------------------- |
-| 어느 화면인지 찾기, 라우트 확인  | [`docs/SCREENS.md`](./docs/SCREENS.md)               |
-| 화면을 새로 만들거나 고치기      | [`docs/UI-RULES.md`](./docs/UI-RULES.md)             |
-| 목업을 실제 API 로 바꾸기        | [`docs/API-INTEGRATION.md`](./docs/API-INTEGRATION.md) |
-| 폴더·네이밍·라우팅 기본 규칙     | [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md)       |
+| 하려는 일                          | 먼저 읽을 문서                                         |
+| ---------------------------------- | ------------------------------------------------------ |
+| 처음 세팅·명령어·폴더 구조·Orval   | [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md)         |
+| 어느 화면인지 찾기, 라우트 확인    | [`docs/SCREENS.md`](./docs/SCREENS.md)                 |
+| 화면을 새로 만들거나 고치기        | [`docs/UI-RULES.md`](./docs/UI-RULES.md)               |
+| 목업을 실제 API 로 바꾸기          | [`docs/API-INTEGRATION.md`](./docs/API-INTEGRATION.md) |
+| 네이밍·import·커밋 등 코드 컨벤션  | [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md)         |
 
 ### 반드시 지킬 것 (요약)
 
