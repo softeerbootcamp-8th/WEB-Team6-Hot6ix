@@ -32,7 +32,8 @@ export function MobileAppBar({
 
   return (
     <header className="sticky top-0 z-40 border-b bg-card">
-      <div className="relative flex h-14 items-center px-4">
+      {/* 좌우 여백은 본문(ShellBody 의 px-5)과 같은 값을 쓴다. */}
+      <div className="relative flex h-14 items-center px-5">
         {showBack && (
           <button
             type="button"
