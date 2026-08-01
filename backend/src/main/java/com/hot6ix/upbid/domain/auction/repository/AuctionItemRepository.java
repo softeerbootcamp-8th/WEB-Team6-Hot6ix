@@ -75,11 +75,13 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
 
     /**
      * 물품 상세를 조회한다. 상태로 거르지 않으므로 낙찰·유찰된 물품도 조회된다.
+     * 유찰 화면이 시작가를 표시하므로 {@code startingPrice}도 함께 내린다 —
+     * 유찰이면 입찰이 없어 {@code currentPrice}가 시작가와 같지만, 그건 결과일 뿐이다.
      */
     @Query("select new com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto("
             + "  ai.auctionItemId, ai.auctionRoom.auctionRoomId, "
             + "  p.name, p.description, p.imageUrl, p.referenceUrl, "
-            + "  ai.currentPrice, ai.bidIncrement, ai.status, ai.endAt) "
+            + "  ai.startingPrice, ai.currentPrice, ai.bidIncrement, ai.status, ai.endAt) "
             + "from AuctionItem ai "
             + "join ai.product p "
             + "where ai.auctionItemId = :auctionItemId")
