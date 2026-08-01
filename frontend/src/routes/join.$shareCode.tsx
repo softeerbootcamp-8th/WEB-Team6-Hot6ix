@@ -1,4 +1,4 @@
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ChevronDown } from 'lucide-react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 
@@ -7,6 +7,7 @@ import { GuestShell } from '@/components/layout/page-shell'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { StatusBadge } from '@/components/status-badge'
+import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
 import { useCurrentUser } from '@/lib/session'
 
@@ -36,6 +37,8 @@ function JoinRoomPage() {
 
   const [agreed, setAgreed] = useState(false)
   const [entering, setEntering] = useState(false)
+  /** 물품 목록을 다 펼쳤는지 */
+  const [expanded, setExpanded] = useState(false)
 
   const result = resolveRoom(shareCode)
 
@@ -133,7 +136,7 @@ function JoinRoomPage() {
           </div>
         </div>
 
-        {/* 무엇이 올라와 있는지. 가로 스크롤 대신 목록으로 쌓는다. */}
+        {/* 무엇이 올라와 있는지. 3개까지 보여주고 나머지는 펼쳐서 본다. */}
         {room.items.length > 0 && (
           <div className="border-b px-5 py-4 md:px-7">
             <div className="flex items-baseline justify-between">
@@ -146,28 +149,54 @@ function JoinRoomPage() {
             </div>
 
             <ul className="mt-2.5 space-y-2">
-              {room.items.slice(0, 3).map((item) => (
-                <li key={item.id} className="flex items-center gap-3">
-                  <ProductThumbnail
-                    name={item.name}
-                    size={160}
-                    iconClassName="size-4"
-                    className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
-                  />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
-                    {item.name}
-                  </span>
-                  <span className="shrink-0 text-[13px] font-bold tabular-nums text-brand-500">
-                    {formatWon(item.currentPrice)}
-                  </span>
-                </li>
-              ))}
+              {(expanded ? room.items : room.items.slice(0, 3)).map(
+                (item, index) => (
+                  <li
+                    key={item.id}
+                    // 펼칠 때 아래로 하나씩 들어오게 한다.
+                    style={
+                      expanded && index >= 3
+                        ? { animationDelay: `${(index - 3) * 40}ms` }
+                        : undefined
+                    }
+                    className={cn(
+                      'flex items-center gap-3',
+                      expanded && index >= 3 && 'animate-rise',
+                    )}
+                  >
+                    <ProductThumbnail
+                      name={item.name}
+                      size={160}
+                      iconClassName="size-4"
+                      className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
+                      {item.name}
+                    </span>
+                    <span className="shrink-0 text-[13px] font-bold tabular-nums text-brand-500">
+                      {formatWon(item.currentPrice)}
+                    </span>
+                  </li>
+                ),
+              )}
             </ul>
 
             {room.items.length > 3 && (
-              <p className="mt-2.5 text-[11px] font-medium text-neutral-muted">
-                외 {room.items.length - 3}개는 입장 후 볼 수 있어요
-              </p>
+              <button
+                type="button"
+                onClick={() => setExpanded((prev) => !prev)}
+                aria-expanded={expanded}
+                className="ease-soft mt-3 flex h-9 w-full items-center justify-center gap-1 rounded-xl bg-fill text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:text-brand-500 active:scale-[0.99]"
+              >
+                {expanded ? '접기' : `물품 ${room.items.length - 3}개 더 보기`}
+                <ChevronDown
+                  aria-hidden
+                  className={cn(
+                    'ease-soft size-3.5 transition-transform duration-150',
+                    expanded && 'rotate-180',
+                  )}
+                />
+              </button>
             )}
           </div>
         )}
