@@ -6,7 +6,7 @@
 
 링크·QR 하나로 참여하는 SNS 연계 실시간 경매 서비스
 
-![UpBid](https://github.com/user-attachments/assets/942847be-6d04-4c6e-9893-d91609eaf235)
+![UpBid](https://github.com/user-attachments/assets/72703977-da20-47fd-8985-2674e5a8bcec)
 
 </div>
 
