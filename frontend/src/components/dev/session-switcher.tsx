@@ -61,7 +61,7 @@ export function DevSessionSwitcher() {
           className={cn(
             'rounded-full px-3 py-1 text-caption font-semibold transition-colors',
             active === option.key
-              ? 'bg-brand-500 text-primary-foreground'
+              ? 'bg-brand-500 text-white'
               : 'text-neutral-tertiary hover:bg-fill',
           )}
         >

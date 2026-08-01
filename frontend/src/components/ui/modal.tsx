@@ -56,6 +56,13 @@ export function Modal({
         if (dismissible && event.target === ref.current) onClose()
       }}
       className={cn(
+        /*
+         * 닫혀 있으면 반드시 사라져야 한다.
+         * 브라우저 기본 규칙은 `dialog:not([open]) { display: none }` 인데,
+         * 바깥에서 `flex` 같은 display 유틸을 얹으면 그 규칙을 이겨서
+         * **닫힌 모달이 화면 밖에 그대로 남고 페이지가 그만큼 길어진다.**
+         */
+        '[&:not([open])]:hidden',
         // 높이를 제한하지 않으면 내용이 긴 모달(물품 추가 등)이 좁은 화면에서
         // 화면 밖으로 넘쳐 스크롤도 안 된다.
         'm-auto max-h-[calc(100svh-2rem)] w-[calc(100%-2rem)] max-w-[420px] overflow-y-auto rounded-4xl border bg-card p-6 text-foreground',

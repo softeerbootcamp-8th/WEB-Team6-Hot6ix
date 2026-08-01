@@ -54,7 +54,7 @@ function AuctionRoomNewPage() {
             action={
               <Link
                 to="/seller/profile/new"
-                className="ease-soft inline-block rounded-2xl bg-primary px-6 py-3.5 text-[15px] font-bold text-primary-foreground transition-all duration-150 hover:opacity-90 active:scale-[0.98]"
+                className="ease-soft inline-block rounded-2xl bg-brand-500 px-6 py-3.5 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.98]"
               >
                 판매자 프로필 등록하기
               </Link>
@@ -307,7 +307,7 @@ function AuctionRoomNewPage() {
         <button
           type="submit"
           disabled={!canSubmit || creating}
-          className="ease-soft h-14 w-full rounded-[14px] bg-primary text-[15px] font-bold text-primary-foreground transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
+          className="ease-soft h-14 w-full rounded-[14px] bg-brand-500 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
         >
           {creating ? '만드는 중…' : '경매방 만들기'}
         </button>

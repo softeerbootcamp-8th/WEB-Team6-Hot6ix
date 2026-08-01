@@ -226,7 +226,7 @@ export function MobileItemDetailView({
        * 화면에 붙어 따라다니지 않고 본문 맨 아래에 놓는다. 좁은 화면에서
        * 고정 바는 내용 절반을 가려서, 정작 무엇에 입찰하는지가 안 보인다.
        */}
-      <div className="mt-4 px-4 pb-8">
+      <div className="mt-4 px-4 pb-16">
         <div className="rounded-2xl border bg-card p-4">
           {biddable ? (
             <>

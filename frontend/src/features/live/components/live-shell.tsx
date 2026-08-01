@@ -186,7 +186,7 @@ export function GuestNotice({ redirectTo }: { redirectTo: string }) {
       <Link
         to="/"
         search={{ redirect: redirectTo }}
-        className="ml-auto flex h-8 items-center rounded-lg bg-primary px-3.5 text-[13px] font-bold text-primary-foreground transition-opacity hover:opacity-90"
+        className="ml-auto flex h-8 items-center rounded-lg bg-brand-500 px-3.5 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
       >
         로그인
       </Link>

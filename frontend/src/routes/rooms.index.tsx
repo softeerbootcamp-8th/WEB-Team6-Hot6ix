@@ -70,7 +70,7 @@ function MyRoomsPage() {
           </Link>
           <Link
             to="/seller/rooms/new"
-            className="ease-soft flex h-10 flex-1 items-center justify-center rounded-[10px] bg-primary px-4 text-[13px] font-bold text-primary-foreground transition-all duration-150 hover:opacity-90 active:scale-95 md:h-9 md:flex-none"
+            className="ease-soft flex h-10 flex-1 items-center justify-center rounded-[10px] bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95 md:h-9 md:flex-none"
           >
             + 경매방 만들기
           </Link>

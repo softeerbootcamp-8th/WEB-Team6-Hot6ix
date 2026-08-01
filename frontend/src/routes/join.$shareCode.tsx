@@ -72,7 +72,7 @@ function JoinRoomPage() {
             {!invalid && (
               <Link
                 to="/rooms"
-                className="flex-1 rounded-2xl bg-primary py-3.5 text-card-title font-bold text-primary-foreground transition-opacity hover:opacity-90"
+                className="flex-1 rounded-2xl bg-brand-500 py-3.5 text-card-title font-bold text-white transition-opacity hover:opacity-90"
               >
                 참여 경매방 보기
               </Link>

@@ -772,7 +772,7 @@ function LiveRoomPage() {
               onClick={() => setPanel('quickBid')}
               disabled={isGuest || isOwner || liveItems.length === 0}
               title={isOwner ? '내 경매방에는 입찰할 수 없어요' : undefined}
-              className="ease-soft mt-4 h-14 shrink-0 rounded-[14px] bg-primary text-[18px] font-bold text-primary-foreground transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
+              className="ease-soft mt-4 h-14 shrink-0 rounded-[14px] bg-brand-500 text-[18px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
             >
               {/* 판매자는 자기 방에 입찰할 수 없다 (Figma 판매자 라이브) */}
               {isOwner ? '판매자는 입찰할 수 없어요' : '입찰하기'}

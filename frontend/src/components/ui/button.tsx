@@ -18,7 +18,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        // 파란 채움 버튼의 글자는 언제나 흰색이다. 토큰을 거치면 다크 모드나
+        // 비활성 상태에서 회색으로 보이는 일이 생긴다.
+        default: 'bg-brand-500 text-white hover:opacity-90',
         destructive:
           'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         outline:

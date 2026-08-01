@@ -73,7 +73,7 @@ export function RoomCard({ room }: { room: AuctionRoomSummary }) {
               <Link
                 to="/rooms/$roomId"
                 params={{ roomId: String(room.id) }}
-                className="ml-auto flex h-9 items-center rounded-[10px] bg-primary px-5 text-[13px] font-bold text-primary-foreground transition-opacity hover:opacity-90"
+                className="ml-auto flex h-9 items-center rounded-[10px] bg-brand-500 px-5 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
               >
                 입장하기
               </Link>

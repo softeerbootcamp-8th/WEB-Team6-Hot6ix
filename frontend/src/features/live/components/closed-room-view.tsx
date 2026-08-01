@@ -102,7 +102,7 @@ export function ClosedRoomView({
        * 모바일(MOB-23)은 웹 3열이 아니라 세로 카드 스택 + 하단 고정 바다.
        * 헤더 카드 → 통계 4칸 → 전체 낙찰 결과.
        */}
-      <div className="flex min-h-svh flex-col bg-background pb-8 md:hidden">
+      <div className="flex min-h-svh flex-col bg-background pb-16 md:hidden">
         <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">
           <Link
             to="/rooms"

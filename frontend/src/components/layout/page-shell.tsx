@@ -15,6 +15,17 @@ interface ShellProps {
   className?: string
 }
 
+/**
+ * 모바일에서만 두는 아래 여백.
+ *
+ * 내용이 화면에 딱 맞는 화면은 스크롤할 거리가 없어 손가락에 아무 반응이
+ * 없다. 한 번 쓸어내릴 만큼(64px)만 여유를 둬서 화면이 굳어 보이지 않게 한다.
+ * 데스크톱은 그대로 둔다.
+ */
+function MobileScrollRoom() {
+  return <div aria-hidden className="h-16 md:hidden" />
+}
+
 function ShellBody({
   children,
   fullWidth,
@@ -62,6 +73,7 @@ export function AppShell({
       <ShellBody fullWidth={fullWidth} className={className}>
         {children}
       </ShellBody>
+      <MobileScrollRoom />
     </div>
   )
 }
@@ -91,6 +103,7 @@ export function GuestShell({
       <ShellBody fullWidth={fullWidth} className={className}>
         {children}
       </ShellBody>
+      <MobileScrollRoom />
     </div>
   )
 }
