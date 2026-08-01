@@ -50,4 +50,6 @@ ncp:
     secret-key: ${NCP_SECRET_KEY}
     service-id: ${NCP_SERVICE_ID}
     send-from: ${NCP_SENDER_PHONE}
+    connect-timeout: 5s
+    read-timeout: 10s
 

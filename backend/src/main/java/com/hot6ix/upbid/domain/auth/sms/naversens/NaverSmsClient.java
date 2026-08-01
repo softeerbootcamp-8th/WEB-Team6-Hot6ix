@@ -4,11 +4,17 @@ import com.hot6ix.upbid.domain.auth.exception.SmsVerificationErrorType;
 import com.hot6ix.upbid.domain.auth.sms.naversens.config.NaverSensProperties;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.net.http.HttpClient;
+import java.security.GeneralSecurityException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
@@ -35,8 +41,17 @@ public class NaverSmsClient {
 
     public NaverSmsClient(NaverSensProperties properties) {
         this.properties = properties;
+
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(properties.connectTimeout())
+                .build();
+
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(properties.readTimeout());
+
         this.restClient = RestClient.builder()
                 .baseUrl(BASE_URL)
+                .requestFactory(factory)
                 .build();
     }
 
@@ -72,8 +87,17 @@ public class NaverSmsClient {
                     .retrieve()
                     .toBodilessEntity();
             log.info("SMS 발송 완료 - to={}", to);
-        } catch (Exception e) {
-            log.error("SMS 발송 실패 - to={}", to, e);
+        } catch (HttpClientErrorException e) {
+            // 4xx — 잘못된 요청이나 인증 실패 (서명 오류, 잘못된 serviceId 등)
+            log.warn("SENS API 클라이언트 오류 - to={}, status={}, body={}", to, e.getStatusCode(), e.getResponseBodyAsString());
+            throw new ApplicationException(SmsVerificationErrorType.SMS_SEND_FAILED);
+        } catch (HttpServerErrorException e) {
+            // 5xx — SENS 서버 측 문제
+            log.error("SENS API 서버 오류 - to={}, status={}", to, e.getStatusCode());
+            throw new ApplicationException(SmsVerificationErrorType.SMS_SEND_FAILED);
+        } catch (ResourceAccessException e) {
+            // 타임아웃, 네트워크 단절 등 연결 수준의 문제
+            log.warn("SENS API 연결 오류 - to={}, message={}", to, e.getMessage());
             throw new ApplicationException(SmsVerificationErrorType.SMS_SEND_FAILED);
         }
     }
@@ -94,9 +118,8 @@ public class NaverSmsClient {
             mac.init(keySpec);
             byte[] rawHmac = mac.doFinal(message.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(rawHmac);
-        } catch (Exception e) {
-            log.error("SENS 서명 생성 실패", e);
-            throw new ApplicationException(SmsVerificationErrorType.SMS_SEND_FAILED);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("SENS 서명 생성 실패", e);
         }
     }
 }
