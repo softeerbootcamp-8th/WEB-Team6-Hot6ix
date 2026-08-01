@@ -13,6 +13,7 @@
   --brand-50: #eff6ff; /* Surface */
   --brand-100: #eaf3ff; /* Info */
   --brand-200: #e5f0ff; /* Faint */
+  --brand-300: #c0d8fe; /* 브랜드 계열 테두리 */
   --brand-400: #5c9bff;
   --brand-500: #3182f6; /* 기본 */
   --brand-600: #1f6feb;
@@ -24,6 +25,22 @@
   --success-surface: #e7f7ef;
   --notice: #b7791f;
   --notice-surface: #fff3e0;
+
+  /*
+   * 거래·경매 결과 배지.
+   *
+   * 위 semantic 과 값이 미묘하게 다르다. Figma 거래 화면(WEB-01/02/03/04,
+   * WEB-05, MOB-01/03/05)이 쓰는 색이 따로 있어서, 화면마다 헥스를 박지 않도록
+   * 여기에 모아 둔다. 값을 바꾸려면 Figma 거래 화면을 먼저 확인한다.
+   */
+  --result-won: #13b08c; /* 낙찰 · 거래 완료 */
+  --result-won-surface: #e9fbf3;
+  --result-progress: #d1870d; /* 거래 진행 중 */
+  --result-progress-surface: #fff6e3;
+  --result-failed: #e5484d; /* 유찰 · 거래 실패 */
+  --result-failed-surface: #ffeeef;
+  --result-idle: #6b7684; /* 미진행 · 대기 */
+  --result-idle-surface: #f2f3f5;
 
   /* Neutral · 쿨 그레이 */
   --neutral-strong: #191f28;
@@ -81,7 +98,8 @@
   --popover: #1f2229;
   --popover-foreground: #f2f4f6;
   --primary: var(--brand-400);
-  --primary-foreground: #101216;
+  /* 파란 CTA 위 글자는 다크에서도 흰색이다. 검정으로 두면 읽히지 않는다. */
+  --primary-foreground: #ffffff;
   --secondary: #2a2e37;
   --secondary-foreground: #d9e0e8;
   --muted: #2a2e37;
@@ -121,6 +139,7 @@
   --color-brand-50: var(--brand-50);
   --color-brand-100: var(--brand-100);
   --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
   --color-brand-400: var(--brand-400);
   --color-brand-500: var(--brand-500);
   --color-brand-600: var(--brand-600);
@@ -132,6 +151,16 @@
   --color-success-surface: var(--success-surface);
   --color-notice: var(--notice);
   --color-notice-surface: var(--notice-surface);
+
+  /* 결과 배지 — bg-result-won-surface, text-result-won 등 */
+  --color-result-won: var(--result-won);
+  --color-result-won-surface: var(--result-won-surface);
+  --color-result-progress: var(--result-progress);
+  --color-result-progress-surface: var(--result-progress-surface);
+  --color-result-failed: var(--result-failed);
+  --color-result-failed-surface: var(--result-failed-surface);
+  --color-result-idle: var(--result-idle);
+  --color-result-idle-surface: var(--result-idle-surface);
 
   /* 중립색 — 시맨틱 토큰으로 부족할 때만 직접 사용 */
   --color-neutral-strong: var(--neutral-strong);
@@ -221,7 +250,8 @@
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
-    *::after {
+    *::after,
+    *::backdrop {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
@@ -248,4 +278,356 @@
 
 @utility animate-rise {
   animation: rise-in 260ms var(--ease-out-soft) both;
+}
+
+/*
+ * 로딩 골격. 반짝이는 대신 은은하게 숨쉬게 한다.
+ * 대기 화면은 오래 보는 게 아니라서 대비를 낮게 잡았다.
+ */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/*
+ * 새 이벤트 한 줄.
+ *
+ * 아래에서 위로 부드럽게 밀려 들어온다. 배경을 번쩍이지 않는다 —
+ * 깜빡이면 오히려 무엇이 새로 온 건지 눈이 못 따라간다.
+ * **새로 들어온 줄에만** 붙이고, 한 번 붙은 클래스는 바꾸지 않는다.
+ * 중간에 클래스가 바뀌면 애니메이션이 처음부터 다시 돌아 순간 사라져 보인다.
+ */
+@keyframes event-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * 새 이벤트가 들어온 직후에만 옅은 브랜드색이 깔렸다가 천천히 빠진다.
+ * 줄이 그냥 나타나기만 하면 어느 줄이 새로 온 건지 알 수 없다.
+ * 깜빡임으로 읽히지 않도록 사라지는 쪽을 길게(1.4s) 잡았다.
+ */
+@keyframes event-highlight {
+  0% {
+    background-color: var(--brand-50);
+    box-shadow: inset 0 0 0 1px var(--brand-200);
+  }
+  60% {
+    background-color: var(--brand-50);
+    box-shadow: inset 0 0 0 1px var(--brand-200);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}
+
+/* 아이콘 칩은 살짝 튀어 오르며 자리를 잡는다 */
+@keyframes event-chip-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/*
+ * 새로 들어온 줄만 잠깐 밝아진다.
+ * 배경은 줄의 라운딩(`rounded-xl`)을 따라가므로 직사각형으로 보이지 않는다.
+ * 처음 그릴 때는 이 클래스가 붙지 않아 목록 전체가 물드는 일은 없다.
+ */
+@utility animate-event {
+  animation:
+    event-in 360ms var(--ease-out-soft) both,
+    event-highlight 1400ms var(--ease-in-out-soft) 120ms both;
+}
+
+/*
+ * 마감 도장 — 시간이 다 된 물품 위에 덮였다가 걷힌다.
+ * 카드가 아래(경매 종료 묶음)로 내려가는 동안 "확실히 끝났다"를 남긴다.
+ *
+ * 배경색을 유틸 안에서 직접 칠한다. 예전에는 `bg-neutral-strong/70` 을 썼는데
+ * 그 클래스가 만들어지지 않아 덮개가 투명했고, 흰 글씨만 남아 안 보였다.
+ */
+@keyframes closed-stamp {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  72% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes closed-label {
+  0% {
+    opacity: 0;
+    transform: scale(1.7) rotate(-14deg);
+  }
+  20% {
+    opacity: 1;
+    transform: scale(0.92) rotate(-8deg);
+  }
+  32% {
+    transform: scale(1.04) rotate(-8deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(-8deg);
+  }
+}
+
+@utility animate-closed-stamp {
+  background-color: color-mix(in srgb, var(--neutral-strong) 82%, transparent);
+  backdrop-filter: blur(1px);
+  animation: closed-stamp 2200ms var(--ease-in-out-soft) both;
+}
+
+@utility animate-closed-label {
+  animation: closed-label 2200ms var(--ease-out-soft) both;
+}
+
+/* 열을 덮는 층 — 오른쪽에서 살짝 미끄러져 덮는다 */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-panel {
+  animation: panel-in 260ms var(--ease-out-soft) both;
+}
+
+/* 1등 메달 — 순위가 뒤집힌 순간에만 튄다 */
+@keyframes medal-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-18deg);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.28) rotate(8deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@utility animate-medal {
+  animation: medal-pop 640ms var(--ease-out-soft) both;
+}
+
+/* 순위 변동 배지 */
+@keyframes badge-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(6px) scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(0) scale(1.1);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@utility animate-badge-pop {
+  animation: badge-pop 380ms var(--ease-out-soft) both;
+}
+
+@utility animate-event-chip {
+  animation: event-chip-pop 420ms var(--ease-out-soft) 60ms both;
+}
+
+/* 알림 — 오른쪽 위에서 살짝 미끄러져 들어온다 */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate3d(12px, -8px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@utility animate-toast {
+  animation: toast-in 240ms var(--ease-out-soft) both;
+}
+
+/* 오른쪽에서 밀려 나오는 서랍 */
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@utility animate-drawer {
+  animation: drawer-in 240ms var(--ease-out-soft) both;
+}
+
+@utility animate-skeleton {
+  animation: skeleton-pulse 1.6s var(--ease-in-out-soft) infinite both;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 화면 전환                                                                    */
+/*                                                                             */
+/* 라우트 전환은 View Transitions API 로만 처리한다 (main.tsx 의               */
+/* `defaultViewTransition`). 애니메이션 라이브러리를 넣지 않기 위한 선택이다.  */
+/* 아래 규칙은 레이어 밖에 두어 Tailwind 유틸리티보다 뒤에 오게 한다.          */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * 옛 화면은 **끝까지 불투명하게 버티다가** 마지막에만 사라진다.
+ * 둘 다 처음부터 흐려지면 그 사이에 배경이 비쳐 한 번 깜빡인 것처럼 보인다.
+ * 새 화면은 위에 그려지므로, 옛 화면이 버텨 주면 빈 순간이 없다.
+ */
+@keyframes view-exit {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+::view-transition-old(root) {
+  animation: view-exit 260ms var(--ease-in-out-soft) both;
+}
+
+::view-transition-new(root) {
+  animation: view-enter 260ms var(--ease-out-soft) both;
+}
+
+/*
+ * 모달 등장·퇴장.
+ *
+ * `display` 와 `overlay` 를 allow-discrete 로 전환하면 `dialog.close()` 만으로도
+ * 퇴장이 애니메이션된다. JS 타이머를 두지 않아 정리할 것도 없다.
+ * Chrome 117+ / Safari 17.4+. 미지원 브라우저는 지금처럼 즉시 나타났다 사라진다.
+ */
+.modal-pop {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+  transition:
+    opacity 200ms var(--ease-out-soft),
+    transform 200ms var(--ease-out-soft),
+    overlay 200ms var(--ease-out-soft) allow-discrete,
+    display 200ms var(--ease-out-soft) allow-discrete;
+}
+
+.modal-pop[open] {
+  opacity: 1;
+  transform: none;
+}
+
+.modal-pop::backdrop {
+  opacity: 0;
+  transition:
+    opacity 200ms var(--ease-out-soft),
+    overlay 200ms var(--ease-out-soft) allow-discrete,
+    display 200ms var(--ease-out-soft) allow-discrete;
+}
+
+.modal-pop[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  .modal-pop[open] {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+
+  .modal-pop[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+/*
+ * `@layer base` 의 reduced-motion 규칙은 `*` 셀렉터라 view transition
+ * 의사 요소를 잡지 못한다. 여기서 따로 걷어낸다.
+ */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * 스크롤바.
+ *
+ * 기본 스크롤바는 굵고 진해서 카드 안 목록에서 특히 눈에 걸린다.
+ * 얇고 흐리게 두고, 마우스를 올렸을 때만 조금 진해지게 한다.
+ * Firefox 는 `scrollbar-*` 표준 속성을, 크로미움·사파리는
+ * `::-webkit-scrollbar` 를 쓴다.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--neutral-muted) 35%, transparent)
+    transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--neutral-muted) 30%, transparent);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  /* 테두리를 투명하게 두고 배경만 칠하면 실제 두께가 4px 로 보인다. */
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--neutral-muted) 55%, transparent);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
