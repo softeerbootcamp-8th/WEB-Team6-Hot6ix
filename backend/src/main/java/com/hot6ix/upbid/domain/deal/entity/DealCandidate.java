@@ -2,7 +2,6 @@ package com.hot6ix.upbid.domain.deal.entity;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.user.entity.User;
-import com.hot6ix.upbid.global.common.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -25,24 +24,28 @@ import lombok.NoArgsConstructor;
  * <b>현재 낙찰 권한자 = {@code WAITING} 후보 중 {@code candidateRank}가 가장 낮은 1행</b>
  * 으로 정의하므로 별도 플래그나 승격 UPDATE가 없다. {@code COMPLETED} 후보가 있으면 거래가
  * 끝난 것이므로 남은 {@code WAITING}은 무시한다. 순위 중복은 물품 행 비관적 락이 막는다.
+ *
+ * <p>{@code BaseTimeEntity}를 상속하지 않는다. 상태 전이가 한 번뿐이고 그 시각을
+ * {@code completedAt}·{@code failedAt}이 기록하므로 수정 시각에 담을 정보가 없고, 생성 시각도
+ * 마감 시각({@code auction_items.end_at})과 사실상 같다.
  */
 @Getter
 @Entity
 @Table(name = "deal_candidates")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class DealCandidate extends BaseTimeEntity {
+public class DealCandidate {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "deal_candidate_id")
+    @Column(name = "deal_candidate_id", nullable = false)
     private Long dealCandidateId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "auction_item_id")
+    @JoinColumn(name = "auction_item_id", nullable = false)
     private AuctionItem auctionItem;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bidder_user_id")
+    @JoinColumn(name = "bidder_user_id", nullable = false)
     private User bidder;
 
     /**
