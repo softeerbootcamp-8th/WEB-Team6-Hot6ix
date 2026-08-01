@@ -1,6 +1,5 @@
 package com.hot6ix.upbid.domain.auth.sms.store;
 
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -83,19 +82,4 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
         return sendHistory.getOrDefault(phoneNumber, new CopyOnWriteArrayList<>());
     }
 
-    /**
-     * 매일 자정에 24시간이 지난 발송 이력을 정리한다.
-     *
-     * <p>일별 발송 제한(10회)이 24시간 기준이므로, 그보다 오래된 이력은
-     * 횟수 계산에 영향을 주지 않아 제거해도 안전하다.
-     * 이력이 비어진 전화번호는 맵에서도 제거해 메모리 누수를 방지한다.
-     *
-     * <p>인증코드 store는 인증 성공·실패 시 즉시 삭제되므로 별도 정리가 불필요하다.
-     */
-    @Scheduled(cron = "0 0 0 * * *")
-    public void evictSendHistory() {
-        LocalDateTime oneDayAgo = LocalDateTime.now().minusDays(1);
-        sendHistory.forEach((phone, times) -> times.removeIf(t -> t.isBefore(oneDayAgo)));
-        sendHistory.entrySet().removeIf(e -> e.getValue().isEmpty());
-    }
 }
