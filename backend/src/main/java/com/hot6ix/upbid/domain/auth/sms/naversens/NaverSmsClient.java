@@ -86,20 +86,30 @@ public class NaverSmsClient {
                     .body(body)
                     .retrieve()
                     .toBodilessEntity();
-            log.info("SMS 발송 완료 - to={}", to);
+            log.info("SMS 발송 완료 - to={}", mask(to));
         } catch (HttpClientErrorException e) {
             // 4xx — 잘못된 요청이나 인증 실패 (서명 오류, 잘못된 serviceId 등)
-            log.warn("SENS API 클라이언트 오류 - to={}, status={}, body={}", to, e.getStatusCode(), e.getResponseBodyAsString());
+            log.warn("SENS API 클라이언트 오류 - to={}, status={}, body={}", mask(to), e.getStatusCode(), e.getResponseBodyAsString());
             throw new ApplicationException(SmsVerificationErrorType.SMS_SEND_FAILED);
         } catch (HttpServerErrorException e) {
             // 5xx — SENS 서버 측 문제
-            log.error("SENS API 서버 오류 - to={}, status={}", to, e.getStatusCode());
+            log.error("SENS API 서버 오류 - to={}, status={}", mask(to), e.getStatusCode());
             throw new ApplicationException(SmsVerificationErrorType.SMS_SEND_FAILED);
         } catch (ResourceAccessException e) {
             // 타임아웃, 네트워크 단절 등 연결 수준의 문제
-            log.warn("SENS API 연결 오류 - to={}, message={}", to, e.getMessage());
+            log.warn("SENS API 연결 오류 - to={}, message={}", mask(to), e.getMessage());
             throw new ApplicationException(SmsVerificationErrorType.SMS_SEND_FAILED);
         }
+    }
+
+    /** 전화번호 앞 3자리와 뒤 4자리만 남기고 나머지를 마스킹한다. 예: 010****5678 */
+    private static String mask(String phoneNumber) {
+        if (phoneNumber == null || phoneNumber.length() < 7) {
+            return "***";
+        }
+        return phoneNumber.substring(0, 3)
+                + "*".repeat(phoneNumber.length() - 7)
+                + phoneNumber.substring(phoneNumber.length() - 4);
     }
 
     /**
