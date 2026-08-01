@@ -1,7 +1,13 @@
 # upbid frontend — 프로젝트 룰셋
 
-Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다. 상세 규칙은
-[`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md) 참고.
+Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다.
+
+> **처음 보는 사람은 [`docs/SCREENS.md`](./docs/SCREENS.md) 를 먼저 읽으세요.**
+> 화면별 접근 경로(`/rooms/3` 은 종료된 방, `/trades/5` 는 유찰 …),
+> 로그인 상태 바꾸는 법, 로직을 어디에 끼우면 되는지가 정리돼 있습니다.
+
+- 화면 지도·라우트·목업: [`docs/SCREENS.md`](./docs/SCREENS.md)
+- 코드 상세 규칙: [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md)
 
 ## 스택
 
@@ -29,14 +35,30 @@ Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다. �
 src/
 ├── api/generated/     # Orval 생성물 — 수정 금지 (재생성됨)
 ├── api/mutator/       # 공용 axios 인스턴스
-├── components/ui/     # shadcn/ui 컴포넌트
-├── lib/               # cn(), queryClient 등 공용 유틸
+├── components/layout/ # AppShell · GuestShell · 헤더 · 모바일 앱바
+├── components/ui/     # shadcn/ui + Button · Field · Modal · Toaster
+├── features/          # 도메인별 화면 조각 (auth · live · rooms · seller · legal)
+├── hooks/             # use-countdown 등
+├── lib/               # session · toast · route-guards · format · cn()
+├── mocks/             # 목업 데이터·타입 (API 붙으면 제거)
 ├── routes/            # 파일 = 라우트 (TanStack Router)
 └── styles/globals.css # Tailwind import + 디자인 토큰
 ```
 
 - `routeTree.gen.ts` 는 **자동 생성물** (gitignore). 직접 수정하지 않는다.
 - import 는 항상 `@/` 별칭 사용 (`@/lib/utils` 등).
+
+## 새 화면·기능을 만들기 전에
+
+**만들기 전에 [`docs/SCREENS.md`](./docs/SCREENS.md) 의 "공용 부품"을 먼저 본다.**
+같은 걸 다시 만들면 색·간격이 조금씩 어긋나서 화면마다 달라 보인다.
+
+- 버튼은 `Button` 변형(`brand` / `brandOutline` / `danger` / `dangerOutline`)
+- 폼 입력은 `TextField` / `TextAreaField` / `SelectField` (에러·`aria-*` 자동 연결)
+- 확인 다이얼로그는 `ConfirmDialog`, 알림은 `toast.success(...)`
+- 색은 **토큰만** 쓴다. `bg-[#3182f6]` 처럼 헥스를 직접 쓰지 않는다
+- 글자는 **크기와 굵기를 항상 같이** 적는다 (`text-[14px] font-bold`)
+- 404·오류·로딩은 `main.tsx` 에 전역 등록돼 있다. 라우트마다 만들지 않는다
 
 ## API 흐름
 

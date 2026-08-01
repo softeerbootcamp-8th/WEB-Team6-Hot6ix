@@ -50,6 +50,8 @@ Hot6ix는 링크·QR로 참여하는 SNS 연계 실시간 경매 서비스다.
 
 `.claude/skills/hot6ix-development/`에서 작업에 필요한 문서만 읽는다.
 
+- **프론트 화면 지도·라우트 경로: `frontend/docs/SCREENS.md`**
+  (어느 URL 이 어느 화면인지, 로그인 상태 바꾸는 법, 로직 붙이는 자리)
 - 서비스 범위: `.claude/skills/hot6ix-development/references/domain.md`
 - API·인증·실시간 계약: `.claude/skills/hot6ix-development/references/contracts.md`
 - Spring 백엔드: `.claude/skills/hot6ix-development/references/backend.md`
