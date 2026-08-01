@@ -12,6 +12,10 @@ import { applyDevNetworkFlags } from '@/lib/dev-network'
  */
 export const axiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
+  // 인증이 세션 쿠키(SESSION, httpOnly) 방식이라 켠다. dev 는 vite 프록시로
+  // 동일 출처가 되어 없어도 되지만, baseURL 이 다른 호스트를 가리키는 순간
+  // 이게 없으면 쿠키가 안 실려 로그인한 사용자도 401 을 받는다.
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
