@@ -93,4 +93,14 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
+
+    /**
+     * 물품을 올린 판매자의 회원 ID를 조회한다. 판매자 본인 입찰을 거르는 데 쓴다.
+     * @return 판매자의 회원 ID. 물품이 없거나 경매방에 판매자가 없으면 빈 값
+     */
+    @Query("select sp.user.userId from AuctionItem ai "
+            + "join ai.auctionRoom ar "
+            + "join ar.sellerProfile sp "
+            + "where ai.auctionItemId = :auctionItemId")
+    Optional<Long> findSellerUserId(@Param("auctionItemId") Long auctionItemId);
 }
