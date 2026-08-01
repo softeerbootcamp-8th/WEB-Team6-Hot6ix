@@ -2,12 +2,34 @@
 
 Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다.
 
-> **처음 보는 사람은 [`docs/SCREENS.md`](./docs/SCREENS.md) 를 먼저 읽으세요.**
-> 화면별 접근 경로(`/rooms/3` 은 종료된 방, `/trades/5` 는 유찰 …),
-> 로그인 상태 바꾸는 법, 로직을 어디에 끼우면 되는지가 정리돼 있습니다.
+## 작업 전에 읽을 문서 (중요)
 
-- 화면 지도·라우트·목업: [`docs/SCREENS.md`](./docs/SCREENS.md)
-- 코드 상세 규칙: [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md)
+화면은 Figma 기준으로 한 번에 맞춰 둔 상태입니다. 규칙을 모르고 고치면
+이미 해결한 문제가 그대로 되살아납니다. **작업 종류에 맞는 문서를 먼저 읽으세요.**
+
+| 하려는 일                        | 먼저 읽을 문서                                       |
+| -------------------------------- | ---------------------------------------------------- |
+| 어느 화면인지 찾기, 라우트 확인  | [`docs/SCREENS.md`](./docs/SCREENS.md)               |
+| 화면을 새로 만들거나 고치기      | [`docs/UI-RULES.md`](./docs/UI-RULES.md)             |
+| 목업을 실제 API 로 바꾸기        | [`docs/API-INTEGRATION.md`](./docs/API-INTEGRATION.md) |
+| 폴더·네이밍·라우팅 기본 규칙     | [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md)       |
+
+### 반드시 지킬 것 (요약)
+
+1. **공용 부품을 먼저 찾는다.** Button·Field·Dropdown·Modal·ConfirmDialog·
+   toast·Pager·ProductThumbnail·EmptyState 가 이미 있다. 직접 조립하지 않는다.
+2. **색은 토큰만, 글자는 크기와 굵기를 같이.** 파란 버튼 글자는 항상 흰색.
+3. **모바일은 CSS 로 숨기지 않는다.** `md:hidden` 은 언마운트가 아니다.
+   `useIsDesktop()`(1024px)으로 트리를 하나만 그린다. 어기면 `<dialog>` 가
+   문서를 `inert` 로 만들어 **다른 화면의 버튼이 전부 죽는다.**
+4. **라이브 경매방은 페이지가 스크롤되지 않는다.** 열 안에서만 스크롤한다.
+5. **물품 상세는 라우트 이동이 아니라 층(overlay)이다.** 옮기면 실시간
+   연결·타이머·쌓인 이벤트가 끊긴다.
+6. **서버가 확정하기 전에 성공으로 표시하지 않는다.** 입찰·낙찰·마감 공통.
+7. 끝내기 전에 `pnpm build` + `pnpm lint`.
+
+자세한 이유와 이미 밟은 지뢰 목록은 [`docs/UI-RULES.md`](./docs/UI-RULES.md)
+4장에 있습니다.
 
 ## 스택
 
@@ -28,6 +50,25 @@ Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다.
 | `pnpm lint`         | ESLint                                           |
 | `pnpm format`       | Prettier 자동 정렬                               |
 | `pnpm api:gen`      | Orval 로 API 훅/타입 생성 (백엔드 기동 필요)     |
+
+## 공용 부품 (직접 만들기 전에 확인)
+
+| 위치                                    | 무엇                                                  |
+| --------------------------------------- | ----------------------------------------------------- |
+| `components/ui/`                        | Button · Field · Dropdown · Modal · ConfirmDialog · Toaster |
+| `components/`                           | Pager · EmptyState · ProductThumbnail · ProfilePhoto · Reveal · StatusBadge |
+| `components/layout/`                    | AppShell · GuestShell · AppHeader · MobileAppBar · MobileNavDrawer |
+| `features/live/components/`             | LiveShell · LiveItemList · ItemDetailPanel · QuickBidOverlay · LeaderboardRows · EventFeed |
+| `hooks/` · `features/live/`             | useIsDesktop · useCountdown · useListFlip · useEventEntrance |
+| `lib/`                                  | toast · session · route-guards · format(금액·날짜·전화번호) · dev-flags |
+
+## 개발용 도구
+
+- 화면 우하단 **DEV 패널** — 세션(게스트/회원/판매자) 전환, API 응답 지연,
+  요청 강제 실패. API 연동 중 로딩·에러 화면을 백엔드 없이 확인할 때 쓴다.
+- `⌘/Ctrl + Shift + D` — 개발용 UI(패널·라우터 devtools·경매방 DEV 버튼) 숨기기.
+  `.env.local` 에 `VITE_DEV_TOOLS=off` 를 두면 처음부터 꺼진 채 시작한다.
+- 프로덕션 빌드에는 이 코드들이 **포함되지 않는다.**
 
 ## 폴더 규칙 (요약)
 
@@ -66,7 +107,12 @@ src/
 2. `pnpm api:gen` → `http://localhost:8080/v3/api-docs` 를 읽어 `src/api/generated`
    에 TanStack Query 훅과 타입 생성.
 3. 컴포넌트에서 생성된 훅을 그대로 사용 (직접 axios 호출 금지).
-4. 모든 요청은 `src/api/mutator/custom-instance.ts` 를 통과한다 (baseURL·인증).
+4. 모든 요청은 `src/api/mutator/custom-instance.ts` 를 통과한다
+   (baseURL·인증·개발용 지연/실패 주입).
+
+**화면은 아직 목업(`src/mocks/`)으로 돌아갑니다.** 목업을 API 로 바꾸는 순서,
+화면↔목업 대응표, 로딩·에러·빈 상태 처리 규칙은
+[`docs/API-INTEGRATION.md`](./docs/API-INTEGRATION.md) 를 따르세요.
 
 ## 커밋 / PR
 

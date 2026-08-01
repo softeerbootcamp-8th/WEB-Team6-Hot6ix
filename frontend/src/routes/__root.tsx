@@ -2,7 +2,7 @@ import { createRootRouteWithContext, Outlet } from '@tanstack/react-router'
 import type { QueryClient } from '@tanstack/react-query'
 import { lazy, Suspense, useEffect } from 'react'
 
-import { DevSessionSwitcher } from '@/components/dev/session-switcher'
+import { DevPanel } from '@/components/dev/dev-panel'
 import { OfflineBanner } from '@/components/offline-banner'
 import { Toaster } from '@/components/ui/toaster'
 import { devToolsStore, useDevTools } from '@/lib/dev-tools'
@@ -59,7 +59,7 @@ function RootLayout() {
 
       {import.meta.env.DEV && showDevTools && (
         <>
-          <DevSessionSwitcher />
+          <DevPanel />
           <Suspense>
             <TanStackRouterDevtools />
           </Suspense>
