@@ -6,7 +6,7 @@
 
 링크·QR 하나로 참여하는 SNS 연계 실시간 경매 서비스
 
-![UpBid](https://github.com/user-attachments/assets/942847be-6d04-4c6e-9893-d91609eaf235)
+![UpBid](https://github.com/user-attachments/assets/72703977-da20-47fd-8985-2674e5a8bcec)
 
 </div>
 
@@ -148,4 +148,4 @@ main
 | GitHub Wiki | https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki |
 | API 명세 (Swagger UI) | https://api.upbid.store/swagger-ui/index.html |
 | ERD | https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY |
-| 디자인 (Figma) | https://www.figma.com/design/DVDS1Ie2YqLU25HW7HPXZB/Hot6ix |
+| 디자인 (Figma) | https://www.figma.com/design/DVDS1Ie2YqLU25HW7HPXZB/Hot6ix?node-id=26-46&t=8AKsdweyGXJdhfSk-1 |

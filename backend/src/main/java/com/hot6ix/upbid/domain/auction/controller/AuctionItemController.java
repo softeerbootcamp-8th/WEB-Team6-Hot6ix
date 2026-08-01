@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.auction.api.AuctionItemApi;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemService;
+import com.hot6ix.upbid.global.interceptor.GuestAllowed;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ public class AuctionItemController implements AuctionItemApi {
     private final AuctionItemService auctionItemService;
 
     @GetMapping("/auction-rooms/{auctionRoomId}/auction-items")
+    @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<List<AuctionItemSummaryResponseDto>>> getSummaries(
             Long auctionRoomId) {
@@ -30,6 +32,7 @@ public class AuctionItemController implements AuctionItemApi {
     }
 
     @GetMapping("/auction-items/{auctionItemId}")
+    @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<AuctionItemDetailResponseDto>> getDetail(
             Long auctionItemId) {

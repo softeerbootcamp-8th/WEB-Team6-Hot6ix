@@ -5,6 +5,7 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
+import com.hot6ix.upbid.global.interceptor.GuestAllowed;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -34,6 +35,7 @@ public class AuctionRoomController implements AuctionRoomApi {
     }
 
     @GetMapping("/{roomId}")
+    @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(@PathVariable Long roomId) {
 

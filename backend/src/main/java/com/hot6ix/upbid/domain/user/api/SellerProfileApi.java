@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.user.api;
 import com.hot6ix.upbid.domain.user.dto.request.SellerProfileCreateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.request.SellerProfileUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.response.SellerProfileResponseDto;
+import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -12,7 +13,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 
 @Tag(name = "판매자 프로필", description = "판매자 프로필 등록·조회·수정·삭제(soft delete) API")
 public interface SellerProfileApi {
@@ -20,17 +20,17 @@ public interface SellerProfileApi {
     @Operation(
             summary = "판매자 프로필 등록",
             description = "회원의 판매자 프로필을 등록한다. 회원당 하나만 허용하며, 이미 등록된 프로필이 있으면 거절한다. "
-                    + "인증 인프라가 아직 없어 X-User-Id 헤더로 회원을 임시 식별하며, 세션 인증이 도입되면 교체돼야 한다."
+                    + "로그인 세션의 회원으로 등록한다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "등록 성공"),
             @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "존재하지 않는 회원 (code 2003)"),
             @ApiResponse(responseCode = "409", description = "이미 등록된 판매자 프로필이 있음 (code 3001)")
     })
     ResponseEntity<CommonResponse<SellerProfileResponseDto>> create(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Valid @RequestBody SellerProfileCreateRequestDto request);
 
     @Operation(
@@ -39,11 +39,11 @@ public interface SellerProfileApi {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필을 찾을 수 없음 (code 3002)")
     })
     ResponseEntity<CommonResponse<SellerProfileResponseDto>> getMyProfile(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId);
+            @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
             summary = "판매자 프로필 수정",
@@ -53,11 +53,11 @@ public interface SellerProfileApi {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
             @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필을 찾을 수 없음 (code 3002)")
     })
     ResponseEntity<CommonResponse<SellerProfileResponseDto>> update(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Valid @RequestBody SellerProfileUpdateRequestDto request);
 
     @Operation(
@@ -66,9 +66,9 @@ public interface SellerProfileApi {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "삭제 성공"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필을 찾을 수 없음 (code 3002)")
     })
     ResponseEntity<CommonResponse<Void>> delete(
-            @Parameter(description = "요청 회원 ID (임시 인증 헤더)", required = true)
-            @RequestHeader("X-User-Id") Long userId);
+            @Parameter(hidden = true) @LoginUserId Long userId);
 }
