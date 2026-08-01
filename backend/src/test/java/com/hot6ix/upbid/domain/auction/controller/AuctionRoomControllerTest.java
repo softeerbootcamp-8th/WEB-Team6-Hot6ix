@@ -12,9 +12,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
+import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
@@ -32,6 +34,9 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
 
     @MockitoBean
     private AuctionRoomService auctionRoomService;
+
+    @MockitoBean
+    private AuctionRoomShareService auctionRoomShareService;
 
     private AuctionRoomCreateRequestDto newCreateRequest() {
         return AuctionRoomCreateRequestDto.builder()
@@ -212,6 +217,69 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/auction-rooms/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    @Test
+    @DisplayName("소유자가 공유 링크를 조회하면 200과 shareUrl을 반환한다")
+    void getShareInfo() throws Exception {
+
+        when(auctionRoomShareService.getShareInfo(1L, 1L))
+                .thenReturn(new AuctionRoomShareResponseDto("https://upbid.com/join/aBcD1234aBcD1234"));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/1/share"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.shareUrl").value("https://upbid.com/join/aBcD1234aBcD1234"));
+    }
+
+    @Test
+    @DisplayName("경매방이 없거나 본인 소유가 아니면 공유 링크 조회 시 404를 반환한다")
+    void getShareInfo_roomNotFound() throws Exception {
+
+        when(auctionRoomShareService.getShareInfo(1L, 999L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/999/share"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    @Test
+    @DisplayName("공유 코드로 경매방을 조회하면 200과 공개 정보를 반환한다")
+    void getRoomByShareCode() throws Exception {
+
+        when(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234")).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/share/aBcD1234aBcD1234"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("승민의 경매방"));
+    }
+
+    @Test
+    @DisplayName("비로그인 사용자도 공유 코드로 경매방을 조회할 수 있다")
+    void getRoomByShareCode_allowsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+        when(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234")).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/share/aBcD1234aBcD1234"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 공유 코드로 조회하면 404를 반환한다")
+    void getRoomByShareCode_notFound() throws Exception {
+
+        when(auctionRoomService.getRoomByShareCode("unknownShareCode"))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/share/unknownShareCode"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(4002));
