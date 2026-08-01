@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auth.sms.store;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -19,6 +20,14 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *   <li>{@code store} — ConcurrentHashMap으로 원자적 읽기·쓰기 보장</li>
  *   <li>{@code sendHistory} — ConcurrentHashMap + CopyOnWriteArrayList 조합으로
  *       다중 스레드에서 발송 이력 추가 시 안전하게 동작</li>
+ * </ul>
+ *
+ * <p>메모리 관리:
+ * <ul>
+ *   <li>{@code store} — 인증 성공·실패 시 즉시 삭제되지만, 발송 후 verify를 호출하지 않으면
+ *       만료 엔트리가 남는다. 1분마다 도는 스케줄러가 만료된 엔트리를 정리한다.</li>
+ *   <li>{@code sendHistory} — {@link #recordSend} 호출 시 24시간이 지난 이력을 함께 정리한다.
+ *       일별 발송 제한(10회)이 24시간 기준이므로 그보다 오래된 이력은 불필요하다.</li>
  * </ul>
  */
 @Component
@@ -55,11 +64,17 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
         store.computeIfPresent(phoneNumber, (k, entry) -> entry.incrementFailCount());
     }
 
+    /**
+     * 현재 시각을 발송 이력에 기록하고, 24시간이 지난 오래된 이력을 함께 정리한다.
+     * 일별 발송 제한(10회)이 24시간 기준이므로 그보다 오래된 이력은 불필요하다.
+     */
     @Override
     public void recordSend(String phoneNumber) {
-        // computeIfAbsent로 리스트 생성과 추가를 원자적으로 처리
-        sendHistory.computeIfAbsent(phoneNumber, k -> new CopyOnWriteArrayList<>())
-                .add(LocalDateTime.now());
+        LocalDateTime oneDayAgo = LocalDateTime.now().minusDays(1);
+        CopyOnWriteArrayList<LocalDateTime> times =
+                sendHistory.computeIfAbsent(phoneNumber, k -> new CopyOnWriteArrayList<>());
+        times.removeIf(t -> t.isBefore(oneDayAgo));
+        times.add(LocalDateTime.now());
     }
 
     @Override
@@ -82,4 +97,16 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
         return sendHistory.getOrDefault(phoneNumber, new CopyOnWriteArrayList<>());
     }
 
+    /**
+     * 매일 자정에 만료된 인증번호 엔트리를 정리한다.
+     *
+     * <p>인증 성공·실패 시 즉시 삭제되지만, 발송 후 verify를 호출하지 않으면
+     * 만료 엔트리가 store에 남는다. 인증번호 유효시간(4분)이 매우 짧아
+     * 하루에 한 번 정리해도 실질적인 메모리 부담은 없다.
+     */
+    @Scheduled(cron = "0 0 0 * * *")
+    public void evictExpiredEntries() {
+        LocalDateTime now = LocalDateTime.now();
+        store.entrySet().removeIf(e -> e.getValue().expiresAt().isBefore(now));
+    }
 }
