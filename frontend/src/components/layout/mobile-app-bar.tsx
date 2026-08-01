@@ -2,6 +2,8 @@ import { ChevronLeft } from 'lucide-react'
 import { Link, useRouter } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
+import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
+
 /**
  * 모바일 상단 앱바.
  *
@@ -16,12 +18,15 @@ export function MobileAppBar({
   showLogo = false,
   state,
   trailing,
+  /** 로그인 화면처럼 이동할 곳이 없을 때만 끈다. */
+  showNav = true,
 }: {
   title?: string
   showBack?: boolean
   showLogo?: boolean
   state?: string
   trailing?: ReactNode
+  showNav?: boolean
 }) {
   const router = useRouter()
 
@@ -58,6 +63,7 @@ export function MobileAppBar({
             </span>
           )}
           {trailing}
+          {showNav && <MobileNavDrawer />}
         </div>
       </div>
     </header>

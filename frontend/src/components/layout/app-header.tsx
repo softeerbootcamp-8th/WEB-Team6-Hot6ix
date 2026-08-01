@@ -20,18 +20,22 @@ export function AppHeader() {
           UpBid
         </Link>
 
+        {/*
+         * 글자 규격을 화면 전체와 맞춘다. 예전에는 굵기 400에 회색 헥스를
+         * 직접 박아 다른 메뉴·버튼과 다른 서체처럼 보였다.
+         */}
         <nav
           aria-label="주요 메뉴"
-          className="absolute left-1/2 flex h-9 -translate-x-1/2 items-center rounded-[18px] bg-[#f2f2f5]"
+          className="bg-fill absolute left-1/2 flex h-10 -translate-x-1/2 items-center rounded-[20px] p-1 font-sans"
         >
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.to}
               to={item.to}
               className={cn(
-                'flex h-9 w-[115px] items-center justify-center rounded-[18px] text-[14px] transition-colors',
-                'font-normal text-[#595959] hover:text-foreground',
-                '[&.active]:font-semibold [&.active]:text-brand-500',
+                'ease-soft flex h-8 w-[112px] items-center justify-center rounded-[16px] text-[14px] font-semibold transition-all duration-150',
+                'text-neutral-tertiary hover:text-neutral-secondary',
+                '[&.active]:bg-card [&.active]:font-bold [&.active]:text-brand-500 [&.active]:shadow-sm',
               )}
             >
               {item.label}
@@ -62,7 +66,8 @@ export function AppHeader() {
 export function GuestHeader({ state = '비로그인' }: { state?: string }) {
   return (
     <header className="h-16 shrink-0 border-b bg-card">
-      <div className="mx-auto flex h-full max-w-[1280px] items-center px-7">
+      {/* 좌우 여백은 아래 카드(랜딩 컨테이너)와 같은 값을 쓴다. */}
+      <div className="mx-auto flex h-full max-w-[1216px] items-center px-5 md:px-8">
         <Link to="/" className="text-logo font-extrabold text-brand-500">
           UpBid
         </Link>

@@ -49,6 +49,7 @@ export function AppShell({
   return (
     <div className="min-h-svh bg-background">
       <div className="md:hidden">
+        {/* 로고는 앱바가 아니라 햄버거 서랍 안에 둔다. */}
         <MobileAppBar
           title={title}
           showBack={back}
