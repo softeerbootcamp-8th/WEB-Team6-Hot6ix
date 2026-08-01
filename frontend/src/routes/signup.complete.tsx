@@ -25,7 +25,8 @@ function SignupCompletePage() {
     <GuestShell
       state="가입 완료"
       title="회원가입 완료"
-      className="max-w-[608px] px-5 py-6 md:py-10"
+      // 내용이 짧아서 위쪽에만 붙어 있었다. 남는 높이를 써서 가운데로 모은다.
+      className="flex min-h-[calc(100svh-8rem)] max-w-[608px] flex-col justify-center px-5 py-6 md:min-h-[calc(100svh-10rem)] md:py-10"
     >
       <section className="rounded-4xl border bg-card p-6 text-center md:p-10">
         <span
@@ -61,7 +62,12 @@ function SignupCompletePage() {
           </div>
         </dl>
 
-        <Button size="cta" className="mt-8" onClick={handleStart}>
+        <Button
+          size="cta"
+          variant="brand"
+          className="mt-8"
+          onClick={handleStart}
+        >
           내 경매방으로 이동
         </Button>
       </section>

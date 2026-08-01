@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
-import { ImageIcon } from 'lucide-react'
 
+import { ProductThumbnail } from '@/components/product-thumbnail'
+import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import type { AuctionRoomSummary } from '@/mocks/types'
 
@@ -16,13 +17,11 @@ export function RoomCard({ room }: { room: AuctionRoomSummary }) {
   return (
     <li className="rounded-2xl border bg-card p-4">
       <div className="flex gap-4">
-        <span
-          aria-hidden
-          className="flex size-[124px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-border-strong text-white sm:size-[136px]"
-        >
-          <ImageIcon className="size-6" />
-          <span className="text-[11px] font-medium">상품 이미지</span>
-        </span>
+        <ProductThumbnail
+          name={room.title}
+          size={320}
+          className="flex size-[124px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-fill text-neutral-muted sm:size-[136px]"
+        />
 
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex items-center gap-2">
@@ -40,14 +39,16 @@ export function RoomCard({ room }: { room: AuctionRoomSummary }) {
               </span>
             )}
 
+            {/* 역할도 배지로. 다른 화면(거래 내역·거래 상세)과 모양을 맞춘다. */}
             <span
-              className={
+              className={cn(
+                'ml-auto flex h-[22px] shrink-0 items-center rounded-md px-2 text-[11px] font-bold',
                 room.role === 'SELLER'
-                  ? 'ml-auto text-[12px] font-bold text-brand-500'
-                  : 'ml-auto text-[12px] font-bold text-neutral-tertiary'
-              }
+                  ? 'bg-result-won-surface text-result-won'
+                  : 'bg-brand-50 text-brand-500',
+              )}
             >
-              {room.role === 'SELLER' ? '판매자 운영' : '구매자 참여'}
+              {room.role === 'SELLER' ? '판매자' : '구매자'}
             </span>
           </div>
 
