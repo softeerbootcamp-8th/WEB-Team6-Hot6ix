@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * {@link VerificationCodeStore}의 인메모리 구현체.
@@ -20,14 +21,16 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *   <li>{@code store} — ConcurrentHashMap으로 원자적 읽기·쓰기 보장</li>
  *   <li>{@code sendHistory} — ConcurrentHashMap + CopyOnWriteArrayList 조합으로
  *       다중 스레드에서 발송 이력 추가 시 안전하게 동작</li>
+ *   <li>{@code dailyTotalCount} — AtomicLong으로 원자적 증가 보장</li>
  * </ul>
  *
  * <p>메모리 관리:
  * <ul>
  *   <li>{@code store} — 인증 성공·실패 시 즉시 삭제되지만, 발송 후 verify를 호출하지 않으면
- *       만료 엔트리가 남는다. 1분마다 도는 스케줄러가 만료된 엔트리를 정리한다.</li>
+ *       만료 엔트리가 남는다. 매일 자정 스케줄러가 만료된 엔트리를 정리한다.</li>
  *   <li>{@code sendHistory} — {@link #recordSend} 호출 시 24시간이 지난 이력을 함께 정리한다.
  *       일별 발송 제한(10회)이 24시간 기준이므로 그보다 오래된 이력은 불필요하다.</li>
+ *   <li>{@code dailyTotalCount} — 매일 자정 스케줄러가 0으로 리셋한다.</li>
  * </ul>
  */
 @Component
@@ -38,6 +41,9 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
 
     // 전화번호 → 발송 시각 목록 (1시간·하루 발송 횟수 제한 계산용)
     private final Map<String, CopyOnWriteArrayList<LocalDateTime>> sendHistory = new ConcurrentHashMap<>();
+
+    // 당일 전체 발송 건수 (과금 방어용 총량 제한 계산용)
+    private final AtomicLong dailyTotalCount = new AtomicLong(0);
 
     @Override
     public void save(String phoneNumber, VerificationEntry entry) {
@@ -75,6 +81,7 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
                 sendHistory.computeIfAbsent(phoneNumber, k -> new CopyOnWriteArrayList<>());
         times.removeIf(t -> t.isBefore(oneDayAgo));
         times.add(LocalDateTime.now());
+        dailyTotalCount.incrementAndGet();
     }
 
     @Override
@@ -93,6 +100,11 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
                 .count();
     }
 
+    @Override
+    public long countTotalSendsToday() {
+        return dailyTotalCount.get();
+    }
+
     private CopyOnWriteArrayList<LocalDateTime> getHistory(String phoneNumber) {
         return sendHistory.getOrDefault(phoneNumber, new CopyOnWriteArrayList<>());
     }
@@ -108,5 +120,6 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
     public void evictExpiredEntries() {
         LocalDateTime now = LocalDateTime.now();
         store.entrySet().removeIf(e -> e.getValue().expiresAt().isBefore(now));
+        dailyTotalCount.set(0);
     }
 }

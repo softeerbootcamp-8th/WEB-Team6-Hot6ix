@@ -33,6 +33,9 @@ public class SmsVerificationService {
     /** 하루 최대 발송 횟수. */
     private static final long MAX_SENDS_PER_DAY = 10;
 
+    /** 서비스 전체 일일 최대 발송 건수. 과금 방어를 위한 총량 제한. */
+    private static final long MAX_TOTAL_SENDS_PER_DAY = 500;
+
     /**
      * 암호학적으로 안전한 난수 생성기.
      * Java 기본 Random은 seed 기반이라 예측 가능성이 있어 보안 목적에 부적합하다.
@@ -131,6 +134,10 @@ public class SmsVerificationService {
 
         if (codeStore.countSendsWithinDay(phoneNumber) >= MAX_SENDS_PER_DAY) {
             throw new ApplicationException(SmsVerificationErrorType.SEND_DAILY_LIMIT_EXCEEDED);
+        }
+
+        if (codeStore.countTotalSendsToday() >= MAX_TOTAL_SENDS_PER_DAY) {
+            throw new ApplicationException(SmsVerificationErrorType.DAILY_TOTAL_LIMIT_EXCEEDED);
         }
     }
 

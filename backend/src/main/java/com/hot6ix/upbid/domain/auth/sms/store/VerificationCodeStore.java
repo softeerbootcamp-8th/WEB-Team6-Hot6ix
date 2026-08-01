@@ -12,6 +12,7 @@ import java.util.Optional;
  * <ul>
  *   <li>{@code store} — 전화번호별 현재 유효한 인증번호 엔트리</li>
  *   <li>{@code sendHistory} — 전화번호별 발송 이력 (횟수 제한 계산용)</li>
+ *   <li>{@code dailyTotalCount} — 당일 전체 발송 건수 (과금 방어용 총량 제한)</li>
  * </ul>
  */
 public interface VerificationCodeStore {
@@ -36,4 +37,7 @@ public interface VerificationCodeStore {
 
     /** 최근 24시간 내 해당 전화번호로 발송된 횟수를 반환한다. */
     long countSendsWithinDay(String phoneNumber);
+
+    /** 당일 서비스 전체 발송 건수를 반환한다. */
+    long countTotalSendsToday();
 }

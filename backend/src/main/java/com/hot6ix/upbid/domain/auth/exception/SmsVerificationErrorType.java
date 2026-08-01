@@ -19,7 +19,8 @@ public enum SmsVerificationErrorType implements ErrorType {
     CODE_MAX_FAIL_EXCEEDED(HttpStatus.BAD_REQUEST, 8005, "인증번호 입력 횟수를 초과했습니다. 다시 발급해주세요."),
     SEND_COOLDOWN(HttpStatus.TOO_MANY_REQUESTS, 8006, "인증번호 재발송은 1분 후에 가능합니다."),
     SEND_HOURLY_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, 8007, "1시간 내 인증번호 발송 횟수를 초과했습니다."),
-    SEND_DAILY_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, 8008, "오늘 인증번호 발송 횟수를 초과했습니다.");
+    SEND_DAILY_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, 8008, "오늘 인증번호 발송 횟수를 초과했습니다."),
+    DAILY_TOTAL_LIMIT_EXCEEDED(HttpStatus.TOO_MANY_REQUESTS, 8009, "서비스 일일 발송 한도를 초과했습니다. 내일 다시 시도해주세요.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;
