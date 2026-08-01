@@ -4,24 +4,19 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
-import com.hot6ix.upbid.domain.bid.dto.BidderRankProjection;
-import com.hot6ix.upbid.domain.bid.repository.BidRepository;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
 import com.hot6ix.upbid.domain.deal.exception.DealErrorType;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
-import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.WinnerDecided;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,49 +25,49 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class DealCandidateService {
 
-    /** 상한이 아니라 한 번에 만들 후보 수다. 다 실패하면 다음 묶음을 보충한다. */
-    private static final int CANDIDATE_BATCH_SIZE = 5;
-
     private final AuctionItemRepository auctionItemRepository;
     private final DealCandidateRepository dealCandidateRepository;
-    private final BidRepository bidRepository;
-    private final UserRepository userRepository;
     private final DomainEventPublisher domainEventPublisher;
 
     /**
-     * 상위 입찰자를 순위대로 후보로 남기고 1순위에게 낙찰 권한을 준다. 같은 이벤트를 두 번
-     * 받아도 후보는 한 번만 생긴다. 낙찰자는 {@code ItemEnded}가 아니라 {@code bids}에서
-     * 다시 뽑는다 — DB가 원본이고 2순위 이하는 어차피 재조회가 필요하다.
+     * 물품의 입찰 이력을 후보로 옮기고 1순위에게 낙찰 권한을 준다. 같은 이벤트를 두 번 받아도
+     * 후보는 한 번만 생긴다. 낙찰자는 {@code ItemEnded}가 아니라 {@code bids}에서 다시 뽑는다 —
+     * DB가 원본이다.
      * {@code REQUIRES_NEW}인 이유는 {@code AFTER_COMMIT} 리스너에서 호출되기 때문이다.
      * 기본 전파로는 완료 처리 중인 마감 트랜잭션에 참여해 커밋되지 않을 수 있다.
+     *
+     * <p><b>{@code READ_COMMITTED}인 이유는 {@code INSERT ... SELECT} 때문이다.</b>
+     * REPEATABLE READ에서는 InnoDB가 읽는 쪽 테이블에 공유 넥스트키 락을 걸어,
+     * {@code bids}와 {@code users}의 행이 <b>입찰자 수에 비례해</b> 커밋까지 잠긴다. 그러면
+     * 그 경매와 무관한 회원의 프로필 수정까지 대기한다. READ COMMITTED에서는 SELECT 부분이
+     * 일관된 읽기로 처리돼 원천 테이블에 락을 걸지 않는다.
+     *
+     * <p>대신 statement 실행 중 커밋된 입찰은 후보에 들어오지 않는다. 이 메서드는 마감이
+     * 커밋된 뒤에 돌아 물품이 이미 낙찰 상태이므로 새 입찰이 들어올 수 없다.
+     * 멱등성은 격리 수준과 무관하다 — 물품 행의 배타 락이 존재 검사와 삽입을 직렬화한다.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.REQUIRES_NEW, isolation = Isolation.READ_COMMITTED)
     public void award(ItemEnded event) {
 
-        AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(event.itemId())
+        auctionItemRepository.findByIdForUpdate(event.itemId())
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
-        if (dealCandidateRepository.existsByAuctionItem_AuctionItemId(event.itemId())) {
+        if (dealCandidateRepository.existsCandidate(event.itemId())) {
             return;
         }
 
-        List<BidderRankProjection> topBidders =
-                bidRepository.findTopBidders(event.itemId(), CANDIDATE_BATCH_SIZE);
-
-        // 입찰이 없으면 유찰이다. ItemPassed는 마감 쪽이 발행하므로 여기서는 아무것도 남기지 않는다.
-        if (topBidders.isEmpty()) {
+        // 삽입 행이 0이면 입찰이 없었다는 뜻이다. 유찰 이벤트는 마감 쪽이 발행한다.
+        if (dealCandidateRepository.insertCandidatesFromBids(event.itemId()) == 0) {
             return;
         }
 
-        List<DealCandidate> saved =
-                dealCandidateRepository.saveAll(toCandidates(auctionItem, topBidders, 1));
-
-        publishDealRight(event.roomId(), event.itemId(), saved.getFirst());
+        dealCandidateRepository.findCurrentWinner(event.itemId())
+                .ifPresent(winner -> publishDealRight(event.roomId(), event.itemId(), winner));
     }
 
     /**
-     * 거래 실패를 기록하고 낙찰 권한을 다음 후보에게 넘긴다. 남은 후보가 없으면 보충해서라도
-     * 넘기며 입찰자가 소진될 때까지 이어진다. 그때까지도 물품은 {@code SOLD}로 남는다.
+     * 거래 실패를 기록하고 낙찰 권한을 다음 후보에게 넘긴다. 남은 후보가 없으면 이벤트 없이
+     * 끝나고 물품은 {@code SOLD}로 남는다 — 경매 결과와 거래 결과는 별개다.
      *
      * @throws ApplicationException 물품·판매자·후보 상태 검증 실패 시({@link DealErrorType})
      */
@@ -80,44 +75,13 @@ public class DealCandidateService {
     public void fail(Long auctionItemId, Long candidateId, Long sellerUserId) {
 
         AuctionItem auctionItem = lockSoldItemOwnedBy(auctionItemId, sellerUserId);
-        List<DealCandidate> candidates = dealCandidateRepository.findAllByAuctionItemId(auctionItemId);
-        DealCandidate target = findCurrentWinner(candidates, candidateId);
+        DealCandidate target = findCurrentWinner(auctionItemId, candidateId);
 
         target.fail(LocalDateTime.now());
 
-        nextWaiting(candidates, target)
-                .or(() -> topUpCandidates(auctionItem, candidates))
+        dealCandidateRepository.findNextWaitingCandidate(auctionItemId, target.getCandidateRank())
                 .ifPresent(next -> publishDealRight(
                         auctionItem.getAuctionRoom().getAuctionRoomId(), auctionItemId, next));
-    }
-
-    /**
-     * 후보가 소진됐을 때 다음 순위를 한 묶음 더 이어 붙인다. 이미 후보인 회원은 제외해
-     * 조회하고, 순위는 기존 최대 다음부터 매긴다. {@code fail}이 잡은 락 안에서 실행된다.
-     *
-     * @return 보충한 묶음의 첫 후보. 남은 입찰자가 없으면 빈 값
-     */
-    private Optional<DealCandidate> topUpCandidates(AuctionItem auctionItem, List<DealCandidate> exhausted) {
-
-        List<Long> excludedBidderUserIds = exhausted.stream()
-                .map(candidate -> candidate.getBidder().getUserId())
-                .toList();
-
-        List<BidderRankProjection> nextBidders = bidRepository.findTopBiddersExcluding(
-                auctionItem.getAuctionItemId(), excludedBidderUserIds, CANDIDATE_BATCH_SIZE);
-
-        if (nextBidders.isEmpty()) {
-            return Optional.empty();
-        }
-
-        int nextRank = exhausted.stream()
-                .mapToInt(DealCandidate::getCandidateRank)
-                .max()
-                .orElse(0) + 1;
-
-        return Optional.of(dealCandidateRepository
-                .saveAll(toCandidates(auctionItem, nextBidders, nextRank))
-                .getFirst());
     }
 
     /**
@@ -130,8 +94,7 @@ public class DealCandidateService {
     public void complete(Long auctionItemId, Long candidateId, Long sellerUserId) {
 
         AuctionItem auctionItem = lockSoldItemOwnedBy(auctionItemId, sellerUserId);
-        List<DealCandidate> candidates = dealCandidateRepository.findAllByAuctionItemId(auctionItemId);
-        DealCandidate winner = findCurrentWinner(candidates, candidateId);
+        DealCandidate winner = findCurrentWinner(auctionItemId, candidateId);
 
         winner.complete(LocalDateTime.now());
 
@@ -163,54 +126,27 @@ public class DealCandidateService {
         return auctionItem;
     }
 
-    /** 순위가 더 높은 {@code WAITING} 후보가 남아 있으면 아직 그 후보의 차례다. */
-    private DealCandidate findCurrentWinner(List<DealCandidate> candidates, Long candidateId) {
+    /**
+     * 요청받은 후보가 지금 낙찰 권한을 가진 후보인지 확인한다. 후보 전체를 읽지 않고 판정에
+     * 필요한 것만 조회한다 — 후보 수가 입찰자 수만큼 늘어날 수 있기 때문이다.
+     */
+    private DealCandidate findCurrentWinner(Long auctionItemId, Long candidateId) {
 
-        if (candidates.stream().anyMatch(candidate -> candidate.getStatus() == DealCandidateStatus.COMPLETED)) {
+        if (dealCandidateRepository.existsCompletedCandidate(auctionItemId)) {
             throw new ApplicationException(DealErrorType.DEAL_ALREADY_COMPLETED);
         }
 
-        DealCandidate target = candidates.stream()
-                .filter(candidate -> candidate.getDealCandidateId().equals(candidateId))
-                .findFirst()
+        DealCandidate target = dealCandidateRepository
+                .findCandidate(auctionItemId, candidateId)
                 .orElseThrow(() -> new ApplicationException(DealErrorType.DEAL_CANDIDATE_NOT_FOUND));
 
         if (target.getStatus() != DealCandidateStatus.WAITING) {
             throw new ApplicationException(DealErrorType.DEAL_CANDIDATE_ALREADY_RESOLVED);
         }
-        if (hasWaitingAbove(candidates, target)) {
+        if (dealCandidateRepository.existsWaitingCandidateBefore(
+                auctionItemId, target.getCandidateRank())) {
             throw new ApplicationException(DealErrorType.DEAL_CANDIDATE_NOT_ACTIVE);
         }
         return target;
-    }
-
-    private boolean hasWaitingAbove(List<DealCandidate> candidates, DealCandidate target) {
-        return candidates.stream()
-                .anyMatch(candidate -> candidate.getStatus() == DealCandidateStatus.WAITING
-                        && candidate.getCandidateRank() < target.getCandidateRank());
-    }
-
-    private Optional<DealCandidate> nextWaiting(List<DealCandidate> candidates, DealCandidate failed) {
-        return candidates.stream()
-                .filter(candidate -> candidate.getStatus() == DealCandidateStatus.WAITING
-                        && candidate.getCandidateRank() > failed.getCandidateRank())
-                .findFirst();
-    }
-
-    /** 입찰자는 프록시만 잡아 FK만 채운다. 실제 조회는 하지 않는다. */
-    private List<DealCandidate> toCandidates(AuctionItem auctionItem,
-                                             List<BidderRankProjection> topBidders, int startRank) {
-
-        List<DealCandidate> candidates = new ArrayList<>();
-        for (int index = 0; index < topBidders.size(); index++) {
-            BidderRankProjection bidder = topBidders.get(index);
-            candidates.add(DealCandidate.builder()
-                    .auctionItem(auctionItem)
-                    .bidder(userRepository.getReferenceById(bidder.getBidderUserId()))
-                    .candidateRank(startRank + index)
-                    .bidAmount(bidder.getAmount())
-                    .build());
-        }
-        return candidates;
     }
 }
