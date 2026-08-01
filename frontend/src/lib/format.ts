@@ -37,3 +37,31 @@ export function formatRemaining(totalSeconds: number): string {
     .map(pad)
     .join(':')
 }
+
+/**
+ * 전화번호 하이픈 자동 삽입.
+ *
+ * 입력하는 도중에도 자리수에 맞춰 끊어준다(토스 등에서 익숙한 방식).
+ * 휴대전화(010…)와 서울 지역번호(02…)를 함께 처리한다. 숫자가 아닌 글자는
+ * 버리므로 붙여넣기한 `010.1234.5678` 같은 값도 정리된다.
+ */
+export function formatPhoneNumber(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11)
+
+  // 02 는 국번이 한 자리 짧다.
+  if (digits.startsWith('02')) {
+    if (digits.length <= 2) return digits
+    if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`
+    if (digits.length <= 9) {
+      return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`
+    }
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`
+  }
+
+  if (digits.length <= 3) return digits
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`
+  if (digits.length <= 10) {
+    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
+  }
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`
+}

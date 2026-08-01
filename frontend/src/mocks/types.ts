@@ -87,25 +87,36 @@ export interface RoomEvent {
   emphasized?: boolean
 }
 
-export type ProductStatus = 'DRAFT' | 'IN_AUCTION' | 'SOLD'
+/**
+ * 상품은 한 번의 경매에만 쓰인다. 그래서 상태가 곧 경매 결과다.
+ * `DRAFT` 미진행 → `IN_AUCTION` 경매 중 → `SOLD` 낙찰 / `UNSOLD` 유찰.
+ */
+export type ProductStatus = 'DRAFT' | 'IN_AUCTION' | 'SOLD' | 'UNSOLD'
 
 export interface Product {
   id: number
   name: string
   category: string
   description: string
+  /** Figma 상품 등록의 "참고 링크". 없을 수 있다. */
+  productUrl?: string
   status: ProductStatus
   createdAt: string
 }
 
-/** Figma 거래 내역이 쓰는 4가지 상태 */
-export type TradeStatus =
-  /** 낙찰됐고 아직 상대와 연락 전 */
-  'ACTION_NEEDED' | 'IN_PROGRESS' | 'COMPLETED' | 'UNSOLD'
+/** 거래 내역이 쓰는 3가지 상태 */
+export type TradeStatus = 'IN_PROGRESS' | 'COMPLETED' | 'UNSOLD'
 
 export interface TradeSummary {
   id: number
   auctionItemId: number
+  /**
+   * 이 거래가 나온 상품. 판매자 상품 상세에서 거래로 건너뛸 때 쓴다.
+   * 내가 산 물건(구매자 거래)은 내 상품이 아니라서 값이 없다.
+   */
+  productId?: number
+  /** 이 거래가 나온 경매방. 거래 상세에서 방 전체 결과로 넘어갈 때 쓴다. */
+  roomId: number
   productName: string
   category: string
   roomTitle: string
@@ -126,4 +137,6 @@ export interface DealCandidate {
   phone: string
   amount: number
   status: CandidateStatus
+  /** 구매자 화면에서 내 순위를 짚어주기 위한 값. 서버가 내려준다. */
+  isMe?: boolean
 }

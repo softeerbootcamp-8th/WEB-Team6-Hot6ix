@@ -14,6 +14,10 @@ export interface SellerProfile {
   shopName: string
   snsUrl: string
   contact: string
+  /** 프로필 카드에 한 줄로 노출되는 가게 소개. */
+  introduction: string
+  /** 전화번호 인증까지 마친 판매자. 카드에 "인증 완료" 배지가 붙는다. */
+  verified: boolean
 }
 
 export interface SessionUser {
@@ -48,6 +52,8 @@ export const MOCK_SELLER: SessionUser = {
     shopName: '승민이네 빈티지',
     snsUrl: 'https://instagram.com/upbid',
     contact: '010-1234-5678',
+    introduction: '희소성 있는 스니커즈를 엄선해 소개합니다.',
+    verified: true,
   },
 }
 
