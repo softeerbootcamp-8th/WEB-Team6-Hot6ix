@@ -56,8 +56,12 @@ export function Modal({
         if (dismissible && event.target === ref.current) onClose()
       }}
       className={cn(
-        'm-auto w-[calc(100%-2rem)] max-w-[420px] rounded-4xl border bg-card p-6 text-foreground',
+        // 높이를 제한하지 않으면 내용이 긴 모달(물품 추가 등)이 좁은 화면에서
+        // 화면 밖으로 넘쳐 스크롤도 안 된다.
+        'm-auto max-h-[calc(100svh-2rem)] w-[calc(100%-2rem)] max-w-[420px] overflow-y-auto rounded-4xl border bg-card p-6 text-foreground',
         'backdrop:bg-neutral-strong/40',
+        // 등장·퇴장 트랜지션. 규칙은 globals.css 의 `.modal-pop`.
+        'modal-pop',
         className,
       )}
     >
