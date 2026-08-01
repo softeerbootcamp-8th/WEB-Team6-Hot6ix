@@ -57,16 +57,6 @@ class SmsVerificationServiceTest {
         );
     }
 
-    // 30초 전에 발급 → 쿨다운 1분 미경과
-    private VerificationEntry cooldownEntry() {
-        return new VerificationEntry(
-                VALID_CODE,
-                LocalDateTime.now().minusSeconds(30),
-                LocalDateTime.now().plusMinutes(3),
-                0
-        );
-    }
-
     private VerificationEntry entryWithFailCount(int failCount) {
         return new VerificationEntry(
                 VALID_CODE,
@@ -81,7 +71,7 @@ class SmsVerificationServiceTest {
     @Test
     @DisplayName("정상적으로 인증번호를 발송하면 store에 저장하고 발송 이력을 기록한다")
     void sendCode_성공() {
-        when(codeStore.find(PHONE_NUMBER)).thenReturn(Optional.empty());
+        when(codeStore.getLastSentAt(PHONE_NUMBER)).thenReturn(Optional.empty());
         when(codeStore.countSendsWithinHour(PHONE_NUMBER)).thenReturn(0L);
         when(codeStore.countSendsWithinDay(PHONE_NUMBER)).thenReturn(0L);
         doNothing().when(naverSmsClient).sendVerificationCode(eq(PHONE_NUMBER), any());
@@ -96,7 +86,8 @@ class SmsVerificationServiceTest {
     @Test
     @DisplayName("쿨다운 중 재발송하면 SEND_COOLDOWN 예외가 발생한다")
     void sendCode_쿨다운_중_재발송() {
-        when(codeStore.find(PHONE_NUMBER)).thenReturn(Optional.of(cooldownEntry()));
+        // 30초 전 발송 이력 → 쿨다운 1분 미경과
+        when(codeStore.getLastSentAt(PHONE_NUMBER)).thenReturn(Optional.of(LocalDateTime.now().minusSeconds(30)));
 
         assertThatThrownBy(() -> smsVerificationService.sendCode(PHONE_NUMBER))
                 .isInstanceOf(ApplicationException.class)
@@ -109,7 +100,7 @@ class SmsVerificationServiceTest {
     @Test
     @DisplayName("1시간 내 5회 초과 발송하면 SEND_HOURLY_LIMIT_EXCEEDED 예외가 발생한다")
     void sendCode_시간당_횟수_초과() {
-        when(codeStore.find(PHONE_NUMBER)).thenReturn(Optional.empty());
+        when(codeStore.getLastSentAt(PHONE_NUMBER)).thenReturn(Optional.empty());
         when(codeStore.countSendsWithinHour(PHONE_NUMBER)).thenReturn(5L);
 
         assertThatThrownBy(() -> smsVerificationService.sendCode(PHONE_NUMBER))
@@ -123,7 +114,7 @@ class SmsVerificationServiceTest {
     @Test
     @DisplayName("하루 10회 초과 발송하면 SEND_DAILY_LIMIT_EXCEEDED 예외가 발생한다")
     void sendCode_일일_횟수_초과() {
-        when(codeStore.find(PHONE_NUMBER)).thenReturn(Optional.empty());
+        when(codeStore.getLastSentAt(PHONE_NUMBER)).thenReturn(Optional.empty());
         when(codeStore.countSendsWithinHour(PHONE_NUMBER)).thenReturn(0L);
         when(codeStore.countSendsWithinDay(PHONE_NUMBER)).thenReturn(10L);
 
@@ -138,7 +129,7 @@ class SmsVerificationServiceTest {
     @Test
     @DisplayName("SMS 발송이 실패하면 store에 저장하지 않는다")
     void sendCode_SMS_발송_실패_시_저장_안_함() {
-        when(codeStore.find(PHONE_NUMBER)).thenReturn(Optional.empty());
+        when(codeStore.getLastSentAt(PHONE_NUMBER)).thenReturn(Optional.empty());
         when(codeStore.countSendsWithinHour(PHONE_NUMBER)).thenReturn(0L);
         when(codeStore.countSendsWithinDay(PHONE_NUMBER)).thenReturn(0L);
         doThrow(new ApplicationException(SmsVerificationErrorType.SMS_SEND_FAILED))
@@ -151,6 +142,22 @@ class SmsVerificationServiceTest {
 
         verify(codeStore, never()).save(any(), any());
         verify(codeStore, never()).recordSend(any());
+    }
+
+    @Test
+    @DisplayName("일일 총 발송량을 초과하면 DAILY_TOTAL_LIMIT_EXCEEDED 예외가 발생한다")
+    void sendCode_일일_총량_초과() {
+        when(codeStore.getLastSentAt(PHONE_NUMBER)).thenReturn(Optional.empty());
+        when(codeStore.countSendsWithinHour(PHONE_NUMBER)).thenReturn(0L);
+        when(codeStore.countSendsWithinDay(PHONE_NUMBER)).thenReturn(0L);
+        when(codeStore.countTotalSendsToday()).thenReturn(500L);
+
+        assertThatThrownBy(() -> smsVerificationService.sendCode(PHONE_NUMBER))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SmsVerificationErrorType.DAILY_TOTAL_LIMIT_EXCEEDED);
+
+        verify(naverSmsClient, never()).sendVerificationCode(any(), any());
     }
 
     // ==================== verifyCode ====================

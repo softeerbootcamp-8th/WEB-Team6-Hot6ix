@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auth.sms.store;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 /**
@@ -31,6 +32,9 @@ public interface VerificationCodeStore {
 
     /** 현재 시각을 해당 전화번호의 발송 이력에 기록한다. */
     void recordSend(String phoneNumber);
+
+    /** 해당 전화번호의 가장 최근 발송 시각을 반환한다. 발송 이력이 없으면 빈 Optional을 반환한다. */
+    Optional<LocalDateTime> getLastSentAt(String phoneNumber);
 
     /** 최근 1시간 내 해당 전화번호로 발송된 횟수를 반환한다. */
     long countSendsWithinHour(String phoneNumber);

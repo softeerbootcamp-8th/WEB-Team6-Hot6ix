@@ -122,8 +122,8 @@ public class SmsVerificationService {
      * </ul>
      */
     private void validateSendRateLimit(String phoneNumber) {
-        codeStore.find(phoneNumber).ifPresent(entry -> {
-            if (entry.issuedAt().plusMinutes(COOLDOWN_MINUTES).isAfter(LocalDateTime.now())) {
+        codeStore.getLastSentAt(phoneNumber).ifPresent(lastSentAt -> {
+            if (lastSentAt.plusMinutes(COOLDOWN_MINUTES).isAfter(LocalDateTime.now())) {
                 throw new ApplicationException(SmsVerificationErrorType.SEND_COOLDOWN);
             }
         });

@@ -13,25 +13,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * {@link VerificationCodeStore}의 인메모리 구현체.
  *
- * <p>단일 인스턴스 환경을 전제로 하며, 다중 서버 환경으로 확장 시
- * Redis 기반 구현체로 교체한다.
- *
- * <p>동시성 처리:
- * <ul>
- *   <li>{@code store} — ConcurrentHashMap으로 원자적 읽기·쓰기 보장</li>
- *   <li>{@code sendHistory} — ConcurrentHashMap + CopyOnWriteArrayList 조합으로
- *       다중 스레드에서 발송 이력 추가 시 안전하게 동작</li>
- *   <li>{@code dailyTotalCount} — AtomicLong으로 원자적 증가 보장</li>
- * </ul>
- *
- * <p>메모리 관리:
- * <ul>
- *   <li>{@code store} — 인증 성공·실패 시 즉시 삭제되지만, 발송 후 verify를 호출하지 않으면
- *       만료 엔트리가 남는다. 매일 자정 스케줄러가 만료된 엔트리를 정리한다.</li>
- *   <li>{@code sendHistory} — {@link #recordSend} 호출 시 24시간이 지난 이력을 함께 정리한다.
- *       일별 발송 제한(10회)이 24시간 기준이므로 그보다 오래된 이력은 불필요하다.</li>
- *   <li>{@code dailyTotalCount} — 매일 자정 스케줄러가 0으로 리셋한다.</li>
- * </ul>
+ * <p>단일 인스턴스 환경을 전제로 하며, 다중 서버 환경으로 확장 시 Redis 기반 구현체로 교체한다.
+ * 만료 엔트리와 일일 발송 카운터는 매일 자정 스케줄러가 정리한다.
  */
 @Component
 public class InMemoryVerificationCodeStore implements VerificationCodeStore {
@@ -72,7 +55,6 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
 
     /**
      * 현재 시각을 발송 이력에 기록하고, 24시간이 지난 오래된 이력을 함께 정리한다.
-     * 일별 발송 제한(10회)이 24시간 기준이므로 그보다 오래된 이력은 불필요하다.
      */
     @Override
     public void recordSend(String phoneNumber) {
@@ -82,6 +64,15 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
         times.removeIf(t -> t.isBefore(oneDayAgo));
         times.add(LocalDateTime.now());
         dailyTotalCount.incrementAndGet();
+    }
+
+    @Override
+    public Optional<LocalDateTime> getLastSentAt(String phoneNumber) {
+        CopyOnWriteArrayList<LocalDateTime> times = getHistory(phoneNumber);
+        if (times.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(times.get(times.size() - 1));
     }
 
     @Override
@@ -109,13 +100,7 @@ public class InMemoryVerificationCodeStore implements VerificationCodeStore {
         return sendHistory.getOrDefault(phoneNumber, new CopyOnWriteArrayList<>());
     }
 
-    /**
-     * 매일 자정에 만료된 인증번호 엔트리를 정리한다.
-     *
-     * <p>인증 성공·실패 시 즉시 삭제되지만, 발송 후 verify를 호출하지 않으면
-     * 만료 엔트리가 store에 남는다. 인증번호 유효시간(4분)이 매우 짧아
-     * 하루에 한 번 정리해도 실질적인 메모리 부담은 없다.
-     */
+    /** 매일 자정에 만료 엔트리를 정리하고 일일 발송 카운터를 리셋한다. */
     @Scheduled(cron = "0 0 0 * * *")
     public void evictExpiredEntries() {
         LocalDateTime now = LocalDateTime.now();
