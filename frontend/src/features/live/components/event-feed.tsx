@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 
+import { useEventEntrance } from '@/features/live/use-event-entrance'
+
 import {
   BidIcon,
   ClosingIcon,
@@ -78,10 +80,13 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
   const ordered = byTimeAsc(events)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // 새 이벤트가 오면 맨 아래로 붙인다.
+  const entranceOf = useEventEntrance()
+
+  // 새 이벤트가 오면 맨 아래로 부드럽게 따라간다.
   useEffect(() => {
     const node = scrollRef.current
-    if (node) node.scrollTop = node.scrollHeight
+    if (!node) return
+    node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' })
   }, [events])
 
   return (
@@ -100,7 +105,7 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
         </div>
       ) : (
         // 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다.
-        <ul className="flex min-h-full flex-col justify-end gap-[30px] p-5">
+        <ul className="flex min-h-full flex-col justify-end gap-4 p-2">
           {ordered.map((event, index) => {
             const style = resolveStyle(event)
             const latest = event.id === ordered[ordered.length - 1]?.id
@@ -108,13 +113,27 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
             return (
               <li
                 key={event.id}
-                className="animate-rise flex items-start gap-3"
-                style={{ animationDelay: `${index * 40}ms` }}
+                className={cn(
+                  /*
+                   * 음수 마진을 쓰면 스크롤 컨테이너가 좌우로 삐져나온 부분을
+                   * 잘라내 둥근 모서리가 깎인다. 안쪽 여백만으로 배경을 만든다.
+                   */
+                  'flex items-start gap-3 rounded-2xl px-3 py-2',
+                  entranceOf(event.id) === 'incoming'
+                    ? 'animate-event'
+                    : 'animate-rise',
+                )}
+                style={
+                  entranceOf(event.id) === 'incoming'
+                    ? undefined
+                    : { animationDelay: `${index * 40}ms` }
+                }
               >
                 <span
                   className={cn(
                     'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
                     style.chip,
+                    entranceOf(event.id) === 'incoming' && 'animate-event-chip',
                   )}
                 >
                   {style.icon}

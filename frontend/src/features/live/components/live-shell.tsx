@@ -1,10 +1,8 @@
 import { Link } from '@tanstack/react-router'
-import { Share2, Users } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Share2, Square, Users } from 'lucide-react'
+import { useEffect, type ReactNode } from 'react'
 
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
-import { ConnectionPill } from '@/features/live/components/connection-banner'
-import type { RealtimeStatus } from '@/features/live/use-realtime-status'
 import type { AuctionRoomDetail } from '@/mocks/types'
 
 /**
@@ -19,21 +17,26 @@ import type { AuctionRoomDetail } from '@/mocks/types'
  */
 export function LiveShell({
   room,
-  status,
   isGuest,
   onShare,
+  onCloseRoom,
   left,
+  headerActions,
   leftLabel,
   center,
   centerLabel,
   right,
   rightLabel,
+  overlay,
 }: {
   room: AuctionRoomDetail
-  status: RealtimeStatus
   isGuest: boolean
   /** 방 헤더의 공유 버튼. 오른쪽 열에 공유 패널을 띄운다. */
   onShare?: () => void
+  /** 공유 버튼 왼쪽에 들어가는 보조 조작(개발용 시점 전환 등) */
+  headerActions?: ReactNode
+  /** 판매자만 받는다. 방 전체를 끝낸다. */
+  onCloseRoom?: () => void
   leftLabel: ReactNode
   left: ReactNode
   centerLabel: ReactNode
@@ -41,9 +44,34 @@ export function LiveShell({
   /** 물품 상세처럼 가운데가 오른쪽까지 차지하면 생략한다. */
   rightLabel?: ReactNode
   right?: ReactNode
+  /**
+   * 가운데·오른쪽 열을 덮는 층. 물품 상세처럼 "지금 보던 화면 위에"
+   * 얹혀야 하는 것에 쓴다. 왼쪽 물품 목록은 그대로 보인다.
+   */
+  overlay?: ReactNode
 }) {
+  /*
+   * 라이브 화면이 떠 있는 동안에는 문서 자체를 잠근다.
+   * 높이를 100dvh 로 맞춰도, 바깥에 무엇 하나라도 더 그려지면 페이지가
+   * 스크롤된다. 여기서 확실히 막고 화면을 떠날 때 되돌린다.
+   */
+  useEffect(() => {
+    const root = document.documentElement
+    const previousRoot = root.style.overflow
+    const previousBody = document.body.style.overflow
+
+    root.style.overflow = 'hidden'
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      root.style.overflow = previousRoot
+      document.body.style.overflow = previousBody
+    }
+  }, [])
+
   return (
-    <div className="flex min-h-svh flex-col bg-background lg:h-svh lg:min-h-0 lg:overflow-hidden">
+    // 라이브 화면은 페이지 자체가 스크롤되지 않는다. 안쪽 열만 스크롤한다.
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
       {isGuest ? <GuestHeader /> : <AppHeader />}
 
       {/* 방 헤더 */}
@@ -62,22 +90,35 @@ export function LiveShell({
             {room.participantCount}명 참여 중
           </p>
 
-          <div className="ml-auto flex items-center gap-3">
-            <ConnectionPill status={status} />
+          <div className="ml-auto flex items-center gap-2">
+            {headerActions}
+
             <button
               type="button"
               onClick={onShare}
-              aria-label="경매방 공유"
-              className="ease-soft flex h-8 w-10 items-center justify-center rounded-[10px] border border-border-strong bg-card text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
+              className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-border-strong bg-card px-3 text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
             >
-              <Share2 aria-hidden className="size-[18px]" />
+              <Share2 aria-hidden className="size-[15px]" />
+              공유
             </button>
+
+            {/* 방을 만든 사람만 보인다. 되돌릴 수 없어 확인을 한 번 받는다. */}
+            {onCloseRoom && (
+              <button
+                type="button"
+                onClick={onCloseRoom}
+                className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-live/40 bg-card px-3 text-[12px] font-bold text-live transition-all duration-150 hover:bg-live-surface active:scale-95"
+              >
+                <Square aria-hidden className="size-[13px]" />
+                경매방 종료
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* 본문 */}
-      <div className="lg:min-h-0 lg:flex-1">
+      {/* 본문 — 남은 높이를 채우고, 넘치면 이 안에서만 스크롤한다. */}
+      <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
         <div className="mx-auto flex max-w-[1280px] flex-col gap-5 px-5 pt-[18px] pb-8 lg:h-full lg:flex-row lg:gap-3 lg:pb-[34px]">
           <section className="flex flex-col lg:min-h-0 lg:w-[332px] lg:shrink-0">
             <h2 className="pb-2.5 text-[13px] font-bold text-neutral-tertiary lg:px-2">
@@ -89,23 +130,46 @@ export function LiveShell({
             </div>
           </section>
 
-          <section className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1 lg:self-stretch">
-            <div className="flex items-center pb-2.5 text-[13px] font-bold text-neutral-tertiary">
-              {centerLabel}
-            </div>
-            <div className="flex flex-col lg:min-h-0 lg:flex-1">{center}</div>
-          </section>
-
-          {right && (
-            <section className="flex flex-col lg:min-h-0 lg:w-[332px] lg:shrink-0">
-              <h2 className="pb-2.5 text-[13px] font-bold text-neutral-tertiary lg:px-2">
-                {rightLabel}
-              </h2>
-              <div className="flex flex-col rounded-2xl border p-2 lg:min-h-0 lg:max-h-full">
-                {right}
+          {/*
+           * 가운데 + 오른쪽을 한 덩어리로 묶는다. 물품 상세 같은 층이
+           * 이 영역만 덮고 왼쪽 목록은 계속 보이게 하기 위해서다.
+           */}
+          <div className="relative flex min-w-0 flex-col gap-5 lg:min-h-0 lg:flex-1 lg:flex-row lg:gap-3">
+            <section className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1 lg:self-stretch">
+              <div className="flex items-center pb-2.5 text-[13px] font-bold text-neutral-tertiary">
+                {centerLabel}
               </div>
+              <div className="flex flex-col lg:min-h-0 lg:flex-1">{center}</div>
             </section>
-          )}
+
+            {right && (
+              <section className="flex flex-col lg:min-h-0 lg:w-[332px] lg:shrink-0">
+                <h2 className="shrink-0 pb-2.5 text-[13px] font-bold text-neutral-tertiary lg:px-2">
+                  {rightLabel}
+                </h2>
+                {/*
+                 * 안쪽 목록이 스크롤되려면 이 박스 높이가 확정돼야 한다.
+                 * `max-h-full` 은 h2 를 포함한 열 전체 높이를 기준으로 잡혀서
+                 * 실제로는 아무것도 제한하지 못했다. `flex-1` 로 남은 공간을 채운다.
+                 */}
+                {/*
+                 * 안쪽 여백을 두지 않는다. 빠른 입찰·공유 패널이 이 테두리에
+                 * 딱 맞게 들어가야 "테두리가 감싼" 것처럼 보인다. 여백이 필요한
+                 * 리더보드 쪽에서만 자기 패딩을 준다.
+                 */}
+                <div className="flex flex-col overflow-hidden rounded-2xl border lg:min-h-0 lg:flex-1">
+                  {right}
+                </div>
+              </section>
+            )}
+
+            {overlay && (
+              // 열 경계보다 3px 만 넉넉하게. 딱 맞추면 가장자리가 어중간하게 걸친다.
+              <div className="animate-panel absolute -inset-[3px] z-20 flex flex-col">
+                {overlay}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

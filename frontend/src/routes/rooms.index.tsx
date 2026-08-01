@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { Search } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/page-shell'
-import { EmptyState, PageHeader } from '@/components/page-header'
+import { EmptyState } from '@/components/page-header'
 import { Input } from '@/components/ui/input'
 import { MOCK_ROOMS } from '@/mocks/data'
 import { RoomCard } from '@/features/rooms/components/room-card'
@@ -49,33 +49,35 @@ function MyRoomsPage() {
 
   return (
     <AppShell title="내 경매방">
-      <PageHeader
-        title="참여 경매방"
-        description={
-          rooms.length > 0
-            ? '참여한 경매방의 진행 상태와 결과를 확인할 수 있어요'
-            : '참여하거나 만든 경매방이 이곳에 표시됩니다.'
-        }
-        actions={
-          <>
-            <Link
-              to="/join/$shareCode"
-              params={{ shareCode: 'abc123' }}
-              className="flex h-9 items-center rounded-[10px] border px-4 text-[13px] font-semibold text-neutral-secondary transition-colors hover:border-border-strong"
-            >
-              링크로 참여
-            </Link>
-            <Link
-              to="/seller/rooms/new"
-              className="flex h-9 items-center rounded-[10px] bg-primary px-4 text-[13px] font-bold text-primary-foreground transition-opacity hover:opacity-90"
-            >
-              + 경매방 만들기
-            </Link>
-          </>
-        }
-      />
+      {/* 모바일은 앱바가 제목을 들고 있어 큰 제목을 다시 쓰지 않는다. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="hidden md:block">
+          <h1 className="text-[20px] font-bold text-foreground">참여 경매방</h1>
+          <p className="mt-2 text-[13px] font-medium text-neutral-tertiary">
+            {rooms.length > 0
+              ? '참여한 경매방의 진행 상태와 결과를 확인할 수 있어요'
+              : '참여하거나 만든 경매방이 이곳에 표시됩니다.'}
+          </p>
+        </div>
 
-      <p className="mt-8 text-[13px] font-bold text-neutral-secondary">
+        <div className="flex w-full gap-2 md:w-auto">
+          <Link
+            to="/join/$shareCode"
+            params={{ shareCode: 'abc123' }}
+            className="ease-soft flex h-10 flex-1 items-center justify-center rounded-[10px] border bg-card px-4 text-[13px] font-semibold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95 md:h-9 md:flex-none"
+          >
+            링크로 참여
+          </Link>
+          <Link
+            to="/seller/rooms/new"
+            className="ease-soft flex h-10 flex-1 items-center justify-center rounded-[10px] bg-primary px-4 text-[13px] font-bold text-primary-foreground transition-all duration-150 hover:opacity-90 active:scale-95 md:h-9 md:flex-none"
+          >
+            + 경매방 만들기
+          </Link>
+        </div>
+      </div>
+
+      <p className="mt-6 text-[13px] font-bold text-neutral-secondary md:mt-8">
         참여 경매방 ({rooms.length})
       </p>
 
@@ -135,7 +137,7 @@ function MyRoomsPage() {
               />
             </div>
           ) : (
-            <div className="mt-8 space-y-10">
+            <div className="mt-6 space-y-8 md:mt-8 md:space-y-10">
               {visibleLive.length > 0 && (
                 <section>
                   <div className="flex items-baseline gap-3">

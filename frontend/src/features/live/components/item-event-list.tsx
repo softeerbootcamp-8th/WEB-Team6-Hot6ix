@@ -5,6 +5,9 @@ import {
   StartIcon,
   WinIcon,
 } from '@/features/live/components/event-icons'
+import { useEffect, useRef } from 'react'
+
+import { useEventEntrance } from '@/features/live/use-event-entrance'
 import { formatTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { RoomEvent } from '@/mocks/types'
@@ -64,13 +67,17 @@ function byTimeAsc(events: RoomEvent[]) {
   )
 }
 
-export function ItemEventList({
-  events,
-  itemName,
-}: {
-  events: RoomEvent[]
-  itemName: string
-}) {
+export function ItemEventList({ events }: { events: RoomEvent[] }) {
+  const entranceOf = useEventEntrance()
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // 새 이벤트가 오면 맨 아래로 부드럽게 따라간다.
+  useEffect(() => {
+    const node = scrollRef.current
+    if (!node) return
+    node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' })
+  }, [events])
+
   return (
     <section className="flex min-h-0 flex-col rounded-2xl border p-5 lg:flex-1">
       <h3 className="shrink-0 text-[13px] font-bold text-neutral-tertiary">
@@ -78,36 +85,56 @@ export function ItemEventList({
       </h3>
 
       {events.length === 0 ? (
-        <p className="mt-6 pb-4 text-center text-[12px] font-medium text-neutral-muted">
-          아직 이벤트가 없어요.
-        </p>
+        // 남는 높이를 채워 박스 한가운데 놓는다. 위에만 붙으면 빈칸이 커 보인다.
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <p className="text-center text-[12px] font-medium text-neutral-muted">
+            아직 이벤트가 없어요.
+          </p>
+        </div>
       ) : (
-        <div className="mt-3 min-h-0 flex-1 overflow-y-auto border-t pt-4">
+        <div
+          ref={scrollRef}
+          className="mt-3 min-h-0 flex-1 overflow-y-auto border-t pt-2"
+        >
           {/* 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다 */}
-          <ul className="flex min-h-full flex-col justify-end gap-[30px]">
+          <ul className="flex min-h-full flex-col justify-end gap-4">
             {byTimeAsc(events).map((event, index) => {
               const style = resolveStyle(event)
               return (
                 <li
                   key={event.id}
-                  className="animate-rise flex items-start gap-3"
-                  style={{ animationDelay: `${index * 40}ms` }}
+                  className={cn(
+                    /*
+                     * 음수 마진을 쓰면 스크롤 컨테이너가 좌우로 삐져나온
+                     * 부분을 잘라내서, 둥근 모서리가 깎여 직사각형으로 보인다.
+                     * 안쪽 여백만으로 배경을 만든다.
+                     */
+                    'flex items-start gap-3 rounded-2xl px-3 py-2',
+                    entranceOf(event.id) === 'incoming'
+                      ? 'animate-event'
+                      : 'animate-rise',
+                  )}
+                  style={
+                    entranceOf(event.id) === 'incoming'
+                      ? undefined
+                      : { animationDelay: `${index * 40}ms` }
+                  }
                 >
                   <span
                     className={cn(
                       'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
                       style.chip,
+                      entranceOf(event.id) === 'incoming' &&
+                        'animate-event-chip',
                     )}
                   >
                     {style.icon}
                   </span>
 
+                  {/* 한 물품만 보는 화면이라 물품명은 다시 적지 않는다. */}
                   <div className="min-w-0 flex-1">
                     <p className={cn('text-[13px]', style.text)}>
                       {event.message}
-                    </p>
-                    <p className="mt-1 text-[11px] font-normal text-neutral-tertiary">
-                      {itemName}
                     </p>
                   </div>
 

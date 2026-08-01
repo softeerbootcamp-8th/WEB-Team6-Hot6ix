@@ -1,8 +1,11 @@
-import { ChevronRight, ImageIcon, Search, Share2 } from 'lucide-react'
+import { ChevronLeft, Search, Share2 } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
+import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
+import { MOCK_TRADES } from '@/mocks/data'
+import { ProductThumbnail } from '@/components/product-thumbnail'
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
 import type { AuctionRoomDetail } from '@/mocks/types'
@@ -11,8 +14,61 @@ import type { AuctionRoomDetail } from '@/mocks/types'
  * 종료된 경매방 (Figma `WEB-20 · 구매자 · 종료된 경매방`).
  *
  * 라이브와 열 구성은 같지만 실시간 요소가 전부 빠진다.
- * 왼쪽 종료된 물품 목록 / 가운데 종료 요약 + 전체 낙찰 결과 / 오른쪽 내 낙찰 결과.
+ * 왼쪽 종료된 물품 목록 / 가운데 종료 요약 + 전체 낙찰 결과.
  */
+/**
+ * 물품에 이어지는 거래를 찾는다.
+ *
+ * 지금은 물품–거래를 잇는 키가 없어 이름으로 맞춘다(목업 한정).
+ * 목업 방마다 물품 이름을 테마로 갈아 끼우다 보니 이름이 안 맞는 방이 있는데,
+ * 그때도 거래 화면을 볼 수 있도록 물품 id 로 하나를 정해 이어 둔다.
+ * API 가 붙으면 물품 응답의 거래 id 로 바꾼다.
+ */
+function findTrade(itemName: string, itemId: number) {
+  const byName = MOCK_TRADES.find(
+    (trade) =>
+      trade.productName === itemName ||
+      trade.productName.includes(itemName) ||
+      itemName.includes(trade.productName),
+  )
+  if (byName) return byName
+  return MOCK_TRADES[itemId % MOCK_TRADES.length]
+}
+
+/**
+ * 결과 한 줄. 이어지는 거래가 있으면 그 거래 상세로 보낸다.
+ *
+ * 종료된 방에서 라이브 물품 상세로 보내면 진행 중 화면이 떠 버린다.
+ * 거래가 없으면(유찰) 갈 곳이 없으므로 누를 수 없게 둔다.
+ */
+function ResultRow({
+  itemName,
+  itemId,
+  className,
+  children,
+}: {
+  itemName: string
+  itemId: number
+  className?: string
+  children: ReactNode
+}) {
+  const trade = findTrade(itemName, itemId)
+  if (!trade) return <div className={className}>{children}</div>
+
+  return (
+    <Link
+      to="/trades/$itemId"
+      params={{ itemId: String(trade.auctionItemId) }}
+      className={cn(
+        'ease-soft transition-all duration-150 hover:border-brand-300 active:scale-[0.99]',
+        className,
+      )}
+    >
+      {children}
+    </Link>
+  )
+}
+
 export function ClosedRoomView({
   room,
   isGuest,
@@ -37,340 +93,420 @@ export function ClosedRoomView({
     0,
   )
   const myWins = items.filter((item) => item.leaderboard[0]?.isMe)
-  const myTotal = myWins.reduce(
-    (sum, item) => sum + (item.leaderboard[0]?.amount ?? 0),
-    0,
-  )
+
+  const unsoldCount = items.length - sold.length
 
   return (
-    <div className="flex min-h-svh flex-col bg-background lg:h-svh lg:min-h-0 lg:overflow-hidden">
-      {isGuest ? <GuestHeader state="종료" /> : <AppHeader />}
-
-      {/* 방 헤더 */}
-      <div className="shrink-0 border-b bg-card">
-        <div className="mx-auto flex min-h-[68px] max-w-[1280px] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 md:px-7">
-          <span className="flex h-6 items-center rounded-full bg-fill px-3 text-[11px] font-bold text-neutral-tertiary">
-            종료
-          </span>
-          <h1 className="text-[17px] font-bold text-foreground">
-            {room.title}
-          </h1>
-          <p className="text-[12px] font-medium text-neutral-tertiary">
-            종료 {closedAt}
-          </p>
-
-          <button
-            type="button"
-            className="ease-soft ml-auto flex h-9 items-center gap-1.5 rounded-[10px] border bg-card px-4 text-[13px] font-semibold text-foreground transition-all duration-150 hover:bg-fill active:scale-95"
+    <>
+      {/*
+       * 모바일(MOB-23)은 웹 3열이 아니라 세로 카드 스택 + 하단 고정 바다.
+       * 헤더 카드 → 통계 4칸 → 전체 낙찰 결과.
+       */}
+      <div className="flex min-h-svh flex-col bg-background pb-8 md:hidden">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">
+          <Link
+            to="/rooms"
+            aria-label="뒤로 가기"
+            className="ease-soft -ml-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-foreground transition-all duration-150 active:scale-90"
           >
-            <Share2 aria-hidden className="size-3.5" />
-            공유
-          </button>
-        </div>
-      </div>
+            <ChevronLeft aria-hidden className="size-6" strokeWidth={2} />
+          </Link>
+          <h1 className="min-w-0 flex-1 truncate text-[17px] font-bold text-foreground">
+            종료된 경매방
+          </h1>
 
-      <div className="lg:min-h-0 lg:flex-1">
-        <div className="mx-auto flex max-w-[1280px] flex-col gap-5 px-5 pt-[18px] pb-8 lg:h-full lg:flex-row lg:gap-3 lg:pb-[34px]">
-          {/* 왼쪽 · 종료된 물품 */}
-          <section className="flex flex-col lg:min-h-0 lg:w-[340px] lg:shrink-0">
-            <h2 className="pb-2.5 text-[13px] font-bold text-neutral-tertiary lg:px-2">
-              종료된 물품 ({items.length})
+          <MobileNavDrawer />
+        </header>
+
+        <main className="flex-1 px-4 pt-5">
+          <section className="rounded-2xl border bg-card p-4">
+            <span className="flex h-[22px] w-16 items-center justify-center rounded-full bg-fill text-[11px] font-bold text-neutral-tertiary">
+              종료
+            </span>
+            <h2 className="mt-3 text-[18px] font-bold text-foreground">
+              {room.title}
             </h2>
-            <div className="flex flex-col rounded-2xl border p-3 lg:min-h-0 lg:max-h-full">
-              <div className="relative shrink-0">
-                <Search
-                  aria-hidden
-                  className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-muted"
-                />
-                <input
-                  type="search"
-                  value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
-                  placeholder="물품 이름 검색"
-                  aria-label="물품 이름 검색"
-                  className="h-10 w-full rounded-xl border bg-card pr-3 pl-9 text-[13px] font-normal outline-none placeholder:text-neutral-muted focus-visible:border-ring"
-                />
-              </div>
-
-              <ul className="mt-3 max-h-[420px] space-y-3 overflow-y-auto pr-0.5 lg:max-h-none lg:min-h-0 lg:flex-1">
-                {visibleItems.map((item) => (
-                  <li key={item.id}>
-                    <Link
-                      to="/rooms/$roomId/items/$itemId"
-                      params={{
-                        roomId: String(room.id),
-                        itemId: String(item.id),
-                      }}
-                      className="ease-soft flex gap-3 rounded-2xl border bg-card p-3 transition-all duration-200 hover:border-border-strong active:scale-[0.99]"
-                    >
-                      <span
-                        aria-hidden
-                        className="flex h-[84px] w-[72px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl bg-border-strong text-white"
-                      >
-                        <ImageIcon className="size-5" />
-                        <span className="text-[11px] font-medium">상품</span>
-                      </span>
-
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="flex h-5 w-11 items-center justify-center rounded-full bg-fill text-[10px] font-bold text-neutral-tertiary">
-                          종료
-                        </span>
-                        <span className="mt-1.5 block truncate text-[14px] font-bold text-foreground">
-                          {item.name}
-                        </span>
-                        <span className="mt-1 block text-[11px] font-medium text-neutral-tertiary">
-                          {item.topBidderNickname ?? '입찰자 없음'}
-                        </span>
-                        <span className="mt-auto text-right text-[15px] font-bold tabular-nums text-brand-500">
-                          {item.leaderboard.length > 0
-                            ? formatWon(item.currentPrice)
-                            : '유찰'}
-                        </span>
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <p className="mt-2 text-[13px] font-medium text-neutral-tertiary">
+              모든 물품의 경매가 종료되었습니다.
+            </p>
+            <p className="mt-2 text-[11px] font-medium text-neutral-muted">
+              종료 {closedAt}
+            </p>
           </section>
 
-          {/* 가운데 · 종료 요약 + 전체 결과 */}
-          <section className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1 lg:self-stretch">
-            <h2 className="pb-2.5 text-[13px] font-bold text-neutral-tertiary">
-              경매방 종료 요약
-            </h2>
+          <dl className="mt-4 grid grid-cols-2 gap-2">
+            {[
+              {
+                label: '전체 물품',
+                value: `${items.length}개`,
+                accent: 'text-result-idle',
+                bg: 'bg-result-idle-surface',
+              },
+              {
+                label: '낙찰',
+                value: `${sold.length}건`,
+                accent: 'text-result-won',
+                bg: 'bg-result-won-surface',
+              },
+              {
+                label: '유찰',
+                value: `${unsoldCount}건`,
+                accent: 'text-result-failed',
+                bg: 'bg-result-failed-surface',
+              },
+              {
+                label: '내 낙찰',
+                value: `${myWins.length}개`,
+                accent: 'text-brand-500',
+                bg: 'bg-brand-50',
+              },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className={cn(
+                  'flex h-[68px] flex-col items-center justify-center rounded-xl',
+                  stat.bg,
+                )}
+              >
+                <dd
+                  className={cn(
+                    'text-[17px] font-extrabold tabular-nums',
+                    stat.accent,
+                  )}
+                >
+                  {stat.value}
+                </dd>
+                <dt className="mt-1 text-[12px] font-semibold text-neutral-secondary">
+                  {stat.label}
+                </dt>
+              </div>
+            ))}
+          </dl>
 
-            <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
-              <div className="shrink-0 rounded-[20px] border bg-card p-4">
-                <h3 className="text-[16px] font-bold text-foreground">
-                  경매방 종료 요약
-                </h3>
-                <dl className="mt-4 grid grid-cols-3 gap-3">
-                  {[
-                    {
-                      label: '전체 물품',
-                      value: `${items.length}개`,
-                      bg: 'bg-brand-50',
-                      color: 'text-brand-500',
-                      size: 'text-[20px]',
-                    },
-                    {
-                      label: '낙찰',
-                      value: `${sold.length}건`,
-                      bg: 'bg-success-surface',
-                      color: 'text-success',
-                      size: 'text-[20px]',
-                    },
-                    {
-                      label: '총 낙찰액',
-                      value: formatWon(totalAmount),
-                      bg: 'bg-fill',
-                      color: 'text-foreground',
-                      size: 'text-[18px]',
-                    },
-                  ].map((stat) => (
-                    <div
-                      key={stat.label}
+          {/* 전체 결과도 다른 화면으로 넘기지 않고 여기서 바로 보여준다. */}
+          <section className="mt-4 rounded-2xl border bg-card p-4">
+            <h3 className="text-[14px] font-bold text-foreground">
+              전체 낙찰 결과
+            </h3>
+            <p className="mt-2 text-[12px] font-medium text-neutral-tertiary">
+              낙찰 {sold.length}건 · 유찰 {unsoldCount}건 · 총 낙찰액{' '}
+              {formatWon(totalAmount)}
+            </p>
+
+            <ul className="mt-3 space-y-2">
+              {items.map((item) => {
+                const winner = item.leaderboard[0] ?? null
+                const won = winner !== null
+                const mine = Boolean(winner?.isMe)
+
+                return (
+                  <li key={item.id}>
+                    <ResultRow
+                      itemName={item.name}
+                      itemId={item.id}
                       className={cn(
-                        'flex h-[72px] flex-col items-center justify-center rounded-xl',
-                        stat.bg,
+                        'flex items-center gap-2 rounded-xl border px-3 py-2.5',
+                        // 내가 낙찰받은 물품은 한눈에 찾을 수 있어야 한다.
+                        mine ? 'border-brand-300 bg-brand-50' : 'bg-card',
                       )}
                     >
-                      <dd
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5">
+                          <span className="min-w-0 truncate text-[13px] font-bold text-foreground">
+                            {item.name}
+                          </span>
+                          {mine && (
+                            <span className="shrink-0 rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-extrabold text-white">
+                              내 낙찰
+                            </span>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] font-medium text-neutral-tertiary">
+                          {winner?.nickname ?? '낙찰자 없음'}
+                        </span>
+                      </span>
+
+                      <span
                         className={cn(
-                          'font-bold tabular-nums',
-                          stat.size,
-                          stat.color,
+                          'flex h-6 w-[46px] shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
+                          won
+                            ? 'bg-result-won-surface text-result-won'
+                            : 'bg-result-failed-surface text-result-failed',
                         )}
                       >
-                        {stat.value}
-                      </dd>
-                      <dt className="mt-1 text-[12px] font-medium text-neutral-tertiary">
-                        {stat.label}
-                      </dt>
-                    </div>
-                  ))}
-                </dl>
-              </div>
+                        {won ? '낙찰' : '유찰'}
+                      </span>
 
-              <div className="flex flex-col rounded-[20px] border bg-card p-4 lg:min-h-0 lg:max-h-full">
-                <h3 className="shrink-0 text-[18px] font-bold text-foreground">
-                  전체 물품 낙찰 결과
-                </h3>
-                <p className="mt-1 shrink-0 text-[12px] font-medium text-neutral-tertiary">
-                  유찰을 제외한 최종 결과입니다.
-                </p>
+                      <span
+                        className={cn(
+                          'w-[84px] shrink-0 text-right text-[13px] tabular-nums',
+                          won
+                            ? 'font-bold text-foreground'
+                            : 'font-medium text-neutral-muted',
+                        )}
+                      >
+                        {won ? formatWon(winner.amount) : '—'}
+                      </span>
+                    </ResultRow>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        </main>
+      </div>
 
-                <div className="mt-3 flex h-10 shrink-0 items-center rounded-lg bg-fill px-4 text-[11px] font-semibold text-neutral-tertiary">
-                  <span className="flex-1">물품</span>
-                  <span className="w-[120px]">낙찰자</span>
-                  <span className="w-[104px] text-right">낙찰가</span>
+      <div className="hidden min-h-svh flex-col bg-background md:flex lg:h-svh lg:min-h-0 lg:overflow-hidden">
+        {isGuest ? <GuestHeader state="종료" /> : <AppHeader />}
+
+        {/* 방 헤더 */}
+        <div className="shrink-0 border-b bg-card">
+          <div className="mx-auto flex min-h-[68px] max-w-[1280px] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 md:px-7">
+            <span className="flex h-6 items-center rounded-full bg-fill px-3 text-[11px] font-bold text-neutral-tertiary">
+              종료
+            </span>
+            <h1 className="text-[17px] font-bold text-foreground">
+              {room.title}
+            </h1>
+            <p className="text-[12px] font-medium text-neutral-tertiary">
+              종료 {closedAt}
+            </p>
+
+            <button
+              type="button"
+              className="ease-soft ml-auto flex h-9 items-center gap-1.5 rounded-[10px] border bg-card px-4 text-[13px] font-semibold text-foreground transition-all duration-150 hover:bg-fill active:scale-95"
+            >
+              <Share2 aria-hidden className="size-3.5" />
+              공유
+            </button>
+          </div>
+        </div>
+
+        <div className="lg:min-h-0 lg:flex-1">
+          <div className="mx-auto flex max-w-[1280px] flex-col gap-5 px-5 pt-[18px] pb-8 lg:h-full lg:flex-row lg:gap-3 lg:pb-[34px]">
+            {/* 왼쪽 · 종료된 물품 */}
+            <section className="flex flex-col lg:min-h-0 lg:w-[340px] lg:shrink-0">
+              <h2 className="pb-2.5 text-[13px] font-bold text-neutral-tertiary lg:px-2">
+                종료된 물품 ({items.length})
+              </h2>
+              <div className="flex flex-col rounded-2xl border p-3 lg:min-h-0 lg:max-h-full">
+                <div className="relative shrink-0">
+                  <Search
+                    aria-hidden
+                    className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-muted"
+                  />
+                  <input
+                    type="search"
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
+                    placeholder="물품 이름 검색"
+                    aria-label="물품 이름 검색"
+                    className="h-10 w-full rounded-xl border bg-card pr-3 pl-9 text-[13px] font-normal outline-none placeholder:text-neutral-muted focus-visible:border-ring"
+                  />
                 </div>
 
-                <ul className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
-                  {sold.map((item, index) => {
-                    const winner = item.leaderboard[0]!
-                    const first = index === 0
+                <ul className="mt-3 max-h-[420px] space-y-3 overflow-y-auto pr-0.5 lg:max-h-none lg:min-h-0 lg:flex-1">
+                  {visibleItems.map((item) => {
                     return (
-                      <li
-                        key={item.id}
-                        className={cn(
-                          'flex h-14 items-center rounded-[10px] px-4 text-[13px]',
-                          first ? 'bg-brand-50' : 'border bg-card',
-                        )}
-                      >
-                        <span
+                      <li key={item.id}>
+                        {/*
+                         * 끝난 물품은 그 물품의 거래로 보낸다. 이어지는 거래가
+                         * 없으면 아무 데도 보내지 않는다. 예전에는 라이브 물품
+                         * 상세로 떨어져서, 종료된 방인데 진행 중 화면이 떴다.
+                         */}
+                        {/* 누르면 그 물품의 거래 상세로 간다. */}
+                        <ResultRow
+                          itemName={item.name}
+                          itemId={item.id}
                           className={cn(
-                            'min-w-0 flex-1 truncate',
-                            first
-                              ? 'font-semibold text-brand-500'
-                              : 'font-medium text-foreground',
+                            'flex gap-3 rounded-2xl border p-3',
+                            item.leaderboard[0]?.isMe
+                              ? 'border-brand-300 bg-brand-50'
+                              : 'bg-card',
                           )}
                         >
-                          {item.name}
-                        </span>
-                        <span
-                          className={cn(
-                            'w-[120px] truncate',
-                            first
-                              ? 'font-semibold text-brand-500'
-                              : 'font-medium text-neutral-tertiary',
-                          )}
-                        >
-                          {winner.nickname}
-                        </span>
-                        <span
-                          className={cn(
-                            'w-[104px] text-right tabular-nums',
-                            first
-                              ? 'font-bold text-brand-500'
-                              : 'font-semibold text-neutral-secondary',
-                          )}
-                        >
-                          {formatWon(winner.amount)}
-                        </span>
+                          <ProductThumbnail
+                            name={item.name}
+                            size={200}
+                            iconClassName="size-5"
+                            className="flex h-[84px] w-[72px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl bg-fill text-neutral-muted"
+                          />
+                          <span className="flex min-w-0 flex-1 flex-col">
+                            <span
+                              className={cn(
+                                'flex h-5 w-11 items-center justify-center rounded-full text-[10px] font-bold',
+                                item.leaderboard.length > 0
+                                  ? 'bg-result-won-surface text-result-won'
+                                  : 'bg-result-failed-surface text-result-failed',
+                              )}
+                            >
+                              {item.leaderboard.length > 0 ? '낙찰' : '유찰'}
+                            </span>
+                            <span className="mt-1.5 block truncate text-[14px] font-bold text-foreground">
+                              {item.name}
+                            </span>
+                            <span className="mt-1 block text-[11px] font-medium text-neutral-tertiary">
+                              {item.topBidderNickname ?? '입찰자 없음'}
+                            </span>
+                            <span
+                              className={cn(
+                                'mt-auto text-right text-[15px] tabular-nums',
+                                item.leaderboard.length > 0
+                                  ? 'font-bold text-foreground'
+                                  : 'font-medium text-neutral-muted',
+                              )}
+                            >
+                              {item.leaderboard.length > 0
+                                ? formatWon(item.currentPrice)
+                                : '—'}
+                            </span>
+                          </span>
+                        </ResultRow>
                       </li>
                     )
                   })}
                 </ul>
-
-                <p className="mt-3 shrink-0 text-[11px] font-medium text-neutral-muted">
-                  총 {items.length}개 물품 · 낙찰 {sold.length}건 · 유찰{' '}
-                  {items.length - sold.length}건
-                </p>
               </div>
-            </div>
-          </section>
+            </section>
 
-          {/* 오른쪽 · 내 낙찰 결과 */}
-          <aside className="flex flex-col gap-3 lg:min-h-0 lg:w-[308px] lg:shrink-0">
-            <h2 className="pb-0.5 text-[13px] font-bold text-neutral-tertiary lg:px-2">
-              내 낙찰 결과
-            </h2>
+            {/* 가운데 · 종료 요약 + 전체 결과 (오른쪽 열 없이 넓게 쓴다) */}
+            <section className="relative flex min-w-0 flex-col lg:min-h-0 lg:flex-1 lg:self-stretch">
+              <h2 className="pb-2.5 text-[13px] font-bold text-neutral-tertiary">
+                경매방 종료 요약
+              </h2>
 
-            <div className="flex flex-col rounded-[20px] border bg-card p-4 lg:min-h-0 lg:max-h-full">
-              <div className="flex shrink-0 items-baseline">
-                <h3 className="text-[16px] font-bold text-foreground">
-                  내 낙찰 결과
-                </h3>
-                <span className="ml-auto text-[12px] font-semibold text-brand-500">
-                  {myWins.length}건
-                </span>
-              </div>
-
-              {myWins.length === 0 ? (
-                <p className="mt-4 rounded-xl bg-surface-subtle py-8 text-center text-[12px] font-medium text-neutral-muted">
-                  낙찰받은 물품이 없어요.
-                </p>
-              ) : (
-                <>
-                  <ul className="mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-auto pr-0.5">
-                    {myWins.map((item, index) => (
-                      <li
-                        key={item.id}
+              {/* 왼쪽 목록과 같은 높이를 쓰도록 남는 공간을 채운다. */}
+              <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
+                <div className="shrink-0 rounded-[20px] border bg-card p-4">
+                  <h3 className="text-[16px] font-bold text-foreground">
+                    경매방 종료 요약
+                  </h3>
+                  {/*
+                   * 낙찰과 유찰은 성격이 반대라 한 칸에 `5 · 1` 로 묶으면
+                   * 무엇이 무엇인지 읽어야 안다. 칸을 나누고 결과색을 입힌다.
+                   */}
+                  <dl className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+                    {[
+                      {
+                        label: '전체 물품',
+                        value: `${items.length}개`,
+                        bg: 'bg-result-idle-surface',
+                        color: 'text-result-idle',
+                      },
+                      {
+                        label: '낙찰',
+                        value: `${sold.length}건`,
+                        bg: 'bg-result-won-surface',
+                        color: 'text-result-won',
+                      },
+                      {
+                        label: '유찰',
+                        value: `${items.length - sold.length}건`,
+                        bg: 'bg-result-failed-surface',
+                        color: 'text-result-failed',
+                      },
+                      {
+                        label: '총 낙찰액',
+                        value: formatWon(totalAmount),
+                        bg: 'bg-brand-50',
+                        color: 'text-brand-500',
+                      },
+                    ].map((stat) => (
+                      <div
+                        key={stat.label}
                         className={cn(
-                          'rounded-xl p-4',
-                          index === 0
-                            ? 'border border-brand-200 bg-brand-50'
-                            : 'border bg-surface-subtle',
+                          'flex h-[76px] flex-col items-center justify-center rounded-xl',
+                          stat.bg,
                         )}
                       >
-                        <div className="flex items-baseline gap-2">
-                          <p className="min-w-0 truncate text-[13px] font-bold text-foreground">
-                            {item.name}
-                          </p>
-                          <p className="ml-auto shrink-0 text-[13px] font-bold tabular-nums text-brand-500">
-                            {formatWon(item.currentPrice)}
-                          </p>
-                        </div>
-                        <div className="mt-2 flex items-baseline gap-2">
-                          <p className="text-[11px] font-medium text-neutral-tertiary">
-                            {room.sellerName}
-                          </p>
-                          <p
-                            className={cn(
-                              'ml-auto text-[11px]',
-                              index === 0
-                                ? 'font-bold text-success'
-                                : 'font-semibold text-neutral-tertiary',
-                            )}
-                          >
-                            {index === 0 ? '거래 필요' : '거래 완료'}
-                          </p>
-                        </div>
-                      </li>
+                        <dd
+                          className={cn(
+                            'text-[19px] font-extrabold tabular-nums',
+                            stat.color,
+                          )}
+                        >
+                          {stat.value}
+                        </dd>
+                        <dt className="mt-1 text-[12px] font-semibold text-neutral-secondary">
+                          {stat.label}
+                        </dt>
+                      </div>
                     ))}
-                  </ul>
+                  </dl>
+                </div>
 
-                  <div className="mt-3 shrink-0 rounded-xl border bg-surface-subtle p-4">
-                    <p className="text-[12px] font-semibold text-neutral-tertiary">
-                      내 낙찰 요약
-                    </p>
-                    <div className="mt-2.5 flex items-baseline">
-                      <span className="text-[12px] font-medium text-neutral-tertiary">
-                        총 낙찰액
-                      </span>
-                      <span className="ml-auto text-[17px] font-extrabold tabular-nums text-brand-500">
-                        {formatWon(myTotal)}
-                      </span>
-                    </div>
-                    <p className="mt-2.5 text-[12px] font-semibold text-neutral-secondary">
-                      거래 필요 {myWins.length > 0 ? 1 : 0}건 · 거래 완료{' '}
-                      {Math.max(0, myWins.length - 1)}건
-                    </p>
+                <div className="flex flex-col rounded-[20px] border bg-card p-4 lg:min-h-0 lg:flex-1">
+                  <h3 className="shrink-0 text-[18px] font-bold text-foreground">
+                    전체 물품 결과
+                  </h3>
+                  <p className="mt-1 shrink-0 text-[12px] font-medium text-neutral-tertiary">
+                    낙찰 {sold.length}건 · 유찰 {items.length - sold.length}건
+                  </p>
+
+                  <div className="mt-3 flex h-10 shrink-0 items-center rounded-lg bg-surface-subtle px-4 text-[11px] font-semibold text-neutral-tertiary">
+                    <span className="flex-1">물품</span>
+                    <span className="hidden w-[120px] sm:block">낙찰자</span>
+                    <span className="w-[68px] text-center">결과</span>
+                    <span className="w-[92px] text-right sm:w-[104px]">
+                      낙찰가
+                    </span>
                   </div>
-                </>
-              )}
-            </div>
 
-            <div className="shrink-0 rounded-[20px] border bg-card p-4">
-              <h3 className="text-[16px] font-bold text-foreground">
-                종료된 경매방
-              </h3>
-              <p className="mt-2.5 text-[13px] leading-[1.5] font-medium text-neutral-tertiary">
-                실시간 입찰은 종료되었습니다.
-                <br />
-                낙찰 물품의 거래 상태만 확인할 수 있어요.
-              </p>
+                  <ul className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+                    {items.map((item) => {
+                      const winner = item.leaderboard[0] ?? null
+                      const won = winner !== null
 
-              <Link
-                to="/trades"
-                className="ease-soft mt-4 flex h-10 items-center justify-center gap-1 rounded-xl border border-brand-200 bg-brand-50 text-[13px] font-semibold text-brand-500 transition-all duration-150 hover:opacity-90 active:scale-[0.98]"
-              >
-                거래 내역 확인
-                <ChevronRight aria-hidden className="size-3.5" />
-              </Link>
+                      return (
+                        <li key={item.id}>
+                          <ResultRow
+                            itemName={item.name}
+                            itemId={item.id}
+                            className="flex h-14 items-center rounded-[10px] border bg-card px-4 text-[13px]"
+                          >
+                            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                              {item.name}
+                            </span>
 
-              <Link
-                to="/rooms"
-                className="ease-soft mt-3 flex h-11 items-center justify-center rounded-[14px] bg-primary text-[15px] font-bold text-primary-foreground transition-all duration-150 hover:opacity-90 active:scale-[0.98]"
-              >
-                참여 경매방 목록으로
-              </Link>
-            </div>
-          </aside>
+                            <span className="hidden w-[120px] truncate font-medium text-neutral-tertiary sm:block">
+                              {winner?.nickname ?? '—'}
+                            </span>
+
+                            {/* 낙찰·유찰은 색이 아니라 배지로 구분한다. 훑어볼 때 이게 제일 빠르다. */}
+                            <span className="flex w-[68px] justify-center">
+                              <span
+                                className={cn(
+                                  'flex h-6 w-[52px] items-center justify-center rounded-full text-[11px] font-bold',
+                                  won
+                                    ? 'bg-result-won-surface text-result-won'
+                                    : 'bg-result-failed-surface text-result-failed',
+                                )}
+                              >
+                                {won ? '낙찰' : '유찰'}
+                              </span>
+                            </span>
+
+                            <span
+                              className={cn(
+                                'w-[92px] text-right tabular-nums sm:w-[104px]',
+                                won
+                                  ? 'font-bold text-foreground'
+                                  : 'font-medium text-neutral-muted',
+                              )}
+                            >
+                              {won ? formatWon(winner.amount) : '—'}
+                            </span>
+                          </ResultRow>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }
