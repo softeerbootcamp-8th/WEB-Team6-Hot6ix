@@ -21,7 +21,8 @@ public enum BidErrorType implements ErrorType {
     ALREADY_TOP_BIDDER(HttpStatus.CONFLICT, 7003, "이미 최고 입찰자입니다."),
     BID_AMOUNT_TOO_LOW(HttpStatus.CONFLICT, 7004, "최소 입찰 금액보다 낮습니다."),
     INVALID_BID_UNIT(HttpStatus.CONFLICT, 7005, "입찰 단위에 맞지 않는 금액입니다."),
-    CONCURRENT_BID_CONFLICT(HttpStatus.CONFLICT, 7006, "다른 분이 먼저 입찰했습니다. 현재가를 확인해 주세요.");
+    CONCURRENT_BID_CONFLICT(HttpStatus.CONFLICT, 7006, "다른 분이 먼저 입찰했습니다. 현재가를 확인해 주세요."),
+    SELLER_CANNOT_BID(HttpStatus.FORBIDDEN, 7007, "판매자는 자신의 물품에 입찰할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;

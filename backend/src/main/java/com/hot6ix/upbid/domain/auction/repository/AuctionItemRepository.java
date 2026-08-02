@@ -97,15 +97,15 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
 
     /**
-     * 물품과 판매자를 락 없이 함께 조회한다. 요청자가 판매자인지 판정하려면 물품 →
-     * 경매방 → 판매자 프로필 → 회원까지 타야 하는데, 지연 로딩에 맡기면 쿼리가 넷이 된다.
+     * 물품을 올린 판매자의 회원 ID를 조회한다. 판매자 본인 입찰을 거르는 데 쓰고,
+     * 낙찰 후보 목록에서 요청자가 판매자인지 판정하는 데도 쓴다.
      * 조회에 {@link #findByIdForUpdate}를 쓰면 읽기 요청이 거래 상태 변경을 막으므로 쓰지 않는다.
-     * 락이 없으니 fetch join도 안전하다 — 잠글 행이 없어 조인이 락을 넓히지 않는다.
+     *
+     * @return 판매자의 회원 ID. 물품이 없거나 경매방에 판매자가 없으면 빈 값
      */
-    @Query("select ai from AuctionItem ai "
-            + "join fetch ai.auctionRoom ar "
-            + "join fetch ar.sellerProfile sp "
-            + "join fetch sp.user "
+    @Query("select sp.user.userId from AuctionItem ai "
+            + "join ai.auctionRoom ar "
+            + "join ar.sellerProfile sp "
             + "where ai.auctionItemId = :auctionItemId")
-    Optional<AuctionItem> findWithSeller(@Param("auctionItemId") Long auctionItemId);
+    Optional<Long> findSellerUserId(@Param("auctionItemId") Long auctionItemId);
 }

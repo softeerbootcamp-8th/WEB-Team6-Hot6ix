@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button'
 import { GuestShell } from '@/components/layout/page-shell'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { MOCK_ROOM_DETAIL } from '@/mocks/data'
+import { RouteError, RoutePending } from '@/components/route-states'
 import { StatusBadge } from '@/components/status-badge'
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
 import { useCurrentUser } from '@/lib/session'
+import { useGetRoomByShareCode } from '@/api/generated/경매방/경매방'
 
 /**
  * 링크·QR 진입점.
@@ -17,18 +19,14 @@ import { useCurrentUser } from '@/lib/session'
  * 비로그인도 방을 미리 볼 수 있고, 로그인한 사용자는 약관에 동의한 뒤
  * 입장한다. shareCode 로 방을 못 찾거나 이미 종료됐으면 각각 다른 안내를
  * 보여준다.
+ *
+ * 방 정보는 API 로 받지만 **물품 목록은 아직 목업**이다 — 공개 조회 응답에는
+ * 물품 개수만 있고 목록은 별도 엔드포인트라, 그 연동은 다음 이슈로 미뤘다.
+ * 참여자 수도 서버가 아직 채우지 않아 화면에서 뺐다.
  */
 export const Route = createFileRoute('/join/$shareCode')({
   component: JoinRoomPage,
 })
-
-/** 목업 판정. 실제로는 `GET /api/v1/public/auction-rooms/{shareCode}` 응답을 쓴다. */
-function resolveRoom(shareCode: string) {
-  if (shareCode === 'expired') return { kind: 'closed' as const }
-  if (shareCode !== MOCK_ROOM_DETAIL.shareCode)
-    return { kind: 'invalid' as const }
-  return { kind: 'ok' as const, room: MOCK_ROOM_DETAIL }
-}
 
 function JoinRoomPage() {
   const { shareCode } = Route.useParams()
@@ -40,10 +38,22 @@ function JoinRoomPage() {
   /** 물품 목록을 다 펼쳤는지 */
   const [expanded, setExpanded] = useState(false)
 
-  const result = resolveRoom(shareCode)
+  const { data, isPending, isError, error, refetch } =
+    useGetRoomByShareCode(shareCode)
 
-  if (result.kind !== 'ok') {
-    const invalid = result.kind === 'invalid'
+  if (isPending) return <RoutePending />
+
+  // 없는 공유 코드는 오류가 아니라 "유효하지 않은 링크" 안내로 받는다.
+  const notFound = isError && error?.response?.status === 404
+  if (isError && !notFound) {
+    return <RouteError error={error} reset={() => void refetch()} />
+  }
+
+  const room = data?.data
+  const closed = room?.status === 'CLOSED'
+
+  if (notFound || !room || closed) {
+    const invalid = notFound || !room
     return (
       <GuestShell
         title="경매방 입장"
@@ -85,14 +95,19 @@ function JoinRoomPage() {
     )
   }
 
-  const { room } = result
   const isGuest = user === null
+  const roomTitle = room.name ?? '경매방'
+  // TODO: 물품 목록은 별도 엔드포인트라 아직 목업이다.
+  const items = MOCK_ROOM_DETAIL.items
 
   const enter = () => {
     if (!isGuest && !agreed) return
     setEntering(true)
     // TODO: POST /api/v1/agreements 후 입장 (현재 목업)
-    void navigate({ to: '/rooms/$roomId', params: { roomId: String(room.id) } })
+    void navigate({
+      to: '/rooms/$roomId',
+      params: { roomId: String(room.auctionRoomId) },
+    })
   }
 
   return (
@@ -111,84 +126,86 @@ function JoinRoomPage() {
         <div className="border-b px-5 py-5 md:px-7 md:py-6">
           <div className="flex items-center gap-3.5">
             <ProductThumbnail
-              name={room.title}
+              name={roomTitle}
               size={240}
               className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-fill text-neutral-muted"
             />
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <StatusBadge tone="live" dot>
-                  LIVE
-                </StatusBadge>
+                {room.status === 'OPEN' ? (
+                  <StatusBadge tone="live" dot>
+                    LIVE
+                  </StatusBadge>
+                ) : (
+                  <StatusBadge tone="neutral">시작 전</StatusBadge>
+                )}
                 <span className="truncate text-[11px] font-medium text-neutral-muted">
-                  참여 {room.participantCount}명
+                  물품 {room.itemCount ?? 0}개
                 </span>
               </div>
 
               <h1 className="mt-1.5 truncate text-[17px] font-bold text-foreground">
-                {room.title}
+                {roomTitle}
               </h1>
               <p className="mt-1 truncate text-[12px] font-medium text-neutral-tertiary">
-                {room.sellerName}
+                {room.sellerStoreName}
               </p>
             </div>
           </div>
         </div>
 
         {/* 무엇이 올라와 있는지. 3개까지 보여주고 나머지는 펼쳐서 본다. */}
-        {room.items.length > 0 && (
+        {items.length > 0 && (
           <div className="border-b px-5 py-4 md:px-7">
             <div className="flex items-baseline justify-between">
               <p className="text-[12px] font-bold text-neutral-tertiary">
                 올라온 물품
               </p>
               <p className="text-[11px] font-medium text-neutral-muted">
-                총 {room.items.length}개
+                총 {items.length}개
               </p>
             </div>
 
             <ul className="mt-2.5 space-y-2">
-              {(expanded ? room.items : room.items.slice(0, 3)).map(
-                (item, index) => (
-                  <li
-                    key={item.id}
-                    // 펼칠 때 아래로 하나씩 들어오게 한다.
-                    style={
-                      expanded && index >= 3
-                        ? { animationDelay: `${(index - 3) * 40}ms` }
-                        : undefined
-                    }
-                    className={cn(
-                      'flex items-center gap-3',
-                      expanded && index >= 3 && 'animate-rise',
-                    )}
-                  >
-                    <ProductThumbnail
-                      name={item.name}
-                      size={160}
-                      iconClassName="size-4"
-                      className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
-                    />
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
-                      {item.name}
-                    </span>
-                    <span className="shrink-0 text-[13px] font-bold tabular-nums text-brand-500">
-                      {formatWon(item.currentPrice)}
-                    </span>
-                  </li>
-                ),
-              )}
+              {(expanded ? items : items.slice(0, 3)).map((item, index) => (
+                <li
+                  key={item.id}
+                  // 펼칠 때 아래로 하나씩 들어오게 한다.
+                  style={
+                    expanded && index >= 3
+                      ? { animationDelay: `${(index - 3) * 40}ms` }
+                      : undefined
+                  }
+                  className={cn(
+                    'flex items-center gap-3',
+                    expanded && index >= 3 && 'animate-rise',
+                  )}
+                >
+                  <ProductThumbnail
+                    name={item.name}
+                    size={160}
+                    iconClassName="size-4"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
+                    {item.name}
+                  </span>
+                  <span className="shrink-0 text-[13px] font-bold tabular-nums text-brand-500">
+                    {formatWon(item.currentPrice)}
+                  </span>
+                </li>
+              ))}
             </ul>
 
-            {room.items.length > 3 && (
+            {items.length > 3 && (
               <button
                 type="button"
                 onClick={() => setExpanded((prev) => !prev)}
                 aria-expanded={expanded}
                 className="ease-soft mt-3 flex h-9 w-full items-center justify-center gap-1 rounded-xl bg-fill text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:text-brand-500 active:scale-[0.99]"
               >
-                {expanded ? '접기' : `물품 ${room.items.length - 3}개 더 보기`}
+                {expanded ? '접기' : `물품 ${items.length - 3}개 더 보기`}
                 <ChevronDown
                   aria-hidden
                   className={cn(
@@ -208,26 +225,29 @@ function JoinRoomPage() {
 
           {isGuest ? (
             <>
-              <Button
-                size="cta"
-                variant="brand"
-                className="mt-6"
-                onClick={enter}
+              {/*
+               * 우리가 유도하려는 건 로그인 참여다. 둘러보기는 "그래도 안 할래"
+               * 쪽이라 채움 버튼이 아니라 아래 텍스트 링크로 둔다.
+               */}
+              <Link
+                to="/"
+                search={{ redirect: `/rooms/${room.auctionRoomId}` }}
+                className="ease-soft mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-brand-500 text-card-title font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
               >
-                둘러보기
-              </Button>
+                로그인하고 참여하기
+              </Link>
 
               <p className="mt-3 text-center text-[12px] font-medium text-neutral-tertiary">
                 로그인 없이도 둘러볼 수 있어요. 입찰할 때만 로그인이 필요합니다.
               </p>
 
-              <Link
-                to="/"
-                search={{ redirect: `/rooms/${room.id}` }}
-                className="mt-3 block text-center text-[13px] font-bold text-brand-500 hover:underline"
+              <button
+                type="button"
+                onClick={enter}
+                className="mt-3 block w-full text-center text-[13px] font-bold text-neutral-tertiary hover:underline"
               >
-                로그인하고 참여하기 →
-              </Link>
+                로그인 없이 둘러보기
+              </button>
             </>
           ) : (
             <>

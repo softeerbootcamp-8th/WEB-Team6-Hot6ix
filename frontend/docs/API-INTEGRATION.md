@@ -1,7 +1,18 @@
 # API 연동 가이드
 
-지금 화면은 전부 **목업 데이터**(`src/mocks/`)로 돌아갑니다.
+화면은 **대부분 목업 데이터**(`src/mocks/`)로 돌아갑니다.
 이 문서는 목업을 실제 API 로 갈아 끼우는 순서와, 그 과정에서 쓸 도구를 정리합니다.
+
+### 이미 연동된 화면
+
+| 화면 | 쓰는 API |
+|---|---|
+| `/seller/rooms/$roomId/created` 공유 링크·QR | `GET /api/v1/auction-rooms/{roomId}/share` |
+| 라이브 경매방 공유 패널(`SharePanel`) | 〃 |
+| `/join/$shareCode` 방 정보 (물품 목록은 목업) | `GET /api/v1/auction-rooms/share/{shareCode}` |
+
+QR 은 서버가 이미지를 만들지 않습니다. 서버는 `shareUrl` 문자열만 주고,
+`components/qr-code.tsx`(화면) 와 `lib/qr.ts`(PNG 저장)가 그립니다.
 
 ---
 
@@ -52,7 +63,7 @@ const rooms = data ?? []
 | 목업                | 쓰는 화면                                              | 성격                        |
 | ------------------- | ------------------------------------------------------ | --------------------------- |
 | `MOCK_ROOMS`        | `/rooms`, `/rooms/$roomId`(요약)                       | 경매방 목록                 |
-| `MOCK_ROOM_DETAIL`  | `/rooms/$roomId`, 물품 상세, `/join/$shareCode`        | 방 상세 + 물품 배열         |
+| `MOCK_ROOM_DETAIL`  | `/rooms/$roomId`, 물품 상세, `/join/$shareCode`(물품 목록만) | 방 상세 + 물품 배열   |
 | `MOCK_EMPTY_ROOM`   | `/rooms/7`                                             | 물품 0개인 방(빈 상태 확인) |
 | `MOCK_ROOM_EVENTS`  | 라이브 이벤트 피드                                     | 실시간으로 대체될 값        |
 | `MOCK_PRODUCTS`     | `/seller`, `/seller/products`, 물품 추가 모달          | 판매자 상품                 |
@@ -68,9 +79,16 @@ const rooms = data ?? []
 
 ```tsx
 if (isPending) return <RoutePending />        // 또는 스켈레톤
-if (isError) return <RouteError onRetry={refetch} />
+if (isError) return <RouteError error={error} reset={() => void refetch()} />
 if (rooms.length === 0) return <EmptyState ... />
 ```
+
+`RouteError` 의 prop 은 `error` / `reset` 이다(`onRetry` 아님). 라우터 에러
+경계와 같은 시그니처라 그대로 꽂아 쓸 수 있다.
+
+**404 를 에러로 처리하지 않는 경우가 있다.** 예를 들어 `/join/$shareCode` 는
+없는 공유 코드가 "장애" 가 아니라 "유효하지 않은 링크" 안내다. 이럴 땐
+`error?.response?.status` 를 보고 갈라 준다.
 
 - **로딩**: 라우트 전체면 `main.tsx` 에 등록된 `RoutePending`, 카드 단위면
   `animate-skeleton` 유틸로 자리를 잡아 둔다.
@@ -126,7 +144,9 @@ if (rooms.length === 0) return <EmptyState ... />
 ## 7. 자주 막히는 곳
 
 - **CORS** — `VITE_API_BASE_URL` 을 비우고 vite 프록시를 쓰면 안 만납니다.
-- **401** — 세션 쿠키 방식이라 `withCredentials` 설정이 필요할 수 있습니다.
-  `custom-instance.ts` 한 곳만 고치면 됩니다.
+- **401** — 세션 쿠키(`SESSION`, httpOnly) 방식이라 `custom-instance.ts` 에
+  `withCredentials: true` 를 켜 두었습니다. dev 는 vite 프록시로 동일 출처가 되어
+  없어도 되지만, `VITE_API_BASE_URL` 이 다른 호스트를 가리키는 순간 이게 없으면
+  로그인한 사용자도 401 을 받습니다.
 - **응답 필드가 화면과 다름** — 화면을 고치기 전에 백엔드와 계약을 맞추세요.
   API Method/Path/필드/enum/날짜·금액 형식은 공용 계약입니다(루트 `CLAUDE.md`).

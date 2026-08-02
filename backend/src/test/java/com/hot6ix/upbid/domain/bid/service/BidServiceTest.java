@@ -43,6 +43,7 @@ class BidServiceTest {
     private static final Long ITEM_ID = 2L;
     private static final Long BIDDER_ID = 10L;
     private static final Long OTHER_BIDDER_ID = 11L;
+    private static final Long SELLER_ID = 20L;
 
     private static final long STARTING_PRICE = 10_000L;
     private static final long BID_INCREMENT = 1_000L;
@@ -117,8 +118,18 @@ class BidServiceTest {
         when(userRepository.findByUserIdAndDeletedAtIsNull(BIDDER_ID)).thenReturn(Optional.of(bidder));
     }
 
+    /** 판매자는 입찰자와 다른 사람이라 판매자 검사를 통과한다. */
     private void givenItem(AuctionItem auctionItem) {
+        givenItemSoldBy(auctionItem, SELLER_ID);
+    }
+
+    /**
+     * 판매자 조회는 락을 잡기 전에 일어나 물품 조회와 별개 쿼리지만, 검사 자체는 락 안에서
+     * 하므로 두 스텁이 항상 함께 필요하다.
+     */
+    private void givenItemSoldBy(AuctionItem auctionItem, Long sellerUserId) {
         when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(sellerUserId));
     }
 
     /**
@@ -260,16 +271,48 @@ class BidServiceTest {
     }
 
     @Test
-    @DisplayName("없는 물품에는 입찰할 수 없다")
+    @DisplayName("판매자는 자기 물품에 입찰할 수 없다")
+    void rejectsSellerBiddingOnOwnItem() {
+
+        givenBidder();
+        givenItemSoldBy(inProgressItem(), BIDDER_ID);
+
+        assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, STARTING_PRICE))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(BidErrorType.SELLER_CANNOT_BID);
+
+        verify(bidRepository, never()).saveAndFlush(any(Bid.class));
+    }
+    
+    @Test
+    @DisplayName("판매자가 아직 시작 안 한 자기 물품에 입찰하면 상태가 아니라 판매자 사유로 거절한다")
+    void rejectsSellerBeforeItemStatus() {
+
+        givenBidder();
+        givenItemSoldBy(
+                auctionItem(AuctionItemStatus.READY, LocalDateTime.now().plusHours(1), null),
+                BIDDER_ID);
+
+        assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, STARTING_PRICE))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(BidErrorType.SELLER_CANNOT_BID);
+    }
+
+    @Test
+    @DisplayName("없는 물품에는 입찰할 수 없고 물품 락도 잡지 않는다")
     void rejectsMissingItem() {
 
         givenBidder();
-        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.empty());
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, STARTING_PRICE))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
+
+        verify(auctionItemRepository, never()).findByIdForUpdate(any());
     }
 
     @Test

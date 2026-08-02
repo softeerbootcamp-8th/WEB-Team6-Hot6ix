@@ -519,8 +519,8 @@ function LiveRoomPage() {
 
           {panel === 'share' && (
             <SharePanel
+              roomId={room.id}
               roomTitle={room.title}
-              shareCode={room.shareCode}
               onClose={() => setPanel('leaderboard')}
             />
           )}
@@ -856,8 +856,8 @@ function LiveRoomPage() {
 
             <RightSlot active={panel === 'share'}>
               <SharePanel
+                roomId={room.id}
                 roomTitle={room.title}
-                shareCode={room.shareCode}
                 onClose={() => setPanel('leaderboard')}
               />
             </RightSlot>

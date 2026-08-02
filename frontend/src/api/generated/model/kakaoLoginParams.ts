@@ -5,10 +5,6 @@
  * OpenAPI spec version: v0
  */
 
-/**
- * 테스트 응답 DTO
- */
-export interface TestDto {
-  /** 응답 메시지 */
-  name?: string;
-}
+export type KakaoLoginParams = {
+code: string;
+};

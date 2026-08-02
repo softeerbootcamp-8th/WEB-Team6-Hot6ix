@@ -354,8 +354,7 @@ class DealCandidateServiceTest {
     }
 
     private void givenItemWithSeller() {
-        when(auctionItemRepository.findWithSeller(ITEM_ID))
-                .thenReturn(Optional.of(soldItem(AuctionItemStatus.SOLD)));
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(SELLER_ID));
     }
 
     private void givenPage(int page, long total, DealCandidate... candidates) {
@@ -498,7 +497,7 @@ class DealCandidateServiceTest {
     @DisplayName("없는 물품의 후보는 조회할 수 없다")
     void getCandidatesRejectsMissingItem() {
 
-        when(auctionItemRepository.findWithSeller(ITEM_ID)).thenReturn(Optional.empty());
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID))
                 .isInstanceOf(ApplicationException.class)

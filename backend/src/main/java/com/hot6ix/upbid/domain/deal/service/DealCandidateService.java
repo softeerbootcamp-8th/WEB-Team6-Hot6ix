@@ -86,11 +86,10 @@ public class DealCandidateService {
     public DealCandidateListResponseDto getCandidates(
             Long auctionItemId, int page, Long loginUserId) {
 
-        AuctionItem auctionItem = auctionItemRepository.findWithSeller(auctionItemId)
+        Long sellerUserId = auctionItemRepository.findSellerUserId(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
-        boolean seller = auctionItem.getAuctionRoom().getSellerProfile().getUser()
-                .getUserId().equals(loginUserId);
+        boolean seller = sellerUserId.equals(loginUserId);
         DealCandidate mine = seller ? null
                 : dealCandidateRepository.findByBidder(auctionItemId, loginUserId)
                         .orElseThrow(() -> new ApplicationException(DealErrorType.NOT_DEAL_VIEWER));
