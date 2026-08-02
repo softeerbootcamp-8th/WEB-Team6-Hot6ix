@@ -1,16 +1,24 @@
 import { Search, X } from 'lucide-react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import {
+  useGetDetail1,
+  useGetSummaries,
+} from '@/api/generated/경매-물품-조회/경매-물품-조회'
+import { usePlace } from '@/api/generated/입찰/입찰'
 import { ConnectionBanner } from '@/features/live/components/connection-banner'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'
 import { ItemDetailPanel } from '@/features/live/components/item-detail-panel'
 import { LiveItemList } from '@/features/live/components/live-item-list'
+import { RouteError, RoutePending } from '@/components/route-states'
 import {
-  MOCK_ROOM_DETAIL,
-  MOCK_ROOM_EVENTS,
-  themedRoomItems,
-} from '@/mocks/data'
+  fallbackItem,
+  toAuctionItemDetail,
+  toAuctionItems,
+} from '@/features/live/adapt-item'
+import { toBidErrorMessage } from '@/features/live/bid-error'
+import { MOCK_ROOM_DETAIL, MOCK_ROOM_EVENTS } from '@/mocks/data'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -46,10 +54,24 @@ function AuctionItemPage() {
   const isDesktop = useIsDesktop()
   const showDevTools = useDevTools()
 
-  const room = {
-    ...MOCK_ROOM_DETAIL,
-    items: themedRoomItems(Number(roomId), MOCK_ROOM_DETAIL.items),
-  }
+  const auctionRoomId = Number(roomId)
+  const auctionItemId = Number(itemId)
+
+  const summaries = useGetSummaries(auctionRoomId, {
+    query: { enabled: Number.isInteger(auctionRoomId) },
+  })
+  const detailQuery = useGetDetail1(auctionItemId, {
+    query: { enabled: Number.isInteger(auctionItemId) },
+  })
+  const placeBid = usePlace()
+
+  const serverItems = useMemo(
+    () => toAuctionItems(summaries.data?.data ?? []),
+    [summaries.data],
+  )
+
+  // 방 제목·판매자명은 아직 목업이다. 물품 배열만 서버 값으로 바꾼다.
+  const room = { ...MOCK_ROOM_DETAIL, items: serverItems }
   const isGuest = user === null
 
   const [keyword, setKeyword] = useState('')
@@ -63,9 +85,22 @@ function AuctionItemPage() {
   const [override, setOverride] = useState<AuctionItemDetail | null>(null)
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
 
-  const base =
-    room.items.find((candidate) => String(candidate.id) === itemId) ??
-    room.items[0]!
+  /*
+   * 상세 API 가 원본이고, 목록은 왼쪽 열용이다.
+   *
+   * 아직 아무것도 못 받았으면 목업 하나를 자리에 놓는다. 훅 순서를 지키려면
+   * 렌더 도중에 빠져나갈 수 없어서다. 실제로 목업이 보이는 일은 없다 —
+   * 아래에서 로딩·에러를 먼저 걸러낸다.
+   */
+  const detailDto = detailQuery.data?.data
+  const base = useMemo(() => {
+    const listItem =
+      serverItems.find((candidate) => candidate.id === auctionItemId) ??
+      fallbackItem(0)
+    if (!detailDto || detailDto.auctionItemId !== auctionItemId) return listItem
+    return toAuctionItemDetail(detailDto, listItem)
+  }, [serverItems, detailDto, auctionItemId])
+
   const item = override?.id === base.id ? override : base
 
   const handleSseEvent = useCallback(
@@ -172,6 +207,11 @@ function AuctionItemPage() {
   const minimum = item.currentPrice + item.bidUnit
   const [amount, setAmount] = useState(minimum)
 
+  // 상세가 도착하면 최소 입찰가로 다시 맞춘다. 자리값이 남아 있으면 안 된다.
+  useEffect(() => {
+    setAmount(item.currentPrice + item.bidUnit)
+  }, [item.currentPrice, item.bidUnit])
+
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
     if (!trimmed) return room.items
@@ -226,32 +266,52 @@ function AuctionItemPage() {
 
   const bidBlocked = closed || ready || amount < minimum
 
-  const submitBid = () => {
+  const submitBid = async () => {
     setPending(true)
     setFeedback(null)
 
-    // TODO: POST /api/v1/auction-items/{id}/bids 연동 (현재 목업)
-    window.setTimeout(() => {
+    try {
+      await placeBid.mutateAsync({
+        auctionItemId: item.id,
+        data: { amount },
+      })
+
+      // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
+      setFeedback({
+        tone: 'success',
+        message: `${formatWon(amount)} 입찰이 등록됐어요.`,
+      })
+      toast.success('입찰이 등록됐어요', {
+        description: `${item.name} · ${formatWon(amount)}`,
+      })
+      // 데모 입찰로 덮어쓴 값을 비워야 서버가 준 현재가가 보인다.
+      setOverride(null)
+      void detailQuery.refetch()
+      void summaries.refetch()
+    } catch (error) {
+      const { title, description } = toBidErrorMessage(error)
+      setFeedback({ tone: 'error', message: `${title}. ${description}` })
+      toast.error(title, { description })
+    } finally {
       setPending(false)
-      if (amount <= item.currentPrice) {
-        const message = '이미 더 높은 입찰이 있어요'
-        setFeedback({
-          tone: 'error',
-          message: `${message}. 최신 현재가로 다시 시도해주세요.`,
-        })
-        toast.error(message, {
-          description: `현재가 ${formatWon(item.currentPrice)} · 그 위로 다시 입찰해 주세요.`,
-        })
-      } else {
-        setFeedback({
-          tone: 'success',
-          message: `${formatWon(amount)} 입찰이 등록됐어요.`,
-        })
-        toast.success('입찰이 등록됐어요', {
-          description: `${item.name} · ${formatWon(amount)}`,
-        })
-      }
-    }, 1200)
+    }
+  }
+
+  /*
+   * 여기부터는 화면을 통째로 갈아끼운다. 훅은 위에서 전부 부른 뒤다.
+   *
+   * 라이브 경매방(`/rooms/$roomId`)과 달리 이 라우트는 링크로 바로 들어오는
+   * 단독 페이지라, 상세를 못 받으면 보여줄 게 없다. 실시간 연결을 지킬 이유도
+   * 없으므로 전역 상태 화면을 그대로 쓴다.
+   */
+  if (detailQuery.isPending) return <RoutePending />
+  if (detailQuery.isError) {
+    return (
+      <RouteError
+        error={detailQuery.error as Error}
+        reset={() => void detailQuery.refetch()}
+      />
+    )
   }
 
   /*

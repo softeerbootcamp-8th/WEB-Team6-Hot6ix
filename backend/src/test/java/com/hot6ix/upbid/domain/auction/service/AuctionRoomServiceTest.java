@@ -30,6 +30,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class AuctionRoomServiceTest {
@@ -181,6 +182,44 @@ class AuctionRoomServiceTest {
         when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> auctionRoomService.getRoom(999L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("공유 코드로 경매방 공개 정보를 조회한다")
+    void getRoomByShareCode() {
+
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .shareCode("aBcD1234aBcD1234")
+                .status(AuctionRoomStatus.BEFORE)
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+        ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("aBcD1234aBcD1234"))
+                .thenReturn(Optional.of(auctionRoom));
+        when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(10L)).thenReturn(3L);
+
+        AuctionRoomPublicResponseDto response = auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234");
+
+        assertThat(response.auctionRoomId()).isEqualTo(10L);
+        assertThat(response.name()).isEqualTo("승민의 경매방");
+        assertThat(response.itemCount()).isEqualTo(3L);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 공유 코드로 조회하면 예외가 발생한다")
+    void getRoomByShareCode_notFound() {
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("unknownShareCode"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionRoomService.getRoomByShareCode("unknownShareCode"))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);

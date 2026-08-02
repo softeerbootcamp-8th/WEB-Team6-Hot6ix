@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { QrCode } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/page-shell'
-import { MOCK_ROOM_DETAIL } from '@/mocks/data'
+import { QrCode } from '@/components/qr-code'
+import { useGetShareInfo } from '@/api/generated/경매방/경매방'
 import { requireMember } from '@/lib/route-guards'
 import { toast } from '@/lib/toast'
 
@@ -20,9 +20,12 @@ export const Route = createFileRoute('/seller/rooms/$roomId/created')({
 function AuctionRoomCreatedPage() {
   const { roomId } = Route.useParams()
 
-  const shareUrl = `${window.location.origin}/join/${MOCK_ROOM_DETAIL.shareCode}`
+  // 공유 링크는 서버가 조립해서 준다(share_code + 프론트 베이스 URL).
+  const { data, isError } = useGetShareInfo(Number(roomId))
+  const shareUrl = data?.data?.shareUrl
 
   const copy = async () => {
+    if (!shareUrl) return
     try {
       await navigator.clipboard.writeText(shareUrl)
       toast.success('참여 링크를 복사했어요', { description: shareUrl })
@@ -47,25 +50,27 @@ function AuctionRoomCreatedPage() {
         {/* 참여 링크 — 440 + 16 + 120 */}
         <div className="mt-8 flex gap-4">
           <p className="flex h-[60px] min-w-0 flex-1 items-center truncate rounded-[20px] border bg-surface-subtle px-5 text-[14px] font-semibold text-foreground">
-            {shareUrl}
+            {shareUrl ??
+              (isError ? '링크를 불러오지 못했어요' : '불러오는 중…')}
           </p>
           <button
             type="button"
             onClick={copy}
-            className="ease-soft h-[60px] w-[120px] shrink-0 rounded-[14px] bg-brand-50 text-[13px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-200 active:scale-95"
+            disabled={!shareUrl}
+            className="ease-soft h-[60px] w-[120px] shrink-0 rounded-[14px] bg-brand-50 text-[13px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-200 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             링크 복사
           </button>
         </div>
 
-        {/* QR — 160×160. TODO: 실제 QR 생성은 별도 이슈. */}
+        {/* QR — 160×160 */}
         <div className="mt-6 flex justify-center">
-          <span
-            aria-label="경매방 참여 QR 코드"
-            className="flex size-40 items-center justify-center rounded-[20px] border bg-card text-neutral-muted"
-          >
-            <QrCode aria-hidden className="size-20" />
-          </span>
+          {/* Figma 기준 160×160 고정 */}
+          <QrCode
+            value={shareUrl}
+            error={isError}
+            className="size-40 rounded-[20px]"
+          />
         </div>
 
         <Link

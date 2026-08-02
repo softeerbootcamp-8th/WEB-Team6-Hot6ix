@@ -57,11 +57,11 @@ Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다.
 | 위치                                    | 무엇                                                  |
 | --------------------------------------- | ----------------------------------------------------- |
 | `components/ui/`                        | Button · Field · Dropdown · Modal · ConfirmDialog · Toaster |
-| `components/`                           | Pager · EmptyState · ProductThumbnail · ProfilePhoto · Reveal · StatusBadge |
+| `components/`                           | Pager · EmptyState · ProductThumbnail · ProfilePhoto · Reveal · StatusBadge · QrCode |
 | `components/layout/`                    | AppShell · GuestShell · AppHeader · MobileAppBar · MobileNavDrawer |
 | `features/live/components/`             | LiveShell · LiveItemList · ItemDetailPanel · QuickBidOverlay · LeaderboardRows · EventFeed |
 | `hooks/` · `features/live/`             | useIsDesktop · useCountdown · useListFlip · useEventEntrance |
-| `lib/`                                  | toast · session · route-guards · format(금액·날짜·전화번호) · dev-flags |
+| `lib/`                                  | toast · session · route-guards · format(금액·날짜·전화번호) · dev-flags · qr |
 
 ## 개발용 도구
 

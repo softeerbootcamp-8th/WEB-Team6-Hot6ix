@@ -4,7 +4,9 @@ import com.hot6ix.upbid.domain.auction.api.AuctionRoomApi;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
+import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
 import com.hot6ix.upbid.global.interceptor.GuestAllowed;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuctionRoomController implements AuctionRoomApi {
 
     private final AuctionRoomService auctionRoomService;
+    private final AuctionRoomShareService auctionRoomShareService;
 
     @PostMapping
     @Override
@@ -40,6 +43,27 @@ public class AuctionRoomController implements AuctionRoomApi {
     public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(@PathVariable Long roomId) {
 
         AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(roomId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "경매방 정보 조회에 성공했습니다."));
+    }
+
+    @GetMapping("/{roomId}/share")
+    @Override
+    public ResponseEntity<CommonResponse<AuctionRoomShareResponseDto>> getShareInfo(
+            Long userId, @PathVariable Long roomId) {
+
+        AuctionRoomShareResponseDto response = auctionRoomShareService.getShareInfo(userId, roomId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "경매방 공유 링크 조회에 성공했습니다."));
+    }
+
+    @GetMapping("/share/{shareCode}")
+    @GuestAllowed
+    @Override
+    public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoomByShareCode(
+            @PathVariable String shareCode) {
+
+        AuctionRoomPublicResponseDto response = auctionRoomService.getRoomByShareCode(shareCode);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매방 정보 조회에 성공했습니다."));
     }

@@ -23,6 +23,7 @@
 | 알림             | `toast.success/error/info` — 우측 상단, 전역                        |
 | 목록 페이지 넘김 | `Pager`                                                             |
 | 상품 사진        | `ProductThumbnail` / 프로필은 `ProfilePhoto`                        |
+| QR 코드          | `QrCode` (PNG 저장은 `lib/qr` 의 `downloadQrCard`)                  |
 | 빈 목록·오류     | `EmptyState`, 라우트 단위는 `main.tsx` 에 전역 등록된 상태 화면     |
 | 페이지 골격      | `AppShell`(회원) / `GuestShell`(비로그인) / `LiveShell`(라이브 3열) |
 | 등장 애니메이션  | `Reveal`, 목록 이동은 `useListFlip`                                 |
