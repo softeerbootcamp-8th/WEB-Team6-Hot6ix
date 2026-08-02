@@ -5,38 +5,8 @@
 
 ## 1. 폴더 구조
 
-```
-frontend/
-├── public/                     # 정적 에셋
-├── src/
-│   ├── api/
-│   │   ├── generated/          # Orval 생성물 (훅 + model/) — 수정 금지
-│   │   └── mutator/
-│   │       └── custom-instance.ts   # 공용 axios 인스턴스 (baseURL·인터셉터)
-│   ├── components/
-│   │   └── ui/                 # shadcn/ui 컴포넌트
-│   ├── lib/
-│   │   ├── utils.ts            # cn() 클래스 병합 유틸
-│   │   └── query-client.ts     # 전역 QueryClient
-│   ├── routes/                 # 파일 기반 라우트
-│   │   ├── __root.tsx          # 루트 레이아웃 (헤더 + <Outlet/>)
-│   │   └── index.tsx           # "/" 라우트
-│   ├── styles/
-│   │   └── globals.css         # Tailwind import + 디자인 토큰(@theme)
-│   ├── main.tsx                # Provider 조립 (Query → Router)
-│   ├── routeTree.gen.ts        # 자동 생성 (gitignore)
-│   └── vite-env.d.ts           # env 타입
-├── components.json             # shadcn 설정
-├── orval.config.ts             # OpenAPI → generated
-├── vite.config.ts
-└── tsconfig*.json
-```
-
-권장 추가 위치(필요 시 생성):
-
-- `src/features/<feature>/` — 도메인별 컴포넌트·훅·타입 묶음
-- `src/hooks/` — 공용 커스텀 훅
-- `src/components/` (ui 밖) — 도메인 공용 컴포넌트
+실제 구조와 "새 파일을 어디에 두는지" 는
+[`DEVELOPMENT.md`](./DEVELOPMENT.md) 4장에 정리돼 있습니다.
 
 ## 2. 네이밍
 
@@ -78,10 +48,13 @@ frontend/
 
 - Tailwind v4 는 CSS-first. 설정은 `src/styles/globals.css` 의 `@theme`/CSS 변수로 관리
   (별도 `tailwind.config.js` 없음).
-- 색상은 토큰 유틸(`bg-background`, `text-muted-foreground`, `border` 등)로 사용하고,
-  하드코딩된 색(`#fff`, `text-gray-500`) 은 지양한다.
+- 색상은 **디자인 토큰만** 쓴다: `bg-brand-500`, `text-neutral-tertiary`,
+  `bg-result-won-surface` 등. 헥스(`#3182f6`)나 기본 팔레트(`text-gray-500`) 금지.
+- 글자는 크기와 굵기를 항상 함께 적는다: `text-[14px] font-bold`.
 - 클래스 조합은 `cn()` 사용.
 - 새 컴포넌트는 `pnpm dlx shadcn@latest add <name>` 로 추가하고 `components/ui/` 에 둔다.
+- 화면을 만들 때 지켜야 하는 레이아웃·모션 규칙은
+  [`UI-RULES.md`](./UI-RULES.md) 에 따로 있다.
 
 ## 7. 코드 품질
 
@@ -91,6 +64,15 @@ frontend/
 
 ## 8. 커밋 컨벤션
 
-- 형식: `type: 요약` — `feat`, `fix`, `docs`, `chore`, `refactor`, `style`, `test`.
-- 모노레포 전체 공통 변경은 기존 관례대로 `[ALL] type: ...`.
-- 예: `feat: 실시간 입찰 소켓 연결`, `[ALL] chore: gitignore 정리`.
+- 형식: `[FE] type: 요약` — `feat`, `fix`, `docs`, `chore`, `refactor`, `style`, `test`.
+  모노레포라 영역 태그(`[FE]`/`[BE]`/`[ALL]`)를 앞에 붙인다.
+- 본문에는 무엇을 왜 바꿨는지 목록으로 남긴다.
+
+```text
+[FE] fix: 모바일에서 버튼이 눌리지 않던 문제 수정
+
+- md:hidden 안의 dialog 가 showModal 되어 문서 전체가 inert 가 되던 원인 제거
+- useIsDesktop 으로 트리를 하나만 렌더하도록 변경
+```
+
+- 커밋·푸시는 사람이 확인한 뒤에 한다.

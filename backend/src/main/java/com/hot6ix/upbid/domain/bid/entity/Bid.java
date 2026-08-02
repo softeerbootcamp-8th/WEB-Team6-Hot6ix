@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -20,9 +21,22 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+/**
+ * 한 물품에서 같은 금액은 한 번만 입찰될 수 있다. 현재가 이하를 거절하는 규칙에서는 같은
+ * 금액이 정당한 경우가 없고, 이 제약이 있으면 금액 순서가 곧 시각 순서가 되어 낙찰 순위를
+ * 금액만으로 결정할 수 있다.
+ *
+ * <p>제약은 값의 중복만 막는다. 서로 다른 금액이 현재가 검사를 통과한 뒤 뒤바뀐 순서로
+ * 커밋되는 것은 막지 못하므로, 입찰 동시성은 물품 행 잠금으로 따로 다뤄야 한다.
+ */
 @Getter
 @Entity
-@Table(name = "bids")
+@Table(
+        name = "bids",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_bids_item_amount",
+                columnNames = {"auction_item_id", "amount"})
+)
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Bid {
@@ -33,18 +47,18 @@ public class Bid {
     private Long bidId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "auction_item_id")
+    @JoinColumn(name = "auction_item_id", nullable = false)
     private AuctionItem auctionItem;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "bidder_user_id")
+    @JoinColumn(name = "bidder_user_id", nullable = false)
     private User bidder;
 
-    @Column(name = "amount")
+    @Column(name = "amount", nullable = false)
     private Long amount;
 
     @CreatedDate
-    @Column(name = "accepted_at", updatable = false)
+    @Column(name = "accepted_at", updatable = false, nullable = false)
     private LocalDateTime acceptedAt;
 
     @Builder

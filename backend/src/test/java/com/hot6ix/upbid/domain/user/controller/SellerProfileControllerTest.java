@@ -17,25 +17,17 @@ import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.service.SellerProfileService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
+import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
-import tools.jackson.databind.ObjectMapper;
 
 @WebMvcTest(controllers = SellerProfileController.class)
 @Import(GlobalExceptionHandler.class)
-class SellerProfileControllerTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ObjectMapper objectMapper;
+class SellerProfileControllerTest extends AbstractControllerTest {
 
     @MockitoBean
     private SellerProfileService sellerProfileService;
@@ -67,7 +59,6 @@ class SellerProfileControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(post("/api/v1/seller-profiles")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -87,7 +78,6 @@ class SellerProfileControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(post("/api/v1/seller-profiles")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -104,7 +94,6 @@ class SellerProfileControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/seller-profiles")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -123,7 +112,6 @@ class SellerProfileControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/seller-profiles")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -138,7 +126,7 @@ class SellerProfileControllerTest {
 
         when(sellerProfileService.getMyProfile(1L)).thenReturn(sampleResponse());
 
-        mockMvc.perform(get("/api/v1/seller-profiles/me").header("X-User-Id", "1"))
+        mockMvc.perform(get("/api/v1/seller-profiles/me"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.storeName").value("승민상점"));
@@ -151,7 +139,7 @@ class SellerProfileControllerTest {
         when(sellerProfileService.getMyProfile(1L))
                 .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
 
-        mockMvc.perform(get("/api/v1/seller-profiles/me").header("X-User-Id", "1"))
+        mockMvc.perform(get("/api/v1/seller-profiles/me"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(3002));
@@ -169,7 +157,6 @@ class SellerProfileControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(put("/api/v1/seller-profiles/me")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -185,7 +172,6 @@ class SellerProfileControllerTest {
                 .build();
 
         mockMvc.perform(put("/api/v1/seller-profiles/me")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -204,7 +190,6 @@ class SellerProfileControllerTest {
                 .build();
 
         mockMvc.perform(put("/api/v1/seller-profiles/me")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -216,7 +201,7 @@ class SellerProfileControllerTest {
     @DisplayName("판매자 프로필을 삭제한다")
     void deleteMyProfile() throws Exception {
 
-        mockMvc.perform(delete("/api/v1/seller-profiles/me").header("X-User-Id", "1"))
+        mockMvc.perform(delete("/api/v1/seller-profiles/me"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").doesNotExist());

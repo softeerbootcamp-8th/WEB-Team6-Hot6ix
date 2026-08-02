@@ -1,7 +1,9 @@
 package com.hot6ix.upbid.domain.auction.entity;
 
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
-import com.hot6ix.upbid.global.common.BaseTimeEntity;
+import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -23,7 +25,7 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(name = "auction_rooms")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class AuctionRoom extends BaseTimeEntity {
+public class AuctionRoom extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -46,7 +48,7 @@ public class AuctionRoom extends BaseTimeEntity {
     @Column(name = "live_url", columnDefinition = "TEXT")
     private String liveUrl;
 
-    @Column(name = "share_code", length = 32)
+    @Column(name = "share_code", length = 32, unique = true)
     private String shareCode;
 
     @Enumerated(EnumType.STRING)
@@ -76,5 +78,42 @@ public class AuctionRoom extends BaseTimeEntity {
         this.softCloseTriggerSeconds = softCloseTriggerSeconds;
         this.softCloseExtendSeconds = softCloseExtendSeconds;
         this.closedAt = closedAt;
+    }
+
+    public static AuctionRoom from(SellerProfile sellerProfile, AuctionRoomCreateRequestDto request, String shareCode) {
+        return AuctionRoom.builder()
+                .sellerProfile(sellerProfile)
+                .name(request.name())
+                .coverImageUrl(request.coverImageUrl())
+                .description(request.description())
+                .liveUrl(request.liveUrl())
+                .shareCode(shareCode)
+                .softCloseTriggerSeconds(request.softCloseTriggerSeconds())
+                .softCloseExtendSeconds(request.softCloseExtendSeconds())
+                .build();
+    }
+
+    /**
+     * 요청에서 값이 온 필드만 부분 병합한다. 생략된(null) 필드는 기존 값을 그대로 유지한다.
+     */
+    public void update(AuctionRoomUpdateRequestDto request) {
+        if (request.name() != null) {
+            this.name = request.name();
+        }
+        if (request.coverImageUrl() != null) {
+            this.coverImageUrl = request.coverImageUrl();
+        }
+        if (request.description() != null) {
+            this.description = request.description();
+        }
+        if (request.liveUrl() != null) {
+            this.liveUrl = request.liveUrl();
+        }
+        if (request.softCloseTriggerSeconds() != null) {
+            this.softCloseTriggerSeconds = request.softCloseTriggerSeconds();
+        }
+        if (request.softCloseExtendSeconds() != null) {
+            this.softCloseExtendSeconds = request.softCloseExtendSeconds();
+        }
     }
 }

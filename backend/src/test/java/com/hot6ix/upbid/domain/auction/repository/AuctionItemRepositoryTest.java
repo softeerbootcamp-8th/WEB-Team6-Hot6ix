@@ -12,6 +12,7 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -198,5 +199,73 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 product.getProductId(), AuctionItemStatus.READY);
 
         assertThat(started).isFalse();
+    }
+
+    /**
+     * 트랜잭션이 둘 필요해 락의 실제 차단은 볼 수 없어 락 모드만 단정한다. {@code clear()}가
+     * 필요한 이유는 같은 트랜잭션에서 INSERT한 엔티티가 이미 쓰기 상태로 표시돼 있기 때문이다.
+     */
+    @Test
+    @DisplayName("락 조회는 물품에 쓰기 락을 걸고 그대로 돌려준다")
+    void findByIdForUpdateLocksItem() {
+
+        AuctionItem item = newAuctionItem(newAuctionRoom("승민상점 경매방"), "낙찰물품", AuctionItemStatus.SOLD);
+        Long auctionItemId = item.getAuctionItemId();
+        entityManager.flush();
+        entityManager.clear();
+
+        AuctionItem locked = auctionItemRepository.findByIdForUpdate(auctionItemId).orElseThrow();
+
+        assertThat(locked.getAuctionItemId()).isEqualTo(auctionItemId);
+        assertThat(locked.getStatus()).isEqualTo(AuctionItemStatus.SOLD);
+        assertThat(entityManager.getEntityManager().getLockMode(locked))
+                .isEqualTo(LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    @Test
+    @DisplayName("없는 물품을 락 조회하면 빈 값을 돌려준다")
+    void findByIdForUpdateReturnsEmptyWhenNotFound() {
+        assertThat(auctionItemRepository.findByIdForUpdate(999L)).isEmpty();
+    }
+
+    /**
+     * 판매자 본인 입찰 차단이 이 조회에 걸려 있다. 경로가 바뀌면 차단 대상이 바뀌므로
+     * 경매방을 거쳐 회원까지 닿는지 실제 쿼리로 확인한다.
+     */
+    @Test
+    @DisplayName("물품의 판매자 회원 ID를 경매방을 거쳐 조회한다")
+    void findSellerUserIdFollowsAuctionRoom() {
+
+        AuctionItem item = newAuctionItem(newAuctionRoom("승민상점 경매방"), "한정판피규어",
+                AuctionItemStatus.IN_PROGRESS);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(auctionItemRepository.findSellerUserId(item.getAuctionItemId()))
+                .contains(sellerProfile.getUser().getUserId());
+    }
+
+    @Test
+    @DisplayName("없는 물품의 판매자를 조회하면 빈 값을 돌려준다")
+    void findSellerUserIdReturnsEmptyWhenNotFound() {
+        assertThat(auctionItemRepository.findSellerUserId(999L)).isEmpty();
+    }
+
+    /**
+     * 경매방에 판매자가 없으면 조인이 걸러 빈 값이 된다. Service가 이걸 물품 없음으로 바꿔
+     * 입찰을 거절하므로, 판매자를 확인할 수 없는 물품은 통과하지 않는다.
+     */
+    @Test
+    @DisplayName("경매방에 판매자가 없으면 판매자 조회가 빈 값이다")
+    void findSellerUserIdReturnsEmptyWhenRoomHasNoSeller() {
+
+        AuctionRoom roomWithoutSeller = entityManager.persist(AuctionRoom.builder()
+                .name("판매자 없는 방")
+                .build());
+        AuctionItem item = newAuctionItem(roomWithoutSeller, "주인없는물품", AuctionItemStatus.IN_PROGRESS);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(auctionItemRepository.findSellerUserId(item.getAuctionItemId())).isEmpty();
     }
 }

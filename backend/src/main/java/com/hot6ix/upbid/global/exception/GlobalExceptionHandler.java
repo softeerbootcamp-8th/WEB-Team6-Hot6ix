@@ -10,6 +10,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
 import org.springframework.validation.method.ParameterErrors;
 import org.springframework.validation.method.ParameterValidationResult;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -76,6 +77,16 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(CommonErrorType.INVALID_REQUEST.getHttpStatus())
                 .body(CommonResponse.error(CommonErrorType.INVALID_REQUEST, errors));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<CommonResponse<Void>> handleHttpMessageNotReadableException(
+            HttpMessageNotReadableException e, HttpServletRequest request) {
+
+        log.warn("요청 바디 파싱 실패 - [{}] {}", request.getMethod(), request.getRequestURI());
+
+        return ResponseEntity.status(CommonErrorType.INVALID_REQUEST.getHttpStatus())
+                .body(CommonResponse.error(CommonErrorType.INVALID_REQUEST));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

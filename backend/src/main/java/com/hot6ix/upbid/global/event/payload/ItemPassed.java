@@ -12,7 +12,8 @@ public record ItemPassed(
         EventType type,
         Long roomId,
         Long itemId,
-        LocalDateTime occurredAt
+        LocalDateTime occurredAt,
+        String itemName
 ) implements ItemEvent {
 
     public ItemPassed {
@@ -21,10 +22,11 @@ public record ItemPassed(
         Objects.requireNonNull(roomId, "roomId");
         Objects.requireNonNull(itemId, "itemId");
         Objects.requireNonNull(occurredAt, "occurredAt");
+        Objects.requireNonNull(itemName, "itemName");
     }
 
-    public static ItemPassed of(Long roomId, Long itemId, LocalDateTime occurredAt) {
+    public static ItemPassed of(Long roomId, Long itemId, String itemName, LocalDateTime occurredAt) {
         return new ItemPassed(UUID.randomUUID().toString(), EventType.ITEM_PASSED,
-                roomId, itemId, occurredAt);
+                roomId, itemId, occurredAt, itemName);
     }
 }
