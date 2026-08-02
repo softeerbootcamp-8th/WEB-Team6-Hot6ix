@@ -56,7 +56,11 @@ public class AuctionItemCloseService {
 
     /**
      * 리스너가 커밋 후에만 받으므로(DomainEventSseListener) 마감이 롤백되면 이벤트도 나가지 않는다.
-     * 낙찰 이벤트에는 D(낙찰 후보 생성)가 걸려 있고, 유찰 이벤트는 화면 알림에만 쓰인다.
+     * 낙찰 이벤트에는 D(낙찰 후보 생성)가 걸려 있다.
+     *
+     * <p><b>두 이벤트 모두 아직 화면까지 가지 않는다.</b> {@code DomainEventSseListener}가 SSE로
+     * 내보낼 DTO를 만드는 자리에 이 둘의 분기가 없어 로그만 남는다. 실시간 채널은 B·E 담당이라
+     * 여기서 함께 고치지 않는다.
      */
     private DomainEvent toEvent(AuctionItem auctionItem, LocalDateTime occurredAt) {
 
