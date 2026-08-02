@@ -1,6 +1,17 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Minus, Plus, Search, X } from 'lucide-react'
+
+import {
+  getGetDetail1QueryKey,
+  getGetSummariesQueryKey,
+  useGetDetail1,
+  useGetSummaries,
+} from '@/api/generated/경매-물품-조회/경매-물품-조회'
+import { usePlace } from '@/api/generated/입찰/입찰'
+import { toAuctionItemDetail, toAuctionItems } from '@/features/live/adapt-item'
+import { toBidErrorMessage } from '@/features/live/bid-error'
 
 import { BidConfirmPanel } from '@/features/live/components/bid-confirm-panel'
 import { ClosedRoomView } from '@/features/live/components/closed-room-view'
@@ -22,6 +33,7 @@ import {
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
+import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Modal } from '@/components/ui/modal'
 import { QuickBidOverlay } from '@/features/live/components/quick-bid-overlay'
@@ -104,19 +116,64 @@ function LiveRoomPage() {
   const [removeMode, setRemoveMode] = useState(false)
   const [selectedForRemoval, setSelectedForRemoval] = useState<number[]>([])
   const [confirmingRemoval, setConfirmingRemoval] = useState(false)
-  /** 방에 실제로 편성된 물품. 추가·삭제가 반영된다. */
+  /**
+   * 화면에서만 바꾼 편성. 물품 추가·삭제·마감이 아직 목업이라 서버 목록 위에
+   * 덮어쓴다. 입찰이 성공하면 `null` 로 되돌려 서버 값이 다시 이기게 한다.
+   */
   const [items, setItems] = useState<AuctionItemDetail[] | null>(null)
   /** 실시간 연동 전까지 새 이벤트 애니메이션을 눈으로 보려고 쌓아 둔다. */
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
 
-  // 편성을 바꾸기 전까지는 목업 그대로 쓴다.
-  const roomItems = items ?? room.items
+  const auctionRoomId = Number(roomId)
+  const summaries = useGetSummaries(auctionRoomId, {
+    // `/rooms/abc` 처럼 숫자가 아닌 주소로 들어오면 서버를 부르지 않는다.
+    query: { enabled: Number.isInteger(auctionRoomId) },
+  })
+  const serverItems = useMemo(
+    () => toAuctionItems(summaries.data?.data ?? []),
+    [summaries.data],
+  )
+
+  // 편성을 바꾸기 전까지는 서버가 준 목록을 그대로 쓴다.
+  const roomItems = items ?? serverItems
 
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
     if (!trimmed) return roomItems
     return roomItems.filter((item) => item.name.includes(trimmed))
   }, [roomItems, keyword])
+
+  /*
+   * 목록을 아직 못 받았을 때 왼쪽 열에 대신 넣을 것. 정상이면 `null`.
+   *
+   * 라우트 전체를 `RouteError` 로 날리지 않는다. 라이브 화면이 통째로
+   * 언마운트되면 실시간 연결·타이머·쌓아둔 이벤트가 같이 끊긴다.
+   */
+  const itemsPlaceholder = summaries.isPending ? (
+    <div
+      className="mt-2.5 space-y-3"
+      aria-busy
+      aria-label="물품 목록 불러오는 중"
+    >
+      {[0, 1, 2].map((row) => (
+        <div key={row} className="h-[76px] animate-skeleton rounded-2xl" />
+      ))}
+    </div>
+  ) : summaries.isError ? (
+    <div className="mt-2.5 rounded-2xl border bg-card px-4 py-8 text-center">
+      <p className="text-[13px] font-medium text-neutral-muted">
+        물품 목록을 불러오지 못했어요.
+      </p>
+      <Button
+        variant="brandOutline"
+        size="field"
+        className="mt-3"
+        onClick={() => void summaries.refetch()}
+      >
+        다시 시도
+      </Button>
+    </div>
+  ) : null
 
   // 빈 방은 이벤트도 없다.
   const roomEvents =
@@ -154,8 +211,25 @@ function LiveRoomPage() {
 
   const liveItems = roomItems.filter((item) => item.status === 'ACTIVE')
 
-  /** 층으로 띄운 물품 상세의 대상과 입찰 상태 */
-  const detailItem = roomItems.find((item) => item.id === detailItemId) ?? null
+  /*
+   * 층으로 띄운 물품 상세.
+   *
+   * 목록 응답에는 설명·입찰 단위가 없다. 목업 입찰 단위로 금액을 계산하면
+   * 서버가 단위 불일치(7005)로 거절하므로, 물품을 열었을 때만 상세를 부르고
+   * 그 값으로 덮는다.
+   */
+  const listItem = roomItems.find((item) => item.id === detailItemId) ?? null
+  const detailQuery = useGetDetail1(detailItemId ?? 0, {
+    query: { enabled: detailItemId !== null },
+  })
+  const detailItem = useMemo(() => {
+    if (!listItem) return null
+    const dto = detailQuery.data?.data
+    // 물품을 갈아탄 직후에는 이전 물품의 상세가 남아 있다. 그때는 목록 값을 쓴다.
+    if (!dto || dto.auctionItemId !== listItem.id) return listItem
+    return toAuctionItemDetail(dto, listItem)
+  }, [listItem, detailQuery.data])
+
   const detailMinimum = detailItem
     ? detailItem.currentPrice + detailItem.bidUnit
     : 0
@@ -173,27 +247,36 @@ function LiveRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailItemId])
 
-  const submitDetailBid = () => {
+  const queryClient = useQueryClient()
+  const placeBid = usePlace()
+
+  /**
+   * 입찰이 접수된 뒤 서버 값을 다시 읽어온다.
+   *
+   * 화면에서 덮어쓴 편성(`items`)을 비워야 새로 받은 현재가가 보인다.
+   */
+  const refreshAfterBid = (auctionItemId: number) => {
+    setItems(null)
+    void queryClient.invalidateQueries({
+      queryKey: getGetSummariesQueryKey(auctionRoomId),
+    })
+    void queryClient.invalidateQueries({
+      queryKey: getGetDetail1QueryKey(auctionItemId),
+    })
+  }
+
+  const submitDetailBid = async () => {
     if (!detailItem) return
     setDetailPending(true)
     setDetailFeedback(null)
 
-    // TODO: POST /api/v1/auction-items/{id}/bids 연동 (현재 목업)
-    window.setTimeout(() => {
-      setDetailPending(false)
+    try {
+      await placeBid.mutateAsync({
+        auctionItemId: detailItem.id,
+        data: { amount: detailAmount },
+      })
 
-      if (detailAmount <= detailItem.currentPrice) {
-        setDetailFeedback({
-          tone: 'error',
-          message:
-            '이미 더 높은 입찰이 있어요. 최신 현재가로 다시 시도해주세요.',
-        })
-        toast.error('이미 더 높은 입찰이 있어요', {
-          description: `현재가 ${formatWon(detailItem.currentPrice)} · 그 위로 다시 입찰해 주세요.`,
-        })
-        return
-      }
-
+      // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       setDetailFeedback({
         tone: 'success',
         message: `${formatWon(detailAmount)} 입찰이 등록됐어요.`,
@@ -201,7 +284,14 @@ function LiveRoomPage() {
       toast.success('입찰이 등록됐어요', {
         description: `${detailItem.name} · ${formatWon(detailAmount)}`,
       })
-    }, 1200)
+      refreshAfterBid(detailItem.id)
+    } catch (error) {
+      const { title, description } = toBidErrorMessage(error)
+      setDetailFeedback({ tone: 'error', message: `${title}. ${description}` })
+      toast.error(title, { description })
+    } finally {
+      setDetailPending(false)
+    }
   }
 
   /**
@@ -327,36 +417,41 @@ function LiveRoomPage() {
     ),
   }
 
-  const confirmBid = () => {
+  const confirmBid = async () => {
     if (!pendingBid) return
     setSubmitting(true)
 
-    // TODO: POST /api/v1/auction-items/{id}/bids 연동 (현재 목업)
-    window.setTimeout(() => {
-      setSubmitting(false)
-
-      /*
-       * 확인을 누르는 사이에 남이 먼저 올렸을 수 있다. 그때는 거절이다.
-       * 실제로는 서버가 판단하고, 여기서는 최신 현재가로 흉내만 낸다.
-       */
-      const latest = roomItems.find((item) => item.id === pendingBid.item.id)
-      const current = latest?.currentPrice ?? pendingBid.item.currentPrice
-
-      if (pendingBid.amount <= current) {
-        toast.error('이미 더 높은 입찰이 있어요', {
-          description: `현재가 ${formatWon(current)} · 그 위로 다시 입찰해 주세요.`,
-        })
-        setPanel('quickBid')
-        return
-      }
+    /*
+     * 확인을 누르는 사이에 남이 먼저 올렸을 수 있다. 그 판정은 전부 서버가 한다.
+     * 예전에는 여기서 현재가와 비교해 흉내를 냈지만, 이제는 응답만 보고 나눈다.
+     */
+    try {
+      await placeBid.mutateAsync({
+        auctionItemId: pendingBid.item.id,
+        data: { amount: pendingBid.amount },
+      })
 
       // 서버가 확정해 준 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       toast.success('입찰이 등록됐어요', {
         description: `${pendingBid.item.name} · ${formatWon(pendingBid.amount)}`,
       })
+      refreshAfterBid(pendingBid.item.id)
       setPendingBid(null)
       setPanel('leaderboard')
-    }, 1200)
+    } catch (error) {
+      const { title, description, retryable } = toBidErrorMessage(error)
+      toast.error(title, { description })
+
+      // 금액을 고쳐 다시 해볼 만한 실패면 빠른 입찰로 되돌린다.
+      if (retryable) {
+        setPanel('quickBid')
+      } else {
+        setPendingBid(null)
+        setPanel('leaderboard')
+      }
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   if (roomClosed) {
@@ -416,6 +511,7 @@ function LiveRoomPage() {
           isGuest={isGuest}
           events={roomEvents}
           items={roomItems}
+          itemsPlaceholder={itemsPlaceholder}
           liveItems={liveItems}
           rankedItems={rankedItems}
           onRetry={retry}
@@ -692,37 +788,38 @@ function LiveRoomPage() {
               />
             </div>
 
-            {visibleItems.length === 0 ? (
-              <p className="mt-3 rounded-2xl border bg-card px-4 py-10 text-center text-[13px] font-medium text-neutral-muted">
-                검색 결과가 없어요.
-              </p>
-            ) : (
-              <LiveItemList
-                items={visibleItems}
-                // 선택 모드에서는 시작 줄을 숨겨 조작이 섞이지 않게 한다.
-                canStart={isOwner && !removeMode}
-                isSelected={(item) =>
-                  removeMode && selectedForRemoval.includes(item.id)
-                }
-                isDimmed={(item) => removeMode && item.status !== 'READY'}
-                justClosedId={justClosedId}
-                onSelect={(item) => {
-                  if (!removeMode) {
-                    openItem(item.id)
-                    return
+            {itemsPlaceholder ??
+              (visibleItems.length === 0 ? (
+                <p className="mt-3 rounded-2xl border bg-card px-4 py-10 text-center text-[13px] font-medium text-neutral-muted">
+                  검색 결과가 없어요.
+                </p>
+              ) : (
+                <LiveItemList
+                  items={visibleItems}
+                  // 선택 모드에서는 시작 줄을 숨겨 조작이 섞이지 않게 한다.
+                  canStart={isOwner && !removeMode}
+                  isSelected={(item) =>
+                    removeMode && selectedForRemoval.includes(item.id)
                   }
-                  if (item.status !== 'READY') {
-                    toast.error('진행 중이거나 끝난 물품은 뺄 수 없어요')
-                    return
-                  }
-                  setSelectedForRemoval((prev) =>
-                    prev.includes(item.id)
-                      ? prev.filter((id) => id !== item.id)
-                      : [...prev, item.id],
-                  )
-                }}
-              />
-            )}
+                  isDimmed={(item) => removeMode && item.status !== 'READY'}
+                  justClosedId={justClosedId}
+                  onSelect={(item) => {
+                    if (!removeMode) {
+                      openItem(item.id)
+                      return
+                    }
+                    if (item.status !== 'READY') {
+                      toast.error('진행 중이거나 끝난 물품은 뺄 수 없어요')
+                      return
+                    }
+                    setSelectedForRemoval((prev) =>
+                      prev.includes(item.id)
+                        ? prev.filter((id) => id !== item.id)
+                        : [...prev, item.id],
+                    )
+                  }}
+                />
+              ))}
 
             {/* 고른 뒤에 한 번 더 확인한다. 되돌릴 수 없는 조작이다. */}
             {removeMode && (
