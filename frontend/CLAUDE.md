@@ -14,6 +14,7 @@ Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다.
 | 화면을 새로 만들거나 고치기        | [`docs/UI-RULES.md`](./docs/UI-RULES.md)               |
 | 목업을 실제 API 로 바꾸기          | [`docs/API-INTEGRATION.md`](./docs/API-INTEGRATION.md) |
 | 네이밍·import·커밋 등 코드 컨벤션  | [`docs/CONVENTIONS.md`](./docs/CONVENTIONS.md)         |
+| S3·CloudFront 배포, 도메인·캐시    | [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)           |
 
 ### 반드시 지킬 것 (요약)
 

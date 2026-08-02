@@ -2,7 +2,8 @@
 
 프론트를 처음 받는 사람이 읽는 문서입니다.
 화면 규칙은 [`UI-RULES.md`](./UI-RULES.md), 연동 절차는
-[`API-INTEGRATION.md`](./API-INTEGRATION.md) 에 있습니다.
+[`API-INTEGRATION.md`](./API-INTEGRATION.md), 배포는
+[`DEPLOYMENT.md`](./DEPLOYMENT.md) 에 있습니다.
 
 ---
 
