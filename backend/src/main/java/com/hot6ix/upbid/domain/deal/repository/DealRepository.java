@@ -49,9 +49,14 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
      *
      * <p>정렬 키를 셋까지 두는 이유는 순서가 하나로 정해지게 하기 위해서다. 같은 시각에 마감된
      * 물품이 흔하고, 그때 순서가 흔들리면 화면이 요청마다 다르게 보인다.
+     *
+     * <p>UNION 결과를 파생 테이블로 감싸고 각 {@code SELECT}를 괄호로 묶는다. 정렬과 상한이
+     * 합쳐진 전체에 걸린다는 것이 문장 모양으로 드러나야, 읽는 사람이 뒤쪽 {@code SELECT}에만
+     * 걸린 것으로 오해하지 않는다.
      */
     @Query(value = """
-            SELECT 1                    AS sellerRow,
+            SELECT * FROM (
+            (SELECT 1                   AS sellerRow,
                    ai.auction_item_id   AS auctionItemId,
                    ar.auction_room_id   AS auctionRoomId,
                    p.product_id         AS productId,
@@ -80,22 +85,22 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
               JOIN products p          ON p.product_id = ai.product_id
                                       AND p.deleted_at IS NULL
              WHERE sp.user_id = :userId
-               AND ai.status IN (:soldStatus, :failedStatus)
+               AND ai.status IN (:soldStatus, :failedStatus))
             UNION ALL
-            SELECT 0,
-                   ai.auction_item_id,
-                   ar.auction_room_id,
-                   NULL,
-                   p.name,
-                   ar.name,
-                   ai.status,
+            (SELECT 0                   AS sellerRow,
+                   ai.auction_item_id   AS auctionItemId,
+                   ar.auction_room_id   AS auctionRoomId,
+                   NULL                 AS productId,
+                   p.name               AS productName,
+                   ar.name              AS auctionRoomName,
+                   ai.status            AS itemStatus,
                    EXISTS (SELECT 1 FROM deal_candidates c
                             WHERE c.auction_item_id = ai.auction_item_id
-                              AND c.status = :completedStatus),
-                   dc.bid_amount,
-                   su.nickname,
-                   sp.seller_profile_id,
-                   ai.end_at
+                              AND c.status = :completedStatus) AS dealCompleted,
+                   dc.bid_amount        AS amount,
+                   su.nickname          AS partnerNickname,
+                   sp.seller_profile_id AS sellerProfileId,
+                   ai.end_at            AS closedAt
               FROM deal_candidates dc
               JOIN auction_items ai    ON ai.auction_item_id = dc.auction_item_id
               JOIN auction_rooms ar    ON ar.auction_room_id = ai.auction_room_id
@@ -106,7 +111,8 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                                       AND su.deleted_at IS NULL
               JOIN products p          ON p.product_id = ai.product_id
                                       AND p.deleted_at IS NULL
-             WHERE dc.bidder_user_id = :userId
+             WHERE dc.bidder_user_id = :userId)
+            ) deals
              ORDER BY closedAt DESC, auctionItemId DESC, sellerRow DESC
              LIMIT :size
             """, nativeQuery = true)

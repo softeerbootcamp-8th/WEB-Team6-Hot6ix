@@ -23,14 +23,16 @@ public interface DealCandidateApi {
                     + "닉네임과 입찰가는 경매 결과라 모두에게 공개하고, "
                     + "연락처는 판매자가 볼 때 거래 상대인 후보(거래 중·성사)만 내려간다. "
                     + "구매자에게는 다른 후보의 연락처를 주지 않는다. "
-                    + "myRank는 구매자의 순위이며 요청한 페이지 밖에 있어도 값이 나온다."
+                    + "myRank는 구매자의 순위이며 요청한 페이지 밖에 있어도 값이 나온다. "
+                    + "마감된 물품(낙찰·유찰)만 조회할 수 있다. 유찰이면 빈 목록이 내려간다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "400", description = "경로 변수나 page가 숫자가 아님 (code 2002)"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "403", description = "그 물품의 판매자도 후보도 아님 (code 6007)"),
-            @ApiResponse(responseCode = "404", description = "물품이 없음 (code 4001)")
+            @ApiResponse(responseCode = "404", description = "물품이 없음 (code 4001)"),
+            @ApiResponse(responseCode = "409", description = "아직 마감되지 않은 물품 (code 6002)")
     })
     ResponseEntity<CommonResponse<DealCandidateListResponseDto>> getCandidates(
             @Parameter(description = "조회할 물품 ID", required = true)

@@ -96,6 +96,10 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
 
+    /** 물품 전체를 읽지 않고 상태만 본다. 마감됐는지 판정하는 데 쓴다. */
+    @Query("select ai.status from AuctionItem ai where ai.auctionItemId = :auctionItemId")
+    Optional<AuctionItemStatus> findStatus(@Param("auctionItemId") Long auctionItemId);
+
     /**
      * 물품을 올린 판매자의 회원 ID를 조회한다. 판매자 본인 입찰을 거르는 데 쓰고,
      * 낙찰 후보 목록에서 요청자가 판매자인지 판정하는 데도 쓴다.

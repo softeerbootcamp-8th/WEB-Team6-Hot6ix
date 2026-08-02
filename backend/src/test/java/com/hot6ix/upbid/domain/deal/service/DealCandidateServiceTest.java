@@ -354,7 +354,12 @@ class DealCandidateServiceTest {
     }
 
     private void givenItemWithSeller() {
+        givenItemStatus(AuctionItemStatus.SOLD);
         when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(SELLER_ID));
+    }
+
+    private void givenItemStatus(AuctionItemStatus status) {
+        when(auctionItemRepository.findStatus(ITEM_ID)).thenReturn(Optional.of(status));
     }
 
     private void givenPage(int page, long total, DealCandidate... candidates) {
@@ -493,11 +498,52 @@ class DealCandidateServiceTest {
                 .hasFieldOrPropertyWithValue("errorType", DealErrorType.NOT_DEAL_VIEWER);
     }
 
+    /**
+     * 마감 검사를 역할 판정보다 먼저 하지 않으면 판매자는 빈 목록(200), 입찰자는 6007을 받아
+     * 같은 상황에 응답이 갈린다. 두 역할이 같은 에러를 받는지까지 확인한다.
+     */
+    @Test
+    @DisplayName("아직 마감되지 않은 물품은 역할과 무관하게 조회를 거절한다")
+    void getCandidatesRejectsItemNotClosed() {
+
+        givenItemStatus(AuctionItemStatus.IN_PROGRESS);
+
+        assertThatThrownBy(() -> dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID))
+                .isInstanceOf(ApplicationException.class)
+                .hasFieldOrPropertyWithValue("errorType", DealErrorType.ITEM_NOT_SOLD);
+
+        assertThatThrownBy(() -> dealCandidateService.getCandidates(ITEM_ID, 0, OTHER_USER_ID))
+                .isInstanceOf(ApplicationException.class)
+                .hasFieldOrPropertyWithValue("errorType", DealErrorType.ITEM_NOT_SOLD);
+
+        // 마감 전에는 역할을 따질 것도 없다.
+        verify(auctionItemRepository, never()).findSellerUserId(anyLong());
+    }
+
+    /** 유찰도 마감이다. "낙찰 후보 없음" 화면이 이 응답으로 그려진다. */
+    @Test
+    @DisplayName("유찰 물품은 빈 목록으로 조회된다")
+    void getCandidatesAllowsUnsoldItem() {
+
+        givenItemStatus(AuctionItemStatus.FAILED);
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(SELLER_ID));
+        givenNoCompletedCandidate();
+        givenCurrentWinner(null);
+        givenPage(0, 0);
+
+        DealCandidateListResponseDto response =
+                dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID);
+
+        assertThat(response.viewerRole()).isEqualTo(DealRole.SELLER);
+        assertThat(response.candidates().content()).isEmpty();
+        assertThat(response.candidates().totalElements()).isZero();
+    }
+
     @Test
     @DisplayName("없는 물품의 후보는 조회할 수 없다")
     void getCandidatesRejectsMissingItem() {
 
-        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.empty());
+        when(auctionItemRepository.findStatus(ITEM_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID))
                 .isInstanceOf(ApplicationException.class)

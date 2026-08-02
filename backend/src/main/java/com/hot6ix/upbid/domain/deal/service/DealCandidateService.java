@@ -81,10 +81,16 @@ public class DealCandidateService {
      *
      * <p>연락처는 판매자가 볼 때, 거래 상대인 후보만 내린다. 구매자에게는 한 건도 주지 않는다.
      *
-     * @throws ApplicationException 물품이 없거나(4001) 이 물품의 판매자도 후보도 아닐 때(6001)
+     * <p>마감 여부를 역할 판정보다 <b>먼저</b> 본다. 순서가 반대면 아직 진행 중인 물품에 대해
+     * 판매자는 빈 목록(200)을, 입찰자는 후보가 없어 6007을 받아 같은 상황에 응답이 갈린다.
+     *
+     * @throws ApplicationException 물품이 없거나(4001), 아직 마감되지 않았거나(6002),
+     *                              이 물품의 판매자도 후보도 아닐 때(6007)
      */
     public DealCandidateListResponseDto getCandidates(
             Long auctionItemId, int page, Long loginUserId) {
+
+        requireClosed(auctionItemId);
 
         Long sellerUserId = auctionItemRepository.findSellerUserId(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
@@ -104,6 +110,20 @@ public class DealCandidateService {
                 seller ? DealRole.SELLER : DealRole.BUYER,
                 seller ? null : mine.getCandidateRank(),
                 PageResponse.of(candidates));
+    }
+
+    /**
+     * 마감된 물품만 후보를 조회할 수 있다. 유찰도 마감이라 통과시킨다 — 후보가 없다는 사실
+     * 자체가 화면이 보여줄 결과이고("낙찰 후보 없음"), 거래 내역에서 같은 경로로 들어온다.
+     */
+    private void requireClosed(Long auctionItemId) {
+
+        AuctionItemStatus status = auctionItemRepository.findStatus(auctionItemId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        if (status != AuctionItemStatus.SOLD && status != AuctionItemStatus.FAILED) {
+            throw new ApplicationException(DealErrorType.ITEM_NOT_SOLD);
+        }
     }
 
     /**
