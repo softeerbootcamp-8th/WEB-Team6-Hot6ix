@@ -42,7 +42,7 @@ oauth:
     user-info-uri: https://kapi.kakao.com/v2/user/me
 
 app:
-  frontend-url: ${FRONTEND_URL:http://localhost:8080}
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
 
 ncp:
   sms:

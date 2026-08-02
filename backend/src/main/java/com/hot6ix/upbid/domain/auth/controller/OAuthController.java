@@ -36,6 +36,6 @@ public class OAuthController {
         AuthLoginResponseDto login = authService.login(code);
         sessionManager.create(request, login.userId());
 
-        response.sendRedirect(frontendUrl + (login.isNewUser() ? "/onboarding" : "/"));
+        response.sendRedirect(frontendUrl + "/rooms");
     }
 }
