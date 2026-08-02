@@ -33,6 +33,8 @@ public class RoomSseManager {
         send(emitter, name, data);
         broadcastParticipantCount(roomId);
 
+        log.info("sse 연결 완료: roomId={}", roomId);
+
         return emitter;
     }
 
@@ -60,6 +62,7 @@ public class RoomSseManager {
                     .name(name)
                     .data(data)
             );
+            log.info("sse 전송 완료: name={}", name);
         } catch (IOException e) {
             log.warn("sse 전송 실패: name={}", name, e);
             emitter.completeWithError(e);

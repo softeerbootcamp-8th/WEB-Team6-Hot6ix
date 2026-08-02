@@ -15,7 +15,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class SseController implements SseApi {
     private final SseService sseService;
 
-    @RequestMapping(value = "/auction-rooms/{roomId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @RequestMapping(value = "/auction-rooms/{roomId}/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter subscribe(@PathVariable Long roomId){
         return sseService.subscribe(roomId);
     }
