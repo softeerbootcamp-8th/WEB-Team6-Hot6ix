@@ -196,6 +196,25 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     }
 
     @Test
+    @DisplayName("입찰 단위가 없으면 생성 시 400을 반환한다")
+    void create_missingBidIncrement() throws Exception {
+
+        AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+
+        mockMvc.perform(post("/api/v1/auction-rooms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("bidIncrement"));
+    }
+
+    @Test
     @DisplayName("입찰 단위가 0이면 생성 시 400을 반환한다")
     void create_bidIncrementZero() throws Exception {
 

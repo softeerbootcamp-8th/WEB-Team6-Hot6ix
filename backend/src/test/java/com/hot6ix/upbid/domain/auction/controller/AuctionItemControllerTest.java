@@ -266,6 +266,21 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     }
 
     @Test
+    @DisplayName("없거나 남의 경매방에 물품을 추가하면 404와 4002를 반환한다")
+    void addRoomNotFound() throws Exception {
+
+        when(auctionItemService.add(eq(LOGIN_USER_ID), eq(999L), any(AuctionItemAddRequestDto.class)))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(post("/api/v1/auction-rooms/999/auction-items")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newAddRequest())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    @Test
     @DisplayName("남의 상품을 추가하면 404와 5001을 반환한다")
     void addProductNotFound() throws Exception {
 
@@ -315,6 +330,19 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(4006));
+    }
+
+    @Test
+    @DisplayName("없거나 남의 경매방에서 물품을 빼면 404와 4002를 반환한다")
+    void removeRoomNotFound() throws Exception {
+
+        doThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND))
+                .when(auctionItemService).remove(LOGIN_USER_ID, 999L, 30L);
+
+        mockMvc.perform(delete("/api/v1/auction-rooms/999/auction-items/30"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
     }
 
     @Test
