@@ -70,7 +70,7 @@ export function SharePanel({
         </button>
       </div>
 
-      <ShareQr roomTitle={roomTitle} shareUrl={shareUrl} />
+      <ShareQr roomTitle={roomTitle} shareUrl={shareUrl} failed={isError} />
 
       <div className="mt-3 shrink-0">
         <p className="text-[12px] font-medium text-neutral-tertiary">
@@ -116,9 +116,11 @@ export function SharePanel({
 function ShareQr({
   roomTitle,
   shareUrl,
+  failed,
 }: {
   roomTitle: string
   shareUrl: string | undefined
+  failed: boolean
 }) {
   const save = async () => {
     if (!shareUrl) return
@@ -132,7 +134,16 @@ function ShareQr({
 
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col items-center justify-center rounded-2xl bg-surface-subtle p-4">
-      <QrCode value={shareUrl} size={180} className="w-full max-w-[180px]" />
+      {/*
+       * 자리에 맞춰 늘어난다. 모바일 모달은 높이가 680px 로 고정(퀵입찰 목록
+       * 때문)이라 QR 이 180px 이면 위아래가 휑했다. QR 은 클수록 스캔이 잘 되므로
+       * 남는 폭을 먹게 두고, 데스크톱 오른쪽 열에서는 열 너비가 상한이 된다.
+       */}
+      <QrCode
+        value={shareUrl}
+        error={failed}
+        className="max-h-full max-w-[min(100%,280px)]"
+      />
 
       <p className="mt-3 text-center text-[12px] font-medium text-neutral-tertiary">
         QR 코드 · 오프라인에서 바로 공유

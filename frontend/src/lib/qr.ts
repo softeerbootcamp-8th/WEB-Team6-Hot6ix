@@ -10,12 +10,23 @@ import QRCodeLib from 'qrcode'
 export const QR_DARK = '#191f28'
 export const QR_LIGHT = '#ffffff'
 
-export function drawQr(canvas: HTMLCanvasElement, value: string, size: number) {
-  return QRCodeLib.toCanvas(canvas, value, {
+export async function drawQr(
+  canvas: HTMLCanvasElement,
+  value: string,
+  size: number,
+) {
+  await QRCodeLib.toCanvas(canvas, value, {
     width: size,
     margin: 1,
     color: { dark: QR_DARK, light: QR_LIGHT },
   })
+
+  // qrcode 는 canvas 의 style.width/height 에 픽셀 값을 직접 박는다. 그대로 두면
+  // 표시 크기를 CSS 로 못 정해서 좁은 화면에서 컨테이너 밖으로 밀려 나간다.
+  // 지워서 고유 크기(640×640)로 되돌리면, max-width/max-height 만으로 브라우저가
+  // 비율을 지키며 줄여 준다 — canvas 는 replaced element 라 가능하다.
+  canvas.style.removeProperty('width')
+  canvas.style.removeProperty('height')
 }
 
 /**

@@ -65,7 +65,12 @@ function AuctionRoomCreatedPage() {
 
         {/* QR — 160×160 */}
         <div className="mt-6 flex justify-center">
-          <QrCode value={shareUrl} size={160} className="rounded-[20px]" />
+          {/* Figma 기준 160×160 고정 */}
+          <QrCode
+            value={shareUrl}
+            error={isError}
+            className="size-40 rounded-[20px]"
+          />
         </div>
 
         <Link
