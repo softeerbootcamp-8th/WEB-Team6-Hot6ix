@@ -103,6 +103,14 @@ public class AuctionRoom extends BaseEntity {
     }
 
     /**
+     * 경매방을 방송 중으로 바꾼다. 첫 물품 경매가 시작되는 순간이 곧 방송 시작이라
+     * 물품 시작에서 호출한다. 이미 {@code OPEN}인 방은 호출하지 않는다.
+     */
+    public void open() {
+        this.status = AuctionRoomStatus.OPEN;
+    }
+
+    /**
      * 요청에서 값이 온 필드만 부분 병합한다. 생략된(null) 필드는 기존 값을 그대로 유지한다.
      */
     public void update(AuctionRoomUpdateRequestDto request) {
