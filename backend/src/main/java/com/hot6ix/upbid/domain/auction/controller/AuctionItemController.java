@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.auction.controller;
 
 import com.hot6ix.upbid.domain.auction.api.AuctionItemApi;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemService;
@@ -65,5 +66,15 @@ public class AuctionItemController implements AuctionItemApi {
         auctionItemService.remove(userId, auctionRoomId, auctionItemId);
 
         return ResponseEntity.ok(CommonResponse.ok("경매방에서 물품이 제외되었습니다."));
+    }
+
+    @PostMapping("/auction-items/{auctionItemId}/start")
+    @Override
+    public ResponseEntity<CommonResponse<AuctionItemDetailResponseDto>> start(
+            Long auctionItemId, Long userId, AuctionItemStartRequestDto request) {
+
+        AuctionItemDetailResponseDto response = auctionItemService.start(auctionItemId, userId, request);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "물품 경매가 시작되었습니다."));
     }
 }
