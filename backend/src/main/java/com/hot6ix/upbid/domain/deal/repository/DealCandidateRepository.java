@@ -3,6 +3,8 @@ package com.hot6ix.upbid.domain.deal.repository;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -59,6 +61,23 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
             """, nativeQuery = true)
     int insertCandidatesFromBids(@Param("auctionItemId") Long auctionItemId,
                                  @Param("status") String status);
+
+    /**
+     * 물품의 낙찰 후보를 순위대로 한 페이지 조회한다. 응답에 닉네임과 연락처가 필요하므로 입찰자를 fetch join한다.
+     *
+     * <p>화면이 "총 N명"과 페이지 번호를 그리고 구매자를 자기 순위가 있는 페이지로 보내므로
+     * 전체 개수와 임의 페이지 접근이 필요하다. cursor로는 셋 다 낼 수 없어 offset으로 간다.
+     *
+     * <p>count 쿼리를 따로 준다. fetch join이 있는 쿼리에서 Spring Data가 만들어내는 count
+     * 쿼리는 불필요한 조인을 남긴다.
+     */
+    @Query(value = "select dc from DealCandidate dc "
+            + "join fetch dc.bidder "
+            + "where dc.auctionItem.auctionItemId = :auctionItemId "
+            + "order by dc.candidateRank asc",
+            countQuery = "select count(dc) from DealCandidate dc "
+                    + "where dc.auctionItem.auctionItemId = :auctionItemId")
+    Page<DealCandidate> findCandidates(@Param("auctionItemId") Long auctionItemId, Pageable pageable);
 
     /** 거래가 이미 끝났는지 판단한다. {@code COMPLETED} 후보가 있으면 더 바꿀 수 없다. */
     default boolean existsCompletedCandidate(Long auctionItemId) {

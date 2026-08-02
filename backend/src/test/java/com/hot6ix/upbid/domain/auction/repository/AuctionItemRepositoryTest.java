@@ -15,6 +15,7 @@ import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.hibernate.Hibernate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -229,5 +230,31 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
     @DisplayName("없는 물품을 락 조회하면 빈 값을 돌려준다")
     void findByIdForUpdateReturnsEmptyWhenNotFound() {
         assertThat(auctionItemRepository.findByIdForUpdate(999L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("판매자 조회는 회원까지 한 번에 읽고 락을 걸지 않는다")
+    void findWithSellerFetchesUserWithoutLock() {
+
+        AuctionItem item = newAuctionItem(newAuctionRoom("승민상점 경매방"), "낙찰물품", AuctionItemStatus.SOLD);
+        entityManager.flush();
+        entityManager.clear();
+
+        AuctionItem found = auctionItemRepository.findWithSeller(item.getAuctionItemId()).orElseThrow();
+
+        // 값만 비교하면 지연 로딩으로도 통과하므로 초기화 여부를 직접 본다.
+        assertThat(Hibernate.isInitialized(found.getAuctionRoom())).isTrue();
+        assertThat(Hibernate.isInitialized(found.getAuctionRoom().getSellerProfile())).isTrue();
+        assertThat(Hibernate.isInitialized(found.getAuctionRoom().getSellerProfile().getUser())).isTrue();
+        assertThat(found.getAuctionRoom().getSellerProfile().getUser().getNickname()).isEqualTo("승민");
+        // 조회에 락이 걸리면 읽기 요청이 거래 상태 변경을 막는다.
+        assertThat(entityManager.getEntityManager().getLockMode(found))
+                .isEqualTo(LockModeType.NONE);
+    }
+
+    @Test
+    @DisplayName("없는 물품을 판매자와 함께 조회하면 빈 값을 돌려준다")
+    void findWithSellerReturnsEmptyWhenNotFound() {
+        assertThat(auctionItemRepository.findWithSeller(999L)).isEmpty();
     }
 }
