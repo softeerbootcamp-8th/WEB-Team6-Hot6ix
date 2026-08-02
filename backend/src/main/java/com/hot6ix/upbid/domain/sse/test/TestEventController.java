@@ -27,10 +27,12 @@ public class TestEventController {
     public void fireItemStarted(
             @PathVariable Long roomId,
             @RequestParam(defaultValue = "1") Long itemId,
-            @RequestParam(defaultValue = "한정판 조던 스니커즈") String itemName
+            @RequestParam(defaultValue = "한정판 조던 스니커즈") String itemName,
+            @RequestParam(defaultValue = "5") Integer durationMinutes
     ) {
+        LocalDateTime now = LocalDateTime.now();
         eventPublisher.publishEvent(
-                ItemStarted.of(roomId, itemId, itemName, LocalDateTime.now())
+                ItemStarted.of(roomId, itemId, itemName, now, now.plusMinutes(durationMinutes))
         );
     }
 

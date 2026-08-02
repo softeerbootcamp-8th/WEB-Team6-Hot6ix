@@ -522,6 +522,9 @@ class AuctionItemServiceTest {
             assertThat(event.itemId()).isEqualTo(ITEM_ID);
             assertThat(event.itemName()).isEqualTo("한정판 피규어");
             assertThat(event.occurredAt()).isEqualTo(auctionItem.getStartedAt());
+            assertThat(event.endAt())
+                    .as("구독자가 재조회 없이 카운트다운을 그릴 수 있어야 한다")
+                    .isEqualTo(auctionItem.getEndAt());
         });
     }
 

@@ -210,7 +210,8 @@ public class AuctionItemService {
                 auctionRoom.getAuctionRoomId(),
                 auctionItem.getAuctionItemId(),
                 auctionItem.getProduct().getName(),
-                auctionItem.getStartedAt()));
+                auctionItem.getStartedAt(),
+                auctionItem.getEndAt()));
 
         return AuctionItemDetailResponseDto.from(auctionItem);
     }
