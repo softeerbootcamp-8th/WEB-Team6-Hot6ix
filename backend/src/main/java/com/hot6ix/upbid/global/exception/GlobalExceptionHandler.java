@@ -3,6 +3,8 @@ package com.hot6ix.upbid.global.exception;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
@@ -34,6 +37,11 @@ public class GlobalExceptionHandler {
         log.warn("애플리케이션 예외 발생 - [{}] {} {} ({})",
                 request.getMethod(), request.getRequestURI(),
                 errorType.getErrorCode(), errorType.getMessage());
+
+        String accept = request.getHeader(HttpHeaders.ACCEPT);
+        if (accept != null && accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE)) {
+            return null;
+        }
 
         return ResponseEntity.status(errorType.getHttpStatus())
                 .body(CommonResponse.error(errorType));
@@ -112,11 +120,26 @@ public class GlobalExceptionHandler {
                 .body(CommonResponse.error(CommonErrorType.RESOURCE_NOT_FOUND));
     }
 
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void handleAsyncRequestNotUsableException(
+            AsyncRequestNotUsableException e, HttpServletRequest request) {
+        // 클라이언트가 연결을 먼저 끊은 경우 발생하는 정상 시나리오 (Broken pipe 등)
+        // RoomSseManager가 이미 "sse 연결 종료" 로그를 남기므로 여기서는 debug 레벨로만 기록
+        log.debug("클라이언트 연결 끊김 - [{}] {}", request.getMethod(), request.getRequestURI());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<CommonResponse<Void>> handleException(
             Exception e, HttpServletRequest request) {
 
         log.error("예상치 못한 예외 발생 - [{}] {} ({})", request.getMethod(), request.getRequestURI(), e.getMessage(), e);
+
+        // SSE 요청은 Content-Type이 text/event-stream으로 고정되어 있어
+        // CommonResponse를 직렬화할 converter가 없으므로 null을 반환해 Spring이 응답 쓰기를 시도하지 않게 한다.
+        String accept = request.getHeader(HttpHeaders.ACCEPT);
+        if (accept != null && accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE)) {
+            return null;
+        }
 
         return ResponseEntity.status(CommonErrorType.INTERNAL_SERVER_ERROR.getHttpStatus())
                 .body(CommonResponse.error(CommonErrorType.INTERNAL_SERVER_ERROR));
