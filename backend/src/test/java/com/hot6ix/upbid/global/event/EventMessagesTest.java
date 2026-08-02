@@ -31,7 +31,8 @@ class EventMessagesTest {
     @Test
     @DisplayName("ItemStarted는 경매 시작 문구를 만든다")
     void itemStarted() {
-        assertThat(EventMessages.of(ItemStarted.of(1L, 2L, "한정판 조던", OCCURRED_AT)))
+        assertThat(EventMessages.of(
+                ItemStarted.of(1L, 2L, "한정판 조던", OCCURRED_AT, OCCURRED_AT.plusMinutes(30))))
                 .contains("한정판 조던 경매가 시작되었습니다");
     }
 

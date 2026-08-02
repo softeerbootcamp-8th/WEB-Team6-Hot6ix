@@ -48,7 +48,7 @@ public class DomainEventSseListener {
     private Object toDto(DomainEvent event) {
         return switch (event) {
             // endedTime 소스가 없어 임시로 현재 시각 + 5분으로 대체
-            case ItemStarted e -> new ItemStartedDto(e.itemId(), e.itemName(), e.occurredAt().plusMinutes(5));
+            case ItemStarted e -> new ItemStartedDto(e.itemId(), e.itemName(), e.endAt());
             case ItemClosingSoon e -> new ItemClosingSoonDto(e.itemId(), e.itemName());
             case BidPlaced e -> new BidPlacedDto(e.itemId(), e.itemName(), e.bidPrice(), e.bidderNickname());
             // endedTime 소스가 없어 현재 이벤트 payload로는 계산 불가 — payload에 endedTime 추가 필요

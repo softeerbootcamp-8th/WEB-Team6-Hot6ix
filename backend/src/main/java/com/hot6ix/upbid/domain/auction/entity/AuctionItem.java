@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.entity;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.common.BaseTimeEntity;
@@ -106,6 +107,23 @@ public class AuctionItem extends BaseTimeEntity {
                 .bidIncrement(auctionRoom.getBidIncrement())
                 .status(AuctionItemStatus.READY)
                 .build();
+    }
+
+    /**
+     * 대기 중인 물품의 경매를 시작한다. 상태·소유자 검증은 Service가 마치고 호출한다.
+     *
+     * <p>{@code endAt}은 {@code originalEndAt}과 같은 값에서 출발한다. 둘을 따로 두는 것은
+     * 2주차 연장(Soft Close)이 붙었을 때 "원래 마감이 언제였는지"를 남겨두기 위해서이며,
+     * 지금은 연장이 없어 두 값이 끝까지 같다. {@code totalExtensionSeconds}도 0 그대로다.
+     *
+     * @param request   경매 시간(분)을 담은 요청
+     * @param startedAt 시작 시각. 마감 시각의 기준이라 Service가 정한 값을 받는다
+     */
+    public void start(AuctionItemStartRequestDto request, LocalDateTime startedAt) {
+        this.status = AuctionItemStatus.IN_PROGRESS;
+        this.startedAt = startedAt;
+        this.originalEndAt = startedAt.plusMinutes(request.durationMinutes());
+        this.endAt = this.originalEndAt;
     }
 
     /**

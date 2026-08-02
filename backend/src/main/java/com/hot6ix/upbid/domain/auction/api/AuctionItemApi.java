@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.api;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
@@ -16,7 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@Tag(name = "경매 물품", description = "입찰자용 경매 물품 조회 API와 판매자용 물품 추가·제외 API")
+@Tag(name = "경매 물품", description = "입찰자용 경매 물품 조회 API와 판매자용 물품 추가·제외·시작 API")
 public interface AuctionItemApi {
 
     @Operation(
@@ -94,4 +95,31 @@ public interface AuctionItemApi {
             @PathVariable Long auctionRoomId,
             @Parameter(description = "뺄 물품 ID", required = true)
             @PathVariable Long auctionItemId);
+
+    @Operation(
+            summary = "물품 경매 시작",
+            description = "소유자가 대기(READY) 중인 물품의 경매를 설정한 시간만큼 시작한다. "
+                    + "마감 시각은 시작 시점에 확정되며 이후 변하지 않는다(연장은 추후 별도 기능). "
+                    + "**한 경매방에서 동시에 진행할 수 있는 물품은 최대 3개**이며, 4번째 시작은 거절한다. "
+                    + "종료된 경매방의 물품은 시작할 수 없고, 시작 전(BEFORE)인 경매방은 이 호출로 "
+                    + "방송 중(OPEN)이 된다 — 경매방 상태는 입장을 막지 않고 구매자 화면의 표시만 가른다. "
+                    + "물품이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다. "
+                    + "응답은 물품 상세와 같은 형식이며 갱신된 status와 endAt이 담긴다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "시작 성공"),
+            @ApiResponse(responseCode = "400", description = "경매 시간이 없거나 1~43200분(30일) 범위를 "
+                    + "벗어남 (code 2002)"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
+            @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002), "
+                    + "물품이 없거나 본인 소유가 아님 (code 4001)"),
+            @ApiResponse(responseCode = "409", description = "종료된 경매방 (code 4004), "
+                    + "대기 중인 물품이 아님 (code 4007), "
+                    + "이미 3개가 진행 중 (code 4008)")
+    })
+    ResponseEntity<CommonResponse<AuctionItemDetailResponseDto>> start(
+            @Parameter(description = "시작할 물품 ID", required = true)
+            @PathVariable Long auctionItemId,
+            @Parameter(hidden = true) @LoginUserId Long userId,
+            @Valid @RequestBody AuctionItemStartRequestDto request);
 }
