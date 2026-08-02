@@ -20,9 +20,17 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.DynamicUpdate;
 
+/**
+ * {@code @DynamicUpdate}는 물품 시작이 켠 {@code OPEN}을 경매방 설정 수정이 되돌리는 것을 막는다.
+ * 기본 동작은 바뀌지 않은 컬럼까지 UPDATE에 싣기 때문에, 설정 수정이 방을 읽은 뒤 물품 시작이
+ * {@code OPEN}으로 커밋하면 뒤이은 수정 커밋이 {@code status}를 읽었던 값으로 덮어쓴다.
+ * 수정은 {@code status}를 건드리지 않으므로 바뀐 컬럼만 쓰면 이 덮어쓰기가 생기지 않는다.
+ */
 @Getter
 @Entity
+@DynamicUpdate
 @Table(name = "auction_rooms")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class AuctionRoom extends BaseEntity {
