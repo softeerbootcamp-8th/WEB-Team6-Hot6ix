@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Minus, Plus, Search, X } from 'lucide-react'
 
 import {
@@ -27,7 +27,6 @@ import {
   MOCK_PRODUCTS,
   MOCK_ROOM_DETAIL,
   themedRoomItems,
-  MOCK_ROOM_EVENTS,
   MOCK_ROOMS,
 } from '@/mocks/data'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
@@ -45,7 +44,10 @@ import { toast } from '@/lib/toast'
 import { useDevTools } from '@/lib/dev-tools'
 import { useCurrentUser } from '@/lib/session'
 import { useIsDesktop } from '@/hooks/use-media-query'
-import { useRealtimeStatus } from '@/features/live/use-realtime-status'
+import {
+  useRealtimeStatus,
+  type SseEventPayload,
+} from '@/features/live/use-realtime-status'
 import type { AuctionItemDetail, Product, RoomEvent } from '@/mocks/types'
 
 /**
@@ -75,7 +77,6 @@ function LiveRoomPage() {
   const { roomId } = Route.useParams()
   const navigate = useNavigate()
   const user = useCurrentUser()
-  const { status, retry } = useRealtimeStatus()
   const isDesktop = useIsDesktop()
 
   const isGuest = user === null
@@ -136,6 +137,117 @@ function LiveRoomPage() {
 
   // 편성을 바꾸기 전까지는 서버가 준 목록을 그대로 쓴다.
   const roomItems = items ?? serverItems
+  const roomItemsRef = useRef(roomItems)
+  useEffect(() => {
+    roomItemsRef.current = roomItems
+  })
+
+  /**
+   * SSE 이벤트 수신 핸들러.
+   *
+   * 이벤트 피드(extraEvents)와 물품 상태(items)를 동시에 갱신한다.
+   */
+  const handleSseEvent = useCallback(
+    (payload: SseEventPayload) => {
+      const eventId = Date.now()
+
+      switch (payload.kind) {
+        case 'ItemStarted':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'START',
+              message: `${payload.itemName} 경매가 시작됐어요`,
+            },
+          ])
+          setItems(
+            roomItems.map((item) =>
+              item.id === payload.itemId
+                ? { ...item, status: 'ACTIVE' as const, endsAt: payload.endedTime }
+                : item,
+            ),
+          )
+          break
+
+        case 'ItemClosingSoon':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'CLOSE',
+              message: `${payload.itemName} 마감 1분 전`,
+              emphasized: true,
+            },
+          ])
+          break
+
+        case 'BidPlaced':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'BID',
+              message: `${payload.bidderNickname}님이 ${formatWon(payload.bidPrice)} 입찰`,
+              subtitle: payload.itemName,
+              emphasized: true,
+            },
+          ])
+          setItems(
+            roomItems.map((item) =>
+              item.id === payload.itemId
+                ? {
+                    ...item,
+                    currentPrice: payload.bidPrice,
+                    topBidderNickname: payload.bidderNickname,
+                    bidCount: item.bidCount + 1,
+                    leaderboard: [
+                      { rank: 1, nickname: payload.bidderNickname, amount: payload.bidPrice, isMe: false },
+                      ...item.leaderboard.filter((entry) => entry.nickname !== payload.bidderNickname),
+                    ]
+                      .slice(0, 5)
+                      .map((entry, index) => ({ ...entry, rank: index + 1 })),
+                  }
+                : item,
+            ),
+          )
+          break
+
+        case 'SoftCloseExtended':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'EXTEND',
+              message: `마감 1분 전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
+              subtitle: payload.itemName,
+              emphasized: true,
+            },
+          ])
+          setItems(
+            roomItems.map((item) =>
+              item.id === payload.itemId
+                ? {
+                    ...item,
+                    endsAt: new Date(
+                      new Date(item.endsAt).getTime() + payload.extendSeconds * 1000,
+                    ).toISOString(),
+                  }
+                : item,
+            ),
+          )
+          break
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [roomItems],
+  )
+
+  const { status, retry } = useRealtimeStatus(roomId, handleSseEvent)
 
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
@@ -175,9 +287,7 @@ function LiveRoomPage() {
     </div>
   ) : null
 
-  // 빈 방은 이벤트도 없다.
-  const roomEvents =
-    roomItems.length === 0 ? [] : [...MOCK_ROOM_EVENTS, ...extraEvents]
+  const roomEvents = extraEvents
 
   // 방을 만든 사람만 물품을 넣고 뺄 수 있다.
   /*
@@ -301,18 +411,19 @@ function LiveRoomPage() {
    * 오면 그 값이 우선**이고, 이건 화면이 멈춰 보이지 않게 하는 임시 처리다.
    */
   useEffect(() => {
-    if (liveItems.length === 0) return
-
     const timer = window.setInterval(() => {
+      const current = roomItemsRef.current
       const now = Date.now()
-      const expired = liveItems.filter(
-        (item) => new Date(item.endsAt).getTime() <= now,
+      const expired = current.filter(
+        (item) =>
+          item.status === 'ACTIVE' &&
+          new Date(item.endsAt).getTime() <= now,
       )
       if (expired.length === 0) return
 
       const ids = new Set(expired.map((item) => item.id))
       setItems(
-        roomItems.map((item) =>
+        current.map((item) =>
           ids.has(item.id) ? { ...item, status: 'CLOSED' as const } : item,
         ),
       )
@@ -333,7 +444,9 @@ function LiveRoomPage() {
     }, 1000)
 
     return () => window.clearInterval(timer)
-  }, [liveItems, roomItems])
+    // roomItemsRef 를 통해 항상 최신값을 읽으므로 deps 없이 한 번만 등록한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 도장은 한 번만 보여주고 지운다.
   useEffect(() => {
