@@ -44,8 +44,14 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
      * <p>거래 상대는 성사된 후보가 있으면 그 사람, 없으면 순서를 기다리는 최저 순위 후보다.
      * 실패한 후보는 이미 지나간 상대라 제외한다. 전원 실패하면 상대가 {@code null}이 된다.
      *
-     * <p>탈퇴 회원과 삭제된 경매방·상품·판매자 프로필은 목록에서 뺀다. 물품에는
-     * {@code deleted_at}이 없어 경매방 쪽에서 걸러진다.
+     * <p><b>상대가 사라져도 내 거래 내역은 남는다.</b> 판매자가 탈퇴하거나 경매방·상품·판매자
+     * 프로필을 지워도 구매자의 내역에서 그 거래가 빠지지 않는다. 거래 내역은 지금의 상태가
+     * 아니라 지나간 사실이라, 상대가 나갔다고 내 기록이 없어지면 안 된다. 그래서 경로에 놓인
+     * 조인에는 {@code deleted_at} 조건을 걸지 않는다.
+     *
+     * <p>거래 상대를 고를 때만 예외로 탈퇴 회원을 뺀다. 탈퇴한 회원은 낙찰 후보로 취급하지
+     * 않으므로({@link DealCandidateRepository}) 순위가 다음 후보에게 넘어가 있고, 내역에도
+     * 그 다음 후보가 상대로 나와야 화면과 어긋나지 않는다.
      *
      * <p>정렬 키를 셋까지 두는 이유는 순서가 하나로 정해지게 하기 위해서다. 같은 시각에 마감된
      * 물품이 흔하고, 그때 순서가 흔들리면 화면이 요청마다 다르게 보인다.
@@ -70,6 +76,7 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    (SELECT bu.nickname
                       FROM deal_candidates c
                       JOIN users bu ON bu.user_id = c.bidder_user_id
+                                   AND bu.deleted_at IS NULL
                      WHERE c.auction_item_id = ai.auction_item_id
                        AND c.status <> :failedCandidateStatus
                      ORDER BY CASE WHEN c.status = :completedStatus THEN 0 ELSE 1 END,
@@ -79,11 +86,8 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    ai.end_at            AS closedAt
               FROM auction_items ai
               JOIN auction_rooms ar    ON ar.auction_room_id = ai.auction_room_id
-                                      AND ar.deleted_at IS NULL
               JOIN seller_profiles sp  ON sp.seller_profile_id = ar.seller_profile_id
-                                      AND sp.deleted_at IS NULL
               JOIN products p          ON p.product_id = ai.product_id
-                                      AND p.deleted_at IS NULL
              WHERE sp.user_id = :userId
                AND ai.status IN (:soldStatus, :failedStatus))
             UNION ALL
@@ -104,13 +108,9 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
               FROM deal_candidates dc
               JOIN auction_items ai    ON ai.auction_item_id = dc.auction_item_id
               JOIN auction_rooms ar    ON ar.auction_room_id = ai.auction_room_id
-                                      AND ar.deleted_at IS NULL
               JOIN seller_profiles sp  ON sp.seller_profile_id = ar.seller_profile_id
-                                      AND sp.deleted_at IS NULL
               JOIN users su            ON su.user_id = sp.user_id
-                                      AND su.deleted_at IS NULL
               JOIN products p          ON p.product_id = ai.product_id
-                                      AND p.deleted_at IS NULL
              WHERE dc.bidder_user_id = :userId)
             ) deals
              ORDER BY closedAt DESC, auctionItemId DESC, sellerRow DESC

@@ -221,13 +221,48 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
-    @DisplayName("삭제된 경매방의 거래는 목록에서 빠진다")
-    void findDealsExcludesDeletedRoom() {
+    @DisplayName("경매방을 지워도 그 방에서 있었던 거래는 내역에 남는다")
+    void findDealsKeepsDealsOfDeletedRoom() {
 
         newItem("낙찰물품", AuctionItemStatus.SOLD, END_AT);
         auctionRoom.softDelete(LocalDateTime.of(2026, 7, 30, 10, 0));
 
-        assertThat(findDeals(seller)).isEmpty();
+        assertThat(findDeals(seller))
+                .extracting(DealSummaryProjection::getProductName)
+                .containsExactly("낙찰물품");
+    }
+
+    /** 상대가 나갔다고 내 기록이 없어지면 안 된다. 구매자 쪽이 판매자에 매달려 있던 부분이다. */
+    @Test
+    @DisplayName("판매자가 탈퇴하고 프로필을 지워도 구매 내역은 남는다")
+    void findDealsKeepsPurchaseWhenSellerWithdraws() {
+
+        AuctionItem item = newItem("포토카드", AuctionItemStatus.SOLD, END_AT);
+        User buyer = newUser("buyer@hot6ix.com", "원기");
+        newCandidate(item, buyer, 1, 15_000L);
+
+        LocalDateTime withdrawnAt = LocalDateTime.of(2026, 7, 30, 10, 0);
+        seller.softDelete(withdrawnAt);
+        sellerProfile.softDelete(withdrawnAt);
+
+        assertThat(findDeals(buyer))
+                .extracting(DealSummaryProjection::getProductName,
+                        DealSummaryProjection::getPartnerNickname)
+                .containsExactly(tuple("포토카드", "승민"));
+    }
+
+    /** 후보 목록에서 탈퇴자를 건너뛰므로, 거래 상대 표시도 같은 사람을 가리켜야 한다. */
+    @Test
+    @DisplayName("거래 상대가 탈퇴하면 다음 순위가 상대로 올라온다")
+    void findDealsSkipsWithdrawnPartner() {
+
+        AuctionItem item = newItem("포토카드", AuctionItemStatus.SOLD, END_AT);
+        User withdrawn = newUser("gone@hot6ix.com", "탈퇴함");
+        newCandidate(item, withdrawn, 1, 15_000L);
+        newCandidate(item, newUser("second@hot6ix.com", "이등"), 2, 13_000L);
+        withdrawn.softDelete(LocalDateTime.of(2026, 7, 30, 10, 0));
+
+        assertThat(findDeals(seller).getFirst().getPartnerNickname()).isEqualTo("이등");
     }
 
     @Test

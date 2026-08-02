@@ -14,6 +14,15 @@ import org.springframework.data.repository.query.Param;
  * 상태는 쿼리 문자열에 박지 않고 파라미터로 넘긴다. 문자열로 두면 enum 상수명이 바뀌어도
  * 컴파일러가 잡지 못한다. 대신 상태를 고정한 {@code default} 메서드를 앞에 둬서 호출부에서는
  * 무엇을 찾는 조회인지 이름만으로 드러나게 한다.
+ *
+ * <p><b>탈퇴한 회원은 낙찰 후보로 취급하지 않는다.</b> 후보 생성 시점에는
+ * {@link #insertCandidatesFromBids}가 이미 걸러내고 있었지만, 후보가 된 뒤에 탈퇴하는 경로가
+ * 남아 있었다. 그래서 목록·순위 판정·차순위 승계에 모두 같은 조건을 건다. 목록에서만 숨기면
+ * 보이지 않는 후보가 낙찰 권한을 쥔 채로 남아 판매자가 거래를 진행할 수 없다.
+ *
+ * <p>이미 성사·실패로 확정된 후보도 함께 숨겨진다. 확정된 뒤에는 상태를 더 바꿀 수 없으므로
+ * 거래가 막히지는 않는다. 다만 {@link #existsCompletedCandidate}는 이 조건을 걸지 않는다 —
+ * 화면에 무엇을 보일지와 상태를 바꿔도 되는지는 다른 문제이고, 후자는 사실대로 봐야 한다.
  */
 public interface DealCandidateRepository extends JpaRepository<DealCandidate, Long> {
 
@@ -72,11 +81,14 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
      * 쿼리는 불필요한 조인을 남긴다.
      */
     @Query(value = "select dc from DealCandidate dc "
-            + "join fetch dc.bidder "
+            + "join fetch dc.bidder b "
             + "where dc.auctionItem.auctionItemId = :auctionItemId "
+            + "and b.deletedAt is null "
             + "order by dc.candidateRank asc",
             countQuery = "select count(dc) from DealCandidate dc "
-                    + "where dc.auctionItem.auctionItemId = :auctionItemId")
+                    + "join dc.bidder b "
+                    + "where dc.auctionItem.auctionItemId = :auctionItemId "
+                    + "and b.deletedAt is null")
     Page<DealCandidate> findCandidates(@Param("auctionItemId") Long auctionItemId, Pageable pageable);
 
     /**
@@ -110,9 +122,10 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
     }
 
     @Query("select dc from DealCandidate dc "
-            + "join fetch dc.bidder "
+            + "join fetch dc.bidder b "
             + "where dc.auctionItem.auctionItemId = :auctionItemId "
             + "and dc.status = :status "
+            + "and b.deletedAt is null "
             + "order by dc.candidateRank asc limit 1")
     Optional<DealCandidate> findFirstByStatus(@Param("auctionItemId") Long auctionItemId,
                                               @Param("status") DealCandidateStatus status);
@@ -123,8 +136,10 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
     }
 
     @Query("select count(dc) > 0 from DealCandidate dc "
+            + "join dc.bidder b "
             + "where dc.auctionItem.auctionItemId = :auctionItemId "
             + "and dc.status = :status "
+            + "and b.deletedAt is null "
             + "and dc.candidateRank < :candidateRank")
     boolean existsByStatusBeforeRank(@Param("auctionItemId") Long auctionItemId,
                                      @Param("status") DealCandidateStatus status,
@@ -136,20 +151,25 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
     }
 
     @Query("select dc from DealCandidate dc "
-            + "join fetch dc.bidder "
+            + "join fetch dc.bidder b "
             + "where dc.auctionItem.auctionItemId = :auctionItemId "
             + "and dc.status = :status "
+            + "and b.deletedAt is null "
             + "and dc.candidateRank > :candidateRank "
             + "order by dc.candidateRank asc limit 1")
     Optional<DealCandidate> findFirstByStatusAfterRank(@Param("auctionItemId") Long auctionItemId,
                                                        @Param("status") DealCandidateStatus status,
                                                        @Param("candidateRank") Integer candidateRank);
 
-    /** 경로로 받은 물품에 속한 후보만 찾는다. 다른 물품의 후보 ID로는 조회되지 않는다. */
+    /**
+     * 경로로 받은 물품에 속한 후보만 찾는다. 다른 물품의 후보 ID로는 조회되지 않는다.
+     * 탈퇴한 회원의 후보도 조회되지 않는다 — 목록에 없는 후보를 ID로 찍어 처리할 수는 없다.
+     */
     @Query("select dc from DealCandidate dc "
-            + "join fetch dc.bidder "
+            + "join fetch dc.bidder b "
             + "where dc.auctionItem.auctionItemId = :auctionItemId "
-            + "and dc.dealCandidateId = :dealCandidateId")
+            + "and dc.dealCandidateId = :dealCandidateId "
+            + "and b.deletedAt is null")
     Optional<DealCandidate> findCandidate(@Param("auctionItemId") Long auctionItemId,
                                           @Param("dealCandidateId") Long dealCandidateId);
 }
