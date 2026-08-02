@@ -4,6 +4,7 @@ import com.hot6ix.upbid.global.event.payload.BidPlaced;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
+import io.swagger.v3.oas.annotations.Hidden;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Profile;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDateTime;
 
+@Hidden
 @RestController
 @Profile("local")
 @RequestMapping("/test/events/{roomId}")
