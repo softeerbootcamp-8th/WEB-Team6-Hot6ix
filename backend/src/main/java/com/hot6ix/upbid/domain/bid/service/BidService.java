@@ -51,11 +51,14 @@ public class BidService {
         User bidder = userRepository.findByUserIdAndDeletedAtIsNull(bidderUserId)
                 .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
 
+        Long sellerUserId = auctionItemRepository.findSellerUserId(auctionItemId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
         // 락 시작
         AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
-        validateBiddable(auctionItem, bidder);
+        validateBiddable(auctionItem, bidder, sellerUserId);
         validateAmount(auctionItem, amount);
 
         Bid bid = saveBid(auctionItem, bidder, amount);
@@ -74,13 +77,17 @@ public class BidService {
     }
 
     /**
-     * 물품 상태로 거절할 것을 거른다.
+     * 입찰을 받을 수 없는 요청을 거른다.
      *
-     * <p>상태와 마감 시각을 모두 본다. 물품을 진행중으로 바꾸는 코드가 아직 없어
+     * <p>상태와 마감 시각을 모두 보는 이유는 물품을 진행중으로 바꾸는 코드가 아직 없어
      * {@code endAt}이 지났는데도 진행중으로 남아 있는 물품이 생길 수 있기 때문이다.
      * {@code endAt}이 비어 있으면 마감 판정을 할 수 없으므로 받지 않는다.
      */
-    private void validateBiddable(AuctionItem auctionItem, User bidder) {
+    private void validateBiddable(AuctionItem auctionItem, User bidder, Long sellerUserId) {
+
+        if (Objects.equals(sellerUserId, bidder.getUserId())) {
+            throw new ApplicationException(BidErrorType.SELLER_CANNOT_BID);
+        }
 
         if (auctionItem.getStatus() != AuctionItemStatus.IN_PROGRESS) {
             throw new ApplicationException(BidErrorType.ITEM_NOT_IN_PROGRESS);
