@@ -31,6 +31,7 @@ export function MobileLiveView({
   isOwner = false,
   events,
   items,
+  itemsPlaceholder = null,
   liveItems,
   rankedItems,
   justClosedId = null,
@@ -50,6 +51,8 @@ export function MobileLiveView({
   events: RoomEvent[]
   /** 방에 편성된 전체 물품. 목록은 데스크톱과 같은 묶음으로 보여준다. */
   items: AuctionItemDetail[]
+  /** 목록을 아직 못 받았을 때 대신 그릴 것(스켈레톤·재시도). 정상이면 넘기지 않는다. */
+  itemsPlaceholder?: ReactNode
   /** 진행 중인 물품. 입찰 버튼 활성화에 쓴다. */
   liveItems: AuctionItemDetail[]
   /** 리더보드 탭에 쌓을 물품 (진행 중 + 종료) */
@@ -197,20 +200,21 @@ export function MobileLiveView({
               </p>
             </div>
 
-            {items.length === 0 ? (
-              <p className="mt-2 rounded-2xl border bg-card px-4 py-8 text-center text-[13px] font-medium text-neutral-muted">
-                아직 물품이 없어요.
-              </p>
-            ) : (
-              <LiveItemList
-                items={items}
-                className="mt-2 min-h-0 flex-1"
-                // 판매자는 모바일에서도 시간 조절과 시작 버튼을 쓸 수 있어야 한다.
-                canStart={isOwner}
-                justClosedId={justClosedId}
-                onSelect={(item) => onOpenItem(item.id)}
-              />
-            )}
+            {itemsPlaceholder ??
+              (items.length === 0 ? (
+                <p className="mt-2 rounded-2xl border bg-card px-4 py-8 text-center text-[13px] font-medium text-neutral-muted">
+                  아직 물품이 없어요.
+                </p>
+              ) : (
+                <LiveItemList
+                  items={items}
+                  className="mt-2 min-h-0 flex-1"
+                  // 판매자는 모바일에서도 시간 조절과 시작 버튼을 쓸 수 있어야 한다.
+                  canStart={isOwner}
+                  justClosedId={justClosedId}
+                  onSelect={(item) => onOpenItem(item.id)}
+                />
+              ))}
           </section>
 
           {/* 목록과 현황 사이는 확실히 띄운다. 붙어 있으면 한 덩어리로 읽힌다. */}
