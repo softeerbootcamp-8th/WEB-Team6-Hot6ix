@@ -6,8 +6,19 @@ export type RealtimeStatus =
 export type SseEventPayload =
   | { kind: 'ItemStarted'; itemId: number; itemName: string; endedTime: string }
   | { kind: 'ItemClosingSoon'; itemId: number; itemName: string }
-  | { kind: 'BidPlaced'; itemId: number; itemName: string; bidPrice: number; bidderNickname: string }
-  | { kind: 'SoftCloseExtended'; itemId: number; itemName: string; extendSeconds: number }
+  | {
+      kind: 'BidPlaced'
+      itemId: number
+      itemName: string
+      bidPrice: number
+      bidderNickname: string
+    }
+  | {
+      kind: 'SoftCloseExtended'
+      itemId: number
+      itemName: string
+      extendSeconds: number
+    }
 
 /**
  * 실시간 SSE 연결과 상태.
