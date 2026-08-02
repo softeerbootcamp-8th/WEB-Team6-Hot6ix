@@ -176,6 +176,32 @@ class SellerProfileServiceTest {
     }
 
     @Test
+    @DisplayName("다른 판매자의 프로필을 ID로 조회한다")
+    void getProfile() {
+
+        when(sellerProfileRepository.findBySellerProfileIdAndDeletedAtIsNull(9L))
+                .thenReturn(Optional.of(newSellerProfile(newUser())));
+
+        SellerProfileResponseDto response = sellerProfileService.getProfile(9L);
+
+        assertThat(response.storeName()).isEqualTo("승민상점");
+    }
+
+    /** soft delete된 프로필은 없는 것으로 본다 — 조회 조건에 deletedAt이 들어가는 이유다. */
+    @Test
+    @DisplayName("없거나 삭제된 판매자 프로필은 ID로 조회되지 않는다")
+    void getProfile_notFound() {
+
+        when(sellerProfileRepository.findBySellerProfileIdAndDeletedAtIsNull(9L))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> sellerProfileService.getProfile(9L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+    }
+
+    @Test
     @DisplayName("요청 값으로 프로필 전체가 교체된다")
     void update_fullReplace() {
 

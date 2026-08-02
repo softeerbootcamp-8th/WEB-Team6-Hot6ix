@@ -8,5 +8,7 @@ public interface SellerProfileRepository extends JpaRepository<SellerProfile, Lo
 
     Optional<SellerProfile> findByUser_UserIdAndDeletedAtIsNull(Long userId);
 
+    Optional<SellerProfile> findBySellerProfileIdAndDeletedAtIsNull(Long sellerProfileId);
+
     boolean existsByUser_UserIdAndDeletedAtIsNull(Long userId);
 }
