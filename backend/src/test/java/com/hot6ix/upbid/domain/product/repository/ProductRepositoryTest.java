@@ -77,6 +77,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
 
     private AuctionRoom newAuctionRoom(SellerProfile sellerProfile) {
         return entityManager.persist(AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(sellerProfile)
                 .name("승민상점 경매방")
                 .build());

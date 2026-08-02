@@ -91,20 +91,22 @@ public class ProductService {
 
     /**
      * 로그인한 판매자 본인 소유의 상품을 soft delete 한다.
-     * 경매방이 한 번이라도 시작된(READY가 아닌 AuctionItem이 있는) 상품은 삭제할 수 없다.
+     * 경매방에 물품으로 올라가 있는 상품은 아직 시작 전(READY)이더라도 삭제할 수 없다 —
+     * 상품만 지우면 물품 행이 남아 경매방·목록에 삭제된 상품이 계속 노출되기 때문이다.
+     * 시작 전이라면 경매방에서 물품을 먼저 빼면 삭제할 수 있다.
      *
      * @param userId    삭제를 요청한 회원의 ID
      * @param productId 삭제할 상품의 ID
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
      *                               상품이 없거나 본인 소유가 아닐 때(PRODUCT_NOT_FOUND),
-     *                               경매방이 시작된 적 있을 때(PRODUCT_AUCTION_ALREADY_STARTED)
+     *                               경매방에 올라가 있을 때(PRODUCT_IN_AUCTION)
      */
     @Transactional
     public void delete(Long userId, Long productId) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         Product product = findOwnedProduct(sellerProfile, productId);
-        assertAuctionNotStarted(productId);
+        assertNotInAuction(productId);
 
         product.softDelete(LocalDateTime.now());
     }
@@ -152,6 +154,16 @@ public class ProductService {
     private void assertAuctionNotStarted(Long productId) {
         if (auctionItemRepository.existsByProduct_ProductIdAndStatusNot(productId, AuctionItemStatus.READY)) {
             throw new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED);
+        }
+    }
+
+    /**
+     * 삭제는 수정보다 엄격하다. 수정은 시작 전이면 허용해도 남는 게 없지만, 삭제는 물품 행이
+     * 남아 삭제된 상품이 경매방에 계속 노출되므로 READY 물품이어도 막는다.
+     */
+    private void assertNotInAuction(Long productId) {
+        if (auctionItemRepository.existsByProduct_ProductId(productId)) {
+            throw new ApplicationException(ProductErrorType.PRODUCT_IN_AUCTION);
         }
     }
 }

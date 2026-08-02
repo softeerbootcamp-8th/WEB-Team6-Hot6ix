@@ -48,6 +48,7 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
 
     private AuctionRoom newAuctionRoom(SellerProfile sellerProfile, String shareCode) {
         return auctionRoomRepository.saveAndFlush(AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(sellerProfile)
                 .name("승민의 경매방")
                 .shareCode(shareCode)

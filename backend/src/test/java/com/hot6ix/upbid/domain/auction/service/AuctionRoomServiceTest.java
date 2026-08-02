@@ -67,6 +67,7 @@ class AuctionRoomServiceTest {
 
     private AuctionRoomCreateRequestDto newCreateRequest() {
         return AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .coverImageUrl("https://cdn.hot6ix.com/cover.png")
                 .description("한정판 피규어 경매")
@@ -91,6 +92,7 @@ class AuctionRoomServiceTest {
 
         assertThat(response.name()).isEqualTo("승민의 경매방");
         assertThat(response.status()).isEqualTo(AuctionRoomStatus.BEFORE);
+        assertThat(response.bidIncrement()).isEqualTo(1_000L);
         assertThat(response.sellerStoreName()).isEqualTo("승민상점");
         assertThat(response.itemCount()).isZero();
         assertThat(response.participantCount()).isNull();
@@ -157,6 +159,7 @@ class AuctionRoomServiceTest {
     void getRoom() {
 
         AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(newSellerProfile())
                 .name("승민의 경매방")
                 .status(AuctionRoomStatus.BEFORE)
@@ -192,6 +195,7 @@ class AuctionRoomServiceTest {
     void getRoomByShareCode() {
 
         AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(newSellerProfile())
                 .name("승민의 경매방")
                 .shareCode("aBcD1234aBcD1234")
@@ -231,6 +235,7 @@ class AuctionRoomServiceTest {
 
         SellerProfile sellerProfile = newSellerProfile();
         AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(sellerProfile)
                 .name("승민의 경매방")
                 .softCloseTriggerSeconds(30)
@@ -258,6 +263,7 @@ class AuctionRoomServiceTest {
 
         SellerProfile sellerProfile = newSellerProfile();
         AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(sellerProfile)
                 .name("승민의 경매방")
                 .softCloseTriggerSeconds(30)

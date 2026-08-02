@@ -14,4 +14,7 @@ public interface AuctionRoomRepository extends JpaRepository<AuctionRoom, Long> 
             Long auctionRoomId, Long sellerProfileId);
 
     boolean existsByAuctionRoomIdAndDeletedAtIsNull(Long auctionRoomId);
+
+    boolean existsByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+            Long auctionRoomId, Long sellerProfileId);
 }

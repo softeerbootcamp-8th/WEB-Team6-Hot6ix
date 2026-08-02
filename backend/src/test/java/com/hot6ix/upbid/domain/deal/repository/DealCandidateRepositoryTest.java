@@ -69,6 +69,7 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
 
     private AuctionItem newAuctionItem(String productName) {
         AuctionRoom auctionRoom = entityManager.persist(AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(sellerProfile)
                 .name("승민상점 경매방")
                 .build());
