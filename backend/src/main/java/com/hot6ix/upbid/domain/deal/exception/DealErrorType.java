@@ -20,7 +20,8 @@ public enum DealErrorType implements ErrorType {
     DEAL_CANDIDATE_NOT_FOUND(HttpStatus.NOT_FOUND, 6003, "낙찰 후보를 찾을 수 없습니다."),
     DEAL_CANDIDATE_ALREADY_RESOLVED(HttpStatus.CONFLICT, 6004, "이미 처리된 낙찰 후보입니다."),
     DEAL_CANDIDATE_NOT_ACTIVE(HttpStatus.CONFLICT, 6005, "현재 낙찰 권한을 가진 후보가 아닙니다."),
-    DEAL_ALREADY_COMPLETED(HttpStatus.CONFLICT, 6006, "이미 완료된 거래입니다.");
+    DEAL_ALREADY_COMPLETED(HttpStatus.CONFLICT, 6006, "이미 완료된 거래입니다."),
+    NOT_DEAL_VIEWER(HttpStatus.FORBIDDEN, 6007, "해당 물품의 거래 당사자만 낙찰 후보를 조회할 수 있습니다.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;

@@ -1,10 +1,12 @@
 package com.hot6ix.upbid.domain.deal.controller;
 
 import com.hot6ix.upbid.domain.deal.api.DealCandidateApi;
+import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateListResponseDto;
 import com.hot6ix.upbid.domain.deal.service.DealCandidateService;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +17,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class DealCandidateController implements DealCandidateApi {
 
     private final DealCandidateService dealCandidateService;
+
+    @GetMapping
+    @Override
+    public ResponseEntity<CommonResponse<DealCandidateListResponseDto>> getCandidates(
+            Long auctionItemId, int page, Long userId) {
+
+        DealCandidateListResponseDto response =
+                dealCandidateService.getCandidates(auctionItemId, page, userId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "낙찰 후보 목록 조회에 성공했습니다."));
+    }
 
     @PostMapping("/{candidateId}/fail")
     @Override

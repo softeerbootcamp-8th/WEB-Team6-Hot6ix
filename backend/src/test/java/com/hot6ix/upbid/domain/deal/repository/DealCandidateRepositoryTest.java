@@ -405,6 +405,39 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
+    @DisplayName("입찰자로 자기 후보를 찾고, 물품이 다르면 찾지 못한다")
+    void findByBidderScopesToItem() {
+
+        DealCandidate mine = newCandidate(auctionItem, "mine@hot6ix.com", 1, 15_000L);
+        Long myUserId = mine.getBidder().getUserId();
+        DealCandidate others = newCandidate(newAuctionItem("다른물품"), "others@hot6ix.com", 1, 99_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Long auctionItemId = auctionItem.getAuctionItemId();
+
+        assertThat(dealCandidateRepository.findByBidder(auctionItemId, myUserId))
+                .get()
+                .extracting(DealCandidate::getCandidateRank)
+                .isEqualTo(1);
+        assertThat(dealCandidateRepository
+                .findByBidder(auctionItemId, others.getBidder().getUserId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("입찰하지 않은 회원은 후보로 조회되지 않는다")
+    void findByBidderReturnsEmptyForNonBidder() {
+
+        newCandidate(auctionItem, "bidder@hot6ix.com", 1, 15_000L);
+        User outsider = newUser("outsider@hot6ix.com", "구경꾼");
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(dealCandidateRepository
+                .findByBidder(auctionItem.getAuctionItemId(), outsider.getUserId())).isEmpty();
+    }
+
+    @Test
     @DisplayName("다른 물품의 후보 ID로는 조회되지 않는다")
     void findByIdAndAuctionItemIdScopesToItem() {
 

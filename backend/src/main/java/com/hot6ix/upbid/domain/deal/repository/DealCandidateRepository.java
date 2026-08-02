@@ -79,6 +79,17 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
                     + "where dc.auctionItem.auctionItemId = :auctionItemId")
     Page<DealCandidate> findCandidates(@Param("auctionItemId") Long auctionItemId, Pageable pageable);
 
+    /**
+     * 요청자가 이 물품의 후보인지, 몇 위인지 확인한다. 목록이 페이지 단위라 목록만으로는
+     * 알 수 없다 — 7위인 사람이 1페이지를 보고 있으면 자기 행이 그 안에 없다.
+     * 한 사람은 한 물품에 후보 한 번만 오른다(입찰자별 최고가 한 행).
+     */
+    @Query("select dc from DealCandidate dc "
+            + "where dc.auctionItem.auctionItemId = :auctionItemId "
+            + "and dc.bidder.userId = :bidderUserId")
+    Optional<DealCandidate> findByBidder(@Param("auctionItemId") Long auctionItemId,
+                                         @Param("bidderUserId") Long bidderUserId);
+
     /** 거래가 이미 끝났는지 판단한다. {@code COMPLETED} 후보가 있으면 더 바꿀 수 없다. */
     default boolean existsCompletedCandidate(Long auctionItemId) {
         return existsByStatus(auctionItemId, DealCandidateStatus.COMPLETED);
