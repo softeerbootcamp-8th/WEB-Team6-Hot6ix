@@ -225,26 +225,29 @@ function JoinRoomPage() {
 
           {isGuest ? (
             <>
-              <Button
-                size="cta"
-                variant="brand"
-                className="mt-6"
-                onClick={enter}
+              {/*
+               * 우리가 유도하려는 건 로그인 참여다. 둘러보기는 "그래도 안 할래"
+               * 쪽이라 채움 버튼이 아니라 아래 텍스트 링크로 둔다.
+               */}
+              <Link
+                to="/"
+                search={{ redirect: `/rooms/${room.auctionRoomId}` }}
+                className="ease-soft mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-brand-500 text-card-title font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
               >
-                둘러보기
-              </Button>
+                로그인하고 참여하기
+              </Link>
 
               <p className="mt-3 text-center text-[12px] font-medium text-neutral-tertiary">
                 로그인 없이도 둘러볼 수 있어요. 입찰할 때만 로그인이 필요합니다.
               </p>
 
-              <Link
-                to="/"
-                search={{ redirect: `/rooms/${room.auctionRoomId}` }}
-                className="mt-3 block text-center text-[13px] font-bold text-brand-500 hover:underline"
+              <button
+                type="button"
+                onClick={enter}
+                className="mt-3 block w-full text-center text-[13px] font-bold text-neutral-tertiary hover:underline"
               >
-                로그인하고 참여하기 →
-              </Link>
+                로그인 없이 둘러보기
+              </button>
             </>
           ) : (
             <>
