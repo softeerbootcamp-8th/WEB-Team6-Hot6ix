@@ -52,6 +52,7 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
                 .build());
         auctionRoom = entityManager.persist(AuctionRoom.builder()
                 .sellerProfile(sellerProfile)
+                .bidIncrement(1_000L)
                 .name("승민상점 경매방")
                 .build());
     }
@@ -202,6 +203,7 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
                 .build());
         AuctionRoom otherRoom = entityManager.persist(AuctionRoom.builder()
                 .sellerProfile(otherProfile)
+                .bidIncrement(1_000L)
                 .name("다른상점 경매방")
                 .build());
         Product product = entityManager.persist(Product.builder()
