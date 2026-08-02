@@ -5,6 +5,7 @@ import java.util.List;
 
 // 실제 리더보드 조회 로직이 나오기 전까지 subscribe() 초기 데이터로 사용하는 임시 DTO
 public record LeaderboardDto(
+        Long itemId,
         String itemName,
         Long currentPrice,
         LocalDateTime endedTime,
@@ -20,6 +21,7 @@ public record LeaderboardDto(
 
     public static LeaderboardDto dummy() {
         return new LeaderboardDto(
+                0L,
                 "한정판 조던 스니커즈",
                 85_000L,
                 LocalDateTime.now().plusMinutes(12).plusSeconds(10),

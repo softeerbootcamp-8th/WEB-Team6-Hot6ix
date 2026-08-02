@@ -40,12 +40,12 @@ public class DomainEventSseListener {
 
     private Object toDto(DomainEvent event) {
         return switch (event) {
-            // endedTime 소스가 없어 현재 이벤트 payload로는 계산 불가
-            case ItemStarted e -> new ItemStartedDto(e.itemName(), null);
-            case ItemClosingSoon e -> new ItemClosingSoonDto(e.itemName());
-            case BidPlaced e -> new BidPlacedDto(e.itemName(), e.bidPrice(), e.bidderNickname());
-            // 연장 후 마감 시각 소스가 없어 현재 이벤트 payload로는 계산 불가
-            case SoftCloseExtended e -> new SoftCloseExtendedDto(e.itemName(), e.extendSeconds(), null);
+            // endedTime 소스가 없어 임시로 현재 시각 + 5분으로 대체
+            case ItemStarted e -> new ItemStartedDto(e.itemId(), e.itemName(), e.occurredAt().plusMinutes(5));
+            case ItemClosingSoon e -> new ItemClosingSoonDto(e.itemId(), e.itemName());
+            case BidPlaced e -> new BidPlacedDto(e.itemId(), e.itemName(), e.bidPrice(), e.bidderNickname());
+            // endedTime 소스가 없어 현재 이벤트 payload로는 계산 불가 — payload에 endedTime 추가 필요
+            case SoftCloseExtended e -> new SoftCloseExtendedDto(e.itemId(), e.itemName(), e.extendSeconds(), null);
             default -> null;
         };
     }
