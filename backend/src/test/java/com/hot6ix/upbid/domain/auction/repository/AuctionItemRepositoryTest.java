@@ -341,4 +341,41 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
 
         assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isTrue();
     }
+
+    /**
+     * 물품 시작의 "방당 동시 3개" 검사가 이 개수에 걸려 있다. 다른 방의 진행 중 물품이나 같은 방의
+     * 다른 상태가 섞여 세지면 제한이 엉뚱한 시점에 걸리므로 실제 쿼리로 확인한다.
+     */
+    @Test
+    @DisplayName("진행 중 물품 개수는 같은 경매방의 IN_PROGRESS만 센다")
+    void countByRoomAndStatusCountsOnlyMatchingItems() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        newAuctionItem(auctionRoom, "진행물품1", AuctionItemStatus.IN_PROGRESS);
+        newAuctionItem(auctionRoom, "진행물품2", AuctionItemStatus.IN_PROGRESS);
+        newAuctionItem(auctionRoom, "대기물품", AuctionItemStatus.READY);
+        newAuctionItem(auctionRoom, "낙찰물품", AuctionItemStatus.SOLD);
+        newAuctionItem(auctionRoom, "유찰물품", AuctionItemStatus.FAILED);
+
+        AuctionRoom otherRoom = newAuctionRoom("다른 경매방");
+        newAuctionItem(otherRoom, "남의진행물품", AuctionItemStatus.IN_PROGRESS);
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
+                auctionRoom.getAuctionRoomId(), AuctionItemStatus.IN_PROGRESS)).isEqualTo(2);
+        assertThat(auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
+                otherRoom.getAuctionRoomId(), AuctionItemStatus.IN_PROGRESS)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("진행 중 물품이 없는 경매방은 개수가 0이다")
+    void countByRoomAndStatusReturnsZeroWhenNone() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        newAuctionItem(auctionRoom, "대기물품", AuctionItemStatus.READY);
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
+                auctionRoom.getAuctionRoomId(), AuctionItemStatus.IN_PROGRESS)).isZero();
+    }
 }
