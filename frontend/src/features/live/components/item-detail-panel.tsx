@@ -193,7 +193,10 @@ export function ItemDetailPanel({
                       : 'border-brand-300 hover:border-brand-400',
                   )}
                 >
-                  <Pencil aria-hidden className="size-3 shrink-0 text-neutral-muted" />
+                  <Pencil
+                    aria-hidden
+                    className="size-3 shrink-0 text-neutral-muted"
+                  />
                   <span className="sr-only">입찰 금액</span>
                   <input
                     inputMode="numeric"

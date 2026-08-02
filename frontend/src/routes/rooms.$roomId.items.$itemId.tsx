@@ -161,8 +161,15 @@ function AuctionItemPage() {
               topBidderNickname: payload.bidderNickname,
               bidCount: base.bidCount + 1,
               leaderboard: [
-                { rank: 1, nickname: payload.bidderNickname, amount: payload.bidPrice, isMe: false },
-                ...base.leaderboard.filter((entry) => entry.nickname !== payload.bidderNickname),
+                {
+                  rank: 1,
+                  nickname: payload.bidderNickname,
+                  amount: payload.bidPrice,
+                  isMe: false,
+                },
+                ...base.leaderboard.filter(
+                  (entry) => entry.nickname !== payload.bidderNickname,
+                ),
               ]
                 .slice(0, 5)
                 .map((entry, index) => ({ ...entry, rank: index + 1 })),
