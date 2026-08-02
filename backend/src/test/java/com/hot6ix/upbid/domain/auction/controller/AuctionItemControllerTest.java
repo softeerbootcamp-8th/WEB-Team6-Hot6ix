@@ -25,6 +25,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -420,6 +422,25 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(2002))
                 .andExpect(jsonPath("$.errors[0].field").value("durationMinutes"));
+    }
+
+    /**
+     * 거절만 검증하면 상한·하한이 한 칸 어긋나 있어도 통과한다. 경계 안쪽 값이 실제로
+     * 받아들여지는지 함께 본다.
+     */
+    @ParameterizedTest
+    @ValueSource(ints = {1, 43_200})
+    @DisplayName("경매 시간이 1분과 43200분이면 시작이 받아들여진다")
+    void startAcceptsBoundaryDuration(int durationMinutes) throws Exception {
+
+        when(auctionItemService.start(eq(30L), eq(LOGIN_USER_ID), any(AuctionItemStartRequestDto.class)))
+                .thenReturn(sampleDetail());
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(durationMinutes))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
     }
 
     @Test
