@@ -43,3 +43,13 @@ oauth:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:8080}
+
+ncp:
+  sms:
+    access-key: ${NCP_ACCESS_KEY}
+    secret-key: ${NCP_SECRET_KEY}
+    service-id: ${NCP_SERVICE_ID}
+    send-from: ${NCP_SENDER_PHONE}
+    connect-timeout: 5s
+    read-timeout: 10s
+
