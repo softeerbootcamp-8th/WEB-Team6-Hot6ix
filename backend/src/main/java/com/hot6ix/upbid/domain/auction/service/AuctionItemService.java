@@ -25,6 +25,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -167,6 +168,13 @@ public class AuctionItemService {
      * 하나뿐이고 그 경로가 모두 이 락을 지난다는 뜻이다. 락을 거치지 않고 진행중으로 바꾸는
      * 코드가 생기면 제한은 조용히 뚫린다. DB 제약으로는 "3개까지"를 표현할 수 없다.
      *
+     * <p><b>{@code READ_COMMITTED}가 3개 제한의 나머지 절반이다.</b> 기본값인 REPEATABLE READ에서는
+     * 트랜잭션의 첫 일반 조회(여기서는 판매자 프로필 조회) 시점에 읽기 뷰가 고정되고, 이후 일반
+     * 조회는 그 시점의 스냅샷만 본다. 그러면 <b>경매방 락을 기다리는 동안 다른 요청이 커밋한
+     * 진행중 물품을 개수 세기가 보지 못해</b>, 락이 요청을 줄 세워도 낡은 값으로 통과시킨다.
+     * Testcontainers MySQL에서 실측한 결과가
+     * {@code AuctionItemStartIsolationTest}에 회귀 테스트로 남아 있다.
+     *
      * @param auctionItemId 시작할 물품의 ID
      * @param userId        시작을 요청한 회원의 ID
      * @param request       경매 시간(분)
@@ -177,7 +185,7 @@ public class AuctionItemService {
      *                               대기 중인 물품이 아닐 때(AUCTION_ITEM_NOT_READY),
      *                               이미 3개가 진행 중일 때(AUCTION_ITEM_START_LIMIT_EXCEEDED)
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public AuctionItemDetailResponseDto start(Long auctionItemId, Long userId,
                                               AuctionItemStartRequestDto request) {
 
@@ -253,9 +261,18 @@ public class AuctionItemService {
     }
 
     /**
-     * 경매방에서 진행 중인 물품 수를 센다. 이 조회 자체에는 락이 없지만, 호출 시점에 경매방 행을
-     * 잡고 있어 같은 방의 다른 시작 요청이 끼어들 수 없다. 물품을 진행중으로 만드는 경로가
-     * 그 락을 지나는 시작 메서드뿐이라, 세는 사이 개수가 늘어나지 않는다.
+     * 경매방에서 진행 중인 물품 수를 센다. 이 조회 자체에는 락이 없다. 정확한 값이 나오려면
+     * <b>두 가지가 모두</b> 필요하다.
+     *
+     * <ol>
+     *   <li>호출 시점에 경매방 행 락을 쥐고 있을 것 — 세는 동안 다른 시작 요청이 끼어들지 못한다.
+     *   <li>트랜잭션이 {@code READ_COMMITTED}일 것 — 기본값인 REPEATABLE READ에서는 락을
+     *       <b>기다리는 동안</b> 다른 요청이 커밋한 물품이 스냅샷에 안 잡혀, 락을 잡고도 낡은
+     *       값을 센다.
+     * </ol>
+     *
+     * 락만으로 충분하다고 보면 안 된다. 락은 "잡은 뒤"만 막고, 위험 구간은 읽기 뷰가 만들어진
+     * 뒤부터 락을 잡기 전까지다.
      */
     private long countInProgress(AuctionRoom auctionRoom) {
         return auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
