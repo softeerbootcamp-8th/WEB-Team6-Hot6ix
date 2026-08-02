@@ -55,6 +55,13 @@ public class AuctionRoom extends BaseEntity {
     @Column(name = "status", length = 20)
     private AuctionRoomStatus status;
 
+    /**
+     * 이 방의 모든 물품이 공유하는 입찰 단위. 물품을 추가할 때 이 값을 물품으로 복사한다.
+     * 입찰 검증은 복사된 물품 값을 읽으므로, 생성 이후에는 바꾸지 않는다.
+     */
+    @Column(name = "bid_increment", nullable = false)
+    private Long bidIncrement;
+
     @Column(name = "soft_close_trigger_seconds")
     private Integer softCloseTriggerSeconds;
 
@@ -66,7 +73,7 @@ public class AuctionRoom extends BaseEntity {
 
     @Builder
     private AuctionRoom(SellerProfile sellerProfile, String name, String coverImageUrl, String description,
-                        String liveUrl, String shareCode, AuctionRoomStatus status,
+                        String liveUrl, String shareCode, AuctionRoomStatus status, Long bidIncrement,
                         Integer softCloseTriggerSeconds, Integer softCloseExtendSeconds, LocalDateTime closedAt) {
         this.sellerProfile = sellerProfile;
         this.name = name;
@@ -75,6 +82,7 @@ public class AuctionRoom extends BaseEntity {
         this.liveUrl = liveUrl;
         this.shareCode = shareCode;
         this.status = status != null ? status : AuctionRoomStatus.BEFORE;
+        this.bidIncrement = bidIncrement;
         this.softCloseTriggerSeconds = softCloseTriggerSeconds;
         this.softCloseExtendSeconds = softCloseExtendSeconds;
         this.closedAt = closedAt;
@@ -88,6 +96,7 @@ public class AuctionRoom extends BaseEntity {
                 .description(request.description())
                 .liveUrl(request.liveUrl())
                 .shareCode(shareCode)
+                .bidIncrement(request.bidIncrement())
                 .softCloseTriggerSeconds(request.softCloseTriggerSeconds())
                 .softCloseExtendSeconds(request.softCloseExtendSeconds())
                 .build();

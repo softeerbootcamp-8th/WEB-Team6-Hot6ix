@@ -352,15 +352,15 @@ class ProductControllerTest extends AbstractControllerTest {
     }
 
     @Test
-    @DisplayName("경매방이 시작된 적 있는 상품은 삭제 시 409와 에러코드를 반환한다")
-    void delete_auctionAlreadyStarted() throws Exception {
+    @DisplayName("경매방에 올라가 있는 상품은 삭제 시 409와 에러코드를 반환한다")
+    void delete_inAuction() throws Exception {
 
-        doThrow(new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED))
+        doThrow(new ApplicationException(ProductErrorType.PRODUCT_IN_AUCTION))
                 .when(productService).delete(eq(1L), eq(1L));
 
         mockMvc.perform(delete("/api/v1/products/1"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value(5002));
+                .andExpect(jsonPath("$.code").value(5003));
     }
 }

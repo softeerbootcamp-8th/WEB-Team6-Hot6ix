@@ -61,6 +61,7 @@ class AuctionRoomShareServiceTest {
 
     private AuctionRoom newAuctionRoom(SellerProfile sellerProfile) {
         AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(sellerProfile)
                 .name("승민의 경매방")
                 .shareCode(SHARE_CODE)

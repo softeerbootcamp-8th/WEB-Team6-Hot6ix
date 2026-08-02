@@ -318,7 +318,7 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("경매방이 시작된 적 없으면 상품이 soft delete 된다")
+    @DisplayName("어느 경매방에도 올라가 있지 않으면 상품이 soft delete 된다")
     void delete() {
 
         SellerProfile sellerProfile = newSellerProfile();
@@ -328,8 +328,7 @@ class ProductServiceTest {
                 .thenReturn(Optional.of(sellerProfile));
         when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
                 .thenReturn(Optional.of(product));
-        when(auctionItemRepository.existsByProduct_ProductIdAndStatusNot(any(), eq(AuctionItemStatus.READY)))
-                .thenReturn(false);
+        when(auctionItemRepository.existsByProduct_ProductId(any())).thenReturn(false);
 
         productService.delete(1L, 10L);
 
@@ -337,8 +336,8 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("경매방이 시작된 적 있으면 삭제 시 예외가 발생한다")
-    void delete_auctionAlreadyStarted() {
+    @DisplayName("아직 시작 전(READY)이어도 경매방에 올라가 있으면 삭제 시 예외가 발생한다")
+    void delete_inAuction() {
 
         SellerProfile sellerProfile = newSellerProfile();
         Product product = newProduct(sellerProfile);
@@ -347,13 +346,12 @@ class ProductServiceTest {
                 .thenReturn(Optional.of(sellerProfile));
         when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
                 .thenReturn(Optional.of(product));
-        when(auctionItemRepository.existsByProduct_ProductIdAndStatusNot(any(), eq(AuctionItemStatus.READY)))
-                .thenReturn(true);
+        when(auctionItemRepository.existsByProduct_ProductId(any())).thenReturn(true);
 
         assertThatThrownBy(() -> productService.delete(1L, 10L))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED);
+                .isEqualTo(ProductErrorType.PRODUCT_IN_AUCTION);
 
         assertThat(product.isDeleted()).isFalse();
     }

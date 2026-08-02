@@ -4,8 +4,12 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateListResponseDto;
+import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateResponseDto;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
+import com.hot6ix.upbid.domain.deal.entity.DealRole;
+import com.hot6ix.upbid.domain.deal.entity.DealStatus;
 import com.hot6ix.upbid.domain.deal.exception.DealErrorType;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
@@ -13,8 +17,11 @@ import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.WinnerDecided;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import com.hot6ix.upbid.global.response.PageResponse;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
@@ -24,6 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class DealCandidateService {
+
+    /** 화면이 5명씩 끊어 보여준다. 클라이언트가 정하게 두면 한 번에 전부 긁어갈 수 있다. */
+    private static final int CANDIDATE_PAGE_SIZE = 5;
 
     private final AuctionItemRepository auctionItemRepository;
     private final DealCandidateRepository dealCandidateRepository;
@@ -63,6 +73,95 @@ public class DealCandidateService {
 
         dealCandidateRepository.findCurrentWinner(event.itemId())
                 .ifPresent(winner -> publishDealRight(event.roomId(), event.itemId(), winner));
+    }
+
+    /**
+     * 물품의 낙찰 후보를 한 페이지 조회한다. 판매자와 입찰자가 같은 endpoint를 쓰고 역할은
+     * 여기서 판정한다. 둘 다 아니면 남의 거래이므로 막는다.
+     *
+     * <p>연락처는 판매자가 볼 때, 거래 상대인 후보만 내린다. 구매자에게는 한 건도 주지 않는다.
+     *
+     * <p>마감 여부를 역할 판정보다 <b>먼저</b> 본다. 순서가 반대면 아직 진행 중인 물품에 대해
+     * 판매자는 빈 목록(200)을, 입찰자는 후보가 없어 6007을 받아 같은 상황에 응답이 갈린다.
+     *
+     * @throws ApplicationException 물품이 없거나(4001), 아직 마감되지 않았거나(6002),
+     *                              이 물품의 판매자도 후보도 아닐 때(6007)
+     */
+    public DealCandidateListResponseDto getCandidates(
+            Long auctionItemId, int page, Long loginUserId) {
+
+        requireClosed(auctionItemId);
+
+        Long sellerUserId = auctionItemRepository.findSellerUserId(auctionItemId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        boolean seller = sellerUserId.equals(loginUserId);
+        DealCandidate mine = seller ? null
+                : dealCandidateRepository.findByBidder(auctionItemId, loginUserId)
+                        .orElseThrow(() -> new ApplicationException(DealErrorType.NOT_DEAL_VIEWER));
+
+        Long currentWinnerId = findCurrentWinnerId(auctionItemId);
+
+        Page<DealCandidateResponseDto> candidates = dealCandidateRepository
+                .findCandidates(auctionItemId, PageRequest.of(page, CANDIDATE_PAGE_SIZE))
+                .map(candidate -> toResponse(candidate, currentWinnerId, seller, loginUserId));
+
+        return new DealCandidateListResponseDto(
+                seller ? DealRole.SELLER : DealRole.BUYER,
+                seller ? null : mine.getCandidateRank(),
+                PageResponse.of(candidates));
+    }
+
+    /**
+     * 마감된 물품만 후보를 조회할 수 있다. 유찰도 마감이라 통과시킨다 — 후보가 없다는 사실
+     * 자체가 화면이 보여줄 결과이고("낙찰 후보 없음"), 거래 내역에서 같은 경로로 들어온다.
+     */
+    private void requireClosed(Long auctionItemId) {
+
+        AuctionItemStatus status = auctionItemRepository.findStatus(auctionItemId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        if (status != AuctionItemStatus.SOLD && status != AuctionItemStatus.FAILED) {
+            throw new ApplicationException(DealErrorType.ITEM_NOT_SOLD);
+        }
+    }
+
+    /**
+     * 지금 낙찰 권한을 가진 후보의 ID. 없으면 {@code null}이다.
+     *
+     * <p>거래가 성사된 뒤에도 하위 순위는 {@code WAITING}으로 남는다. 그 상태에서
+     * {@code findCurrentWinner}는 최저 순위 대기자를 돌려주므로, 끝난 거래에 진행 중인 후보가
+     * 있는 것처럼 보인다. 성사 여부를 먼저 확인해야 하는 이유다.
+     */
+    private Long findCurrentWinnerId(Long auctionItemId) {
+
+        if (dealCandidateRepository.existsCompletedCandidate(auctionItemId)) {
+            return null;
+        }
+        return dealCandidateRepository.findCurrentWinner(auctionItemId)
+                .map(DealCandidate::getDealCandidateId)
+                .orElse(null);
+    }
+
+    /** 연락처는 거래 상대에게만 의미가 있다 — 지금 거래 중이거나 이미 성사된 후보다. */
+    private DealCandidateResponseDto toResponse(
+            DealCandidate candidate, Long currentWinnerId, boolean seller, Long loginUserId) {
+
+        DealStatus dealStatus = toDealStatus(candidate, currentWinnerId);
+        boolean contactVisible = seller
+                && (dealStatus == DealStatus.IN_PROGRESS || dealStatus == DealStatus.COMPLETED);
+
+        return DealCandidateResponseDto.of(candidate, dealStatus, contactVisible,
+                candidate.getBidder().getUserId().equals(loginUserId));
+    }
+
+    private DealStatus toDealStatus(DealCandidate candidate, Long currentWinnerId) {
+        return switch (candidate.getStatus()) {
+            case COMPLETED -> DealStatus.COMPLETED;
+            case FAILED -> DealStatus.FAILED;
+            case WAITING -> candidate.getDealCandidateId().equals(currentWinnerId)
+                    ? DealStatus.IN_PROGRESS : DealStatus.WAITING;
+        };
     }
 
     /**

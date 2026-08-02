@@ -85,7 +85,7 @@ class BidServiceTest {
      * 진행중이고 마감이 한참 남은 물품. 개별 테스트에서 상태·마감·최고입찰자만 바꿔 쓴다.
      */
     private AuctionItem auctionItem(AuctionItemStatus status, LocalDateTime endAt, User leader) {
-        AuctionRoom auctionRoom = AuctionRoom.builder().name("승민상점 경매방").build();
+        AuctionRoom auctionRoom = AuctionRoom.builder().name("승민상점 경매방").bidIncrement(1_000L).build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", ROOM_ID);
 
         Product product = Product.builder().name("한정판피규어").build();

@@ -98,15 +98,16 @@ public interface ProductApi {
 
     @Operation(
             summary = "상품 삭제",
-            description = "로그인한 판매자 본인 소유의 상품을 soft delete 한다. 경매방이 한 번이라도 시작된 적 "
-                    + "있는 상품(READY가 아닌 AuctionItem이 하나라도 있으면)은 이후로도 계속 삭제할 수 없다."
+            description = "로그인한 판매자 본인 소유의 상품을 soft delete 한다. 경매방에 물품으로 올라가 있으면 "
+                    + "아직 시작 전(READY)이더라도 삭제할 수 없다 — 상품만 지우면 물품이 남아 삭제된 상품이 "
+                    + "경매방에 계속 노출되기 때문이다. 시작 전이라면 경매방에서 물품을 먼저 빼면 삭제할 수 있다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "삭제 성공"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
                     + "상품이 없거나 본인 소유가 아님 (code 5001)"),
-            @ApiResponse(responseCode = "409", description = "경매방이 시작된 적 있는 상품 (code 5002)")
+            @ApiResponse(responseCode = "409", description = "경매방에 올라가 있는 상품 (code 5003)")
     })
     ResponseEntity<CommonResponse<Void>> delete(
             @Parameter(hidden = true) @LoginUserId Long userId,

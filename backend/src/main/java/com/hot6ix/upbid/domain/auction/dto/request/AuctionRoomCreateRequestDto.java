@@ -33,6 +33,11 @@ public record AuctionRoomCreateRequestDto(
         @URL(message = "라이브 방송 URL 형식이 올바르지 않습니다.")
         String liveUrl,
 
+        @NotNull(message = "입찰 단위는 필수 값입니다.")
+        @Min(value = 1, message = "입찰 단위는 1원 이상이어야 합니다.")
+        @Max(value = 1_000_000_000_000L, message = "입찰 단위는 1조원 이하여야 합니다.")
+        Long bidIncrement,
+
         @NotNull(message = "Soft Close 트리거 초는 필수 값입니다.")
         @Min(value = 1, message = "Soft Close 트리거 초는 1초 이상이어야 합니다.")
         @Max(value = 3600, message = "Soft Close 트리거 초는 3600초(1시간) 이하여야 합니다.")
