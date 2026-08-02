@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -152,6 +153,19 @@ class DealCandidateControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.data.myRank").value(7));
 
         verify(dealCandidateService).getCandidates(2L, 1, LOGIN_USER_ID);
+    }
+
+    /** 검증이 없으면 PageRequest가 IllegalArgumentException을 던져 500이 나간다. */
+    @Test
+    @DisplayName("page가 음수면 400과 code 2002를 반환하고 서비스를 호출하지 않는다")
+    void getCandidatesRejectsNegativePage() throws Exception {
+
+        mockMvc.perform(get(LIST_URL).param("page", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002));
+
+        verify(dealCandidateService, never()).getCandidates(anyLong(), anyInt(), anyLong());
     }
 
     /** null 필드는 응답에서 빠진다. 구매자 응답에 연락처 키가 남아 있으면 안 된다. */

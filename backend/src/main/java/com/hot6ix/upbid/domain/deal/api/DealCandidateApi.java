@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -28,7 +29,8 @@ public interface DealCandidateApi {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "400", description = "경로 변수나 page가 숫자가 아님 (code 2002)"),
+            @ApiResponse(responseCode = "400", description = "경로 변수나 page가 숫자가 아니거나 "
+                    + "page가 음수임 (code 2002)"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "403", description = "그 물품의 판매자도 후보도 아님 (code 6007)"),
             @ApiResponse(responseCode = "404", description = "물품이 없음 (code 4001)"),
@@ -38,7 +40,8 @@ public interface DealCandidateApi {
             @Parameter(description = "조회할 물품 ID", required = true)
             @PathVariable Long auctionItemId,
             @Parameter(description = "0부터 시작하는 페이지 번호. 크기는 5로 고정이다")
-            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "0")
+            @Min(value = 0, message = "page는 0 이상이어야 합니다.") int page,
             @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
