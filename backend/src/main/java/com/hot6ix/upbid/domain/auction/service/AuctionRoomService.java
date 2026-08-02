@@ -74,6 +74,23 @@ public class AuctionRoomService {
     }
 
     /**
+     * 공유 코드로 경매방 공개 정보를 조회한다. 공유 링크를 받은 사람이 방에 진입할 때 쓰며,
+     * {@link #getRoom(Long)}과 응답이 동일하다. roomId 대신 share_code로 진입점을 두는 이유는
+     * 순차 증가하는 숫자 PK를 공개 URL에 노출하면 남의 방을 추측해 순회 조회할 수 있기 때문이다.
+     *
+     * @param shareCode 조회할 경매방의 공유 코드
+     * @return 조회된 경매방
+     * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
+     */
+    public AuctionRoomPublicResponseDto getRoomByShareCode(String shareCode) {
+
+        AuctionRoom auctionRoom = auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(shareCode)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoom.getAuctionRoomId()));
+    }
+
+    /**
      * 소유자 본인의 경매방 설정을 부분 수정한다. 요청에서 생략된(null) 필드는 기존 값을 유지한다.
      * 이 방의 물품 중 하나라도 READY가 아닌 상태로 경매에 올라간 적이 있으면(=경매가 시작된
      * 적 있으면) 이후로도 계속 수정할 수 없다.

@@ -69,12 +69,17 @@ cd frontend && pnpm install && pnpm dev
 | `/rooms/7` | 〃 | | **빈 경매방** — 물품·이벤트 0 (`MOCK_EMPTY_ROOM`) |
 | `/rooms/1/items/1` | `rooms.$roomId.items.$itemId.tsx` | | 물품 상세 (LIVE) |
 | `/rooms/1/result` | `rooms.$roomId.result.tsx` | | 경매방 종료 요약 |
-| `/join/abc123` | `join.$shareCode.tsx` | | 링크 입장 — **정상** |
-| `/join/expired` | 〃 | | 링크 입장 — **종료된 링크** |
-| `/join/xxxx` | 〃 | | 링크 입장 — **유효하지 않은 링크** |
+| `/join/{shareCode}` | `join.$shareCode.tsx` | ✓ | 링크 입장 — 정상 / 종료 / 유효하지 않은 링크 |
 
-`/join` 의 상태 판정은 `resolveRoom()` 한 함수에 모여 있다.
-API 를 붙일 때 이 함수만 `GET /api/v1/public/auction-rooms/{shareCode}` 로 바꾸면 된다.
+`/join` 은 **실제 API 로 동작한다** — `GET /api/v1/auction-rooms/share/{shareCode}`
+(비로그인 허용). 응답 404 면 "유효하지 않은 링크", `status === 'CLOSED'` 면
+"종료된 경매방" 으로 갈린다. 그래서 목업 시절의 `/join/abc123`·`/join/expired`
+같은 고정 경로는 더 이상 의미가 없고, 화면을 보려면 DB 에 실제로 있는
+share_code 가 필요하다.
+
+**단 물품 목록은 아직 목업이다.** 공개 조회 응답에는 물품 개수(`itemCount`)만
+있고 목록은 별도 엔드포인트라, 그 연동은 다음 이슈로 미뤘다. 참여자 수는 서버가
+아직 채우지 않아(`participantCount` 항상 null) 화면에서 뺐다.
 
 ### 거래
 
