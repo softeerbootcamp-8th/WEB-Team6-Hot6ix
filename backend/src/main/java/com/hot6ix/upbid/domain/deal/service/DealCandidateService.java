@@ -8,8 +8,8 @@ import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateListResponseDto;
 import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateResponseDto;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
+import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.domain.deal.entity.DealStatus;
-import com.hot6ix.upbid.domain.deal.entity.DealViewerRole;
 import com.hot6ix.upbid.domain.deal.exception.DealErrorType;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
@@ -102,7 +102,7 @@ public class DealCandidateService {
                 .map(candidate -> toResponse(candidate, currentWinnerId, seller, loginUserId));
 
         return new DealCandidateListResponseDto(
-                seller ? DealViewerRole.SELLER : DealViewerRole.BIDDER,
+                seller ? DealRole.SELLER : DealRole.BUYER,
                 seller ? null : mine.getCandidateRank(),
                 PageResponse.of(candidates));
     }

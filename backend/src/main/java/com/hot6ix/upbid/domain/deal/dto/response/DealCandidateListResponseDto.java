@@ -1,6 +1,6 @@
 package com.hot6ix.upbid.domain.deal.dto.response;
 
-import com.hot6ix.upbid.domain.deal.entity.DealViewerRole;
+import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.global.response.PageResponse;
 
 /**
@@ -11,7 +11,7 @@ import com.hot6ix.upbid.global.response.PageResponse;
  *               판매자는 {@code null}
  */
 public record DealCandidateListResponseDto(
-        DealViewerRole viewerRole,
+        DealRole viewerRole,
         Integer myRank,
         PageResponse<DealCandidateResponseDto> candidates
 ) {

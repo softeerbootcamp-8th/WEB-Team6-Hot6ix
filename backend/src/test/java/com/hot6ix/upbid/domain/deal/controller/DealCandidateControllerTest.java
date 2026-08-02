@@ -15,7 +15,7 @@ import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateListResponseDto;
 import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateResponseDto;
 import com.hot6ix.upbid.domain.deal.entity.DealStatus;
-import com.hot6ix.upbid.domain.deal.entity.DealViewerRole;
+import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.domain.deal.exception.DealErrorType;
 import com.hot6ix.upbid.domain.deal.service.DealCandidateService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -123,7 +123,7 @@ class DealCandidateControllerTest extends AbstractControllerTest {
         DealCandidateResponseDto candidate = new DealCandidateResponseDto(
                 101L, 1, "원기", 15_000L, DealStatus.IN_PROGRESS, "010-1234-5678", false);
         when(dealCandidateService.getCandidates(anyLong(), anyInt(), anyLong()))
-                .thenReturn(new DealCandidateListResponseDto(DealViewerRole.SELLER, null,
+                .thenReturn(new DealCandidateListResponseDto(DealRole.SELLER, null,
                         new PageResponse<>(List.of(candidate), 0, 1, 12, 3)));
 
         mockMvc.perform(get(LIST_URL))
@@ -144,7 +144,7 @@ class DealCandidateControllerTest extends AbstractControllerTest {
     void getCandidatesPassesPage() throws Exception {
 
         when(dealCandidateService.getCandidates(anyLong(), anyInt(), anyLong()))
-                .thenReturn(new DealCandidateListResponseDto(DealViewerRole.BIDDER, 7,
+                .thenReturn(new DealCandidateListResponseDto(DealRole.BUYER, 7,
                         new PageResponse<>(List.of(), 1, 0, 12, 3)));
 
         mockMvc.perform(get(LIST_URL).param("page", "1"))
@@ -162,7 +162,7 @@ class DealCandidateControllerTest extends AbstractControllerTest {
         DealCandidateResponseDto candidate = new DealCandidateResponseDto(
                 101L, 1, "원기", 15_000L, DealStatus.WAITING, null, true);
         when(dealCandidateService.getCandidates(anyLong(), anyInt(), anyLong()))
-                .thenReturn(new DealCandidateListResponseDto(DealViewerRole.BIDDER, 1,
+                .thenReturn(new DealCandidateListResponseDto(DealRole.BUYER, 1,
                         new PageResponse<>(List.of(candidate), 0, 1, 1, 1)));
 
         mockMvc.perform(get(LIST_URL))

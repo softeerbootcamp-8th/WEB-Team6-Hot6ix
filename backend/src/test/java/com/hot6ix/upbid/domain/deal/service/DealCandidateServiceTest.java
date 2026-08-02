@@ -20,8 +20,8 @@ import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateListResponseDto;
 import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateResponseDto;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
+import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.domain.deal.entity.DealStatus;
-import com.hot6ix.upbid.domain.deal.entity.DealViewerRole;
 import com.hot6ix.upbid.domain.deal.exception.DealErrorType;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -383,7 +383,7 @@ class DealCandidateServiceTest {
         DealCandidateListResponseDto response =
                 dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID);
 
-        assertThat(response.viewerRole()).isEqualTo(DealViewerRole.SELLER);
+        assertThat(response.viewerRole()).isEqualTo(DealRole.SELLER);
         assertThat(response.myRank()).isNull();
         assertThat(response.candidates().content())
                 .extracting(DealCandidateResponseDto::dealStatus, DealCandidateResponseDto::phoneNumber)
@@ -410,7 +410,7 @@ class DealCandidateServiceTest {
         DealCandidateListResponseDto response =
                 dealCandidateService.getCandidates(ITEM_ID, 0, 107L);
 
-        assertThat(response.viewerRole()).isEqualTo(DealViewerRole.BIDDER);
+        assertThat(response.viewerRole()).isEqualTo(DealRole.BUYER);
         assertThat(response.candidates().content())
                 .extracting(DealCandidateResponseDto::phoneNumber)
                 .containsOnlyNulls();
