@@ -1,6 +1,6 @@
 import { Search, X } from 'lucide-react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { ConnectionBanner } from '@/features/live/components/connection-banner'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'
@@ -18,7 +18,10 @@ import { toast } from '@/lib/toast'
 import { useDevTools } from '@/lib/dev-tools'
 import { useCurrentUser } from '@/lib/session'
 import { useIsDesktop } from '@/hooks/use-media-query'
-import { useRealtimeStatus } from '@/features/live/use-realtime-status'
+import {
+  useRealtimeStatus,
+  type SseEventPayload,
+} from '@/features/live/use-realtime-status'
 import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
 
 /**
@@ -40,7 +43,6 @@ function AuctionItemPage() {
   const { roomId, itemId } = Route.useParams()
   const navigate = useNavigate()
   const user = useCurrentUser()
-  const { status, retry } = useRealtimeStatus()
   const isDesktop = useIsDesktop()
   const showDevTools = useDevTools()
 
@@ -65,6 +67,102 @@ function AuctionItemPage() {
     room.items.find((candidate) => String(candidate.id) === itemId) ??
     room.items[0]!
   const item = override?.id === base.id ? override : base
+
+  const handleSseEvent = useCallback(
+    (payload: SseEventPayload) => {
+      // 현재 보고 있는 물품과 관계없는 이벤트는 무시한다.
+      if (payload.itemId !== item.id) return
+
+      const eventId = Date.now()
+
+      switch (payload.kind) {
+        case 'ItemStarted':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'START',
+              message: `${payload.itemName} 경매가 시작됐어요`,
+            },
+          ])
+          setOverride((prev) => ({
+            ...(prev ?? item),
+            status: 'ACTIVE' as const,
+            endsAt: payload.endedTime,
+          }))
+          break
+
+        case 'ItemClosingSoon':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'CLOSE',
+              message: `${payload.itemName} 마감 1분 전`,
+              emphasized: true,
+            },
+          ])
+          break
+
+        case 'BidPlaced':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'BID',
+              message: `${payload.bidderNickname}님이 ${formatWon(payload.bidPrice)} 입찰`,
+              subtitle: payload.itemName,
+              emphasized: true,
+            },
+          ])
+          setOverride((prev) => {
+            const base = prev ?? item
+            return {
+              ...base,
+              currentPrice: payload.bidPrice,
+              topBidderNickname: payload.bidderNickname,
+              bidCount: base.bidCount + 1,
+              leaderboard: [
+                { rank: 1, nickname: payload.bidderNickname, amount: payload.bidPrice, isMe: false },
+                ...base.leaderboard.filter((entry) => entry.nickname !== payload.bidderNickname),
+              ]
+                .slice(0, 5)
+                .map((entry, index) => ({ ...entry, rank: index + 1 })),
+            }
+          })
+          break
+
+        case 'SoftCloseExtended':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'EXTEND',
+              message: `마감 1분 전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
+              subtitle: payload.itemName,
+              emphasized: true,
+            },
+          ])
+          setOverride((prev) => {
+            const base = prev ?? item
+            return {
+              ...base,
+              endsAt: new Date(
+                new Date(base.endsAt).getTime() + payload.extendSeconds * 1000,
+              ).toISOString(),
+            }
+          })
+          break
+      }
+    },
+    [item],
+  )
+
+  const { status, retry } = useRealtimeStatus(roomId, handleSseEvent)
 
   const remaining = useCountdown(item.endsAt)
   const closed = item.status === 'CLOSED'
