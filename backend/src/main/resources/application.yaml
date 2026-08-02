@@ -13,6 +13,13 @@ spring:
     password: ${DB_PASSWORD:1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+  # 기본값 1이면 마감 한 건이 입찰의 행 락을 기다리는 동안 다른 물품 마감과 SMS 정리 cron이
+  # 함께 밀린다. 값의 근거와 전용 스케줄러 분리 여부는 3주차에 측정하고 정한다.
+  task:
+    scheduling:
+      pool:
+        size: 4
+
   jpa:
     hibernate:
       ddl-auto: update
