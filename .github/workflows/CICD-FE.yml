@@ -1,0 +1,146 @@
+name: CICD - Frontend
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/CICD-FE.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/CICD-FE.yml'
+  # 커밋 없이 재배포할 때 쓴다 (S3·CloudFront 설정 변경 후, 배포 재시도 등).
+  # Actions 탭의 버튼은 기본 브랜치의 워크플로 파일을 기준으로 노출된다.
+  workflow_dispatch:
+
+env:
+  # 프론트 번들에 그대로 박히는 값이라 비밀이 될 수 없다. Secrets 로 숨겨도
+  # 빌드 결과물에서 보이므로 여기서 평문으로 관리한다.
+  VITE_API_BASE_URL: https://api.upbid.store
+  # 개발용 DEV 패널·devtools 를 처음부터 끈 상태로 빌드한다.
+  VITE_DEV_TOOLS: 'off'
+  AWS_REGION: ap-northeast-2
+
+# 같은 브랜치의 앞선 실행은 취소한다. 단, 배포(main push)는 S3 sync 도중에
+# 끊기면 index.html 과 자산이 어긋난 상태로 남을 수 있어 취소하지 않는다.
+concurrency:
+  group: cicd-fe-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # CI: main, dev로 향하는 PR에서 포맷·lint·타입 검사·빌드
+  build-and-test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm 을 먼저 깔아야 setup-node 의 `cache: pnpm` 이 스토어를 찾는다.
+      # 버전은 package.json 의 packageManager 필드를 따른다.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 포맷 확인
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      # `pnpm build`(= tsc -b && vite build)를 그대로 쓸 수 없다.
+      # src/routeTree.gen.ts 는 gitignore 대상이고 이 파일을 만드는 주체가
+      # vite 의 라우터 플러그인이라, 새 체크아웃에서는 tsc 가 먼저 돌면
+      # 라우트 타입을 못 찾고 실패한다. 그래서 vite build → tsc 순서로 나눈다.
+      - name: 빌드 (라우트 트리 생성 포함)
+        run: pnpm exec vite build
+
+      - name: 타입 검사
+        run: pnpm exec tsc -b
+
+  # CD: main push 또는 수동 실행 시 빌드해서 S3 에 올리고 CloudFront 를 무효화한다.
+  # 타입·lint 는 PR 단계에서 이미 검증됐지만, 배포물이 타입 오류를 품는 일은
+  # 막아야 하므로 타입 검사만 한 번 더 돌린다.
+  deploy:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 빌드 (라우트 트리 생성 포함)
+        run: pnpm exec vite build
+
+      - name: 타입 검사
+        run: pnpm exec tsc -b
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 1단계: 파일명에 해시가 붙은 자산이라 내용이 바뀌면 이름이 바뀐다.
+      # 그래서 1년 immutable 로 캐시해도 안전하다.
+      #
+      # `--delete` 를 쓰지 않는다. 라우트별 코드 분할(autoCodeSplitting) 때문에
+      # 지금 열려 있는 탭이 아직 예전 index.html 을 들고 있는데 예전 청크를
+      # 지워 버리면, 그 사용자가 다른 화면으로 이동하는 순간 청크 404 로 화면이
+      # 깨진다. 경매 진행 중에 이러면 입찰을 놓친다. 낡은 파일이 쌓이는 건
+      # 수 MB 수준이라 그대로 두고, 정리는 필요할 때 수동으로 한다.
+      - name: 정적 자산 업로드 (해시 파일명 → 1년 캐시)
+        run: |
+          aws s3 sync dist "s3://${{ secrets.FE_S3_BUCKET }}" \
+            --exclude 'index.html' \
+            --cache-control 'public,max-age=31536000,immutable' \
+            --no-progress
+
+      # 2단계: index.html 은 항상 새로 받아야 한다. 자산보다 나중에 올려서,
+      # 새 index.html 이 참조하는 청크가 이미 S3 에 있는 상태를 보장한다.
+      - name: index.html 업로드 (캐시 금지)
+        run: |
+          aws s3 cp dist/index.html "s3://${{ secrets.FE_S3_BUCKET }}/index.html" \
+            --cache-control 'no-cache' \
+            --content-type 'text/html; charset=utf-8' \
+            --no-progress
+
+      # SPA 라우트는 CloudFront 의 커스텀 오류 응답(403/404 → /index.html)으로
+      # 서비스되고, 그 응답도 경로별로 캐시된다. index.html 만 무효화하면
+      # /rooms/1 같은 경로가 예전 문서를 계속 주므로 전체를 무효화한다.
+      # `/*` 무효화는 월 1000 경로까지 무료다.
+      - name: CloudFront 캐시 무효화
+        run: |
+          ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.FE_CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths '/*' \
+            --query 'Invalidation.Id' --output text)
+          echo "무효화 생성: $ID"
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${{ secrets.FE_CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --id "$ID"
+          echo "무효화 완료: $ID"
