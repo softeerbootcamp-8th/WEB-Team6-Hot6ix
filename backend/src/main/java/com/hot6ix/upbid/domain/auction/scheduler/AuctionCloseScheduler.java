@@ -40,10 +40,19 @@ public class AuctionCloseScheduler {
      * 호출되지 않아, 대기 중인 물품에 마감 작업이 도는 일이 없다.
      *
      * <p>{@code endAt}이 이벤트에 실려 있어 물품을 다시 조회하지 않는다.
+     *
+     * <p>예외를 삼키는 것은 <b>커밋이 끝난 뒤에 도는 리스너</b>이기 때문이다. 여기서 던지면
+     * 예외가 커밋한 쪽으로 전파돼, 물품이 이미 진행중으로 저장됐는데 시작 요청은 실패로 보인다.
+     * 컨텍스트가 내려가는 중이면 {@code TaskRejectedException}으로 실제로 그렇게 된다.
+     * 예약이 없는 물품은 닫히지 않을 뿐이고 그건 시작을 실패시켜 될 일이 아니다.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(ItemStarted event) {
-        schedule(event.itemId(), event.endAt());
+        try {
+            schedule(event.itemId(), event.endAt());
+        } catch (Exception e) {
+            log.error("물품 마감 예약 실패: itemId={}, endAt={}", event.itemId(), event.endAt(), e);
+        }
     }
 
     /**

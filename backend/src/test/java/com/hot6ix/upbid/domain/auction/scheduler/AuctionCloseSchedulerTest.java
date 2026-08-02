@@ -22,6 +22,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -54,6 +55,18 @@ class AuctionCloseSchedulerTest {
         verify(taskScheduler).schedule(any(Runnable.class), captor.capture());
 
         assertThat(captor.getValue()).isEqualTo(END_AT.atZone(ZoneId.systemDefault()).toInstant());
+    }
+
+    @Test
+    @DisplayName("예약 등록이 실패해도 시작 요청까지 실패시키지 않는다")
+    void swallowsScheduleFailure() {
+
+        when(taskScheduler.schedule(any(Runnable.class), any(Instant.class)))
+                .thenThrow(new TaskRejectedException("스케줄러가 내려가는 중"));
+
+        assertThatCode(() -> auctionCloseScheduler.on(itemStarted()))
+                .as("커밋 뒤에 도는 리스너라, 여기서 던지면 이미 시작된 물품인데 시작 API가 실패한다")
+                .doesNotThrowAnyException();
     }
 
     @Test
