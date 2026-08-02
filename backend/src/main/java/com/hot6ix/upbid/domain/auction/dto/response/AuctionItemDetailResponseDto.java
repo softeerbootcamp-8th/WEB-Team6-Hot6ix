@@ -31,6 +31,7 @@ public record AuctionItemDetailResponseDto(
                 product.getDescription(),
                 product.getImageUrl(),
                 product.getReferenceUrl(),
+                auctionItem.getStartingPrice(),
                 auctionItem.getCurrentPrice(),
                 auctionItem.getBidIncrement(),
                 auctionItem.getStatus(),
