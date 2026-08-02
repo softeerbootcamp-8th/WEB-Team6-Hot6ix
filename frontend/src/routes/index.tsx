@@ -1,9 +1,12 @@
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
 import { KakaoLoginButton } from '@/features/auth/components/kakao-login-button'
 import { Reveal } from '@/components/reveal'
 import { GuestShell } from '@/components/layout/page-shell'
 import { sessionStore } from '@/lib/session'
+
+const KAKAO_CLIENT_ID = import.meta.env.VITE_KAKAO_CLIENT_ID as string
+const KAKAO_REDIRECT_URI = 'http://localhost:8080/api/v1/oauth/kakao/callback'
 
 export const Route = createFileRoute('/')({
   // 로그인 후 돌아갈 위치. 입찰하려다 로그인한 경우 원래 방으로 복귀한다.
@@ -35,18 +38,14 @@ const VALUE_POINTS = [
 ] as const
 
 function LandingPage() {
-  const navigate = useNavigate()
-  const { redirect: redirectTo } = Route.useSearch()
-
   /**
-   * 카카오 인증은 백엔드(`/api/v1/oauth/kakao/callback`)가 처리한다.
-   * 지금은 목업이라 신규 가입 흐름인 전화번호 인증으로 바로 넘긴다.
+   * 카카오 OAuth 인증 페이지로 이동한다.
+   * 백엔드 콜백(`/api/v1/oauth/kakao/callback`)이 code 를 받아 로그인을 처리하고
+   * 프론트 홈 화면으로 리다이렉트한다.
    */
   const handleKakaoLogin = () => {
-    void navigate({
-      to: '/signup/phone',
-      search: redirectTo ? { redirect: redirectTo } : {},
-    })
+    const url = `https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=${KAKAO_CLIENT_ID}&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}`
+    location.href = url
   }
 
   return (

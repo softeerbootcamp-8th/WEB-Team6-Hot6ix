@@ -6,9 +6,16 @@ import { DevPanel } from '@/components/dev/dev-panel'
 import { OfflineBanner } from '@/components/offline-banner'
 import { Toaster } from '@/components/ui/toaster'
 import { devToolsStore, useDevTools } from '@/lib/dev-tools'
+import { axiosInstance } from '@/api/mutator/custom-instance'
+import { sessionStore, type SessionUser } from '@/lib/session'
 
 interface RouterContext {
   queryClient: QueryClient
+}
+
+interface MeResponse {
+  success: boolean
+  data: SessionUser
 }
 
 // devtools 는 프로덕션 번들에서 제외되도록 lazy 로딩한다.
@@ -21,6 +28,24 @@ const TanStackRouterDevtools = import.meta.env.PROD
     )
 
 export const Route = createRootRouteWithContext<RouterContext>()({
+  beforeLoad: async ({ context }) => {
+    try {
+      const { data } = await context.queryClient.fetchQuery({
+        queryKey: ['session', 'me'],
+        queryFn: () =>
+          axiosInstance
+            .get<MeResponse>('/api/v1/users/me')
+            .then((r) => r.data),
+        // 한 번 가져오면 페이지 내에서는 재요청하지 않는다.
+        // 로그아웃 시 queryClient.removeQueries({ queryKey: ['session'] }) 로 초기화한다.
+        staleTime: Infinity,
+      })
+      sessionStore.signIn(data)
+    } catch {
+      // 401 등 인증 실패 → 게스트 유지. 앱 로드를 막지 않는다.
+      sessionStore.signOut()
+    }
+  },
   component: RootLayout,
 })
 
