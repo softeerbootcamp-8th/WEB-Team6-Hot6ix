@@ -60,6 +60,7 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
 
     private AuctionRoom newAuctionRoom(String name) {
         return entityManager.persist(AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(sellerProfile)
                 .name(name)
                 .build());
@@ -260,6 +261,7 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
     void findSellerUserIdReturnsEmptyWhenRoomHasNoSeller() {
 
         AuctionRoom roomWithoutSeller = entityManager.persist(AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .name("판매자 없는 방")
                 .build());
         AuctionItem item = newAuctionItem(roomWithoutSeller, "주인없는물품", AuctionItemStatus.IN_PROGRESS);

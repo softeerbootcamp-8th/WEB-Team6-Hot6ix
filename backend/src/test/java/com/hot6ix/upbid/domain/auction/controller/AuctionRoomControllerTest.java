@@ -40,6 +40,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
 
     private AuctionRoomCreateRequestDto newCreateRequest() {
         return AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .coverImageUrl("https://cdn.hot6ix.com/cover.png")
                 .description("한정판 피규어 경매")
@@ -82,6 +83,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_blankName() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("")
                 .softCloseTriggerSeconds(30)
                 .softCloseExtendSeconds(60)
@@ -101,6 +103,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_invalidName() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("<script>")
                 .softCloseTriggerSeconds(30)
                 .softCloseExtendSeconds(60)
@@ -120,6 +123,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_invalidCoverImageUrl() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .coverImageUrl("not-a-url")
                 .softCloseTriggerSeconds(30)
@@ -139,6 +143,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_missingSoftCloseFields() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .build();
 
@@ -155,6 +160,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_softCloseExtendSecondsOutOfRange() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .softCloseTriggerSeconds(30)
                 .softCloseExtendSeconds(3601)
@@ -167,6 +173,46 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(2002))
                 .andExpect(jsonPath("$.errors[0].field").value("softCloseExtendSeconds"));
+    }
+
+    @Test
+    @DisplayName("입찰 단위가 1조를 넘으면 생성 시 400을 반환한다")
+    void create_bidIncrementOutOfRange() throws Exception {
+
+        AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000_000_000_001L)
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+
+        mockMvc.perform(post("/api/v1/auction-rooms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("bidIncrement"));
+    }
+
+    @Test
+    @DisplayName("입찰 단위가 0이면 생성 시 400을 반환한다")
+    void create_bidIncrementZero() throws Exception {
+
+        AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(0L)
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+
+        mockMvc.perform(post("/api/v1/auction-rooms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("bidIncrement"));
     }
 
     @Test

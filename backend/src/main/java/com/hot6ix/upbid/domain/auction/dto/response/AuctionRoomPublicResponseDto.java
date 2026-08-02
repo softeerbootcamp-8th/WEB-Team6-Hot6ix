@@ -14,6 +14,7 @@ public record AuctionRoomPublicResponseDto(
         String description,
         String liveUrl,
         AuctionRoomStatus status,
+        Long bidIncrement,
         Integer softCloseTriggerSeconds,
         Integer softCloseExtendSeconds,
         String sellerStoreName,
@@ -31,6 +32,7 @@ public record AuctionRoomPublicResponseDto(
                 .description(auctionRoom.getDescription())
                 .liveUrl(auctionRoom.getLiveUrl())
                 .status(auctionRoom.getStatus())
+                .bidIncrement(auctionRoom.getBidIncrement())
                 .softCloseTriggerSeconds(auctionRoom.getSoftCloseTriggerSeconds())
                 .softCloseExtendSeconds(auctionRoom.getSoftCloseExtendSeconds())
                 .sellerStoreName(auctionRoom.getSellerProfile().getStoreName())

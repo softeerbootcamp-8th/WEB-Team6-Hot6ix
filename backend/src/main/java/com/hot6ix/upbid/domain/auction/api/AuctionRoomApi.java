@@ -23,7 +23,9 @@ public interface AuctionRoomApi {
     @Operation(
             summary = "경매방 생성",
             description = "판매자가 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며, 이를 노출하는 API는 "
-                    + "별도로 제공된다. 로그인 세션의 회원으로 생성한다."
+                    + "별도로 제공된다. 로그인 세션의 회원으로 생성한다. "
+                    + "입찰 단위(bidIncrement)는 이 방의 모든 물품이 공유하며, 물품을 추가할 때 물품으로 복사된다. "
+                    + "복사된 뒤에는 어긋날 수 있어 설정 수정(PATCH)으로는 바꿀 수 없다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "생성 성공"),

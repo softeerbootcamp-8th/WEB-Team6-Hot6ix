@@ -10,6 +10,7 @@ class AuctionRoomTest {
 
     private AuctionRoom newAuctionRoom() {
         return AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .coverImageUrl("https://cdn.hot6ix.com/cover.png")
                 .description("한정판 피규어 경매")
@@ -62,5 +63,18 @@ class AuctionRoomTest {
         assertThat(auctionRoom.getLiveUrl()).isEqualTo("https://youtube.com/@newroom");
         assertThat(auctionRoom.getSoftCloseTriggerSeconds()).isEqualTo(10);
         assertThat(auctionRoom.getSoftCloseExtendSeconds()).isEqualTo(20);
+    }
+
+    @Test
+    @DisplayName("update()로는 입찰 단위를 바꿀 수 없다")
+    void update_keepsBidIncrement() {
+
+        AuctionRoom auctionRoom = newAuctionRoom();
+
+        auctionRoom.update(AuctionRoomUpdateRequestDto.builder()
+                .name("새로운 경매방 이름")
+                .build());
+
+        assertThat(auctionRoom.getBidIncrement()).isEqualTo(1_000L);
     }
 }
