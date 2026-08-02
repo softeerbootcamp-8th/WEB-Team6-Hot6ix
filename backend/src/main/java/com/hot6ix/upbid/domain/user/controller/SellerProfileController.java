@@ -43,6 +43,15 @@ public class SellerProfileController implements SellerProfileApi {
         return ResponseEntity.ok(CommonResponse.ok(response, "판매자 프로필 조회에 성공했습니다."));
     }
 
+    @GetMapping("/{sellerProfileId}")
+    @Override
+    public ResponseEntity<CommonResponse<SellerProfileResponseDto>> getProfile(Long sellerProfileId) {
+
+        SellerProfileResponseDto response = sellerProfileService.getProfile(sellerProfileId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "판매자 프로필 조회에 성공했습니다."));
+    }
+
     @PutMapping("/me")
     @Override
     public ResponseEntity<CommonResponse<SellerProfileResponseDto>> update(

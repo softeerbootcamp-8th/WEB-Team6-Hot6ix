@@ -76,6 +76,7 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
         SellerProfile sellerProfile = newSellerProfile();
 
         AuctionRoom existing = AuctionRoom.builder()
+                .bidIncrement(1_000L)
                 .sellerProfile(sellerProfile)
                 .name("이미 있는 방")
                 .shareCode("REGRESSIONDUPLICATE")
@@ -89,6 +90,7 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
                 .thenReturn("REGRESSIONUNIQUECODE");  // 두 번째 시도는 성공
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("회귀 테스트 경매방")
                 .softCloseTriggerSeconds(30)
                 .softCloseExtendSeconds(60)

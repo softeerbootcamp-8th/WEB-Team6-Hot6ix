@@ -63,7 +63,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(post("/api/v1/products")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -83,7 +82,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(post("/api/v1/products")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -99,7 +97,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/products")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -117,7 +114,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/products")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -136,7 +132,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/products")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -156,7 +151,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
 
         mockMvc.perform(post("/api/v1/products")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound())
@@ -170,7 +164,7 @@ class ProductControllerTest extends AbstractControllerTest {
 
         when(productService.getDetail(eq(1L), eq(1L))).thenReturn(sampleResponse());
 
-        mockMvc.perform(get("/api/v1/products/1").header("X-User-Id", "1"))
+        mockMvc.perform(get("/api/v1/products/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.name").value("승민의 노트북"));
@@ -183,7 +177,7 @@ class ProductControllerTest extends AbstractControllerTest {
         when(productService.getDetail(eq(1L), eq(1L)))
                 .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
 
-        mockMvc.perform(get("/api/v1/products/1").header("X-User-Id", "1"))
+        mockMvc.perform(get("/api/v1/products/1"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(3002));
@@ -196,7 +190,7 @@ class ProductControllerTest extends AbstractControllerTest {
         when(productService.getDetail(eq(1L), eq(999L)))
                 .thenThrow(new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
 
-        mockMvc.perform(get("/api/v1/products/999").header("X-User-Id", "1"))
+        mockMvc.perform(get("/api/v1/products/999"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(5001));
@@ -216,7 +210,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .thenReturn(CursorPageResponse.of(List.of(summary), 2L));
 
         mockMvc.perform(get("/api/v1/products")
-                        .header("X-User-Id", "1")
                         .param("keyword", "노트북")
                         .param("status", "UNREGISTERED")
                         .param("cursor", "3")
@@ -235,7 +228,7 @@ class ProductControllerTest extends AbstractControllerTest {
         when(productService.getList(eq(1L), any(), any(), any(), any()))
                 .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
 
-        mockMvc.perform(get("/api/v1/products").header("X-User-Id", "1"))
+        mockMvc.perform(get("/api/v1/products"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(3002));
@@ -245,7 +238,7 @@ class ProductControllerTest extends AbstractControllerTest {
     @DisplayName("size가 0 이하면 목록 조회 시 400을 반환한다")
     void getList_sizeNotPositive() throws Exception {
 
-        mockMvc.perform(get("/api/v1/products").header("X-User-Id", "1").param("size", "0"))
+        mockMvc.perform(get("/api/v1/products").param("size", "0"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(2002));
@@ -255,7 +248,7 @@ class ProductControllerTest extends AbstractControllerTest {
     @DisplayName("cursor가 0 이하면 목록 조회 시 400을 반환한다")
     void getList_cursorNotPositive() throws Exception {
 
-        mockMvc.perform(get("/api/v1/products").header("X-User-Id", "1").param("cursor", "0"))
+        mockMvc.perform(get("/api/v1/products").param("cursor", "0"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(2002));
@@ -273,7 +266,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(put("/api/v1/products/1")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -290,7 +282,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(put("/api/v1/products/1")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -311,7 +302,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
 
         mockMvc.perform(put("/api/v1/products/999")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound())
@@ -331,7 +321,6 @@ class ProductControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED));
 
         mockMvc.perform(put("/api/v1/products/1")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
@@ -343,7 +332,7 @@ class ProductControllerTest extends AbstractControllerTest {
     @DisplayName("상품을 삭제한다")
     void deleteProduct() throws Exception {
 
-        mockMvc.perform(delete("/api/v1/products/1").header("X-User-Id", "1"))
+        mockMvc.perform(delete("/api/v1/products/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").doesNotExist());
@@ -356,22 +345,22 @@ class ProductControllerTest extends AbstractControllerTest {
         doThrow(new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND))
                 .when(productService).delete(eq(1L), eq(999L));
 
-        mockMvc.perform(delete("/api/v1/products/999").header("X-User-Id", "1"))
+        mockMvc.perform(delete("/api/v1/products/999"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(5001));
     }
 
     @Test
-    @DisplayName("경매방이 시작된 적 있는 상품은 삭제 시 409와 에러코드를 반환한다")
-    void delete_auctionAlreadyStarted() throws Exception {
+    @DisplayName("경매방에 올라가 있는 상품은 삭제 시 409와 에러코드를 반환한다")
+    void delete_inAuction() throws Exception {
 
-        doThrow(new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED))
+        doThrow(new ApplicationException(ProductErrorType.PRODUCT_IN_AUCTION))
                 .when(productService).delete(eq(1L), eq(1L));
 
-        mockMvc.perform(delete("/api/v1/products/1").header("X-User-Id", "1"))
+        mockMvc.perform(delete("/api/v1/products/1"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value(5002));
+                .andExpect(jsonPath("$.code").value(5003));
     }
 }

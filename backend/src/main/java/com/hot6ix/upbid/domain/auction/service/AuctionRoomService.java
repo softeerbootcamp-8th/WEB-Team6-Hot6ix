@@ -52,8 +52,8 @@ public class AuctionRoomService {
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = saveWithUniqueShareCode(sellerProfile, request);
 
-        // 물품 추가는 별도 PR([x05-경매방-물품-구성])에서 기존 방에만 할 수 있어서, 생성 직후엔
-        // itemCount가 항상 0이다 — 조회 없이 바로 0을 넣는다.
+        // 물품 추가는 이미 만들어진 방에만 할 수 있어서, 생성 직후엔 itemCount가 항상 0이다
+        // — 조회 없이 바로 0을 넣는다.
         return AuctionRoomPublicResponseDto.from(auctionRoom, 0L);
     }
 
@@ -71,6 +71,23 @@ public class AuctionRoomService {
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId));
+    }
+
+    /**
+     * 공유 코드로 경매방 공개 정보를 조회한다. 공유 링크를 받은 사람이 방에 진입할 때 쓰며,
+     * {@link #getRoom(Long)}과 응답이 동일하다. roomId 대신 share_code로 진입점을 두는 이유는
+     * 순차 증가하는 숫자 PK를 공개 URL에 노출하면 남의 방을 추측해 순회 조회할 수 있기 때문이다.
+     *
+     * @param shareCode 조회할 경매방의 공유 코드
+     * @return 조회된 경매방
+     * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
+     */
+    public AuctionRoomPublicResponseDto getRoomByShareCode(String shareCode) {
+
+        AuctionRoom auctionRoom = auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(shareCode)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoom.getAuctionRoomId()));
     }
 
     /**

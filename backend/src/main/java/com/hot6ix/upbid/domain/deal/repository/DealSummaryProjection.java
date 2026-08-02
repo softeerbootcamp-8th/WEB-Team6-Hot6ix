@@ -1,0 +1,44 @@
+package com.hot6ix.upbid.domain.deal.repository;
+
+import java.time.LocalDateTime;
+
+/**
+ * 거래 내역 한 줄의 원재료. 네이티브 UNION 쿼리는 생성자 표현식을 쓸 수 없어 인터페이스
+ * 프로젝션으로 받는다.
+ *
+ * <p>쿼리는 <b>사실만 내보내고 판정은 서비스가 한다.</b> {@code sellerRow}와
+ * {@code itemStatus}·{@code dealCompleted}에서 역할과 거래 상태를 계산한다. enum 이름을
+ * SQL에 문자열로 박으면 상수명이 바뀌어도 컴파일러가 잡지 못한다.
+ */
+public interface DealSummaryProjection {
+
+    /** 판매 쪽 원천에서 나온 행이면 1이다. */
+    Integer getSellerRow();
+
+    Long getAuctionItemId();
+
+    Long getAuctionRoomId();
+
+    /** 판매 건만 값이 있다. 내가 산 물건은 내 상품이 아니다. */
+    Long getProductId();
+
+    String getProductName();
+
+    String getAuctionRoomName();
+
+    /** {@code AuctionItemStatus} 이름. 유찰 판정에 쓴다. */
+    String getItemStatus();
+
+    /** 이 물품에 성사된 후보가 있으면 1이다. */
+    Integer getDealCompleted();
+
+    Long getAmount();
+
+    /** 판매 건이면 거래 상대 후보, 구매 건이면 판매자. 거래 상대가 없으면 {@code null} */
+    String getPartnerNickname();
+
+    /** 구매자가 판매자에게 연락할 때 쓰는 프로필 조회 키 */
+    Long getSellerProfileId();
+
+    LocalDateTime getClosedAt();
+}

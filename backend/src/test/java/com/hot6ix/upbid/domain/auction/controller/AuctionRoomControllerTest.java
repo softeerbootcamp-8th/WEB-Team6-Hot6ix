@@ -12,9 +12,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
+import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
@@ -33,8 +35,12 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     @MockitoBean
     private AuctionRoomService auctionRoomService;
 
+    @MockitoBean
+    private AuctionRoomShareService auctionRoomShareService;
+
     private AuctionRoomCreateRequestDto newCreateRequest() {
         return AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .coverImageUrl("https://cdn.hot6ix.com/cover.png")
                 .description("한정판 피규어 경매")
@@ -63,7 +69,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(newCreateRequest())))
                 .andExpect(status().isCreated())
@@ -78,13 +83,13 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_blankName() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("")
                 .softCloseTriggerSeconds(30)
                 .softCloseExtendSeconds(60)
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -98,13 +103,13 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_invalidName() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("<script>")
                 .softCloseTriggerSeconds(30)
                 .softCloseExtendSeconds(60)
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -118,6 +123,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_invalidCoverImageUrl() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .coverImageUrl("not-a-url")
                 .softCloseTriggerSeconds(30)
@@ -125,7 +131,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -138,11 +143,11 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_missingSoftCloseFields() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -155,19 +160,78 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void create_softCloseExtendSecondsOutOfRange() throws Exception {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .softCloseTriggerSeconds(30)
                 .softCloseExtendSeconds(3601)
                 .build();
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(2002))
                 .andExpect(jsonPath("$.errors[0].field").value("softCloseExtendSeconds"));
+    }
+
+    @Test
+    @DisplayName("입찰 단위가 1조를 넘으면 생성 시 400을 반환한다")
+    void create_bidIncrementOutOfRange() throws Exception {
+
+        AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000_000_000_001L)
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+
+        mockMvc.perform(post("/api/v1/auction-rooms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("bidIncrement"));
+    }
+
+    @Test
+    @DisplayName("입찰 단위가 없으면 생성 시 400을 반환한다")
+    void create_missingBidIncrement() throws Exception {
+
+        AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+
+        mockMvc.perform(post("/api/v1/auction-rooms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("bidIncrement"));
+    }
+
+    @Test
+    @DisplayName("입찰 단위가 0이면 생성 시 400을 반환한다")
+    void create_bidIncrementZero() throws Exception {
+
+        AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(0L)
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+
+        mockMvc.perform(post("/api/v1/auction-rooms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("bidIncrement"));
     }
 
     @Test
@@ -178,7 +242,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
 
         mockMvc.perform(post("/api/v1/auction-rooms")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(newCreateRequest())))
                 .andExpect(status().isNotFound())
@@ -200,6 +263,18 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     }
 
     @Test
+    @DisplayName("비로그인 사용자도 경매방 정보를 조회할 수 있다")
+    void getRoom_allowsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+        when(auctionRoomService.getRoom(1L)).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
     @DisplayName("존재하지 않는 경매방을 조회하면 404를 반환한다")
     void getRoom_notFound() throws Exception {
 
@@ -207,6 +282,69 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/auction-rooms/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    @Test
+    @DisplayName("소유자가 공유 링크를 조회하면 200과 shareUrl을 반환한다")
+    void getShareInfo() throws Exception {
+
+        when(auctionRoomShareService.getShareInfo(1L, 1L))
+                .thenReturn(new AuctionRoomShareResponseDto("https://upbid.com/join/aBcD1234aBcD1234"));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/1/share"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.shareUrl").value("https://upbid.com/join/aBcD1234aBcD1234"));
+    }
+
+    @Test
+    @DisplayName("경매방이 없거나 본인 소유가 아니면 공유 링크 조회 시 404를 반환한다")
+    void getShareInfo_roomNotFound() throws Exception {
+
+        when(auctionRoomShareService.getShareInfo(1L, 999L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/999/share"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    @Test
+    @DisplayName("공유 코드로 경매방을 조회하면 200과 공개 정보를 반환한다")
+    void getRoomByShareCode() throws Exception {
+
+        when(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234")).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/share/aBcD1234aBcD1234"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("승민의 경매방"));
+    }
+
+    @Test
+    @DisplayName("비로그인 사용자도 공유 코드로 경매방을 조회할 수 있다")
+    void getRoomByShareCode_allowsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+        when(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234")).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/share/aBcD1234aBcD1234"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 공유 코드로 조회하면 404를 반환한다")
+    void getRoomByShareCode_notFound() throws Exception {
+
+        when(auctionRoomService.getRoomByShareCode("unknownShareCode"))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/share/unknownShareCode"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(4002));
@@ -224,7 +362,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenReturn(sampleResponse());
 
         mockMvc.perform(patch("/api/v1/auction-rooms/1")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -241,7 +378,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .build();
 
         mockMvc.perform(patch("/api/v1/auction-rooms/1")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -262,7 +398,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         mockMvc.perform(patch("/api/v1/auction-rooms/999")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound())
@@ -282,7 +417,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_ALREADY_STARTED));
 
         mockMvc.perform(patch("/api/v1/auction-rooms/1")
-                        .header("X-User-Id", "1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())

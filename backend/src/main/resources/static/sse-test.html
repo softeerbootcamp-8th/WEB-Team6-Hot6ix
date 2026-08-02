@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <title>SSE 이벤트 테스트</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #f0f2f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: #1a1a2e;
+            color: #fff;
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        header h1 { font-size: 18px; font-weight: 600; }
+
+        #status-badge {
+            margin-left: auto;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            background: #444;
+            color: #aaa;
+        }
+
+        #status-badge.connected    { background: #1a7a4a; color: #6effa8; }
+        #status-badge.disconnected { background: #7a1a1a; color: #ffa0a0; }
+
+        .main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ── 왼쪽 패널 ── */
+        .left {
+            width: 320px;
+            min-width: 280px;
+            background: #fff;
+            border-right: 1px solid #dde1e7;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .section {
+            padding: 18px 16px 12px;
+            border-bottom: 1px solid #eef0f3;
+        }
+
+        .section-title {
+            font-size: 11px;
+            font-weight: 700;
+            color: #8892a4;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+
+        .field { margin-bottom: 10px; }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: #555;
+            margin-bottom: 4px;
+        }
+
+        input {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1px solid #d0d5dd;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        input:focus { border-color: #4f7ef8; }
+
+        .btn {
+            width: 100%;
+            padding: 9px;
+            border: none;
+            border-radius: 7px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s, transform 0.1s;
+        }
+
+        .btn:active  { transform: scale(0.97); }
+        .btn:hover   { opacity: 0.88; }
+
+        .btn-connect    { background: #4f7ef8; color: #fff; }
+        .btn-disconnect { background: #e8eaed; color: #444; margin-top: 6px; }
+
+        /* ── 이벤트 카드 ── */
+        .event-card {
+            border: 1.5px solid #e4e7ed;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            transition: border-color 0.12s;
+        }
+
+        .event-card:last-child { margin-bottom: 0; }
+
+        .event-card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 11px 12px;
+            background: #fafbfc;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.12s;
+        }
+
+        .event-card-header:hover { background: #f0f4ff; }
+
+        .event-card.open .event-card-header { background: #f0f4ff; }
+        .event-card.open { border-color: #b3c5ff; }
+
+        .dot {
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .event-card-header .label  { font-size: 13px; font-weight: 600; color: #1a1a2e; }
+        .event-card-header .sub    { font-size: 11px; color: #8892a4; margin-top: 1px; }
+
+        .chevron {
+            margin-left: auto;
+            font-size: 11px;
+            color: #8892a4;
+            transition: transform 0.2s;
+        }
+
+        .event-card.open .chevron { transform: rotate(180deg); }
+
+        .event-card-body {
+            display: none;
+            padding: 12px 12px 10px;
+            border-top: 1px solid #eef0f3;
+            background: #fff;
+        }
+
+        .event-card.open .event-card-body { display: block; }
+
+        .fire-btn {
+            width: 100%;
+            padding: 8px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 6px;
+            transition: opacity 0.15s, transform 0.1s;
+            color: #fff;
+        }
+
+        .fire-btn:hover  { opacity: 0.85; }
+        .fire-btn:active { transform: scale(0.97); }
+
+        /* ── 오른쪽 로그 패널 ── */
+        .right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .log-header {
+            padding: 12px 20px;
+            background: #fff;
+            border-bottom: 1px solid #dde1e7;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .log-header span { font-size: 14px; font-weight: 600; color: #1a1a2e; }
+
+        #clear-btn {
+            margin-left: auto;
+            padding: 5px 14px;
+            border: 1px solid #d0d5dd;
+            border-radius: 6px;
+            background: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            color: #555;
+        }
+
+        #clear-btn:hover { background: #f5f5f5; }
+
+        #log {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .log-entry {
+            background: #fff;
+            border-radius: 8px;
+            padding: 12px 14px;
+            border-left: 4px solid #ccc;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+
+        .log-entry .meta {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .log-entry .time { font-size: 11px; color: #8892a4; }
+        .log-entry .event-type {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 4px;
+            letter-spacing: 0.04em;
+        }
+
+        .log-entry pre {
+            font-size: 12px;
+            color: #2d3748;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log-entry.system              { border-color: #8892a4; }
+        .log-entry.BID_PLACED          { border-color: #f59e0b; }
+        .log-entry.ITEM_STARTED        { border-color: #10b981; }
+        .log-entry.ITEM_CLOSING_SOON   { border-color: #ef4444; }
+        .log-entry.SOFT_CLOSE_EXTENDED { border-color: #8b5cf6; }
+
+        .tag-BID_PLACED          { background: #fef3c7; color: #92400e; }
+        .tag-ITEM_STARTED        { background: #d1fae5; color: #065f46; }
+        .tag-ITEM_CLOSING_SOON   { background: #fee2e2; color: #991b1b; }
+        .tag-SOFT_CLOSE_EXTENDED { background: #ede9fe; color: #5b21b6; }
+        .tag-system              { background: #f1f3f5; color: #555; }
+
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #b0b8c8;
+            font-size: 14px;
+            gap: 8px;
+        }
+
+        .empty-state svg { opacity: 0.35; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🔧 SSE 이벤트 테스트</h1>
+    <span id="status-badge">미연결</span>
+</header>
+
+<div class="main">
+
+    <!-- 왼쪽: 연결 + 이벤트 트리거 -->
+    <div class="left">
+
+        <div class="section">
+            <div class="section-title">연결 설정</div>
+            <div class="field">
+                <label>Room ID</label>
+                <input type="number" id="roomId" value="1" min="1" />
+            </div>
+            <button class="btn btn-connect" onclick="connect()">SSE 연결</button>
+            <button class="btn btn-disconnect" onclick="disconnect()">연결 해제</button>
+        </div>
+
+        <div class="section">
+            <div class="section-title">이벤트 발행</div>
+
+            <!-- ITEM_STARTED -->
+            <div class="event-card" id="card-item-started">
+                <div class="event-card-header" onclick="toggleCard('item-started')">
+                    <span class="dot" style="background:#10b981"></span>
+                    <span>
+                        <div class="label">ITEM_STARTED</div>
+                        <div class="sub">경매 시작</div>
+                    </span>
+                    <span class="chevron">▼</span>
+                </div>
+                <div class="event-card-body">
+                    <div class="field">
+                        <label>Item ID</label>
+                        <input type="number" id="is-itemId" value="1" min="1" />
+                    </div>
+                    <div class="field">
+                        <label>상품명</label>
+                        <input type="text" id="is-itemName" value="한정판 조던 스니커즈" />
+                    </div>
+                    <button class="fire-btn" style="background:#10b981"
+                            onclick="fire('item-started', {itemId:'is-itemId', itemName:'is-itemName'})">
+                        경매 시작 발행
+                    </button>
+                </div>
+            </div>
+
+            <!-- BID_PLACED -->
+            <div class="event-card" id="card-bid-placed">
+                <div class="event-card-header" onclick="toggleCard('bid-placed')">
+                    <span class="dot" style="background:#f59e0b"></span>
+                    <span>
+                        <div class="label">BID_PLACED</div>
+                        <div class="sub">입찰 발생</div>
+                    </span>
+                    <span class="chevron">▼</span>
+                </div>
+                <div class="event-card-body">
+                    <div class="field">
+                        <label>Item ID</label>
+                        <input type="number" id="bp-itemId" value="1" min="1" />
+                    </div>
+                    <div class="field">
+                        <label>상품명</label>
+                        <input type="text" id="bp-itemName" value="한정판 조던 스니커즈" />
+                    </div>
+                    <div class="field">
+                        <label>입찰자 닉네임</label>
+                        <input type="text" id="bp-bidderNickname" value="테스터" />
+                    </div>
+                    <div class="field">
+                        <label>입찰가</label>
+                        <input type="number" id="bp-bidPrice" value="10000" />
+                    </div>
+                    <button class="fire-btn" style="background:#f59e0b"
+                            onclick="fire('bid-placed', {itemId:'bp-itemId', itemName:'bp-itemName', bidderNickname:'bp-bidderNickname', bidPrice:'bp-bidPrice'})">
+                        입찰 발행
+                    </button>
+                </div>
+            </div>
+
+            <!-- ITEM_CLOSING_SOON -->
+            <div class="event-card" id="card-item-closing-soon">
+                <div class="event-card-header" onclick="toggleCard('item-closing-soon')">
+                    <span class="dot" style="background:#ef4444"></span>
+                    <span>
+                        <div class="label">ITEM_CLOSING_SOON</div>
+                        <div class="sub">마감 임박 (1분 전)</div>
+                    </span>
+                    <span class="chevron">▼</span>
+                </div>
+                <div class="event-card-body">
+                    <div class="field">
+                        <label>Item ID</label>
+                        <input type="number" id="ics-itemId" value="1" min="1" />
+                    </div>
+                    <div class="field">
+                        <label>상품명</label>
+                        <input type="text" id="ics-itemName" value="한정판 조던 스니커즈" />
+                    </div>
+                    <button class="fire-btn" style="background:#ef4444"
+                            onclick="fire('item-closing-soon', {itemId:'ics-itemId', itemName:'ics-itemName'})">
+                        마감 임박 발행
+                    </button>
+                </div>
+            </div>
+
+            <!-- SOFT_CLOSE_EXTENDED -->
+            <div class="event-card" id="card-soft-close-extended">
+                <div class="event-card-header" onclick="toggleCard('soft-close-extended')">
+                    <span class="dot" style="background:#8b5cf6"></span>
+                    <span>
+                        <div class="label">SOFT_CLOSE_EXTENDED</div>
+                        <div class="sub">소프트 클로즈 연장</div>
+                    </span>
+                    <span class="chevron">▼</span>
+                </div>
+                <div class="event-card-body">
+                    <div class="field">
+                        <label>Item ID</label>
+                        <input type="number" id="sce-itemId" value="1" min="1" />
+                    </div>
+                    <div class="field">
+                        <label>상품명</label>
+                        <input type="text" id="sce-itemName" value="한정판 조던 스니커즈" />
+                    </div>
+                    <div class="field">
+                        <label>연장 시간 (초)</label>
+                        <input type="number" id="sce-extendSeconds" value="60" />
+                    </div>
+                    <button class="fire-btn" style="background:#8b5cf6"
+                            onclick="fire('soft-close-extended', {itemId:'sce-itemId', itemName:'sce-itemName', extendSeconds:'sce-extendSeconds'})">
+                        소프트 클로즈 연장 발행
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 오른쪽: 로그 -->
+    <div class="right">
+        <div class="log-header">
+            <span>수신 로그</span>
+            <button id="clear-btn" onclick="clearLog()">지우기</button>
+        </div>
+        <div id="log">
+            <div class="empty-state" id="empty">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                </svg>
+                <div>SSE 연결 후 이벤트를 발행하면 여기에 로그가 표시됩니다</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    let es = null;
+
+    function toggleCard(eventKey) {
+        const cardId = `card-${eventKey}`;
+        const card = document.getElementById(cardId);
+        card.classList.toggle('open');
+    }
+
+    function connect() {
+        const roomId = document.getElementById('roomId').value;
+        if (!roomId) return alert('Room ID를 입력해주세요.');
+        if (es) es.close();
+
+        es = new EventSource(`/api/v1/auction-rooms/${roomId}/subscribe`);
+        setStatus('connected', `연결됨 (Room ${roomId})`);
+        addLog('system', 'SYSTEM', { message: `Room ${roomId} SSE 연결 시작` });
+
+        es.onmessage = (e) => handleEvent('MESSAGE', e.data);
+
+        es.addEventListener('BID_PLACED',          (e) => handleEvent('BID_PLACED', e.data));
+        es.addEventListener('ITEM_STARTED',        (e) => handleEvent('ITEM_STARTED', e.data));
+        es.addEventListener('ITEM_CLOSING_SOON',   (e) => handleEvent('ITEM_CLOSING_SOON', e.data));
+        es.addEventListener('SOFT_CLOSE_EXTENDED', (e) => handleEvent('SOFT_CLOSE_EXTENDED', e.data));
+
+        es.onerror = () => {
+            setStatus('disconnected', '연결 끊김');
+            addLog('system', 'SYSTEM', { message: 'SSE 연결 오류 또는 종료' });
+        };
+    }
+
+    function disconnect() {
+        if (es) { es.close(); es = null; }
+        setStatus('', '미연결');
+        addLog('system', 'SYSTEM', { message: 'SSE 연결 해제' });
+    }
+
+    function handleEvent(type, raw) {
+        try {
+            addLog(type, type, JSON.parse(raw));
+        } catch {
+            addLog(type, type, { raw });
+        }
+    }
+
+    // fieldMap: { paramName: elementId, ... }
+    function fire(eventPath, fieldMap) {
+        const roomId = document.getElementById('roomId').value;
+        const params = new URLSearchParams();
+        for (const [param, id] of Object.entries(fieldMap)) {
+            const value = document.getElementById(id).value;
+            if (value !== '') params.set(param, value);
+        }
+
+        fetch(`/test/events/${roomId}/${eventPath}?${params}`, { method: 'POST' })
+            .then(r => {
+                if (!r.ok) addLog('system', 'SYSTEM', { message: `발행 실패: ${r.status}` });
+            })
+            .catch(e => addLog('system', 'SYSTEM', { message: `요청 오류: ${e.message}` }));
+    }
+
+    function addLog(cssClass, type, data) {
+        document.getElementById('empty')?.remove();
+
+        const now = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${cssClass}`;
+        entry.innerHTML = `
+      <div class="meta">
+        <span class="time">${now}</span>
+        <span class="event-type tag-${cssClass}">${type}</span>
+      </div>
+      <pre>${JSON.stringify(data, null, 2)}</pre>
+    `;
+
+        const log = document.getElementById('log');
+        log.appendChild(entry);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function clearLog() {
+        document.getElementById('log').innerHTML = `
+      <div class="empty-state" id="empty">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        <div>SSE 연결 후 이벤트를 발행하면 여기에 로그가 표시됩니다</div>
+      </div>`;
+    }
+
+    function setStatus(cls, text) {
+        const badge = document.getElementById('status-badge');
+        badge.className = cls;
+        badge.textContent = text;
+    }
+</script>
+
+</body>
+</html>

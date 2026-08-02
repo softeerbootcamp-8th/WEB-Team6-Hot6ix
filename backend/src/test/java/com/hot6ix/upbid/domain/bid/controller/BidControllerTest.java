@@ -43,7 +43,6 @@ class BidControllerTest extends AbstractControllerTest {
         when(bidService.place(anyLong(), anyLong(), anyLong())).thenReturn(response());
 
         mockMvc.perform(post(URL)
-                        .header("X-User-Id", "7")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amount\": 15000}"))
                 .andExpect(status().isCreated())
@@ -53,7 +52,7 @@ class BidControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.data.auctionItemId").value(2))
                 .andExpect(jsonPath("$.data.amount").value(15000));
 
-        verify(bidService).place(2L, 7L, 15_000L);
+        verify(bidService).place(2L, LOGIN_USER_ID, 15_000L);
     }
 
     @Test
@@ -61,7 +60,6 @@ class BidControllerTest extends AbstractControllerTest {
     void rejectsMissingAmount() throws Exception {
 
         mockMvc.perform(post(URL)
-                        .header("X-User-Id", "7")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest())
@@ -77,7 +75,6 @@ class BidControllerTest extends AbstractControllerTest {
     void rejectsNonPositiveAmount() throws Exception {
 
         mockMvc.perform(post(URL)
-                        .header("X-User-Id", "7")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amount\": 0}"))
                 .andExpect(status().isBadRequest())
@@ -95,7 +92,6 @@ class BidControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         mockMvc.perform(post(URL)
-                        .header("X-User-Id", "7")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amount\": 15000}"))
                 .andExpect(status().isNotFound())
@@ -111,7 +107,6 @@ class BidControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(BidErrorType.BID_AMOUNT_TOO_LOW));
 
         mockMvc.perform(post(URL)
-                        .header("X-User-Id", "7")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amount\": 11000}"))
                 .andExpect(status().isConflict())
@@ -120,11 +115,25 @@ class BidControllerTest extends AbstractControllerTest {
     }
 
     @Test
+    @DisplayName("판매자 본인의 입찰은 403과 코드 7007을 반환한다")
+    void returnsForbiddenWhenSellerBids() throws Exception {
+
+        when(bidService.place(anyLong(), anyLong(), anyLong()))
+                .thenThrow(new ApplicationException(BidErrorType.SELLER_CANNOT_BID));
+
+        mockMvc.perform(post(URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": 15000}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(7007));
+    }
+
+    @Test
     @DisplayName("경로 변수가 숫자가 아니면 400과 코드 2002를 반환한다")
     void returnsBadRequestWhenPathVariableNotNumeric() throws Exception {
 
         mockMvc.perform(post("/api/v1/auction-items/abc/bids")
-                        .header("X-User-Id", "7")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amount\": 15000}"))
                 .andExpect(status().isBadRequest())

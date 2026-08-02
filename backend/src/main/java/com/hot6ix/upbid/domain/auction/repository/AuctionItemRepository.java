@@ -16,6 +16,17 @@ import org.springframework.data.repository.query.Param;
 public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> {
 
     /**
+     * 이 상품이 어느 경매방엔가 물품으로 올라가 있는지 확인한다. 상태를 따지지 않는 이유는
+     * "한 상품은 한 번에 한 경매방에만" 규칙이 상태와 무관하기 때문이다. 물품을 빼면 행이
+     * 물리 삭제되므로, 뺀 상품은 이 검사를 자연히 통과해 다시 올릴 수 있다.
+     *
+     * <p>이 검사만으로는 동시 요청 두 건이 함께 통과할 수 있어
+     * {@code auction_items.product_id}에 unique 제약이 함께 걸려 있다. 여기서 거르는 건
+     * 정상 경로에서 읽기 쉬운 에러를 주기 위한 것이고, 최후 방어선은 그 제약이다.
+     */
+    boolean existsByProduct_ProductId(Long productId);
+
+    /**
      * 이 상품이 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는지 확인한다
      * (진행중·낙찰·유찰 전부 포함). Product 수정·삭제 시 "경매방이 시작된 적 있는 상품은
      * 이후로도 계속 수정·삭제 불가" 규칙을 검증하는 데 쓰인다.
@@ -75,11 +86,13 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
 
     /**
      * 물품 상세를 조회한다. 상태로 거르지 않으므로 낙찰·유찰된 물품도 조회된다.
+     * 유찰 화면이 시작가를 표시하므로 {@code startingPrice}도 함께 내린다 —
+     * 유찰이면 입찰이 없어 {@code currentPrice}가 시작가와 같지만, 그건 결과일 뿐이다.
      */
     @Query("select new com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto("
             + "  ai.auctionItemId, ai.auctionRoom.auctionRoomId, "
             + "  p.name, p.description, p.imageUrl, p.referenceUrl, "
-            + "  ai.currentPrice, ai.bidIncrement, ai.status, ai.endAt) "
+            + "  ai.startingPrice, ai.currentPrice, ai.bidIncrement, ai.status, ai.endAt) "
             + "from AuctionItem ai "
             + "join ai.product p "
             + "where ai.auctionItemId = :auctionItemId")
@@ -93,4 +106,21 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
+
+    /** 물품 전체를 읽지 않고 상태만 본다. 마감됐는지 판정하는 데 쓴다. */
+    @Query("select ai.status from AuctionItem ai where ai.auctionItemId = :auctionItemId")
+    Optional<AuctionItemStatus> findStatus(@Param("auctionItemId") Long auctionItemId);
+
+    /**
+     * 물품을 올린 판매자의 회원 ID를 조회한다. 판매자 본인 입찰을 거르는 데 쓰고,
+     * 낙찰 후보 목록에서 요청자가 판매자인지 판정하는 데도 쓴다.
+     * 조회에 {@link #findByIdForUpdate}를 쓰면 읽기 요청이 거래 상태 변경을 막으므로 쓰지 않는다.
+     *
+     * @return 판매자의 회원 ID. 물품이 없거나 경매방에 판매자가 없으면 빈 값
+     */
+    @Query("select sp.user.userId from AuctionItem ai "
+            + "join ai.auctionRoom ar "
+            + "join ar.sellerProfile sp "
+            + "where ai.auctionItemId = :auctionItemId")
+    Optional<Long> findSellerUserId(@Param("auctionItemId") Long auctionItemId);
 }
