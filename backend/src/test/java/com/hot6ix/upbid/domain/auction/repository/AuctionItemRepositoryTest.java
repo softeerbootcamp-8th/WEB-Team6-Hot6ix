@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
@@ -15,6 +16,7 @@ import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -269,5 +271,71 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.clear();
 
         assertThat(auctionItemRepository.findSellerUserId(item.getAuctionItemId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("경매방에 올라간 상품이면 상태와 무관하게 존재 검사가 참이다")
+    void existsByProductIdIgnoresStatus() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        Product ready = newProduct("대기상품");
+        Product sold = newProduct("낙찰상품");
+        newAuctionItem(auctionRoom, ready, AuctionItemStatus.READY);
+        newAuctionItem(auctionRoom, sold, AuctionItemStatus.SOLD);
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.existsByProduct_ProductId(ready.getProductId())).isTrue();
+        assertThat(auctionItemRepository.existsByProduct_ProductId(sold.getProductId())).isTrue();
+    }
+
+    @Test
+    @DisplayName("어느 경매방에도 없는 상품이면 존재 검사가 거짓이다")
+    void existsByProductIdIsFalseWhenNotListed() {
+
+        Product product = newProduct("미등록상품");
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isFalse();
+    }
+
+    /**
+     * 서비스의 존재 검사는 읽고-검사하고-쓰는 흐름이라 동시 요청 두 건이 함께 통과할 수 있다.
+     * 최후 방어선인 unique 제약이 실제 스키마에 붙었는지는 mock으로 확인할 수 없어 여기서 본다.
+     *
+     * <p>ID 전략이 IDENTITY라 {@code persist()} 시점에 INSERT가 바로 나가므로, 제약 위반도
+     * 뒤따르는 {@code flush()}가 아니라 그 자리에서 터진다.
+     */
+    @Test
+    @DisplayName("같은 상품을 두 물품으로 올리면 unique 제약에 걸린다")
+    void productIdIsUnique() {
+
+        Product product = newProduct("중복상품");
+        newAuctionItem(newAuctionRoom("첫 번째 방"), product, AuctionItemStatus.READY);
+        entityManager.flush();
+
+        AuctionRoom secondRoom = newAuctionRoom("두 번째 방");
+
+        assertThatThrownBy(() -> newAuctionItem(secondRoom, product, AuctionItemStatus.READY))
+                .isInstanceOf(ConstraintViolationException.class)
+                .hasMessageContaining("uk_auction_items_product_id");
+    }
+
+    @Test
+    @DisplayName("물품을 빼면 그 상품을 다시 다른 경매방에 올릴 수 있다")
+    void productCanBeRelistedAfterRemoval() {
+
+        Product product = newProduct("재등록상품");
+        AuctionItem first = newAuctionItem(newAuctionRoom("첫 번째 방"), product, AuctionItemStatus.READY);
+        entityManager.flush();
+
+        auctionItemRepository.delete(first);
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isFalse();
+
+        newAuctionItem(newAuctionRoom("두 번째 방"), product, AuctionItemStatus.READY);
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isTrue();
     }
 }

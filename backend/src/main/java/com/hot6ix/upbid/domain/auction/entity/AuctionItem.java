@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.entity;
 
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.common.BaseTimeEntity;
@@ -14,6 +15,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -22,7 +24,10 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Entity
-@Table(name = "auction_items")
+@Table(
+        name = "auction_items",
+        uniqueConstraints = @UniqueConstraint(name = "uk_auction_items_product_id", columnNames = "product_id")
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class AuctionItem extends BaseTimeEntity {
 
@@ -83,6 +88,24 @@ public class AuctionItem extends BaseTimeEntity {
         this.originalEndAt = originalEndAt;
         this.endAt = endAt;
         this.totalExtensionSeconds = totalExtensionSeconds != null ? totalExtensionSeconds : 0;
+    }
+
+    /**
+     * 경매방에 올릴 대기(READY) 물품을 만든다. 입찰 단위는 요청이 아니라 <b>경매방 값을 복사</b>한다
+     * — 한 방의 모든 물품이 같은 단위를 갖게 하려는 것이며, 복사한 뒤로는 방 값과 동기화되지 않는다.
+     *
+     * @param auctionRoom 물품을 올릴 경매방. 입찰 단위의 출처
+     * @param product     올릴 상품
+     * @param request     시작가를 담은 요청
+     */
+    public static AuctionItem from(AuctionRoom auctionRoom, Product product, AuctionItemAddRequestDto request) {
+        return AuctionItem.builder()
+                .auctionRoom(auctionRoom)
+                .product(product)
+                .startingPrice(request.startingPrice())
+                .bidIncrement(auctionRoom.getBidIncrement())
+                .status(AuctionItemStatus.READY)
+                .build();
     }
 
     /**
