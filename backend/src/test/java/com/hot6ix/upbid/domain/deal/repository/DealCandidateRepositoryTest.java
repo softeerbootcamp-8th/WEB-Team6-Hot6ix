@@ -15,7 +15,6 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.List;
 import org.hibernate.Hibernate;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +26,9 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jpa.test.autoconfigure.AutoConfigureTestEntityManager;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -96,18 +98,22 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
                 .build());
     }
 
-    /**
-     * 저장 결과를 확인하려고 쓰는 헬퍼다. 후보 목록 조회는 프로덕션에 없어서(#44에서
-     * 페이지네이션과 함께 만든다) 여기서 물품으로 걸러 순위대로 정렬한다.
-     */
+    /** 후보가 된 뒤에 탈퇴한 회원. 후보 생성 시점에 걸러지는 경우와는 다른 경로다. */
+    private DealCandidate withdrawnCandidate(
+            AuctionItem item, String bidderEmail, int candidateRank, long bidAmount) {
+
+        DealCandidate candidate = newCandidate(item, bidderEmail, candidateRank, bidAmount);
+        candidate.getBidder().softDelete(LocalDateTime.of(2026, 7, 30, 9, 0));
+        return candidate;
+    }
+
+    /** 저장 결과를 확인하려고 쓰는 헬퍼다. 네이티브 insert가 보이도록 컨텍스트를 비운다. */
     private List<DealCandidate> findAll() {
         entityManager.flush();
         entityManager.clear();
-        return dealCandidateRepository.findAll().stream()
-                .filter(candidate -> candidate.getAuctionItem().getAuctionItemId()
-                        .equals(auctionItem.getAuctionItemId()))
-                .sorted(Comparator.comparing(DealCandidate::getCandidateRank))
-                .toList();
+        return dealCandidateRepository
+                .findCandidates(auctionItem.getAuctionItemId(), Pageable.unpaged())
+                .getContent();
     }
 
     private Bid newBid(AuctionItem item, User bidder, long amount) {
@@ -325,6 +331,185 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
 
         assertThat(dealCandidateRepository
                 .existsWaitingCandidateBefore(auctionItem.getAuctionItemId(), 2)).isFalse();
+    }
+
+    @Test
+    @DisplayName("후보 목록은 순위 오름차순이고 입찰자를 함께 읽어 온다")
+    void findCandidatesOrdersByRankWithBidder() {
+
+        newCandidate(auctionItem, "third@hot6ix.com", 3, 12_000L);
+        newCandidate(auctionItem, "first@hot6ix.com", 1, 15_000L);
+        newCandidate(auctionItem, "second@hot6ix.com", 2, 13_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        List<DealCandidate> candidates = dealCandidateRepository
+                .findCandidates(auctionItem.getAuctionItemId(), PageRequest.of(0, 10))
+                .getContent();
+
+        assertThat(candidates)
+                .extracting(DealCandidate::getCandidateRank, DealCandidate::getBidAmount)
+                .containsExactly(tuple(1, 15_000L), tuple(2, 13_000L), tuple(3, 12_000L));
+        // 닉네임과 연락처를 응답에 담아야 하므로 지연 로딩으로 남으면 후보 수만큼 쿼리가 더 나간다.
+        assertThat(Hibernate.isInitialized(candidates.getFirst().getBidder())).isTrue();
+    }
+
+    @Test
+    @DisplayName("후보 목록은 다른 물품의 후보를 섞지 않는다")
+    void findCandidatesScopesToItem() {
+
+        newCandidate(auctionItem, "mine@hot6ix.com", 1, 15_000L);
+        newCandidate(newAuctionItem("다른물품"), "others@hot6ix.com", 1, 99_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<DealCandidate> page = dealCandidateRepository
+                .findCandidates(auctionItem.getAuctionItemId(), PageRequest.of(0, 10));
+
+        assertThat(page.getContent())
+                .extracting(DealCandidate::getBidAmount)
+                .containsExactly(15_000L);
+        // count 쿼리도 물품으로 걸러야 한다. 화면의 "총 N명"이 이 값이다.
+        assertThat(page.getTotalElements()).isEqualTo(1);
+    }
+
+    /** 화면은 5명씩 끊어 보여주고 "총 N명"과 페이지 번호를 함께 그린다. */
+    @Test
+    @DisplayName("후보 목록은 페이지 단위로 잘리고 전체 개수를 함께 돌려준다")
+    void findCandidatesPagesByRank() {
+
+        newCandidate(auctionItem, "first@hot6ix.com", 1, 15_000L);
+        newCandidate(auctionItem, "second@hot6ix.com", 2, 13_000L);
+        newCandidate(auctionItem, "third@hot6ix.com", 3, 12_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Long auctionItemId = auctionItem.getAuctionItemId();
+
+        Page<DealCandidate> first = dealCandidateRepository
+                .findCandidates(auctionItemId, PageRequest.of(0, 2));
+
+        assertThat(first.getContent())
+                .extracting(DealCandidate::getCandidateRank)
+                .containsExactly(1, 2);
+        assertThat(first.getTotalElements()).isEqualTo(3);
+        assertThat(first.getTotalPages()).isEqualTo(2);
+
+        // 마지막 페이지는 덜 찬다. 앞 페이지를 건너뛰고도 순위가 이어져야 한다.
+        assertThat(dealCandidateRepository
+                .findCandidates(auctionItemId, PageRequest.of(1, 2)).getContent())
+                .extracting(DealCandidate::getCandidateRank)
+                .containsExactly(3);
+    }
+
+    @Test
+    @DisplayName("후보가 없는 물품은 빈 페이지를 돌려준다")
+    void findCandidatesReturnsEmptyPage() {
+
+        Page<DealCandidate> page = dealCandidateRepository
+                .findCandidates(auctionItem.getAuctionItemId(), PageRequest.of(0, 5));
+
+        assertThat(page.getContent()).isEmpty();
+        assertThat(page.getTotalElements()).isZero();
+    }
+
+    @Test
+    @DisplayName("입찰자로 자기 후보를 찾고, 물품이 다르면 찾지 못한다")
+    void findByBidderScopesToItem() {
+
+        DealCandidate mine = newCandidate(auctionItem, "mine@hot6ix.com", 1, 15_000L);
+        Long myUserId = mine.getBidder().getUserId();
+        DealCandidate others = newCandidate(newAuctionItem("다른물품"), "others@hot6ix.com", 1, 99_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Long auctionItemId = auctionItem.getAuctionItemId();
+
+        assertThat(dealCandidateRepository.findByBidder(auctionItemId, myUserId))
+                .get()
+                .extracting(DealCandidate::getCandidateRank)
+                .isEqualTo(1);
+        assertThat(dealCandidateRepository
+                .findByBidder(auctionItemId, others.getBidder().getUserId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("입찰하지 않은 회원은 후보로 조회되지 않는다")
+    void findByBidderReturnsEmptyForNonBidder() {
+
+        newCandidate(auctionItem, "bidder@hot6ix.com", 1, 15_000L);
+        User outsider = newUser("outsider@hot6ix.com", "구경꾼");
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(dealCandidateRepository
+                .findByBidder(auctionItem.getAuctionItemId(), outsider.getUserId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("후보가 된 뒤 탈퇴하면 목록과 전체 개수에서 모두 빠진다")
+    void findCandidatesExcludesWithdrawnBidder() {
+
+        newCandidate(auctionItem, "first@hot6ix.com", 1, 15_000L);
+        withdrawnCandidate(auctionItem, "gone@hot6ix.com", 2, 13_000L);
+        newCandidate(auctionItem, "third@hot6ix.com", 3, 12_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Page<DealCandidate> page = dealCandidateRepository
+                .findCandidates(auctionItem.getAuctionItemId(), PageRequest.of(0, 10));
+
+        assertThat(page.getContent())
+                .extracting(DealCandidate::getCandidateRank)
+                .containsExactly(1, 3);
+        assertThat(page.getTotalElements())
+                .as("count 쿼리에도 같은 조건이 걸려야 화면의 총원이 목록과 맞는다")
+                .isEqualTo(2);
+    }
+
+    /**
+     * 목록에서만 숨기면 보이지 않는 후보가 낙찰 권한을 쥔 채 남는다. 그러면 판매자는 상대를
+     * 볼 수도, 다음 후보로 넘길 수도 없어 그 물품의 거래가 영영 멈춘다.
+     */
+    @Test
+    @DisplayName("탈퇴한 후보는 낙찰 권한을 붙잡지 않고 차례가 다음 후보로 넘어간다")
+    void withdrawnCandidateDoesNotHoldDealRight() {
+
+        DealCandidate withdrawn = withdrawnCandidate(auctionItem, "gone@hot6ix.com", 1, 15_000L);
+        newCandidate(auctionItem, "second@hot6ix.com", 2, 13_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        Long auctionItemId = auctionItem.getAuctionItemId();
+
+        assertThat(dealCandidateRepository.findCurrentWinner(auctionItemId))
+                .get()
+                .extracting(DealCandidate::getCandidateRank)
+                .isEqualTo(2);
+        assertThat(dealCandidateRepository.existsWaitingCandidateBefore(auctionItemId, 2))
+                .as("탈퇴자가 앞에 남아 있으면 2순위가 자기 차례를 못 얻는다")
+                .isFalse();
+        assertThat(dealCandidateRepository
+                .findCandidate(auctionItemId, withdrawn.getDealCandidateId()))
+                .as("목록에 없는 후보를 ID로 찍어 처리할 수는 없다")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("차순위 승계는 탈퇴한 후보를 건너뛴다")
+    void findNextWaitingSkipsWithdrawn() {
+
+        newCandidate(auctionItem, "first@hot6ix.com", 1, 15_000L);
+        withdrawnCandidate(auctionItem, "gone@hot6ix.com", 2, 13_000L);
+        newCandidate(auctionItem, "third@hot6ix.com", 3, 12_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(dealCandidateRepository
+                .findNextWaitingCandidate(auctionItem.getAuctionItemId(), 1))
+                .get()
+                .extracting(DealCandidate::getCandidateRank)
+                .isEqualTo(3);
     }
 
     @Test

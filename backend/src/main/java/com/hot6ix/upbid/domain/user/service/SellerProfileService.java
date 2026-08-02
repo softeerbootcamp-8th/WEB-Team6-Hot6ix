@@ -65,6 +65,18 @@ public class SellerProfileService {
     }
 
     /**
+     * 낙찰 후보가 된 구매자가 판매자에게 연락하기 위해 다른 회원의 판매자 프로필을 조회한다.
+     *
+     * @throws ApplicationException 프로필이 없거나 삭제됐을 때(SELLER_PROFILE_NOT_FOUND)
+     */
+    public SellerProfileResponseDto getProfile(Long sellerProfileId) {
+        return SellerProfileResponseDto.from(
+                sellerProfileRepository.findBySellerProfileIdAndDeletedAtIsNull(sellerProfileId)
+                        .orElseThrow(() -> new ApplicationException(
+                                SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND)));
+    }
+
+    /**
      * 로그인한 회원의 판매자 프로필을 요청 값으로 전체 교체한다.
      * storeName은 필수이며, 나머지 선택 필드를 생략하면 null로 지워진다.
      *

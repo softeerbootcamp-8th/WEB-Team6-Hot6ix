@@ -75,11 +75,13 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
 
     /**
      * 물품 상세를 조회한다. 상태로 거르지 않으므로 낙찰·유찰된 물품도 조회된다.
+     * 유찰 화면이 시작가를 표시하므로 {@code startingPrice}도 함께 내린다 —
+     * 유찰이면 입찰이 없어 {@code currentPrice}가 시작가와 같지만, 그건 결과일 뿐이다.
      */
     @Query("select new com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto("
             + "  ai.auctionItemId, ai.auctionRoom.auctionRoomId, "
             + "  p.name, p.description, p.imageUrl, p.referenceUrl, "
-            + "  ai.currentPrice, ai.bidIncrement, ai.status, ai.endAt) "
+            + "  ai.startingPrice, ai.currentPrice, ai.bidIncrement, ai.status, ai.endAt) "
             + "from AuctionItem ai "
             + "join ai.product p "
             + "where ai.auctionItemId = :auctionItemId")
@@ -94,8 +96,15 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
 
+    /** 물품 전체를 읽지 않고 상태만 본다. 마감됐는지 판정하는 데 쓴다. */
+    @Query("select ai.status from AuctionItem ai where ai.auctionItemId = :auctionItemId")
+    Optional<AuctionItemStatus> findStatus(@Param("auctionItemId") Long auctionItemId);
+
     /**
-     * 물품을 올린 판매자의 회원 ID를 조회한다. 판매자 본인 입찰을 거르는 데 쓴다.
+     * 물품을 올린 판매자의 회원 ID를 조회한다. 판매자 본인 입찰을 거르는 데 쓰고,
+     * 낙찰 후보 목록에서 요청자가 판매자인지 판정하는 데도 쓴다.
+     * 조회에 {@link #findByIdForUpdate}를 쓰면 읽기 요청이 거래 상태 변경을 막으므로 쓰지 않는다.
+     *
      * @return 판매자의 회원 ID. 물품이 없거나 경매방에 판매자가 없으면 빈 값
      */
     @Query("select sp.user.userId from AuctionItem ai "

@@ -141,6 +141,8 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
 
         AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
         AuctionItem item = newAuctionItem(auctionRoom, "한정판피규어", AuctionItemStatus.IN_PROGRESS);
+        // 시작가와 현재가를 다르게 둬야 두 필드가 뒤바뀌어도 테스트가 잡아낸다.
+        item.applyBid(sellerProfile.getUser(), 12_000L);
         entityManager.flush();
 
         AuctionItemDetailResponseDto detail =
@@ -152,7 +154,8 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(detail.description()).isEqualTo("미개봉 정품");
         assertThat(detail.imageUrl()).isEqualTo("https://cdn.hot6ix.com/한정판피규어.png");
         assertThat(detail.referenceUrl()).isEqualTo("https://instagram.com/hot6ix/한정판피규어");
-        assertThat(detail.currentPrice()).isEqualTo(10_000L);
+        assertThat(detail.startingPrice()).isEqualTo(10_000L);
+        assertThat(detail.currentPrice()).isEqualTo(12_000L);
         assertThat(detail.bidIncrement()).isEqualTo(1_000L);
         assertThat(detail.status()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
         assertThat(detail.endAt()).isEqualTo(LocalDateTime.of(2026, 7, 29, 21, 0));

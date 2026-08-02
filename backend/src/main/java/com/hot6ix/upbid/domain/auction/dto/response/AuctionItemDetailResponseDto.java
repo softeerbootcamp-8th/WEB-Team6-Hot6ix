@@ -10,6 +10,7 @@ public record AuctionItemDetailResponseDto(
         String description,
         String imageUrl,
         String referenceUrl,
+        Long startingPrice,
         Long currentPrice,
         Long bidIncrement,
         AuctionItemStatus status,

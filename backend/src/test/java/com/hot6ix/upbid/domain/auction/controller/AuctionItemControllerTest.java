@@ -46,6 +46,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 "미개봉 정품",
                 "https://cdn.hot6ix.com/item.png",
                 "https://instagram.com/hot6ix",
+                10_000L,
                 50_000L,
                 1_000L,
                 AuctionItemStatus.IN_PROGRESS,
@@ -108,6 +109,8 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.message").value("경매 물품 상세 조회에 성공했습니다."))
                 .andExpect(jsonPath("$.data.auctionItemId").value(1))
                 .andExpect(jsonPath("$.data.auctionRoomId").value(10))
+                .andExpect(jsonPath("$.data.startingPrice").value(10000))
+                .andExpect(jsonPath("$.data.currentPrice").value(50000))
                 .andExpect(jsonPath("$.data.bidIncrement").value(1000));
     }
 

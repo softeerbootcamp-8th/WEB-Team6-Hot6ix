@@ -80,6 +80,7 @@ class AuctionItemServiceTest {
                 "미개봉 정품",
                 "https://cdn.hot6ix.com/item.png",
                 "https://instagram.com/hot6ix",
+                10_000L,
                 50_000L,
                 1_000L,
                 AuctionItemStatus.SOLD,

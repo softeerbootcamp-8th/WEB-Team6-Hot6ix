@@ -2,8 +2,10 @@ package com.hot6ix.upbid.domain.deal.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -14,8 +16,12 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateListResponseDto;
+import com.hot6ix.upbid.domain.deal.dto.response.DealCandidateResponseDto;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
+import com.hot6ix.upbid.domain.deal.entity.DealRole;
+import com.hot6ix.upbid.domain.deal.entity.DealStatus;
 import com.hot6ix.upbid.domain.deal.exception.DealErrorType;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -28,6 +34,7 @@ import com.hot6ix.upbid.global.event.payload.WinnerDecided;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,6 +45,9 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -341,5 +351,202 @@ class DealCandidateServiceTest {
         assertThatThrownBy(() -> dealCandidateService.fail(ITEM_ID, 102L, SELLER_ID))
                 .isInstanceOf(ApplicationException.class)
                 .hasFieldOrPropertyWithValue("errorType", DealErrorType.DEAL_ALREADY_COMPLETED);
+    }
+
+    private void givenItemWithSeller() {
+        givenItemStatus(AuctionItemStatus.SOLD);
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(SELLER_ID));
+    }
+
+    private void givenItemStatus(AuctionItemStatus status) {
+        when(auctionItemRepository.findStatus(ITEM_ID)).thenReturn(Optional.of(status));
+    }
+
+    private void givenPage(int page, long total, DealCandidate... candidates) {
+        when(dealCandidateRepository.findCandidates(eq(ITEM_ID), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(candidates), PageRequest.of(page, 5), total));
+    }
+
+    private void givenNoCompletedCandidate() {
+        when(dealCandidateRepository.existsCompletedCandidate(ITEM_ID)).thenReturn(false);
+    }
+
+    @Test
+    @DisplayName("판매자에게는 거래 상대인 후보의 연락처만 보인다")
+    void getCandidatesRevealsContactOnlyToSellerForCurrentAndCompleted() {
+
+        givenItemWithSeller();
+        givenNoCompletedCandidate();
+        DealCandidate current = candidate(102L, 2, 13_000L, DealCandidateStatus.WAITING);
+        givenCurrentWinner(current);
+        givenPage(0, 3,
+                candidate(101L, 1, 15_000L, DealCandidateStatus.FAILED),
+                current,
+                candidate(103L, 3, 12_000L, DealCandidateStatus.WAITING));
+
+        DealCandidateListResponseDto response =
+                dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID);
+
+        assertThat(response.viewerRole()).isEqualTo(DealRole.SELLER);
+        assertThat(response.myRank()).isNull();
+        assertThat(response.candidates().content())
+                .extracting(DealCandidateResponseDto::dealStatus, DealCandidateResponseDto::phoneNumber)
+                .containsExactly(
+                        tuple(DealStatus.FAILED, null),
+                        tuple(DealStatus.IN_PROGRESS, "010-1234-5678"),
+                        tuple(DealStatus.WAITING, null));
+        assertThat(response.candidates().totalElements()).isEqualTo(3);
+    }
+
+    /** 연락처가 새면 개인정보 유출이다. 구매자에게는 한 건도 주지 않는다. */
+    @Test
+    @DisplayName("구매자에게는 어떤 후보의 연락처도 주지 않는다")
+    void getCandidatesHidesEveryContactFromBidder() {
+
+        givenItemWithSeller();
+        givenNoCompletedCandidate();
+        DealCandidate current = candidate(101L, 1, 15_000L, DealCandidateStatus.WAITING);
+        givenCurrentWinner(current);
+        DealCandidate mine = candidate(107L, 7, 9_000L, DealCandidateStatus.WAITING);
+        when(dealCandidateRepository.findByBidder(ITEM_ID, 107L)).thenReturn(Optional.of(mine));
+        givenPage(0, 7, current, candidate(102L, 2, 13_000L, DealCandidateStatus.WAITING));
+
+        DealCandidateListResponseDto response =
+                dealCandidateService.getCandidates(ITEM_ID, 0, 107L);
+
+        assertThat(response.viewerRole()).isEqualTo(DealRole.BUYER);
+        assertThat(response.candidates().content())
+                .extracting(DealCandidateResponseDto::phoneNumber)
+                .containsOnlyNulls();
+    }
+
+    /** 7위가 1페이지를 봐도 자기 순위를 알아야 화면이 그 페이지로 이동할 수 있다. */
+    @Test
+    @DisplayName("구매자의 순위는 요청한 페이지 밖에 있어도 내려간다")
+    void getCandidatesReturnsMyRankOutsideRequestedPage() {
+
+        givenItemWithSeller();
+        givenNoCompletedCandidate();
+        givenCurrentWinner(null);
+        when(dealCandidateRepository.findByBidder(ITEM_ID, 107L))
+                .thenReturn(Optional.of(candidate(107L, 7, 9_000L, DealCandidateStatus.WAITING)));
+        givenPage(0, 7, candidate(101L, 1, 15_000L, DealCandidateStatus.FAILED));
+
+        DealCandidateListResponseDto response =
+                dealCandidateService.getCandidates(ITEM_ID, 0, 107L);
+
+        assertThat(response.myRank()).isEqualTo(7);
+        assertThat(response.candidates().content())
+                .extracting(DealCandidateResponseDto::isMe)
+                .containsExactly(false);
+    }
+
+    @Test
+    @DisplayName("목록에 있는 내 행은 isMe로 표시된다")
+    void getCandidatesMarksMyRow() {
+
+        givenItemWithSeller();
+        givenNoCompletedCandidate();
+        DealCandidate mine = candidate(102L, 2, 13_000L, DealCandidateStatus.WAITING);
+        givenCurrentWinner(mine);
+        when(dealCandidateRepository.findByBidder(ITEM_ID, 102L)).thenReturn(Optional.of(mine));
+        givenPage(0, 2, candidate(101L, 1, 15_000L, DealCandidateStatus.FAILED), mine);
+
+        DealCandidateListResponseDto response =
+                dealCandidateService.getCandidates(ITEM_ID, 0, 102L);
+
+        assertThat(response.candidates().content())
+                .extracting(DealCandidateResponseDto::isMe)
+                .containsExactly(false, true);
+    }
+
+    /**
+     * 성사된 뒤에도 하위 순위는 WAITING으로 남는다. 그 상태에서 최저 순위 대기자를 진행 중으로
+     * 칠하면, 끝난 거래에 아직 진행 중인 후보가 있는 것처럼 보인다.
+     */
+    @Test
+    @DisplayName("거래가 성사되면 남은 대기자를 진행 중으로 표시하지 않는다")
+    void getCandidatesMarksNobodyInProgressAfterCompletion() {
+
+        givenItemWithSeller();
+        when(dealCandidateRepository.existsCompletedCandidate(ITEM_ID)).thenReturn(true);
+        givenPage(0, 2,
+                candidate(101L, 1, 15_000L, DealCandidateStatus.COMPLETED),
+                candidate(102L, 2, 13_000L, DealCandidateStatus.WAITING));
+
+        DealCandidateListResponseDto response =
+                dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID);
+
+        assertThat(response.candidates().content())
+                .extracting(DealCandidateResponseDto::dealStatus)
+                .containsExactly(DealStatus.COMPLETED, DealStatus.WAITING);
+        // 성사된 거래 상대의 연락처는 계속 보여야 한다.
+        assertThat(response.candidates().content().getFirst().phoneNumber())
+                .isEqualTo("010-1234-5678");
+        verify(dealCandidateRepository, never()).findCurrentWinner(anyLong());
+    }
+
+    @Test
+    @DisplayName("판매자도 후보도 아니면 조회할 수 없다")
+    void getCandidatesRejectsOutsider() {
+
+        givenItemWithSeller();
+        when(dealCandidateRepository.findByBidder(ITEM_ID, OTHER_USER_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> dealCandidateService.getCandidates(ITEM_ID, 0, OTHER_USER_ID))
+                .isInstanceOf(ApplicationException.class)
+                .hasFieldOrPropertyWithValue("errorType", DealErrorType.NOT_DEAL_VIEWER);
+    }
+
+    /**
+     * 마감 검사를 역할 판정보다 먼저 하지 않으면 판매자는 빈 목록(200), 입찰자는 6007을 받아
+     * 같은 상황에 응답이 갈린다. 두 역할이 같은 에러를 받는지까지 확인한다.
+     */
+    @Test
+    @DisplayName("아직 마감되지 않은 물품은 역할과 무관하게 조회를 거절한다")
+    void getCandidatesRejectsItemNotClosed() {
+
+        givenItemStatus(AuctionItemStatus.IN_PROGRESS);
+
+        assertThatThrownBy(() -> dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID))
+                .isInstanceOf(ApplicationException.class)
+                .hasFieldOrPropertyWithValue("errorType", DealErrorType.ITEM_NOT_SOLD);
+
+        assertThatThrownBy(() -> dealCandidateService.getCandidates(ITEM_ID, 0, OTHER_USER_ID))
+                .isInstanceOf(ApplicationException.class)
+                .hasFieldOrPropertyWithValue("errorType", DealErrorType.ITEM_NOT_SOLD);
+
+        // 마감 전에는 역할을 따질 것도 없다.
+        verify(auctionItemRepository, never()).findSellerUserId(anyLong());
+    }
+
+    /** 유찰도 마감이다. "낙찰 후보 없음" 화면이 이 응답으로 그려진다. */
+    @Test
+    @DisplayName("유찰 물품은 빈 목록으로 조회된다")
+    void getCandidatesAllowsUnsoldItem() {
+
+        givenItemStatus(AuctionItemStatus.FAILED);
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(SELLER_ID));
+        givenNoCompletedCandidate();
+        givenCurrentWinner(null);
+        givenPage(0, 0);
+
+        DealCandidateListResponseDto response =
+                dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID);
+
+        assertThat(response.viewerRole()).isEqualTo(DealRole.SELLER);
+        assertThat(response.candidates().content()).isEmpty();
+        assertThat(response.candidates().totalElements()).isZero();
+    }
+
+    @Test
+    @DisplayName("없는 물품의 후보는 조회할 수 없다")
+    void getCandidatesRejectsMissingItem() {
+
+        when(auctionItemRepository.findStatus(ITEM_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> dealCandidateService.getCandidates(ITEM_ID, 0, SELLER_ID))
+                .isInstanceOf(ApplicationException.class)
+                .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
     }
 }

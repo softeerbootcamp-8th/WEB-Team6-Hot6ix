@@ -1,7 +1,10 @@
 package com.hot6ix.upbid.domain.user.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -143,6 +146,53 @@ class SellerProfileControllerTest extends AbstractControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    @Test
+    @DisplayName("다른 판매자의 프로필을 조회하면 가게 연락처까지 내려간다")
+    void getProfile() throws Exception {
+
+        when(sellerProfileService.getProfile(9L)).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/seller-profiles/9"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.storeName").value("승민상점"))
+                .andExpect(jsonPath("$.data.storePhoneNumber").value("02-1234-5678"));
+    }
+
+    /** /me와 /{sellerProfileId}가 같은 자리를 두고 겹친다. me가 ID로 넘어가면 안 된다. */
+    @Test
+    @DisplayName("/me는 ID 조회로 넘어가지 않는다")
+    void getMyProfileTakesPrecedenceOverIdPath() throws Exception {
+
+        when(sellerProfileService.getMyProfile(LOGIN_USER_ID)).thenReturn(sampleResponse());
+
+        mockMvc.perform(get("/api/v1/seller-profiles/me"))
+                .andExpect(status().isOk());
+
+        verify(sellerProfileService).getMyProfile(LOGIN_USER_ID);
+        verify(sellerProfileService, never()).getProfile(anyLong());
+    }
+
+    @Test
+    @DisplayName("없는 판매자 프로필을 ID로 조회하면 404와 3002를 반환한다")
+    void getProfile_notFound() throws Exception {
+
+        when(sellerProfileService.getProfile(9L))
+                .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/seller-profiles/9"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    @Test
+    @DisplayName("판매자 프로필 ID가 숫자가 아니면 400과 2002를 반환한다")
+    void getProfile_invalidPathVariable() throws Exception {
+
+        mockMvc.perform(get("/api/v1/seller-profiles/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2002));
     }
 
     @Test
