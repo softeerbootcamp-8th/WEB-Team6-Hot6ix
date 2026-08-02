@@ -118,8 +118,8 @@ export function ItemDetailPanel({
         </div>
 
         {/* 오른쪽 · 리더보드 → 이벤트 → 퀵입찰 */}
-        <div className="flex min-w-0 flex-col gap-4 overflow-y-auto overscroll-contain lg:min-h-0">
-          <section className="rounded-2xl border p-5">
+        <div className="flex min-w-0 flex-col gap-4">
+          <section className="shrink-0 rounded-2xl border p-5">
             <div className="flex items-baseline">
               <h3 className="text-[13px] font-bold text-neutral-tertiary">
                 실시간 리더보드
@@ -140,58 +140,60 @@ export function ItemDetailPanel({
             </div>
           </section>
 
-          <ItemEventList events={events} />
+          {/* 이벤트 로그 — 로그 3개 높이 고정, 넘치면 스크롤 */}
+          <div className="flex h-[200px] flex-col overflow-hidden">
+            <ItemEventList events={events} />
+          </div>
 
-          {/*
-           * 입찰 영역.
-           *
-           * 예전에는 칩·직접 입력·큰 버튼이 한 줄에 몰려 있어 어느 것이
-           * 지금 값이고 어느 것이 조작인지 읽히지 않았다.
-           * 한 장의 카드 안에서 금액 → 조절 → 확정 순으로 세운다.
-           */}
-          {action ? (
-            action
-          ) : isGuest ? (
-            <Link
-              to="/"
-              search={{
-                redirect: `/rooms/${roomId}/items/${itemId}`,
-              }}
-              className="ease-soft flex h-11 items-center justify-center rounded-xl bg-brand-500 text-[14px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
-            >
-              로그인하고 입찰하기
-            </Link>
-          ) : closed || ready ? (
-            <p className="flex h-11 items-center justify-center rounded-xl bg-fill text-[13px] font-medium text-neutral-tertiary">
-              {closed ? '마감된 물품이에요' : '아직 시작하지 않은 물품이에요'}
-            </p>
-          ) : (
-            <div className="rounded-2xl border bg-surface-subtle p-3.5">
-              <div className="flex items-end justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-medium text-neutral-tertiary">
-                    현재가 {formatWon(item.currentPrice)} · 단위 +
-                    {item.bidUnit.toLocaleString('ko-KR')}
-                  </p>
-                  <p className="mt-1 text-[12px] font-bold text-brand-600">
-                    내 입찰가
-                  </p>
-                </div>
+          {/* 입찰 영역 — 하단 한 줄 고정 */}
+          <div className="shrink-0">
+            {!isGuest && amount < minimum && !closed && !ready && (
+              <p className="mb-2 text-[12px] font-medium text-live">
+                최소 {formatWon(minimum)}부터 입찰할 수 있어요.
+              </p>
+            )}
 
-                {/* 이 숫자가 곧 입력칸이다. 눌러서 바로 고쳐 쓸 수 있다. */}
+            {action ? (
+              action
+            ) : isGuest ? (
+              <Link
+                to="/"
+                search={{ redirect: `/rooms/${roomId}/items/${itemId}` }}
+                className="ease-soft flex h-11 items-center justify-center rounded-xl bg-brand-500 text-[14px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
+              >
+                로그인하고 입찰하기
+              </Link>
+            ) : closed || ready ? (
+              <p className="flex h-11 items-center justify-center rounded-xl bg-fill text-[13px] font-medium text-neutral-tertiary">
+                {closed ? '마감된 물품이에요' : '아직 시작하지 않은 물품이에요'}
+              </p>
+            ) : (
+              <div className="flex items-center gap-2 rounded-2xl border bg-surface-subtle px-3 py-2.5">
+                {/* 칩 버튼 */}
+                {PRESETS.map((multiplier) => (
+                  <button
+                    key={multiplier}
+                    type="button"
+                    onClick={() =>
+                      setAmount((prev) => prev + item.bidUnit * multiplier)
+                    }
+                    className="ease-soft h-9 shrink-0 rounded-xl bg-fill px-3 text-[12px] font-bold tabular-nums text-neutral-secondary transition-all duration-150 hover:text-brand-500 active:scale-95"
+                  >
+                    +{(item.bidUnit * multiplier).toLocaleString('ko-KR')}
+                  </button>
+                ))}
+
+                {/* 금액 입력 */}
                 <label
                   className={cn(
-                    'ease-soft flex h-11 min-w-0 max-w-[180px] flex-1 cursor-text items-center gap-1.5 rounded-xl border-2 bg-card px-3 transition-all duration-150',
+                    'ease-soft flex h-9 min-w-0 flex-1 cursor-text items-center gap-1 rounded-xl border-2 bg-card px-2.5 transition-all duration-150',
                     'focus-within:ring-2 focus-within:ring-brand-200',
                     amount < minimum
                       ? 'border-live/50'
                       : 'border-brand-300 hover:border-brand-400',
                   )}
                 >
-                  <Pencil
-                    aria-hidden
-                    className="size-3.5 shrink-0 text-neutral-muted"
-                  />
+                  <Pencil aria-hidden className="size-3 shrink-0 text-neutral-muted" />
                   <span className="sr-only">입찰 금액</span>
                   <input
                     inputMode="numeric"
@@ -203,65 +205,35 @@ export function ItemDetailPanel({
                       )
                     }
                     className={cn(
-                      'min-w-0 flex-1 bg-transparent text-right text-[20px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
+                      'min-w-0 flex-1 bg-transparent text-right text-[16px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
                       amount < minimum ? 'text-live' : 'text-brand-600',
                     )}
                   />
                   <span
                     className={cn(
-                      'shrink-0 text-[13px] font-bold',
+                      'shrink-0 text-[12px] font-bold',
                       amount < minimum ? 'text-live' : 'text-brand-600',
                     )}
                   >
                     원
                   </span>
                 </label>
-              </div>
 
-              <div className="mt-3 flex gap-2">
-                {PRESETS.map((multiplier) => (
-                  <button
-                    key={multiplier}
-                    type="button"
-                    // 누를 때마다 누적된다. 두 번 누르면 두 배만큼 오른다.
-                    onClick={() =>
-                      setAmount((prev) => prev + item.bidUnit * multiplier)
-                    }
-                    className="ease-soft h-10 flex-1 rounded-xl bg-fill text-[13px] font-bold tabular-nums text-neutral-secondary transition-all duration-150 hover:text-brand-500 active:scale-95"
-                  >
-                    +{(item.bidUnit * multiplier).toLocaleString('ko-KR')}
-                  </button>
-                ))}
-
+                {/* 입찰 버튼 */}
                 <button
                   type="button"
-                  onClick={() => setAmount(minimum)}
-                  disabled={amount === minimum}
-                  className="ease-soft h-10 shrink-0 rounded-xl bg-fill px-3 text-[13px] font-bold text-neutral-tertiary transition-all duration-150 active:scale-95 disabled:opacity-40"
+                  disabled={bidBlocked || pending}
+                  onClick={onBid}
+                  className="ease-soft flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
                 >
-                  초기화
+                  {pending && (
+                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                  )}
+                  {pending ? '처리 중…' : `${formatWon(amount)} 입찰하기`}
                 </button>
               </div>
-
-              <button
-                type="button"
-                disabled={bidBlocked || pending}
-                onClick={onBid}
-                className="ease-soft mt-2.5 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-500 text-[14px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
-              >
-                {pending && (
-                  <Loader2 aria-hidden className="size-4 animate-spin" />
-                )}
-                {pending ? '처리 중…' : `${formatWon(amount)} 입찰하기`}
-              </button>
-            </div>
-          )}
-
-          {!isGuest && amount < minimum && !closed && !ready && (
-            <p className="text-[12px] font-medium text-live">
-              최소 {formatWon(minimum)}부터 입찰할 수 있어요.
-            </p>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
