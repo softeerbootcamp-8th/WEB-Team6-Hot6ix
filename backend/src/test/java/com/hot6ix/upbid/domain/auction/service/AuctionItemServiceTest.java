@@ -509,7 +509,7 @@ class AuctionItemServiceTest {
     @DisplayName("물품을 시작하면 ItemStarted 이벤트가 발행된다")
     void startPublishesItemStarted() {
 
-        givenLockedItem(AuctionRoomStatus.OPEN, AuctionItemStatus.READY);
+        AuctionItem auctionItem = givenLockedItem(AuctionRoomStatus.OPEN, AuctionItemStatus.READY);
         givenInProgressCount(0L);
 
         auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30));
@@ -521,6 +521,7 @@ class AuctionItemServiceTest {
             assertThat(event.roomId()).isEqualTo(ROOM_ID);
             assertThat(event.itemId()).isEqualTo(ITEM_ID);
             assertThat(event.itemName()).isEqualTo("한정판 피규어");
+            assertThat(event.occurredAt()).isEqualTo(auctionItem.getStartedAt());
         });
     }
 
