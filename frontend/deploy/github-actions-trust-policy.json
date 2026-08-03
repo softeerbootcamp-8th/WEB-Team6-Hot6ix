@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GitHubActionsOidcFromMainOnly",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::603224628947:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:softeerbootcamp-8th/WEB-Team6-Hot6ix:ref:refs/heads/main"
+        }
+      }
+    }
+  ]
+}

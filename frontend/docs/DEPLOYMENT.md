@@ -19,7 +19,7 @@
 | 1 | 프론트 도메인 | `www.upbid.store` | apex(`upbid.store`) — DNS 를 Route 53 으로 이전해야 함 / CloudFront 기본 도메인 — **로그인 불가**(2장) | ACM 인증서, 가비아 CNAME, 백엔드 `FRONTEND_URL` |
 | 2 | API 경로 | 브라우저 → `api.upbid.store` 직접 | CloudFront 에 `/api/*` 비헤이비어를 두고 단일 오리진 (CORS·preflight 없음) | CloudFront 배포 설정, `VITE_API_BASE_URL` |
 | 3 | 배포 시 옛 자산 처리 | 지우지 않음(`--delete` 없음) | 매 배포마다 정리 — 진행 중 세션이 깨질 수 있음(7장) | 워크플로 sync 단계 |
-| 4 | CI 자격증명 | IAM 액세스 키 + Secrets | GitHub OIDC 역할 | IAM, 워크플로 |
+| 4 | CI 자격증명 | ~~IAM 액세스 키 + Secrets~~ → **GitHub OIDC 역할로 결정**(4-3) | — | 결정됨 |
 | 5 | `routeTree.gen.ts` | gitignore 유지, CI 에서 생성 | 커밋 대상으로 전환(TanStack 권장) | `.gitignore`, `build` 스크립트, 6장 |
 | 6 | 신규 가입 리다이렉트 | 미해결 — 아래 5장 | 백엔드가 `/signup/phone` 로 보내기 / 프론트에 `/onboarding` 추가 | 공용 계약이라 양쪽 합의 필요 |
 
@@ -140,34 +140,64 @@ AWS 콘솔에서 아래 순서로 직접 만들었고, 안 쓴 스크립트는 �
 배포가 전 엣지에 퍼지기까지 **5~15분** 걸립니다. 다른 계정·리전에 다시 만들
 일이 있으면 이 순서를 그대로 따라 하면 됩니다.
 
-### 4-3. 배포용 IAM 사용자 — **실제로는 이렇게 안 됐다**
+### 4-3. 배포용 자격증명 — **GitHub OIDC 역할** (액세스 키 아님)
 
-원래 계획은 [`../deploy/ci-iam-policy.json`](../deploy/ci-iam-policy.json) 을
-전용 IAM 사용자에 붙여 S3 는 그 버킷만, CloudFront 는 그 배포만 건드릴 수 있는
-최소 권한을 주는 것이었습니다. 그런데 이 계정(`edu/cylin0201`, edu 계정)은
-`iam:CreateUser`, `iam:AttachUserPolicy` 가 모두 identity-based 정책 부재로
-막혀 있어 **IAM 셀프서비스 자체가 안 됩니다.**
+**액세스 키로는 CD 가 불가능합니다.** 조직 SCP(`p-ibyqe45g`)가 **MFA 없는
+요청**에 대해 `s3:*`, `cloudfront:*`, `iam:*` 를 explicit deny 합니다. IAM
+사용자의 장기 액세스 키에는 MFA 컨텍스트가 없어서, 키를 GitHub Secrets 에
+넣어도 배포가 첫 단계(`aws s3 sync` 의 `s3:ListBucket`)에서 죽습니다.
 
-그래서 실제로는 **기존 사용자(`cylin0201`)에 액세스 키를 하나 더 발급**해서
-그대로 씁니다. `ci-iam-policy.json` 은 어디에도 붙지 않았고, GitHub Secrets 의
-키는 이 사용자가 가진 **전체 권한**을 그대로 가집니다(최소 권한 아님). 이 파일은
-나중에 IAM 을 직접 다룰 수 있는 계정(팀 공용 계정 등)으로 옮길 때 붙일 목표
-정책으로 남겨 둡니다.
+```
+AccessDenied ... s3:ListBucket ... with an explicit deny in a service control
+policy: arn:aws:organizations::652613583830:policy/.../p-ibyqe45g
+```
 
-> 액세스 키 대신 GitHub OIDC(`role-to-assume`)를 쓰면 장기 키를 저장하지 않아도
-> 됩니다. 다만 OIDC 설정(IAM 역할 생성)도 이 계정에서는 같은 이유로 막혀 있을
-> 가능성이 높아, 지금은 시도하지 않았습니다.
+같은 SCP 때문에 로컬 CLI 로는 IAM 을 아예 손댈 수 없습니다(`iam:CreateRole` 까지
+deny). **콘솔 로그인은 MFA 를 타므로 통과**하고, 그래서 아래 역할 생성은
+반드시 **콘솔에서** 합니다. (S3·CloudFront 도 이 경로로 만들어졌습니다.)
+
+| 항목 | 값 |
+| --- | --- |
+| 역할 이름 | **`GitHubActionsRole`** — 운영자가 지정한 이름. SCP 예외가 이 이름에 걸려 있으므로 **오타·변경 금지** |
+| 신뢰 정책 | [`../deploy/github-actions-trust-policy.json`](../deploy/github-actions-trust-policy.json) — `main` 브랜치에서 온 토큰만 허용 |
+| 권한 정책 | [`../deploy/ci-iam-policy.json`](../deploy/ci-iam-policy.json) — 그 버킷·그 배포만 (인라인으로 붙임) |
+
+절차(콘솔):
+
+1. IAM → **자격 증명 공급자**에 `token.actions.githubusercontent.com` 이 있는지
+   확인. 이 계정에는 이미 있습니다(기존 `github-actions-role` 이 이 공급자를
+   신뢰합니다). 없으면 **공급자 추가 → OpenID Connect**, URL
+   `https://token.actions.githubusercontent.com`, 대상 `sts.amazonaws.com`
+2. IAM → 역할 → **역할 생성** → **사용자 지정 신뢰 정책** →
+   `github-actions-trust-policy.json` 내용 붙여넣기
+3. 권한은 **인라인 정책**으로 `ci-iam-policy.json` 내용 붙여넣기
+4. 역할 이름 `GitHubActionsRole` 로 생성
+
+> **남은 위험:** SCP 의 조건이 `aws:MultiFactorAuthPresent` 라면 OIDC 로 맡은
+> 역할 세션도 이 값이 `false` 입니다. 운영자가 이 역할 이름을 deny 대상에서
+> 예외로 뺐다는 전제이며, 그렇지 않으면 **역할을 만들어도 같은 SCP 에 막힙니다.**
+> 첫 `workflow_dispatch` 실행에서 확인하고, 또 막히면 위 에러 메시지를 그대로
+> 운영자에게 전달해 예외 조건을 확인받습니다.
+> 그때까지의 임시 배포 수단은 [`../deploy/deploy-manual.sh`](../deploy/deploy-manual.sh)
+> (사람이 MFA 코드를 넣어 로컬에서 올리는 스크립트)입니다.
 
 ### 4-4. GitHub Secrets
 
-`Settings → Secrets and variables → Actions` 에 4개를 넣습니다.
+`Settings → Secrets and variables → Actions` 에 3개를 넣습니다.
 
 | 이름 | 값 |
 | --- | --- |
-| `AWS_ACCESS_KEY_ID` | 4-3 에서 발급한 키 |
-| `AWS_SECRET_ACCESS_KEY` | 4-3 에서 발급한 시크릿 |
+| `AWS_ROLE_ARN` | `arn:aws:iam::603224628947:role/GitHubActionsRole` (4-3) |
 | `FE_S3_BUCKET` | `upbid-frontend` |
-| `FE_CLOUDFRONT_DISTRIBUTION_ID` | `E...` (스크립트 출력값) |
+| `FE_CLOUDFRONT_DISTRIBUTION_ID` | `E17BE3ZTNT6VTF` |
+
+`AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY` 는 **더 이상 쓰지 않습니다.**
+OIDC 로 전환한 뒤에는 GitHub 에서 지우고, AWS 콘솔에서 그 액세스 키도
+비활성화·삭제하세요(SCP 때문에 배포에는 쓸 수 없고, 남겨 두면 유출 위험만
+남습니다).
+
+단, **로컬 `~/.aws` 의 키는 남겨 둡니다.** MFA 세션을 발급받아 수동 배포하는
+`deploy-manual.sh` 가 그 키를 씁니다.
 
 `VITE_API_BASE_URL` 은 Secrets 가 아니라 워크플로 `env:` 에 평문으로 둡니다.
 프론트 번들에 그대로 박히는 값이라 숨겨도 의미가 없습니다.
@@ -382,4 +412,7 @@ CloudFront·S3 에는 버전 개념이 없으므로 **되돌리려면 이전 커
 | ACM 인증서가 CloudFront 목록에 없음 | 리전이 us-east-1 이 아니다(4-1) |
 | 로그인 후 404 화면 | 신규 사용자 `/onboarding` 리다이렉트. 5장의 계약 불일치 |
 | CI 에서 `TS2345 ... type 'undefined'` | 라우트 트리 생성 전에 `tsc` 가 돌았다(6장) |
+| `Credentials could not be loaded` | deploy 잡에 `permissions: id-token: write` 가 없다(4-3) |
+| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | 신뢰 정책의 `sub` 와 실제 브랜치가 다르다. `main` 에서만 맡을 수 있다 |
+| `AccessDenied ... explicit deny in a service control policy` | 액세스 키로 배포하고 있거나, SCP 가 `GitHubActionsRole` 을 예외로 두지 않았다(4-3) |
 | 경매방·공유링크 화면만 안 열림 | 한글 청크(`경매방-*.js`) 로드 실패. 7장의 비ASCII 파일명 |

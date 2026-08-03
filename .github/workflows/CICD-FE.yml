@@ -86,6 +86,12 @@ jobs:
   deploy:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # OIDC 로 IAM 역할을 맡으려면 GitHub 이 발급하는 id-token 을 쓸 수 있어야
+    # 한다. 이 블록이 없으면 configure-aws-credentials 가 토큰을 못 받아
+    # "Credentials could not be loaded" 로 죽는다.
+    permissions:
+      id-token: write
+      contents: read
     defaults:
       run:
         working-directory: frontend
@@ -110,10 +116,16 @@ jobs:
       - name: 타입 검사
         run: pnpm exec tsc -b
 
+      # 장기 액세스 키를 저장하지 않고 OIDC 로 역할을 맡는다. 키를 지우는 것도
+      # 목적이지만, 더 직접적인 이유는 조직 SCP 가 MFA 없는 요청에 s3:*,
+      # cloudfront:* 를 explicit deny 하기 때문이다. IAM 사용자의 장기 키는
+      # MFA 컨텍스트가 없어 CD 가 s3:ListBucket 에서 통째로 막혔다.
+      # 역할·신뢰 정책은 frontend/deploy/github-actions-trust-policy.json,
+      # 권한은 frontend/deploy/ci-iam-policy.json 참고.
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: cicd-fe-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
 
       # 1단계: 파일명에 해시가 붙은 자산이라 내용이 바뀌면 이름이 바뀐다.
