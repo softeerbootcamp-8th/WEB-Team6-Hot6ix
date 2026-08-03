@@ -213,6 +213,28 @@ function AuctionItemPage() {
             }
           })
           break
+
+        case 'ItemEnded':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'CLOSE',
+              message: payload.winnerNickname
+                ? `${payload.itemName} 낙찰 확정`
+                : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
+              ...(payload.winnerNickname && {
+                subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
+                emphasized: true,
+              }),
+            },
+          ])
+          setOverride((prev) => ({
+            ...(prev ?? item),
+            status: 'CLOSED' as const,
+          }))
+          break
       }
     },
     [item],

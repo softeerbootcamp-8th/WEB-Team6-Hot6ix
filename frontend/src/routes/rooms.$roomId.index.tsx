@@ -255,6 +255,31 @@ function LiveRoomPage() {
             ),
           )
           break
+
+        case 'ItemEnded':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'CLOSE',
+              message: payload.winnerNickname
+                ? `${payload.itemName} 낙찰 확정`
+                : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
+              ...(payload.winnerNickname && {
+                subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
+                emphasized: true,
+              }),
+            },
+          ])
+          setItems(
+            roomItems.map((item) =>
+              item.id === payload.itemId
+                ? { ...item, status: 'CLOSED' as const }
+                : item,
+            ),
+          )
+          break
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
