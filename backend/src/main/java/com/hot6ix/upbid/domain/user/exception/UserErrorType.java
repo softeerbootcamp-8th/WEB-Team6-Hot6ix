@@ -9,7 +9,7 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum UserErrorType implements ErrorType {
 
-    USER_NOT_FOUND(HttpStatus.NOT_FOUND, 2001, "존재하지 않는 회원입니다.");
+    USER_NOT_FOUND(HttpStatus.NOT_FOUND, 9001, "존재하지 않는 회원입니다.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;

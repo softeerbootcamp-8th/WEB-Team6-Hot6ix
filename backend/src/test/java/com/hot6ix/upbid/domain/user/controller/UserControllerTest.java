@@ -62,6 +62,6 @@ class UserControllerTest extends AbstractControllerTest {
         mockMvc.perform(get("/api/v1/users/me"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value(2001));
+                .andExpect(jsonPath("$.code").value(9001));
     }
 }
