@@ -11,6 +11,7 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.LeaderboardEntryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
@@ -18,6 +19,8 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.bid.repository.BidRepository;
+import com.hot6ix.upbid.domain.bid.repository.TopBidderProjection;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
@@ -57,6 +60,9 @@ class AuctionItemServiceTest {
 
     @Mock
     private AuctionRoomRepository auctionRoomRepository;
+
+    @Mock
+    private BidRepository bidRepository;
 
     @Mock
     private ProductRepository productRepository;
@@ -131,6 +137,15 @@ class AuctionItemServiceTest {
         return AuctionItemStartRequestDto.builder()
                 .durationMinutes(durationMinutes)
                 .build();
+    }
+
+    private TopBidderProjection row(Long itemId, int rankNo, String nickname, Long amount) {
+        return new TopBidderProjection() {
+            @Override public Long getAuctionItemId() { return itemId; }
+            @Override public Integer getRankNo() { return rankNo; }
+            @Override public String getNickname() { return nickname; }
+            @Override public Long getAmount() { return amount; }
+        };
     }
 
     private SellerProfile givenSellerProfile() {
@@ -231,6 +246,51 @@ class AuctionItemServiceTest {
         AuctionItemDetailResponseDto result = auctionItemService.getDetail(1L);
 
         assertThat(result.status()).isEqualTo(AuctionItemStatus.SOLD);
+    }
+
+    @Test
+    @DisplayName("상세 조회는 상위 3명을 순위대로 담는다")
+    void getDetailFillsLeaderboard() {
+
+        AuctionItemDetailResponseDto found = new AuctionItemDetailResponseDto(
+                ITEM_ID, ROOM_ID, "한정판 피규어", "미개봉 정품",
+                "https://cdn.hot6ix.com/item.png", "https://instagram.com/hot6ix",
+                10_000L, 50_000L, 1_000L,
+                AuctionItemStatus.IN_PROGRESS, LocalDateTime.of(2026, 7, 29, 21, 0));
+
+        when(auctionItemRepository.findDetail(ITEM_ID)).thenReturn(Optional.of(found));
+        when(bidRepository.findTopBidders(List.of(ITEM_ID), 3)).thenReturn(List.of(
+                row(ITEM_ID, 1, "스니커홀릭", 50_000L),
+                row(ITEM_ID, 2, "조던매니아", 48_000L),
+                row(ITEM_ID, 3, "슈즈러버", 46_000L)));
+
+        AuctionItemDetailResponseDto result = auctionItemService.getDetail(ITEM_ID);
+
+        assertThat(result.leaderboard())
+                .extracting(LeaderboardEntryResponseDto::rank)
+                .containsExactly(1, 2, 3);
+        assertThat(result.leaderboard())
+                .extracting(LeaderboardEntryResponseDto::nickname)
+                .containsExactly("스니커홀릭", "조던매니아", "슈즈러버");
+        assertThat(result.leaderboard().get(0).amount()).isEqualTo(50_000L);
+    }
+
+    @Test
+    @DisplayName("입찰이 없는 물품의 상세 조회는 빈 리더보드를 담는다")
+    void getDetailFillsEmptyLeaderboardWhenNoBids() {
+
+        AuctionItemDetailResponseDto found = new AuctionItemDetailResponseDto(
+                ITEM_ID, ROOM_ID, "한정판 피규어", "미개봉 정품",
+                "https://cdn.hot6ix.com/item.png", "https://instagram.com/hot6ix",
+                10_000L, 10_000L, 1_000L,
+                AuctionItemStatus.IN_PROGRESS, LocalDateTime.of(2026, 7, 29, 21, 0));
+
+        when(auctionItemRepository.findDetail(ITEM_ID)).thenReturn(Optional.of(found));
+        when(bidRepository.findTopBidders(List.of(ITEM_ID), 3)).thenReturn(List.of());
+
+        AuctionItemDetailResponseDto result = auctionItemService.getDetail(ITEM_ID);
+
+        assertThat(result.leaderboard()).isEmpty();
     }
 
     @Test
