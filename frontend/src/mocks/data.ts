@@ -178,7 +178,12 @@ const ROOM_1: AuctionRoomDetail = {
       startPrice: 8000,
       currentPrice: 13000,
       bidUnit: 1000,
-      endsAt: after(5400),
+      /*
+       * 시연용으로 짧게 잡았다. 화면을 열고 1분 뒤 마감되므로 마감 임박 표시,
+       * 소프트클로즈 +30초 연장(입찰 시), 자동 마감까지 한 번에 보여줄 수 있다.
+       * 새로고침하면 다시 1분부터 센다.
+       */
+      endsAt: after(60),
       bidCount: 7,
       topBidderNickname: '데님러버',
       extended: true,
