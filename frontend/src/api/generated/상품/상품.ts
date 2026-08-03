@@ -199,7 +199,7 @@ export const useUpdate1 = <TError = ErrorType<CommonResponseProductResponseDto>,
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 로그인한 판매자 본인 소유의 상품을 soft delete 한다. 경매방이 한 번이라도 시작된 적 있는 상품(READY가 아닌 AuctionItem이 하나라도 있으면)은 이후로도 계속 삭제할 수 없다.
+ * 로그인한 판매자 본인 소유의 상품을 soft delete 한다. 경매방에 물품으로 올라가 있으면 아직 시작 전(READY)이더라도 삭제할 수 없다 — 상품만 지우면 물품이 남아 삭제된 상품이 경매방에 계속 노출되기 때문이다. 시작 전이라면 경매방에서 물품을 먼저 빼면 삭제할 수 있다.
  * @summary 상품 삭제
  */
 export const delete1 = (

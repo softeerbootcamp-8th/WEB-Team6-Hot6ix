@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   useGetDetail1,
   useGetSummaries,
-} from '@/api/generated/경매-물품-조회/경매-물품-조회'
+} from '@/api/generated/경매-물품/경매-물품'
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { ConnectionBanner } from '@/features/live/components/connection-banner'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'

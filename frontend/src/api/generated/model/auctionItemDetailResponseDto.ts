@@ -13,6 +13,7 @@ export interface AuctionItemDetailResponseDto {
   description?: string;
   imageUrl?: string;
   referenceUrl?: string;
+  startingPrice?: number;
   currentPrice?: number;
   bidIncrement?: number;
   status?: AuctionItemDetailResponseDtoStatus;
