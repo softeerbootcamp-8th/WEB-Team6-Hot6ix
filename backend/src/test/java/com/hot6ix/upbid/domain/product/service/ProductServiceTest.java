@@ -93,6 +93,7 @@ class ProductServiceTest {
         assertThat(response.description()).isEqualTo("깨끗합니다");
         assertThat(response.imageUrl()).isEqualTo("https://cdn.hot6ix.com/product.png");
         assertThat(response.referenceUrl()).isEqualTo("https://example.com/product");
+        assertThat(response.status()).isEqualTo(ProductListingStatus.UNREGISTERED);
     }
 
     @Test
@@ -125,10 +126,13 @@ class ProductServiceTest {
                 .thenReturn(Optional.of(sellerProfile));
         when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
                 .thenReturn(Optional.of(product));
+        when(productRepository.findListingStatus(10L))
+                .thenReturn(Optional.of(ProductListingStatus.IN_PROGRESS));
 
         ProductResponseDto response = productService.getDetail(1L, 10L);
 
         assertThat(response.name()).isEqualTo("승민의 노트북");
+        assertThat(response.status()).isEqualTo(ProductListingStatus.IN_PROGRESS);
     }
 
     @Test
@@ -244,6 +248,8 @@ class ProductServiceTest {
                 .thenReturn(Optional.of(product));
         when(auctionItemRepository.existsByProduct_ProductIdAndStatusNot(any(), eq(AuctionItemStatus.READY)))
                 .thenReturn(false);
+        when(productRepository.findListingStatus(10L))
+                .thenReturn(Optional.of(ProductListingStatus.READY));
 
         ProductResponseDto response = productService.update(1L, 10L, request);
 
@@ -251,6 +257,7 @@ class ProductServiceTest {
         assertThat(response.description()).isEqualTo("새 설명");
         assertThat(response.imageUrl()).isEqualTo("https://cdn.hot6ix.com/new.png");
         assertThat(response.referenceUrl()).isEqualTo("https://example.com/new");
+        assertThat(response.status()).isEqualTo(ProductListingStatus.READY);
     }
 
     @Test

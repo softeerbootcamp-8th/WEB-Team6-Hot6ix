@@ -9,12 +9,14 @@
 **그 외 환경**: 카카오 로그인 후 발급된 SESSION 쿠키가 자동으로 포함됩니다.
  * OpenAPI spec version: v1
  */
-import type { ProductSummaryResponseDtoStatus } from './productSummaryResponseDtoStatus';
 
-export interface ProductSummaryResponseDto {
-  productId?: number;
-  name?: string;
-  imageUrl?: string;
-  status?: ProductSummaryResponseDtoStatus;
-  createdAt?: string;
-}
+export type ProductResponseDtoStatus = typeof ProductResponseDtoStatus[keyof typeof ProductResponseDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ProductResponseDtoStatus = {
+  UNREGISTERED: 'UNREGISTERED',
+  READY: 'READY',
+  IN_PROGRESS: 'IN_PROGRESS',
+  ENDED: 'ENDED',
+} as const;

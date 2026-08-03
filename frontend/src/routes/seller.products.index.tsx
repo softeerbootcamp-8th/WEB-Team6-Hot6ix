@@ -1,67 +1,77 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { ImageIcon, Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
+import { Button } from '@/components/ui/button'
 import { Dropdown } from '@/components/ui/dropdown'
 import { EmptyState } from '@/components/page-header'
-import { MOCK_PRODUCTS } from '@/mocks/data'
-import { Pager } from '@/components/pager'
-import { PRODUCT_RESULT } from '@/features/seller/product-status'
+import {
+  PRODUCT_STATUS,
+  canEditProduct,
+} from '@/features/seller/product-status'
+import { RouteError, RoutePending } from '@/components/route-states'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { requireMember } from '@/lib/route-guards'
-import type { ProductStatus } from '@/mocks/types'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
+import { useProductList } from '@/features/seller/use-product-list'
+import type { GetListStatus } from '@/api/generated/model'
 
 /**
  * 상품 관리 (Figma `WEB-05 · 판매자 · 상품 관리`, 713:3785).
  *
- * 1216 폭 한 덩어리다. 검색·결과 필터·총 개수를 담은 64 높이 툴바 아래
- * 표 카드가 오고, 5줄씩 끊어 보여준 뒤 아래에 페이지네이션이 붙는다.
+ * 1216 폭 한 덩어리다. 검색·상태 필터를 담은 64 높이 툴바 아래 표 카드가 온다.
+ *
+ * 서버가 커서 페이지네이션이라 전체 개수를 주지 않는다. 그래서 Figma 의 번호
+ * 페이지네이션과 "총 N개" 대신 맨 아래 "더 보기"로 이어 붙인다.
  */
 export const Route = createFileRoute('/seller/products/')({
   beforeLoad: requireMember,
   component: SellerProductsPage,
 })
 
-/** Figma 표 카드에 그려진 줄 수. */
-const PAGE_SIZE = 5
+/** 한 번에 받아 오는 줄 수. Figma 표 카드가 5줄이라 그 배수로 맞췄다. */
+const PAGE_SIZE = 10
 
 const TABLE_COLS = 'grid-cols-[56px_minmax(0,1fr)_180px_208px_116px] gap-x-5'
 
-const FILTERS: { key: 'ALL' | ProductStatus; label: string }[] = [
-  { key: 'ALL', label: '전체 결과' },
-  { key: 'DRAFT', label: '미진행' },
-  { key: 'IN_AUCTION', label: '경매 중' },
-  { key: 'SOLD', label: '낙찰' },
-  { key: 'UNSOLD', label: '유찰' },
+const FILTERS: { key: 'ALL' | GetListStatus; label: string }[] = [
+  { key: 'ALL', label: '전체 상태' },
+  { key: 'UNREGISTERED', label: '경매 미등록' },
+  { key: 'READY', label: '경매 대기' },
+  { key: 'IN_PROGRESS', label: '경매 중' },
+  { key: 'ENDED', label: '경매 종료' },
 ]
 
 function SellerProductsPage() {
-  const [filter, setFilter] = useState<'ALL' | ProductStatus>('ALL')
+  const [filter, setFilter] = useState<'ALL' | GetListStatus>('ALL')
   const [keyword, setKeyword] = useState('')
-  const [page, setPage] = useState(0)
+  // 검색어는 서버로 나가므로 한 글자마다 보내지 않는다.
+  const debouncedKeyword = useDebouncedValue(keyword.trim())
 
-  const products = MOCK_PRODUCTS
+  const {
+    products,
+    isPending,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useProductList({
+    keyword: debouncedKeyword || undefined,
+    status: filter === 'ALL' ? undefined : filter,
+    size: PAGE_SIZE,
+  })
 
-  const visible = useMemo(() => {
-    const byStatus =
-      filter === 'ALL'
-        ? products
-        : products.filter((product) => product.status === filter)
-    const trimmed = keyword.trim()
-    if (!trimmed) return byStatus
-    return byStatus.filter((product) => product.name.includes(trimmed))
-  }, [products, filter, keyword])
+  /** 검색·필터를 걸지 않은 상태에서 비었으면 "등록한 상품이 없다"는 뜻이다. */
+  const filtered = debouncedKeyword !== '' || filter !== 'ALL'
 
-  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE))
-  // 필터·검색으로 목록이 줄면 현재 페이지가 범위를 벗어날 수 있다.
-  const safePage = Math.min(page, pageCount - 1)
-  const rows = visible.slice(
-    safePage * PAGE_SIZE,
-    safePage * PAGE_SIZE + PAGE_SIZE,
-  )
+  if (isPending) return <RoutePending />
+  if (isError && error)
+    return <RouteError error={error} reset={() => void refetch()} />
 
   return (
     <AppShell title="상품 관리" back className="max-w-[1280px]">
@@ -72,7 +82,7 @@ function SellerProductsPage() {
             상품 관리
           </h1>
           <p className="mt-2 text-[14px] font-medium text-neutral-tertiary">
-            경매에 사용할 상품과 경매 결과를 관리하세요.
+            경매에 사용할 상품과 경매 상태를 관리하세요.
           </p>
         </div>
 
@@ -84,7 +94,7 @@ function SellerProductsPage() {
         </Link>
       </div>
 
-      {products.length === 0 ? (
+      {products.length === 0 && !filtered ? (
         <div className="mt-6">
           <EmptyState
             icon={<ImageIcon className="size-8" />}
@@ -112,10 +122,7 @@ function SellerProductsPage() {
               <input
                 type="search"
                 value={keyword}
-                onChange={(event) => {
-                  setKeyword(event.target.value)
-                  setPage(0)
-                }}
+                onChange={(event) => setKeyword(event.target.value)}
                 placeholder="상품명으로 검색"
                 aria-label="상품명으로 검색"
                 className="h-10 w-full rounded-xl border bg-surface-subtle pr-4 pl-10 text-[14px] font-medium outline-none placeholder:text-neutral-muted focus-visible:border-brand-400"
@@ -123,29 +130,18 @@ function SellerProductsPage() {
             </div>
 
             <Dropdown
-              label="경매 결과 필터"
+              label="경매 상태 필터"
               value={filter}
               options={FILTERS.map((item) => ({
                 value: item.key,
                 label: item.label,
               }))}
-              onChange={(next) => {
-                setFilter(next)
-                setPage(0)
-              }}
+              onChange={setFilter}
               className="w-32 shrink-0 md:w-40"
             />
-
-            <p className="hidden w-[120px] shrink-0 text-right text-[13px] font-bold text-brand-500 md:block">
-              총 {visible.length}개
-            </p>
           </div>
 
-          <p className="mt-5 text-[13px] font-medium text-neutral-muted md:hidden">
-            총 {visible.length}개 · {PAGE_SIZE}개씩
-          </p>
-
-          {visible.length === 0 ? (
+          {products.length === 0 ? (
             <div className="mt-4">
               <EmptyState
                 title="조건에 맞는 상품이 없어요"
@@ -158,22 +154,26 @@ function SellerProductsPage() {
                * 모바일(MOB-05)은 표 대신 68 높이 행 카드다. 좁은 화면에서
                * 5열 표를 가로 스크롤시키는 것보다 훨씬 낫다.
                */}
-              <ul key={`m-${safePage}`} className="mt-2 space-y-3 md:hidden">
-                {rows.map((product, index) => {
-                  const result = PRODUCT_RESULT[product.status]
-                  const editable = product.status === 'DRAFT'
+              <ul className="mt-4 space-y-3 md:hidden">
+                {products.map((product, index) => {
+                  const status =
+                    PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
+                  const editable = canEditProduct(product.status)
 
                   return (
-                    <li key={product.id}>
+                    <li key={product.productId}>
                       {/* 상품을 누르면 그 상품의 상세로 간다 (거래 목록 아님). */}
                       <Link
                         to="/seller/products/$productId"
-                        params={{ productId: String(product.id) }}
-                        style={{ animationDelay: `${index * 30}ms` }}
+                        params={{ productId: String(product.productId) }}
+                        style={{
+                          animationDelay: `${(index % PAGE_SIZE) * 30}ms`,
+                        }}
                         className="animate-rise ease-soft flex items-center gap-4 rounded-2xl border bg-card p-3.5 transition-all duration-150 active:scale-[0.99]"
                       >
                         <ProductThumbnail
-                          name={product.name}
+                          name={product.name ?? ''}
+                          src={product.imageUrl}
                           size={200}
                           iconClassName="size-6"
                           className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
@@ -184,15 +184,17 @@ function SellerProductsPage() {
                             {product.name}
                           </span>
                           <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
-                            {product.category} · {formatDate(product.createdAt)}
+                            {product.createdAt
+                              ? formatDate(product.createdAt)
+                              : '-'}
                           </span>
                           <span
                             className={cn(
                               'mt-2 flex h-6 w-[72px] items-center justify-center rounded-full text-[11px] font-bold',
-                              result.className,
+                              status.className,
                             )}
                           >
-                            {result.label}
+                            {status.label}
                           </span>
                         </span>
 
@@ -216,29 +218,32 @@ function SellerProductsPage() {
                     <span>상품</span>
                     <span />
                     <span>등록일</span>
-                    <span>경매 결과</span>
+                    <span>경매 상태</span>
                     <span className="text-center">관리</span>
                   </div>
 
-                  {/* key 로 remount 시켜 페이지를 넘길 때마다 행이 다시 올라온다. */}
                   {/* 행이 붙어 보이지 않도록 높이와 간격을 함께 키운다. */}
-                  <ul key={safePage} className="space-y-1 p-3">
-                    {rows.map((product, index) => {
-                      const result = PRODUCT_RESULT[product.status]
-                      // 경매를 거친 상품은 수정할 수 없다. 결과만 볼 수 있다.
-                      const editable = product.status === 'DRAFT'
+                  <ul className="space-y-1 p-3">
+                    {products.map((product, index) => {
+                      const status =
+                        PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
+                      // 경매가 시작된 상품은 수정할 수 없다. 상태만 볼 수 있다.
+                      const editable = canEditProduct(product.status)
 
                       return (
                         <li
-                          key={product.id}
-                          style={{ animationDelay: `${index * 30}ms` }}
+                          key={product.productId}
+                          style={{
+                            animationDelay: `${(index % PAGE_SIZE) * 30}ms`,
+                          }}
                           className={cn(
                             'animate-rise grid h-[84px] items-center rounded-2xl pr-5 pl-4 transition-colors duration-150 hover:bg-surface-subtle',
                             TABLE_COLS,
                           )}
                         >
                           <ProductThumbnail
-                            name={product.name}
+                            name={product.name ?? ''}
+                            src={product.imageUrl}
                             size={200}
                             iconClassName="size-6"
                             className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
@@ -247,27 +252,26 @@ function SellerProductsPage() {
                           <span className="min-w-0">
                             <Link
                               to="/seller/products/$productId"
-                              params={{ productId: String(product.id) }}
+                              params={{ productId: String(product.productId) }}
                               className="block truncate text-[15px] font-bold text-foreground hover:text-brand-500 hover:underline"
                             >
                               {product.name}
                             </Link>
-                            <span className="mt-1 block truncate text-[13px] font-medium text-neutral-tertiary">
-                              {product.category}
-                            </span>
                           </span>
 
                           <span className="text-[13px] font-medium tabular-nums text-neutral-tertiary">
-                            {formatDate(product.createdAt)}
+                            {product.createdAt
+                              ? formatDate(product.createdAt)
+                              : '-'}
                           </span>
 
                           <span
                             className={cn(
                               'flex h-8 w-28 items-center justify-center rounded-2xl text-[12px] font-bold',
-                              result.className,
+                              status.className,
                             )}
                           >
-                            {result.label}
+                            {status.label}
                           </span>
 
                           <Link
@@ -276,7 +280,7 @@ function SellerProductsPage() {
                                 ? '/seller/products/$productId/edit'
                                 : '/seller/products/$productId'
                             }
-                            params={{ productId: String(product.id) }}
+                            params={{ productId: String(product.productId) }}
                             className={cn(
                               'ease-soft flex h-10 items-center justify-center rounded-xl border bg-card text-[13px] font-bold transition-all duration-150 active:scale-95',
                               editable
@@ -297,14 +301,21 @@ function SellerProductsPage() {
                 상품은 한 번의 경매에만 사용할 수 있어요.
               </p>
 
-              {/* 페이지 넘김은 언제나 목록 맨 아래 */}
-              <Pager
-                page={safePage}
-                pageCount={pageCount}
-                onChange={setPage}
-                size={40}
-                className="mt-5 md:mt-8"
-              />
+              {/* 커서 페이지네이션이라 다음 쪽이 있을 때만 이어 붙인다. */}
+              {hasNextPage && (
+                <div className="mt-5 flex justify-center md:mt-8">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    className="h-11 w-full rounded-xl md:w-40"
+                    disabled={isFetchingNextPage}
+                    onClick={() => void fetchNextPage()}
+                  >
+                    {isFetchingNextPage ? '불러오는 중…' : '더 보기'}
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </>
