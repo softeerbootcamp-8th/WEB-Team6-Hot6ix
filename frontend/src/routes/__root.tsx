@@ -7,15 +7,23 @@ import { OfflineBanner } from '@/components/offline-banner'
 import { Toaster } from '@/components/ui/toaster'
 import { devToolsStore, useDevTools } from '@/lib/dev-tools'
 import { axiosInstance } from '@/api/mutator/custom-instance'
-import { sessionStore, type SessionUser } from '@/lib/session'
+import { sessionStore } from '@/lib/session'
 
 interface RouterContext {
   queryClient: QueryClient
 }
 
+/** GET /api/v1/users/me 응답 DTO. 서버 UserMeResponseDto 와 필드를 맞춘다. */
+interface UserMeResponseDto {
+  userId: number
+  nickname: string
+  email: string
+  profileImageUrl: string | null
+}
+
 interface MeResponse {
   success: boolean
-  data: SessionUser
+  data: UserMeResponseDto
 }
 
 // devtools 는 프로덕션 번들에서 제외되도록 lazy 로딩한다.
@@ -38,7 +46,18 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         // 로그아웃 시 queryClient.removeQueries({ queryKey: ['session'] }) 로 초기화한다.
         staleTime: Infinity,
       })
-      sessionStore.signIn(data)
+      // 서버 DTO → SessionUser 명시 매핑.
+      // phone·sellerProfile 은 /me 가 아직 반환하지 않으므로 기존 세션값을 유지한다.
+      // 백엔드가 이 필드들을 /me 에 추가하면 data.phone / data.sellerProfile 로 교체한다.
+      const prev = sessionStore.getState()
+      const prevUser = prev.status === 'member' ? prev.user : null
+      sessionStore.signIn({
+        id: data.userId,
+        nickname: data.nickname,
+        kakaoEmail: data.email,
+        phone: prevUser?.phone ?? null,
+        sellerProfile: prevUser?.sellerProfile ?? null,
+      })
     } catch {
       // 401 등 인증 실패 → 게스트 유지. 앱 로드를 막지 않는다.
       sessionStore.signOut()
