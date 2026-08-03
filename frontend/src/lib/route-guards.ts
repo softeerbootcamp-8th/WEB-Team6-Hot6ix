@@ -19,11 +19,3 @@ export function requireMember({ location }: { location: { href: string } }): {
 
   return { user: session.user }
 }
-
-/**
- * 판매자 프로필 미등록은 리다이렉트하지 않는다.
- * Figma 에 전용 안내 화면이 있어서 해당 페이지에서 상태로 처리한다.
- */
-export function hasSellerProfile(user: SessionUser): boolean {
-  return user.sellerProfile !== null
-}

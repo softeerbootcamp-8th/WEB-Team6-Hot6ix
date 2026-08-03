@@ -6,7 +6,6 @@ import { cn } from '@/lib/utils'
 import { devFlagsStore, useDevFlags } from '@/lib/dev-flags'
 import {
   MOCK_MEMBER,
-  MOCK_SELLER,
   sessionStore,
   useSession,
   type Session,
@@ -18,7 +17,8 @@ import {
  * 화면이 역할(게스트·회원·판매자)에 따라 갈리고, API 를 붙일 때는 로딩·실패
  * 상태도 봐야 한다. 로그인 API 도 백엔드도 없이 그 상황을 만들 수 있게 둔다.
  *
- * - 세션: 게스트 / 회원 / 판매자 전환 (라우트 가드 재실행까지)
+ * - 세션: 게스트 / 회원 전환 (라우트 가드 재실행까지). 판매자 여부는 서버가
+ *   `GET /seller-profiles/me` 로 정하므로 여기서 흉내 내지 않는다.
  * - 응답 지연: 모든 API 요청에 지연을 걸어 로딩 UI 확인
  * - 실패율: 요청을 강제로 실패시켜 에러 UI·재시도 확인
  *
@@ -31,11 +31,6 @@ const SESSIONS = [
     key: 'member',
     label: '회원',
     apply: () => sessionStore.signIn(MOCK_MEMBER),
-  },
-  {
-    key: 'seller',
-    label: '판매자',
-    apply: () => sessionStore.signIn(MOCK_SELLER),
   },
 ] as const
 
@@ -52,8 +47,7 @@ const FAIL_RATES = [
 ]
 
 function currentKey(session: Session) {
-  if (session.status === 'guest') return 'guest'
-  return session.user.sellerProfile ? 'seller' : 'member'
+  return session.status === 'guest' ? 'guest' : 'member'
 }
 
 export function DevPanel() {

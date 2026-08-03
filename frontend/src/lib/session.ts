@@ -1,24 +1,17 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * 목업 세션 스토어.
+ * 로그인 세션 스토어.
  *
  * 실제 인증은 서버 세션 + HttpOnly 쿠키로 처리하므로, 프론트가 토큰을 들고
  * 있지 않는다. 여기 상태는 **화면 분기용 힌트**일 뿐이고 권한의 근거가 아니다.
- * API 연동 시 이 파일은 `GET /api/v1/users/me` 결과를 담는 얇은 캐시로 바뀐다.
+ * 값은 `__root.tsx` 가 앱 로드 때 `GET /api/v1/users/me` 로 채운다.
  *
  * React 밖(라우트 `beforeLoad`)에서도 읽어야 해서 모듈 레벨 스토어로 둔다.
+ *
+ * **판매자 프로필은 여기 두지 않는다.** 서버 상태라 TanStack Query
+ * (`useGetMyProfile`)가 소스이고, 여기 복사해 두면 출처가 둘이 된다.
  */
-
-export interface SellerProfile {
-  shopName: string
-  snsUrl: string
-  contact: string
-  /** 프로필 카드에 한 줄로 노출되는 가게 소개. */
-  introduction: string
-  /** 전화번호 인증까지 마친 판매자. 카드에 "인증 완료" 배지가 붙는다. */
-  verified: boolean
-}
 
 export interface SessionUser {
   id: number
@@ -26,7 +19,6 @@ export interface SessionUser {
   kakaoEmail: string
   /** 전화번호 인증을 마쳐야 입찰할 수 있다. */
   phone: string | null
-  sellerProfile: SellerProfile | null
 }
 
 export type Session =
@@ -42,19 +34,6 @@ export const MOCK_MEMBER: SessionUser = {
   nickname: '기승민',
   kakaoEmail: 'seungmin@kakao.com',
   phone: '010-1234-5678',
-  sellerProfile: null,
-}
-
-/** 판매자 프로필까지 등록한 상태. */
-export const MOCK_SELLER: SessionUser = {
-  ...MOCK_MEMBER,
-  sellerProfile: {
-    shopName: '승민이네 빈티지',
-    snsUrl: 'https://instagram.com/upbid',
-    contact: '010-1234-5678',
-    introduction: '희소성 있는 스니커즈를 엄선해 소개합니다.',
-    verified: true,
-  },
 }
 
 function read(): Session {
