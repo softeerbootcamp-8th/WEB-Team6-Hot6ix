@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auth.controller;
 import com.hot6ix.upbid.domain.auth.dto.AuthLoginResponseDto;
 import com.hot6ix.upbid.domain.auth.service.AuthService;
 import com.hot6ix.upbid.global.session.SessionManager;
+import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 
+@Hidden
 @RestController
 @RequestMapping("/api/v1/oauth")
 @RequiredArgsConstructor
@@ -34,6 +36,6 @@ public class OAuthController {
         AuthLoginResponseDto login = authService.login(code);
         sessionManager.create(request, login.userId());
 
-        response.sendRedirect(frontendUrl + (login.isNewUser() ? "/onboarding" : "/"));
+        response.sendRedirect(frontendUrl + "/rooms");
     }
 }

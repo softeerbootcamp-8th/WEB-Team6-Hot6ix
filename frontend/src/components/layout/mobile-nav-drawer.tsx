@@ -1,4 +1,5 @@
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronRight,
   Gavel,
@@ -14,6 +15,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ProfilePhoto } from '@/components/profile-photo'
 import { cn } from '@/lib/utils'
 import { sessionStore, useSession } from '@/lib/session'
+import { useLogout } from '@/api/generated/인증/인증'
 
 /**
  * 모바일 섹션 이동 서랍.
@@ -60,9 +62,20 @@ const NAV_ITEMS: {
 export function MobileNavDrawer() {
   const [open, setOpen] = useState(false)
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const session = useSession()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
+  })
+  const { mutate: logout, isPending: isLoggingOut } = useLogout({
+    mutation: {
+      onSuccess: () => {
+        queryClient.removeQueries({ queryKey: ['session'] })
+        sessionStore.signOut()
+        setOpen(false)
+        void navigate({ to: '/' })
+      },
+    },
   })
 
   // 화면을 옮기면 서랍을 닫는다. 열어둔 채로 남으면 뒤 화면을 가린다.
@@ -211,17 +224,12 @@ export function MobileNavDrawer() {
 
               <button
                 type="button"
-                onClick={() => {
-                  // TODO: POST /api/v1/auth/logout 연동 (현재 목업)
-                  setOpen(false)
-                  sessionStore.signOut()
-                  // 세션만 비우면 지금 화면이 그대로 남는다. 랜딩으로 보낸다.
-                  void navigate({ to: '/' })
-                }}
-                className="ease-soft mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border bg-card text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-[0.98]"
+                onClick={() => logout()}
+                disabled={isLoggingOut}
+                className="ease-soft mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border bg-card text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-[0.98] disabled:opacity-60"
               >
                 <LogOut aria-hidden className="size-4" />
-                로그아웃
+                {isLoggingOut ? '로그아웃 중…' : '로그아웃'}
               </button>
             </div>
           </nav>
