@@ -124,6 +124,7 @@ jobs:
             NCP_SERVICE_ID='${{ secrets.NCP_SERVICE_ID }}'
             NCP_SENDER_PHONE='${{ secrets.NCP_SENDER_PHONE }}'
             FRONTEND_URL='${{ secrets.FRONTEND_URL }}'
+            SLACK_WEBHOOK_URL='${{ secrets.SLACK_WEBHOOK_URL }}'
             EOF
             docker compose pull app
             docker compose up -d
