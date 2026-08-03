@@ -9,6 +9,7 @@ import { RouteError, RoutePending } from '@/components/route-states'
 import { useGetCandidates } from '@/api/generated/낙찰-후보/낙찰-후보'
 import { useGetDetail1 } from '@/api/generated/경매-물품/경매-물품'
 import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
+import { useGetProfile } from '@/api/generated/판매자-프로필/판매자-프로필'
 import {
   CANDIDATE_PAGE_SIZE,
   toCandidatePage,
@@ -129,6 +130,18 @@ function TradeDetailPage() {
       ) ?? null,
     [dealsQuery.data, auctionItemId],
   )
+
+  /*
+   * 구매 건에서만 판매자 연락처를 조회한다. 판매 건의 sellerProfileId 는 내
+   * 프로필이라 부를 이유가 없다. 거래 목록에는 연락처가 실려 오지 않는다 —
+   * 거래와 무관한 화면까지 개인 정보를 들고 다니지 않기 위한 설계다.
+   */
+  const sellerProfileId =
+    deal?.role === 'BUYER' ? (deal.sellerProfileId ?? null) : null
+  const sellerProfileQuery = useGetProfile(sellerProfileId ?? 0, {
+    query: { enabled: sellerProfileId != null },
+  })
+  const sellerPhone = sellerProfileQuery.data?.data?.storePhoneNumber ?? null
 
   /*
    * 내 순위는 목록 바깥으로 온다. 7위가 1페이지를 받아도 값이 있어서, 첫 응답을
@@ -273,11 +286,23 @@ function TradeDetailPage() {
                 <p className="text-[12px] font-semibold text-neutral-tertiary">
                   판매자 정보
                 </p>
-                {/* 연락처는 sellerProfileId 로 따로 조회해야 한다 (별도 작업). */}
                 <div className="mt-2 flex items-baseline justify-between gap-3">
                   <p className="min-w-0 truncate text-[15px] font-bold text-foreground">
                     {deal?.partnerNickname ?? '—'}
                   </p>
+
+                  {/*
+                   * 연락처는 보조 정보다. 프로필 조회가 늦거나 실패해도 순위
+                   * 패널은 그대로 보여야 하므로 값이 있을 때만 줄을 채운다.
+                   */}
+                  {sellerPhone && (
+                    <a
+                      href={`tel:${sellerPhone}`}
+                      className="shrink-0 text-[14px] font-semibold text-brand-500 hover:underline"
+                    >
+                      {sellerPhone}
+                    </a>
+                  )}
                 </div>
               </>
             )}
