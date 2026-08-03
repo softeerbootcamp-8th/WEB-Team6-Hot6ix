@@ -1263,11 +1263,15 @@ function ItemManagement({
       <ItemPickerModal
         open={picking}
         onClose={() => onPickingChange(false)}
-        products={products}
-        onConfirm={(productIds) => {
-          // TODO: POST /api/v1/auction-rooms/{id}/items 연동 (현재 목업)
-          const names = productIds
-            .map((id) => products.find((product) => product.id === id)?.name)
+        onConfirm={(picked) => {
+          // TODO: POST /api/v1/auction-rooms/{id}/auction-items/bulk 연동 (현재 목업)
+          // 모달은 이미 실제 상품 목록을 조회하지만, 이 화면의 물품 목록은 아직 목업이라
+          // 고른 상품의 이름을 목업에서 찾아 붙인다. 목록까지 실 API로 바꿀 때 함께 없앤다.
+          const names = picked
+            .map(
+              (item) =>
+                products.find((product) => product.id === item.productId)?.name,
+            )
             .filter((name): name is string => name !== undefined)
           onAdd(names)
           toast.success(`물품 ${names.length}개를 추가했어요`)
