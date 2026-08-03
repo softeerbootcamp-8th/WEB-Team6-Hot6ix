@@ -13,6 +13,7 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -87,6 +88,11 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
                 .build());
     }
 
+    private void saveBid(AuctionItem item, User bidder, Long amount) {
+        bidRepository.saveAndFlush(Bid.builder()
+                .auctionItem(item).bidder(bidder).amount(amount).build());
+    }
+
     @Test
     @DisplayName("같은 물품에 같은 금액으로 두 번 저장하면 unique 제약에 걸린다")
     void rejectsSameAmountOnSameItem() {
@@ -114,5 +120,85 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
                 .auctionItem(newAuctionItem("다른물품")).bidder(bidder).amount(12_000L).build());
 
         assertThat(saved.getBidId()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("한 사람이 여러 번 입찰해도 그 사람의 최고가로 한 줄만 나온다")
+    void findTopBiddersKeepsHighestPerBidder() {
+
+        User bidder = newUser("bidder@hot6ix.com", "입찰자");
+        saveBid(auctionItem, bidder, 11_000L);
+        saveBid(auctionItem, bidder, 13_000L);
+
+        List<TopBidderProjection> rows =
+                bidRepository.findTopBidders(List.of(auctionItem.getAuctionItemId()), 3);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).getRankNo()).isEqualTo(1);
+        assertThat(rows.get(0).getNickname()).isEqualTo("입찰자");
+        assertThat(rows.get(0).getAmount()).isEqualTo(13_000L);
+    }
+
+    @Test
+    @DisplayName("금액이 높은 순으로 limit 만큼만 나온다")
+    void findTopBiddersLimitsToTop3() {
+
+        saveBid(auctionItem, newUser("a@hot6ix.com", "A"), 11_000L);
+        saveBid(auctionItem, newUser("b@hot6ix.com", "B"), 14_000L);
+        saveBid(auctionItem, newUser("c@hot6ix.com", "C"), 12_000L);
+        saveBid(auctionItem, newUser("d@hot6ix.com", "D"), 13_000L);
+
+        List<TopBidderProjection> rows =
+                bidRepository.findTopBidders(List.of(auctionItem.getAuctionItemId()), 3);
+
+        assertThat(rows).extracting(TopBidderProjection::getNickname)
+                .containsExactly("B", "D", "C");
+        assertThat(rows).extracting(TopBidderProjection::getRankNo)
+                .containsExactly(1, 2, 3);
+    }
+
+    @Test
+    @DisplayName("탈퇴한 회원은 순위에서 빠지고 순위 번호에 구멍이 생기지 않는다")
+    void findTopBiddersExcludesDeletedUser() {
+
+        User left = newUser("left@hot6ix.com", "탈퇴자");
+        left.softDelete(LocalDateTime.of(2026, 7, 30, 12, 0));
+
+        saveBid(auctionItem, left, 15_000L);
+        saveBid(auctionItem, newUser("stay@hot6ix.com", "잔류자"), 12_000L);
+        entityManager.flush();
+
+        List<TopBidderProjection> rows =
+                bidRepository.findTopBidders(List.of(auctionItem.getAuctionItemId()), 3);
+
+        assertThat(rows).extracting(TopBidderProjection::getNickname)
+                .containsExactly("잔류자");
+        assertThat(rows.get(0).getRankNo()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("물품 여러 개를 한 번에 조회하면 물품마다 순위가 따로 매겨진다")
+    void findTopBiddersPartitionsByItem() {
+
+        AuctionItem other = newAuctionItem("키링");
+        User bidder = newUser("bidder@hot6ix.com", "입찰자");
+
+        saveBid(auctionItem, bidder, 11_000L);
+        saveBid(other, bidder, 20_000L);
+
+        List<TopBidderProjection> rows = bidRepository.findTopBidders(
+                List.of(auctionItem.getAuctionItemId(), other.getAuctionItemId()), 3);
+
+        assertThat(rows).hasSize(2);
+        assertThat(rows).allSatisfy(row -> assertThat(row.getRankNo()).isEqualTo(1));
+        assertThat(rows).extracting(TopBidderProjection::getAmount)
+                .containsExactlyInAnyOrder(11_000L, 20_000L);
+    }
+
+    @Test
+    @DisplayName("물품 ID 목록이 비어 있으면 빈 목록을 준다")
+    void findTopBiddersReturnsEmptyForEmptyIds() {
+
+        assertThat(bidRepository.findTopBidders(List.of(), 3)).isEmpty();
     }
 }
