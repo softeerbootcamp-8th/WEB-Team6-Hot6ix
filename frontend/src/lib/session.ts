@@ -57,17 +57,37 @@ export const MOCK_SELLER: SessionUser = {
   },
 }
 
-function read(): Session {
-  if (typeof window === 'undefined') return GUEST
+/** 저장된 세션. 한 번도 저장한 적이 없으면 `null` (게스트로 저장한 것과 구분한다). */
+function read(): Session | null {
+  if (typeof window === 'undefined') return null
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Session) : GUEST
+    return raw ? (JSON.parse(raw) as Session) : null
   } catch {
-    return GUEST
+    return null
   }
 }
 
-let current: Session = read()
+/**
+ * 저장된 세션이 없을 때 무엇으로 시작할지.
+ *
+ * 시연용으로 `VITE_DEMO_AUTOLOGIN=on` 이면 목업 판매자로 시작한다. 프로덕션
+ * 빌드에는 DEV 패널이 없어서 로그인할 방법이 사실상 없고, 그러면 내 경매방·
+ * 거래 내역·판매자 화면이 전부 `/` 로 튕긴다.
+ *
+ * **저장된 값이 아예 없을 때만** 적용한다. 로그아웃을 누르면 게스트 상태가
+ * 저장되므로 새로고침해도 다시 로그인되지 않는다 — 게스트 화면도 보여줄 수 있다.
+ *
+ * 실제 로그인이 붙으면 이 함수와 플래그를 지운다.
+ */
+function initialSession(): Session {
+  if (import.meta.env.VITE_DEMO_AUTOLOGIN === 'on') {
+    return { status: 'member', user: MOCK_SELLER }
+  }
+  return GUEST
+}
+
+let current: Session = read() ?? initialSession()
 const listeners = new Set<() => void>()
 
 function emit() {
