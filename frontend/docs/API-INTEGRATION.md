@@ -5,12 +5,13 @@
 
 ### 이미 연동된 화면
 
-| 화면                                          | 쓰는 API                                      |
-| --------------------------------------------- | --------------------------------------------- |
-| `/seller/rooms/$roomId/created` 공유 링크·QR  | `GET /api/v1/auction-rooms/{roomId}/share`    |
-| 라이브 경매방 공유 패널(`SharePanel`)         | 〃                                            |
-| `/join/$shareCode` 방 정보 (물품 목록은 목업) | `GET /api/v1/auction-rooms/share/{shareCode}` |
-| `/trades` 거래 내역                           | `GET /api/v1/deals`                           |
+| 화면                                          | 쓰는 API                                                                            |
+| --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `/seller/rooms/$roomId/created` 공유 링크·QR  | `GET /api/v1/auction-rooms/{roomId}/share`                                          |
+| 라이브 경매방 공유 패널(`SharePanel`)         | 〃                                                                                  |
+| `/join/$shareCode` 방 정보 (물품 목록은 목업) | `GET /api/v1/auction-rooms/share/{shareCode}`                                       |
+| `/trades` 거래 내역                           | `GET /api/v1/deals`                                                                 |
+| `/trades/$itemId` 낙찰 후보·최종 순위         | `GET /api/v1/auction-items/{id}/deal-candidates` + `GET /api/v1/auction-items/{id}` |
 
 QR 은 서버가 이미지를 만들지 않습니다. 서버는 `shareUrl` 문자열만 주고,
 `components/qr-code.tsx`(화면) 와 `lib/qr.ts`(PNG 저장)가 그립니다.
@@ -61,17 +62,16 @@ const rooms = data ?? []
 
 ### 화면 ↔ 목업 대응표
 
-| 목업                | 쓰는 화면                                                            | 성격                        |
-| ------------------- | -------------------------------------------------------------------- | --------------------------- |
-| `MOCK_ROOMS`        | `/rooms`, `/rooms/$roomId`(요약)                                     | 경매방 목록                 |
-| `MOCK_ROOM_DETAIL`  | `/rooms/$roomId`, 물품 상세, `/join/$shareCode`(물품 목록만)         | 방 상세 + 물품 배열         |
-| `MOCK_EMPTY_ROOM`   | `/rooms/7`                                                           | 물품 0개인 방(빈 상태 확인) |
-| `MOCK_ROOM_EVENTS`  | 라이브 이벤트 피드                                                   | 실시간으로 대체될 값        |
-| `MOCK_PRODUCTS`     | `/seller`, `/seller/products`, 물품 추가 모달                        | 판매자 상품                 |
-| `MOCK_TRADES`       | `/trades/$itemId`, 상품 상세, 종료된 경매방 (`/trades` 는 연동 완료) | 거래                        |
-| `MOCK_CANDIDATES`   | `/trades/$itemId` 최종 순위·낙찰 후보                                | 순위표                      |
-| `themedRoomItems()` | 방 제목에 맞춰 물품 이름을 바꾸는 목업 전용 함수                     | **연동 시 삭제**            |
-| `mocks/images.ts`   | 상품·프로필 사진                                                     | 서버 `imageUrl` 로 교체     |
+| 목업                | 쓰는 화면                                                    | 성격                        |
+| ------------------- | ------------------------------------------------------------ | --------------------------- |
+| `MOCK_ROOMS`        | `/rooms`, `/rooms/$roomId`(요약)                             | 경매방 목록                 |
+| `MOCK_ROOM_DETAIL`  | `/rooms/$roomId`, 물품 상세, `/join/$shareCode`(물품 목록만) | 방 상세 + 물품 배열         |
+| `MOCK_EMPTY_ROOM`   | `/rooms/7`                                                   | 물품 0개인 방(빈 상태 확인) |
+| `MOCK_ROOM_EVENTS`  | 라이브 이벤트 피드                                           | 실시간으로 대체될 값        |
+| `MOCK_PRODUCTS`     | `/seller`, `/seller/products`, 물품 추가 모달                | 판매자 상품                 |
+| `MOCK_TRADES`       | 상품 상세, 종료된 경매방 (`/trades` 는 연동 완료)            | 거래                        |
+| `themedRoomItems()` | 방 제목에 맞춰 물품 이름을 바꾸는 목업 전용 함수             | **연동 시 삭제**            |
+| `mocks/images.ts`   | 상품·프로필 사진                                             | 서버 `imageUrl` 로 교체     |
 
 목업이 하나도 남지 않으면 `src/mocks/` 폴더와 `src/lib/session.ts` 의
 `MOCK_MEMBER`/`MOCK_SELLER`, `src/components/dev/` 를 통째로 지웁니다.

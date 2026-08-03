@@ -127,16 +127,3 @@ export interface TradeSummary {
   partnerPhone: string
   closedAt: string
 }
-
-export type CandidateStatus = 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'WAITING'
-
-export interface DealCandidate {
-  id: number
-  rank: number
-  nickname: string
-  phone: string
-  amount: number
-  status: CandidateStatus
-  /** 구매자 화면에서 내 순위를 짚어주기 위한 값. 서버가 내려준다. */
-  isMe?: boolean
-}

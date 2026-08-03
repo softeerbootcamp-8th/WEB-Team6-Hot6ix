@@ -2,7 +2,6 @@ import type {
   AuctionItemDetail,
   AuctionRoomDetail,
   AuctionRoomSummary,
-  DealCandidate,
   Product,
   RoomEvent,
   TradeSummary,
@@ -673,114 +672,5 @@ export const MOCK_TRADES: TradeSummary[] = [
     partnerNickname: '유효한 낙찰자 없음',
     partnerPhone: '-',
     closedAt: '2026-06-02',
-  },
-]
-
-/**
- * 낙찰 후보 / 최종 순위.
- *
- * Figma `WEB-03 · 판매자 · 거래 상세`(1~5위)와 `WEB-02 · 구매자 · 거래 상세`
- * (6~10위, 2페이지)에 그려진 값을 그대로 옮겼다. 두 화면 모두 5명씩 끊어
- * 보여주고 하단에 "총 12명 · 5명씩"이 붙으므로 12명을 채워둔다.
- *
- * 1위는 거래 실패해 2위로 승계된 상태다. 구매자 화면의 "나"는 7위다.
- */
-export const MOCK_CANDIDATES: DealCandidate[] = [
-  {
-    id: 1,
-    rank: 1,
-    nickname: '스니커홀릭',
-    phone: '010-1234-5678',
-    amount: 85000,
-    status: 'FAILED',
-  },
-  {
-    id: 2,
-    rank: 2,
-    nickname: '조던매니아',
-    phone: '010-2345-6789',
-    amount: 82000,
-    status: 'IN_PROGRESS',
-  },
-  {
-    id: 3,
-    rank: 3,
-    nickname: '수집러버',
-    phone: '010-3456-7890',
-    amount: 80000,
-    status: 'WAITING',
-  },
-  {
-    id: 4,
-    rank: 4,
-    nickname: '발망러버',
-    phone: '010-4567-8901',
-    amount: 78000,
-    status: 'WAITING',
-  },
-  {
-    id: 5,
-    rank: 5,
-    nickname: '킥스타',
-    phone: '010-5678-9012',
-    amount: 75000,
-    status: 'WAITING',
-  },
-  {
-    id: 6,
-    rank: 6,
-    nickname: '슈프림홀릭',
-    phone: '010-6789-0123',
-    amount: 68000,
-    status: 'WAITING',
-  },
-  {
-    id: 7,
-    rank: 7,
-    nickname: '빈티지러버',
-    phone: '010-7890-1234',
-    amount: 66000,
-    status: 'WAITING',
-    isMe: true,
-  },
-  {
-    id: 8,
-    rank: 8,
-    nickname: '조던킥스',
-    phone: '010-8901-2345',
-    amount: 64000,
-    status: 'WAITING',
-  },
-  {
-    id: 9,
-    rank: 9,
-    nickname: '데일리슈',
-    phone: '010-9012-3456',
-    amount: 62000,
-    status: 'WAITING',
-  },
-  {
-    id: 10,
-    rank: 10,
-    nickname: '오프화이트',
-    phone: '010-0123-4567',
-    amount: 60000,
-    status: 'WAITING',
-  },
-  {
-    id: 11,
-    rank: 11,
-    nickname: '스트릿핏',
-    phone: '010-1357-2468',
-    amount: 58000,
-    status: 'WAITING',
-  },
-  {
-    id: 12,
-    rank: 12,
-    nickname: '주말경매러',
-    phone: '010-2468-1357',
-    amount: 56000,
-    status: 'WAITING',
   },
 ]

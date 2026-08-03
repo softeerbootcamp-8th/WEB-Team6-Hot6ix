@@ -1,16 +1,25 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState, type ReactNode } from 'react'
+import { keepPreviousData } from '@tanstack/react-query'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { EmptyState } from '@/components/page-header'
-import { MOCK_CANDIDATES, MOCK_ROOM_DETAIL, MOCK_TRADES } from '@/mocks/data'
+import { RouteError, RoutePending } from '@/components/route-states'
+import { useGetCandidates } from '@/api/generated/낙찰-후보/낙찰-후보'
+import { useGetDetail1 } from '@/api/generated/경매-물품/경매-물품'
+import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
+import {
+  CANDIDATE_PAGE_SIZE,
+  toCandidatePage,
+  type CandidateStatus,
+} from '@/features/trades/adapt-candidate'
+import { toDeals } from '@/features/trades/adapt-deal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Pager } from '@/components/pager'
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
 import { requireMember } from '@/lib/route-guards'
-import type { CandidateStatus, DealCandidate } from '@/mocks/types'
 
 /**
  * 거래 상세.
@@ -28,8 +37,33 @@ export const Route = createFileRoute('/trades/$itemId')({
   component: TradeDetailPage,
 })
 
-/** Figma 한 페이지에 그려진 행 수. 하단 "총 N명 · 5명씩" 문구와 같은 값이다. */
-const PAGE_SIZE = 5
+/**
+ * 접근할 수 없는 물품은 장애가 아니라 안내다. 서버가 상태로 구분해 주므로
+ * `RouteError` 로 날리지 않고 이유를 그대로 알려준다.
+ */
+function toAccessNotice(
+  status: number | undefined,
+): { title: string; description: string } | null {
+  switch (status) {
+    case 403:
+      return {
+        title: '내 거래가 아니에요',
+        description: '이 물품의 판매자나 낙찰 후보만 볼 수 있어요.',
+      }
+    case 409:
+      return {
+        title: '아직 마감되지 않은 물품이에요',
+        description: '경매가 끝나면 낙찰 후보를 확인할 수 있어요.',
+      }
+    case 404:
+      return {
+        title: '거래를 찾을 수 없어요',
+        description: '삭제되었거나 접근할 수 없는 거래입니다.',
+      }
+    default:
+      return null
+  }
+}
 
 /**
  * 상태색.
@@ -61,42 +95,89 @@ const CANDIDATE_META: Record<CandidateStatus, { label: string; tone: Tone }> = {
 
 function TradeDetailPage() {
   const { itemId } = Route.useParams()
+  const auctionItemId = Number(itemId)
 
-  const trade = MOCK_TRADES.find(
-    (candidate) => String(candidate.auctionItemId) === itemId,
-  )
-  const item = MOCK_ROOM_DETAIL.items.find(
-    (candidate) => String(candidate.id) === itemId,
-  )
-
-  const [candidates, setCandidates] = useState<DealCandidate[]>(MOCK_CANDIDATES)
+  const [page, setPage] = useState(0)
+  // myRank 로 옮기는 건 한 번뿐이다. 그 뒤 사용자가 넘긴 페이지를 되돌리면 안 된다.
+  const [jumpedToMyPage, setJumpedToMyPage] = useState(false)
   const [pendingAction, setPendingAction] = useState<
     'complete' | 'fail' | null
   >(null)
 
-  const me = candidates.find((candidate) => candidate.isMe) ?? null
-  const current =
-    candidates.find((candidate) => candidate.status === 'IN_PROGRESS') ?? null
+  const candidatesQuery = useGetCandidates(
+    auctionItemId,
+    { page },
+    // 페이지를 넘길 때 표가 빈 상태로 깜빡이지 않게 이전 페이지를 잡아 둔다.
+    { query: { placeholderData: keepPreviousData } },
+  )
+  const itemQuery = useGetDetail1(auctionItemId)
+  /*
+   * 물품 하나의 거래 요약을 주는 endpoint 가 없어 목록을 다시 쓴다. 쿼리 키가
+   * 거래 내역 화면과 같아서, 목록에서 들어오면 캐시를 그대로 쓰고 요청이 없다.
+   */
+  const dealsQuery = useGetDeals()
 
-  /** 승계를 기다리는 바로 다음 후보. 이 사람만 "차순위"로 표시한다. */
-  const nextInLine =
-    candidates.find(
-      (candidate) =>
-        candidate.status === 'WAITING' &&
-        (!current || candidate.rank > current.rank),
-    ) ?? null
-
-  // 구매자는 내 순위가 있는 페이지부터 본다.
-  const initialPage = me ? Math.floor((me.rank - 1) / PAGE_SIZE) : 0
-  const [page, setPage] = useState(initialPage)
-
-  const pageCount = Math.max(1, Math.ceil(candidates.length / PAGE_SIZE))
-  const visible = useMemo(
-    () => candidates.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE),
-    [candidates, page],
+  const list = useMemo(
+    () => toCandidatePage(candidatesQuery.data?.data),
+    [candidatesQuery.data],
+  )
+  const item = itemQuery.data?.data
+  const deal = useMemo(
+    () =>
+      toDeals(dealsQuery.data?.data).find(
+        (row) => row.auctionItemId === auctionItemId,
+      ) ?? null,
+    [dealsQuery.data, auctionItemId],
   )
 
-  if (!trade) {
+  /*
+   * 내 순위는 목록 바깥으로 온다. 7위가 1페이지를 받아도 값이 있어서, 첫 응답을
+   * 보고 내 페이지로 한 번 옮길 수 있다.
+   */
+  useEffect(() => {
+    if (jumpedToMyPage || list.myRank == null) return
+
+    setJumpedToMyPage(true)
+    const target = Math.floor((list.myRank - 1) / CANDIDATE_PAGE_SIZE)
+    if (target !== page) setPage(target)
+  }, [jumpedToMyPage, list.myRank, page])
+
+  const current =
+    list.rows.find((row) => row.dealStatus === 'IN_PROGRESS') ?? null
+
+  /*
+   * 승계를 기다리는 바로 다음 후보. 서버가 5명씩 끊어 주므로 다음 후보가 다른
+   * 페이지에 있으면 알 수 없고, 그때는 표시를 생략한다. "지금 차례"는 서버가
+   * IN_PROGRESS 로 알려주니 승계 예고가 없어도 화면은 성립한다.
+   */
+  const nextInLine =
+    list.rows.find(
+      (row) =>
+        row.dealStatus === 'WAITING' &&
+        (!current || row.candidateRank > current.candidateRank),
+    ) ?? null
+
+  if (candidatesQuery.isPending || itemQuery.isPending) return <RoutePending />
+
+  const notice = toAccessNotice(candidatesQuery.error?.response?.status)
+  if (notice) {
+    return (
+      <AppShell title="거래 상세" back>
+        <EmptyState title={notice.title} description={notice.description} />
+      </AppShell>
+    )
+  }
+
+  if (candidatesQuery.isError) {
+    return (
+      <RouteError
+        error={candidatesQuery.error}
+        reset={() => void candidatesQuery.refetch()}
+      />
+    )
+  }
+
+  if (itemQuery.isError || !item) {
     return (
       <AppShell title="거래 상세" back>
         <EmptyState
@@ -107,31 +188,10 @@ function TradeDetailPage() {
     )
   }
 
-  const isSeller = trade.role === 'SELLER'
-  const unsold = trade.status === 'UNSOLD'
-
-  const applyAction = (action: 'complete' | 'fail') => {
-    if (!current) return
-
-    // TODO: POST .../deal-candidates/{id}/{complete|fail} 연동 (현재 목업)
-    setCandidates((prev) => {
-      const index = prev.findIndex((candidate) => candidate.id === current.id)
-      return prev.map((candidate, position) => {
-        if (position === index) {
-          return {
-            ...candidate,
-            status: action === 'complete' ? 'COMPLETED' : 'FAILED',
-          }
-        }
-        // 실패하면 바로 다음 후보가 거래 진행 중이 된다.
-        if (action === 'fail' && position === index + 1) {
-          return { ...candidate, status: 'IN_PROGRESS' }
-        }
-        return candidate
-      })
-    })
-    setPendingAction(null)
-  }
+  // 역할은 서버가 판정한다. 화면 분기는 UX 일 뿐이고 실제 차단은 서버 몫이다.
+  const isSeller = list.viewerRole === 'SELLER'
+  const unsold = item.status === 'FAILED'
+  const productName = item.productName ?? '이름 없는 물품'
 
   return (
     <AppShell title="거래 상세" back className="max-w-[1280px]">
@@ -162,7 +222,7 @@ function TradeDetailPage() {
            */}
           {/* 모바일에서도 어떤 물건인지 보여야 한다. 높이만 낮춘다. */}
           <ProductThumbnail
-            name={trade.productName}
+            name={productName}
             size={640}
             iconClassName="size-7"
             className={cn(
@@ -173,14 +233,14 @@ function TradeDetailPage() {
           />
 
           <p className="mt-6 shrink-0 text-[20px] font-extrabold text-foreground">
-            {trade.productName}
+            {productName}
           </p>
 
           {/* 구매자는 상품명 바로 아래에 링크를 붙인다 (물품 상세와 같은 모양) */}
           {!isSeller &&
-            (item?.productUrl ? (
+            (item.referenceUrl ? (
               <a
-                href={`https://${item.productUrl}`}
+                href={item.referenceUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="mt-2 shrink-0 text-[13px] font-semibold text-brand-500 hover:underline"
@@ -201,11 +261,11 @@ function TradeDetailPage() {
                   {unsold ? '시작가' : '현재 최고 입찰가'}
                 </p>
                 <p className="mt-2 text-[28px] font-extrabold tabular-nums text-foreground">
-                  {unsold
-                    ? item
-                      ? formatWon(item.startPrice)
-                      : '—'
-                    : formatWon(current?.amount ?? trade.amount)}
+                  {formatWon(
+                    (unsold
+                      ? item.startingPrice
+                      : (current?.bidAmount ?? item.currentPrice)) ?? 0,
+                  )}
                 </p>
               </>
             ) : (
@@ -213,16 +273,11 @@ function TradeDetailPage() {
                 <p className="text-[12px] font-semibold text-neutral-tertiary">
                   판매자 정보
                 </p>
+                {/* 연락처는 sellerProfileId 로 따로 조회해야 한다 (별도 작업). */}
                 <div className="mt-2 flex items-baseline justify-between gap-3">
                   <p className="min-w-0 truncate text-[15px] font-bold text-foreground">
-                    {trade.partnerNickname}
+                    {deal?.partnerNickname ?? '—'}
                   </p>
-                  <a
-                    href={`tel:${trade.partnerPhone}`}
-                    className="shrink-0 text-[14px] font-semibold text-brand-500 hover:underline"
-                  >
-                    {trade.partnerPhone}
-                  </a>
                 </div>
               </>
             )}
@@ -244,7 +299,7 @@ function TradeDetailPage() {
               {unsold
                 ? '유찰'
                 : current
-                  ? `${current.rank}순위 · ${CANDIDATE_META[current.status].label}`
+                  ? `${current.candidateRank}순위 · ${CANDIDATE_META[current.dealStatus].label}`
                   : '진행 중인 후보 없음'}
             </span>
           ) : (
@@ -258,7 +313,7 @@ function TradeDetailPage() {
                   물품 설명
                 </p>
                 <p className="mt-2 min-h-0 flex-1 overflow-y-auto text-[13px] leading-[1.6] font-medium whitespace-pre-line text-neutral-secondary">
-                  {item?.description?.trim()
+                  {item.description?.trim()
                     ? item.description
                     : '등록된 설명이 없어요.'}
                 </p>
@@ -297,10 +352,11 @@ function TradeDetailPage() {
                 ? '유찰'
                 : isSeller
                   ? current
-                    ? `${current.rank}순위 거래 진행 중`
+                    ? `${current.candidateRank}순위 거래 진행 중`
                     : '진행 중인 후보 없음'
-                  : me
-                    ? `내 순위 ${me.rank}위`
+                  : /* 내 순위는 다른 페이지에 있어도 서버가 알려준다. */
+                    list.myRank != null
+                    ? `내 순위 ${list.myRank}위`
                     : '순위 없음'}
             </span>
           </div>
@@ -339,20 +395,21 @@ function TradeDetailPage() {
                * 여기서는 줄만 쌓고, 지금 거래 중인 후보만 강조한다.
                */}
               <ul key={`m-${page}`} className="mt-4 space-y-2 md:hidden">
-                {visible.map((candidate, index) => {
-                  const meta = CANDIDATE_META[candidate.status]
-                  const active = candidate.status === 'IN_PROGRESS'
-                  const mine = !isSeller && Boolean(candidate.isMe)
-                  const succeeds = candidate.id === nextInLine?.id
+                {list.rows.map((candidate, index) => {
+                  const meta = CANDIDATE_META[candidate.dealStatus]
+                  const active = candidate.dealStatus === 'IN_PROGRESS'
+                  const mine = !isSeller && candidate.isMe
+                  const succeeds =
+                    candidate.dealCandidateId === nextInLine?.dealCandidateId
                   const resultLabel =
-                    candidate.status === 'WAITING' && succeeds
+                    candidate.dealStatus === 'WAITING' && succeeds
                       ? '차순위'
                       : meta.label
                   const tone: Tone = mine ? 'mine' : meta.tone
 
                   return (
                     <li
-                      key={candidate.id}
+                      key={candidate.dealCandidateId}
                       style={{ animationDelay: `${index * 30}ms` }}
                       className={cn(
                         'animate-rise rounded-2xl border px-3.5 py-3',
@@ -365,7 +422,7 @@ function TradeDetailPage() {
                     >
                       <div className="flex items-center gap-2.5">
                         <span className="shrink-0 text-[12px] font-bold tabular-nums text-neutral-tertiary">
-                          {candidate.rank}순위
+                          {candidate.candidateRank}순위
                         </span>
                         <span className="min-w-0 flex-1 truncate text-[14px] font-bold text-foreground">
                           {candidate.nickname}
@@ -376,7 +433,7 @@ function TradeDetailPage() {
                           )}
                         </span>
                         <span className="shrink-0 text-[15px] font-extrabold tabular-nums text-foreground">
-                          {formatWon(candidate.amount)}
+                          {formatWon(candidate.bidAmount)}
                         </span>
                       </div>
 
@@ -391,12 +448,13 @@ function TradeDetailPage() {
                           {succeeds && !mine ? '실패 시 승계' : resultLabel}
                         </span>
 
-                        {isSeller && active && (
+                        {/* 서버가 거래 상대일 때만 연락처를 내려준다. */}
+                        {candidate.phoneNumber && (
                           <a
-                            href={`tel:${candidate.phone}`}
+                            href={`tel:${candidate.phoneNumber}`}
                             className="text-[12px] font-semibold text-brand-500 hover:underline"
                           >
-                            {candidate.phone}
+                            {candidate.phoneNumber}
                           </a>
                         )}
 
@@ -445,25 +503,24 @@ function TradeDetailPage() {
 
                   {/* key 로 remount 시켜 페이지를 넘길 때마다 행이 다시 올라오게 한다. */}
                   <ul key={page} className="mt-3 space-y-3.5">
-                    {visible.map((candidate, index) => {
-                      const meta = CANDIDATE_META[candidate.status]
-                      const active = candidate.status === 'IN_PROGRESS'
+                    {list.rows.map((candidate, index) => {
+                      const meta = CANDIDATE_META[candidate.dealStatus]
+                      const active = candidate.dealStatus === 'IN_PROGRESS'
                       // "나" 표시는 구매자 화면에만 있다. 판매자는 목록 밖이다.
-                      const mine = !isSeller && Boolean(candidate.isMe)
-                      const contactOpen =
-                        active || candidate.status === 'COMPLETED'
+                      const mine = !isSeller && candidate.isMe
 
                       // 구매자 화면은 "결과", 판매자 화면은 "거래 상태" 열이다.
                       const resultLabel =
-                        candidate.status === 'WAITING' &&
-                        candidate.id === nextInLine?.id
+                        candidate.dealStatus === 'WAITING' &&
+                        candidate.dealCandidateId ===
+                          nextInLine?.dealCandidateId
                           ? '차순위'
                           : meta.label
                       const resultTone: Tone = mine ? 'mine' : meta.tone
 
                       return (
                         <li
-                          key={candidate.id}
+                          key={candidate.dealCandidateId}
                           style={{ animationDelay: `${index * 30}ms` }}
                           className={cn(
                             'animate-rise grid h-[50px] items-center rounded-[14px] border pr-6 pl-4',
@@ -485,7 +542,7 @@ function TradeDetailPage() {
                                   : 'bg-brand-50 text-brand-500',
                             )}
                           >
-                            {candidate.rank}
+                            {candidate.candidateRank}
                           </span>
 
                           <span className="min-w-0 truncate text-[14px] font-bold text-foreground">
@@ -493,13 +550,17 @@ function TradeDetailPage() {
                             {mine && ' (나)'}
                           </span>
 
+                          {/*
+                           * 연락처를 보여줄지 화면이 계산하지 않는다. 서버가
+                           * 거래 상대인 후보에게만 값을 내려준다.
+                           */}
                           {isSeller &&
-                            (contactOpen ? (
+                            (candidate.phoneNumber ? (
                               <a
-                                href={`tel:${candidate.phone}`}
+                                href={`tel:${candidate.phoneNumber}`}
                                 className="truncate text-[13px] font-bold text-brand-500 hover:underline"
                               >
-                                {candidate.phone}
+                                {candidate.phoneNumber}
                               </a>
                             ) : (
                               <span className="text-[13px] font-medium text-neutral-tertiary">
@@ -508,7 +569,7 @@ function TradeDetailPage() {
                             ))}
 
                           <span className="text-[14px] font-extrabold tabular-nums text-foreground">
-                            {formatWon(candidate.amount)}
+                            {formatWon(candidate.bidAmount)}
                           </span>
 
                           <span
@@ -553,9 +614,9 @@ function TradeDetailPage() {
 
               <Pager
                 page={page}
-                pageCount={pageCount}
+                pageCount={Math.max(1, list.totalPages)}
                 onChange={setPage}
-                meta={`총 ${candidates.length}명 · ${PAGE_SIZE}명씩`}
+                meta={`총 ${list.totalElements}명 · ${CANDIDATE_PAGE_SIZE}명씩`}
                 className="mt-auto pt-6"
               />
             </>
@@ -578,7 +639,8 @@ function TradeDetailPage() {
         }
         confirmLabel={pendingAction === 'complete' ? '거래 성사' : '거래 실패'}
         onCancel={() => setPendingAction(null)}
-        onConfirm={() => pendingAction && applyAction(pendingAction)}
+        // TODO: POST .../deal-candidates/{id}/{complete|fail} 연동 (별도 작업)
+        onConfirm={() => setPendingAction(null)}
       />
     </AppShell>
   )
