@@ -37,7 +37,7 @@ function ShellBody({
   return (
     <main
       className={cn(
-        'mx-auto w-full px-5 py-6 md:px-7 md:py-10',
+        'relative mx-auto w-full px-5 py-6 md:px-7 md:py-10',
         !fullWidth && 'max-w-[1280px]',
         className,
       )}
@@ -52,7 +52,13 @@ function ShellBody({
   )
 }
 
-/** 데스크톱에서만 보이는 뒤로가기. 브라우저 히스토리를 그대로 한 칸 되돌린다. */
+/**
+ * 데스크톱에서만 보이는 뒤로가기. 브라우저 히스토리를 그대로 한 칸 되돌린다.
+ *
+ * **본문 흐름에서 빼내 위쪽 여백 안에 띄운다.** 흐름 안에 두면 제목과 상단
+ * 버튼이 그만큼 아래로 밀려서, 뒤로가기가 없는 화면(판매자 정보 등)과 나란히
+ * 오갈 때 헤더 높이가 어긋난다.
+ */
 function DesktopBackLink() {
   const router = useRouter()
 
@@ -60,7 +66,7 @@ function DesktopBackLink() {
     <button
       type="button"
       onClick={() => void router.history.back()}
-      className="ease-soft mb-4 hidden items-center gap-1 rounded-lg py-1 pr-2 text-[13px] font-semibold text-neutral-tertiary transition-colors duration-150 hover:text-foreground md:inline-flex"
+      className="ease-soft absolute top-3.5 left-7 hidden items-center gap-1 rounded-lg py-1 pr-2 text-[13px] font-semibold text-neutral-tertiary transition-colors duration-150 hover:text-foreground md:inline-flex"
     >
       <ChevronLeft aria-hidden className="size-4" />
       뒤로
