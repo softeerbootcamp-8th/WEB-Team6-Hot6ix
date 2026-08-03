@@ -2,9 +2,11 @@ package com.hot6ix.upbid.domain.auction.service;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
@@ -13,6 +15,8 @@ import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
+import com.hot6ix.upbid.global.response.CursorPageResponse;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -88,6 +92,37 @@ public class AuctionRoomService {
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoom.getAuctionRoomId()));
+    }
+
+    /**
+     * 판매자 본인이 만든 경매방을 최신순으로 조회한다. 참여 경매방 목록과는 응답도 화면 역할도
+     * 달라 경로를 섞지 않는다.
+     *
+     * <p>상태·검색어를 서버가 받는 이유는 커서 페이지네이션이기 때문이다. 화면에서 거르면
+     * 받아온 첫 쪽 안에서만 걸려 "있는데 검색에 안 나오는" 목록이 된다.
+     *
+     * @param userId  조회를 요청한 회원의 ID
+     * @param keyword 경매방 이름 부분 일치. null이면 전체
+     * @param status  경매방 상태. null이면 전체
+     * @param cursor  이전 쪽의 마지막 경매방 ID. null이면 첫 쪽
+     * @param size    한 쪽 크기. null이면 기본값
+     * @return 경매방 목록 한 쪽
+     * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND)
+     */
+    public CursorPageResponse<AuctionRoomListItemResponseDto> getMyRooms(
+            Long userId, String keyword, AuctionRoomStatus status, Long cursor, Integer size) {
+
+        SellerProfile sellerProfile = findActiveSellerProfile(userId);
+        int pageSize = (size != null) ? size : AuctionRoomRepository.DEFAULT_PAGE_SIZE;
+
+        List<AuctionRoomListItemResponseDto> fetched = auctionRoomRepository.search(
+                sellerProfile.getSellerProfileId(), keyword, status, cursor, pageSize);
+
+        boolean hasNext = fetched.size() > pageSize;
+        List<AuctionRoomListItemResponseDto> content = hasNext ? fetched.subList(0, pageSize) : fetched;
+        Long nextCursor = hasNext ? content.get(content.size() - 1).auctionRoomId() : null;
+
+        return CursorPageResponse.of(content, nextCursor);
     }
 
     /**
