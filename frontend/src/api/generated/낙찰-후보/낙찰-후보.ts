@@ -5,17 +5,28 @@
  * OpenAPI spec version: v0
  */
 import {
-  useMutation
+  useMutation,
+  useQuery
 } from '@tanstack/react-query';
 import type {
+  DataTag,
+  DefinedInitialDataOptions,
+  DefinedUseQueryResult,
   MutationFunction,
   QueryClient,
+  QueryFunction,
+  QueryKey,
+  UndefinedInitialDataOptions,
   UseMutationOptions,
-  UseMutationResult
+  UseMutationResult,
+  UseQueryOptions,
+  UseQueryResult
 } from '@tanstack/react-query';
 
 import type {
-  CommonResponseVoid
+  CommonResponseDealCandidateListResponseDto,
+  CommonResponseVoid,
+  GetCandidatesParams
 } from '.././model';
 
 import { customInstance } from '../../mutator/custom-instance';
@@ -154,4 +165,104 @@ export const useComplete = <TError = ErrorType<CommonResponseVoid>,
 
       return useMutation(mutationOptions, queryClient);
     }
+    /**
+ * 물품의 낙찰 후보를 순위 오름차순으로 5명씩 조회한다. 판매자와 입찰자가 같은 경로를 쓰고 역할은 서버가 판정한다 — 그 물품의 판매자면 SELLER, 후보로 오른 입찰자면 BUYER다. 닉네임과 입찰가는 경매 결과라 모두에게 공개하고, 연락처는 판매자가 볼 때 거래 상대인 후보(거래 중·성사)만 내려간다. 구매자에게는 다른 후보의 연락처를 주지 않는다. myRank는 구매자의 순위이며 요청한 페이지 밖에 있어도 값이 나온다. 마감된 물품(낙찰·유찰)만 조회할 수 있다. 유찰이면 빈 목록이 내려간다.
+ * @summary 낙찰 후보 목록 조회
+ */
+export const getCandidates = (
+    auctionItemId: number,
+    params?: GetCandidatesParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseDealCandidateListResponseDto>(
+      {url: `/api/v1/auction-items/${auctionItemId}/deal-candidates`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetCandidatesQueryKey = (auctionItemId?: number,
+    params?: GetCandidatesParams,) => {
+    return [
+    `/api/v1/auction-items/${auctionItemId}/deal-candidates`, ...(params ? [params]: [])
+    ] as const;
+    }
+
     
+export const getGetCandidatesQueryOptions = <TData = Awaited<ReturnType<typeof getCandidates>>, TError = ErrorType<CommonResponseDealCandidateListResponseDto>>(auctionItemId: number,
+    params?: GetCandidatesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandidates>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCandidatesQueryKey(auctionItemId,params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCandidates>>> = ({ signal }) => getCandidates(auctionItemId,params, requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(auctionItemId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCandidates>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCandidatesQueryResult = NonNullable<Awaited<ReturnType<typeof getCandidates>>>
+export type GetCandidatesQueryError = ErrorType<CommonResponseDealCandidateListResponseDto>
+
+
+export function useGetCandidates<TData = Awaited<ReturnType<typeof getCandidates>>, TError = ErrorType<CommonResponseDealCandidateListResponseDto>>(
+ auctionItemId: number,
+    params: undefined |  GetCandidatesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandidates>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof getCandidates>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCandidates<TData = Awaited<ReturnType<typeof getCandidates>>, TError = ErrorType<CommonResponseDealCandidateListResponseDto>>(
+ auctionItemId: number,
+    params?: GetCandidatesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandidates>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCandidates>>,
+          TError,
+          Awaited<ReturnType<typeof getCandidates>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCandidates<TData = Awaited<ReturnType<typeof getCandidates>>, TError = ErrorType<CommonResponseDealCandidateListResponseDto>>(
+ auctionItemId: number,
+    params?: GetCandidatesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandidates>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 낙찰 후보 목록 조회
+ */
+
+export function useGetCandidates<TData = Awaited<ReturnType<typeof getCandidates>>, TError = ErrorType<CommonResponseDealCandidateListResponseDto>>(
+ auctionItemId: number,
+    params?: GetCandidatesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandidates>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCandidatesQueryOptions(auctionItemId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+

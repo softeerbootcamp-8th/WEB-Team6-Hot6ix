@@ -15,7 +15,7 @@ import {
   getGetSummariesQueryKey,
   useGetDetail1,
   useGetSummaries,
-} from '@/api/generated/경매-물품-조회/경매-물품-조회'
+} from '@/api/generated/경매-물품/경매-물품'
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { toAuctionItemDetail, toAuctionItems } from '@/features/live/adapt-item'
 import { toBidErrorMessage } from '@/features/live/bid-error'
