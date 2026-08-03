@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Modal } from '@/components/ui/modal'
 import { cn } from '@/lib/utils'
@@ -38,13 +38,17 @@ export interface PickedItem {
 export function ItemPickerModal({
   open,
   onClose,
-  excludeProductIds = [],
+  initialItems = [],
   onConfirm,
 }: {
   open: boolean
   onClose: () => void
-  /** 이미 이 경매방에 넣어둔 상품. 목록에서 감춘다. */
-  excludeProductIds?: number[]
+  /**
+   * 이미 골라둔 물품. 목록에서 감추지 않고 **체크된 채로** 보여준다.
+   * 감추면 한 번 고른 물품의 시작가를 고치거나 빼낼 방법이 없어진다.
+   */
+  initialItems?: PickedItem[]
+  /** 고른 물품 **전체**를 돌려준다. 호출부는 기존 목록을 이걸로 교체한다. */
   onConfirm: (items: PickedItem[]) => void
 }) {
   const [keyword, setKeyword] = useState('')
@@ -54,6 +58,24 @@ export function ItemPickerModal({
   const [selected, setSelected] = useState<
     { productId: number; name: string; startingPrice: string }[]
   >([])
+
+  // 열 때마다 바깥 목록으로 초기화한다. 열려 있는 동안 바깥이 바뀌어도
+  // 입력 중인 값을 덮지 않도록 ref 로 최신값만 들고 있다가 열릴 때 한 번 쓴다.
+  const initialItemsRef = useRef(initialItems)
+  initialItemsRef.current = initialItems
+
+  useEffect(() => {
+    if (!open) return
+
+    setKeyword('')
+    setSelected(
+      initialItemsRef.current.map((item) => ({
+        productId: item.productId,
+        name: item.name,
+        startingPrice: String(item.startingPrice),
+      })),
+    )
+  }, [open])
 
   const {
     products,
@@ -69,20 +91,13 @@ export function ItemPickerModal({
   })
 
   const visible = useMemo(
-    () =>
-      products.filter(
-        (product) =>
-          product.productId != null &&
-          !excludeProductIds.includes(product.productId),
-      ),
-    [products, excludeProductIds],
+    () => products.filter((product) => product.productId != null),
+    [products],
   )
 
-  const close = () => {
-    setKeyword('')
-    setSelected([])
-    onClose()
-  }
+  // 되돌리기는 여는 쪽 effect 가 맡는다. 여기서 비우면 닫히는 순간 목록이
+  // 사라지는 게 보인다.
+  const close = () => onClose()
 
   const toggle = (productId: number, name: string) =>
     setSelected((prev) =>
@@ -100,10 +115,12 @@ export function ItemPickerModal({
       ),
     )
 
-  // 기본값을 넣지 않는다 — 그대로 두고 넘어간 값이 시작가가 되는 실수를 막는다.
-  const canConfirm =
-    selected.length > 0 &&
-    selected.every((item) => Number(item.startingPrice) > 0)
+  /*
+   * 기본값을 넣지 않는다 — 그대로 두고 넘어간 값이 시작가가 되는 실수를 막는다.
+   * 개수는 보지 않는다. 미리 고른 걸 전부 체크 해제해 비우는 것도 정상 동작이라
+   * 0개일 때 버튼을 잠그면 되돌릴 방법이 없어진다.
+   */
+  const canConfirm = selected.every((item) => Number(item.startingPrice) > 0)
 
   return (
     <Modal

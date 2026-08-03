@@ -294,7 +294,7 @@ function AuctionRoomNewPage() {
                     {item.name}
                   </p>
 
-                  {/* 시작가는 물품 선택 모달에서 받는다. 여기서는 확인만 한다. */}
+                  {/* 시작가 수정은 모달에서 한다 — "물품 추가·수정"으로 다시 연다. */}
                   <p className="shrink-0 text-[14px] font-semibold tabular-nums text-neutral-secondary">
                     시작가 {item.startingPrice.toLocaleString('ko-KR')}원
                   </p>
@@ -324,7 +324,7 @@ function AuctionRoomNewPage() {
             onClick={() => setPicking(true)}
             className="ease-soft mt-6 h-13 w-full rounded-[14px] border border-brand-200 bg-card text-[14px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-50 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
           >
-            + 물품 추가
+            {items.length > 0 ? '물품 추가·수정' : '+ 물품 추가'}
           </button>
 
           <p className="mt-3 text-center text-[12px] font-medium text-neutral-muted">
@@ -344,11 +344,15 @@ function AuctionRoomNewPage() {
       </form>
 
       {/* 물품 추가 — 등록한 상품 고르기 (WEB-09) */}
+      {/*
+        이미 고른 물품도 체크된 채로 보여준다. 그래야 시작가를 고치거나 뺄 수 있다.
+        모달이 고른 것 전체를 돌려주므로 목록을 통째로 교체한다.
+      */}
       <ItemPickerModal
         open={picking}
         onClose={() => setPicking(false)}
-        excludeProductIds={items.map((item) => item.productId)}
-        onConfirm={(picked) => setItems((prev) => [...prev, ...picked])}
+        initialItems={items}
+        onConfirm={setItems}
       />
     </AppShell>
   )
