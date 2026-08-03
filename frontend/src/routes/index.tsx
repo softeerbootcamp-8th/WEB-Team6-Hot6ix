@@ -6,7 +6,7 @@ import { GuestShell } from '@/components/layout/page-shell'
 import { sessionStore } from '@/lib/session'
 
 const KAKAO_CLIENT_ID = import.meta.env.VITE_KAKAO_CLIENT_ID as string
-const KAKAO_REDIRECT_URI = 'http://localhost:8080/api/v1/oauth/kakao/callback'
+const KAKAO_REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI as string
 
 export const Route = createFileRoute('/')({
   // 로그인 후 돌아갈 위치. 입찰하려다 로그인한 경우 원래 방으로 복귀한다.
