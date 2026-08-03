@@ -28,4 +28,13 @@ services:
       - NCP_SENDER_PHONE=${NCP_SENDER_PHONE}
       # 로그인 후 돌아갈 프론트 주소 (application.yaml 의 app.frontend-url)
       - FRONTEND_URL=${FRONTEND_URL}
+      # 세션 쿠키 (application.yaml 의 server.servlet.session.cookie.*)
+      # 운영은 www.upbid.store 와 api.upbid.store 가 다른 사이트다. 기본값
+      # SameSite=Lax 면 로그인 리다이렉트에는 쿠키가 실리지만 그 뒤 화면에서
+      # 보내는 요청에는 빠져 로그인이 풀린 것처럼 보인다. None 으로 풀되,
+      # None 은 Secure 없이는 브라우저가 무시하므로 둘을 같이 넣는다.
+      # 비밀값이 아니라 Secrets 를 거치지 않고 여기 그대로 둔다.
+      # 로컬 개발은 vite 프록시로 동일 출처라 기본값(false/lax)을 쓴다.
+      - SESSION_COOKIE_SECURE=true
+      - SESSION_COOKIE_SAME_SITE=none
     restart: unless-stopped
