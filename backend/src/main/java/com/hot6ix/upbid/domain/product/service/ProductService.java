@@ -45,7 +45,8 @@ public class ProductService {
 
         Product product = Product.from(sellerProfile, request);
 
-        return ProductResponseDto.from(productRepository.save(product));
+        // 방금 만든 상품은 아직 어떤 경매방에도 담기지 않았으므로 파생 상태를 조회할 필요가 없다.
+        return ProductResponseDto.from(productRepository.save(product), ProductListingStatus.UNREGISTERED);
     }
 
     /**
@@ -62,7 +63,7 @@ public class ProductService {
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         Product product = findOwnedProduct(sellerProfile, productId);
 
-        return ProductResponseDto.from(product);
+        return ProductResponseDto.from(product, findListingStatus(productId));
     }
 
     /**
@@ -86,7 +87,7 @@ public class ProductService {
 
         product.update(request);
 
-        return ProductResponseDto.from(product);
+        return ProductResponseDto.from(product, findListingStatus(productId));
     }
 
     /**
@@ -148,6 +149,11 @@ public class ProductService {
     private Product findOwnedProduct(SellerProfile sellerProfile, Long productId) {
         return productRepository
                 .findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(productId, sellerProfile.getSellerProfileId())
+                .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
+    }
+
+    private ProductListingStatus findListingStatus(Long productId) {
+        return productRepository.findListingStatus(productId)
                 .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
     }
 

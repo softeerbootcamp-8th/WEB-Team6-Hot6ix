@@ -217,6 +217,25 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
+    @DisplayName("상세용 파생 상태 조회가 목록과 같은 값을 준다")
+    void findListingStatus() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller12@hot6ix.com");
+        AuctionRoom room = newAuctionRoom(sellerProfile);
+
+        Product unregistered = newProduct(sellerProfile, "미등록상품");
+
+        Product sold = newProduct(sellerProfile, "낙찰상품");
+        newAuctionItem(room, sold, AuctionItemStatus.SOLD);
+        entityManager.flush();
+
+        assertThat(productRepository.findListingStatus(unregistered.getProductId()))
+                .contains(ProductListingStatus.UNREGISTERED);
+        assertThat(productRepository.findListingStatus(sold.getProductId()))
+                .contains(ProductListingStatus.ENDED);
+    }
+
+    @Test
     @DisplayName("status 필터를 걸면 해당 상태의 상품만 조회된다")
     void search_filtersByStatus() {
 

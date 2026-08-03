@@ -65,6 +65,15 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         };
     }
 
+    /**
+     * 상세 조회·수정 응답에 쓸 파생 상태. 목록과 같은 CASE 문을 재사용해 두 응답이 어긋나지 않게 한다.
+     */
+    @Query("select " + DERIVED_STATUS_CASE + " "
+            + "from Product p "
+            + LATEST_AUCTION_ITEM_JOIN + " "
+            + "where p.productId = :productId")
+    Optional<ProductListingStatus> findListingStatus(@Param("productId") Long productId);
+
     @Query("select new com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto("
             + "  p.productId, p.name, p.imageUrl, " + DERIVED_STATUS_CASE + ", p.createdAt) "
             + "from Product p "
