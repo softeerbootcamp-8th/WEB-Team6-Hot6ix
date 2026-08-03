@@ -20,7 +20,7 @@ public interface UserApi {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
-            @ApiResponse(responseCode = "404", description = "존재하지 않는 회원 (code 2001)")
+            @ApiResponse(responseCode = "404", description = "존재하지 않는 회원 (code 9001)")
     })
     ResponseEntity<CommonResponse<UserMeResponseDto>> getMe(
             @Parameter(hidden = true) @LoginUserId Long userId);
