@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.servlet.HandlerMapping;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -39,8 +40,14 @@ public class SlackAlertServiceImpl implements SlackAlertService {
             return;
         }
 
-        String errorKey = request.getMethod() + " " + request.getRequestURI()
-                + " " + e.getClass().getSimpleName();
+        String pattern = (String) request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        String uriForKey = pattern != null ? pattern : request.getRequestURI();
+        String origin = e.getStackTrace().length > 0
+                ? e.getStackTrace()[0].getFileName() + ":" + e.getStackTrace()[0].getLineNumber()
+                : "unknown";
+        String errorKey = request.getMethod() + " " + uriForKey
+                + " " + e.getClass().getSimpleName()
+                + " " + origin;
 
         if (!rateLimiter.shouldSend(errorKey, properties.cooldownSeconds())) {
             log.debug("Slack 알림 쿨다운 중 - errorKey={}", errorKey);
