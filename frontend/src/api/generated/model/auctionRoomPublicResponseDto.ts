@@ -13,6 +13,7 @@ export interface AuctionRoomPublicResponseDto {
   description?: string;
   liveUrl?: string;
   status?: AuctionRoomPublicResponseDtoStatus;
+  bidIncrement?: number;
   softCloseTriggerSeconds?: number;
   softCloseExtendSeconds?: number;
   sellerStoreName?: string;
