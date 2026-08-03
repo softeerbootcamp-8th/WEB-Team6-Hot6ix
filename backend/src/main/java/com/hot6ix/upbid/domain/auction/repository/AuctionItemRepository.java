@@ -27,6 +27,16 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     boolean existsByProduct_ProductId(Long productId);
 
     /**
+     * 넘긴 상품들 중 <b>이미 어느 경매방엔가 올라가 있는 상품의 ID만</b> 골라낸다.
+     * {@link #existsByProduct_ProductId}의 벌크판이며 판정 규칙도 같다(상태를 따지지 않는다).
+     *
+     * <p>벌크 추가에서 상품 수만큼 exists 쿼리를 돌리지 않으려고 한 번에 조회한다.
+     * 엔티티가 아니라 ID만 뽑는 이유는 이 값이 "거절 목록"을 만드는 데만 쓰이기 때문이다.
+     */
+    @Query("select ai.product.productId from AuctionItem ai where ai.product.productId in :productIds")
+    List<Long> findProductIdsIn(@Param("productIds") List<Long> productIds);
+
+    /**
      * 이 상품이 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는지 확인한다
      * (진행중·낙찰·유찰 전부 포함). Product 수정·삭제 시 "경매방이 시작된 적 있는 상품은
      * 이후로도 계속 수정·삭제 불가" 규칙을 검증하는 데 쓰인다.

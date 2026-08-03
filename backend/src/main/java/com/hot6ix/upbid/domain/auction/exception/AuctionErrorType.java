@@ -17,7 +17,9 @@ public enum AuctionErrorType implements ErrorType {
     AUCTION_ITEM_ALREADY_STARTED(HttpStatus.CONFLICT, 4006, "경매가 시작된 물품은 제외할 수 없습니다."),
     AUCTION_ITEM_NOT_READY(HttpStatus.CONFLICT, 4007, "대기 중인 물품만 시작할 수 있습니다."),
     AUCTION_ITEM_START_LIMIT_EXCEEDED(HttpStatus.CONFLICT, 4008,
-            "한 경매방에서는 최대 3개 물품만 동시에 진행할 수 있습니다.");
+            "한 경매방에서는 최대 3개 물품만 동시에 진행할 수 있습니다."),
+    AUCTION_ITEM_LIMIT_EXCEEDED(HttpStatus.CONFLICT, 4009,
+            "한 경매방에는 최대 100개 물품만 등록할 수 있습니다.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;

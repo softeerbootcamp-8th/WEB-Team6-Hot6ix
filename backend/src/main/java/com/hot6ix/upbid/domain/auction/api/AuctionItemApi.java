@@ -1,7 +1,9 @@
 package com.hot6ix.upbid.domain.auction.api;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
@@ -73,6 +75,33 @@ public interface AuctionItemApi {
             @Parameter(description = "물품을 추가할 경매방 ID", required = true)
             @PathVariable Long auctionRoomId,
             @Valid @RequestBody AuctionItemAddRequestDto request);
+
+    @Operation(
+            summary = "경매방 물품 벌크 추가",
+            description = "소유자가 여러 상품을 한 번에 경매방에 대기(READY) 물품으로 올린다. "
+                    + "판정 규칙은 단건 추가와 같지만, **거절된 상품이 있어도 나머지는 추가한다.** "
+                    + "거절된 상품은 응답의 failed 배열에 상품 ID와 사유(code, message)로 담기며, "
+                    + "그 code는 단건 추가가 같은 상황에서 내보내는 값과 같다. "
+                    + "전부 거절돼 added가 비어도 201이다 — 성공 여부는 failed가 비었는지로 판단한다. "
+                    + "한 경매방에는 최대 100개까지 등록할 수 있고, 넘기면 앞에서부터 잘라 넣지 않고 "
+                    + "요청 전체를 거절한다. 요청 배열에 같은 상품 ID가 두 번 들어오면 400이다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "처리 성공. added와 failed가 함께 담긴다"),
+            @ApiResponse(responseCode = "400", description = "items가 비었거나 100개를 넘음, "
+                    + "요청 필드 형식 위반, 같은 상품 ID 중복 (code 2002)"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
+            @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002), "
+                    + "경매방이 없거나 본인 소유가 아님 (code 4002)"),
+            @ApiResponse(responseCode = "409", description = "종료된 경매방 (code 4004), "
+                    + "경매방 물품 상한 초과 (code 4009), "
+                    + "동시 요청이 겹쳐 이미 올라간 상품 (code 4005)")
+    })
+    ResponseEntity<CommonResponse<AuctionItemBulkAddResponseDto>> addAll(
+            @Parameter(hidden = true) @LoginUserId Long userId,
+            @Parameter(description = "물품을 추가할 경매방 ID", required = true)
+            @PathVariable Long auctionRoomId,
+            @Valid @RequestBody AuctionItemBulkAddRequestDto request);
 
     @Operation(
             summary = "경매방 물품 제외",

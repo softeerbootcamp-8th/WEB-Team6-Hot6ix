@@ -2,7 +2,9 @@ package com.hot6ix.upbid.domain.auction.controller;
 
 import com.hot6ix.upbid.domain.auction.api.AuctionItemApi;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemService;
@@ -56,6 +58,17 @@ public class AuctionItemController implements AuctionItemApi {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(CommonResponse.ok(response, "경매방에 물품이 추가되었습니다."));
+    }
+
+    @PostMapping("/auction-rooms/{auctionRoomId}/auction-items/bulk")
+    @Override
+    public ResponseEntity<CommonResponse<AuctionItemBulkAddResponseDto>> addAll(
+            Long userId, Long auctionRoomId, AuctionItemBulkAddRequestDto request) {
+
+        AuctionItemBulkAddResponseDto response = auctionItemService.addAll(userId, auctionRoomId, request);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(CommonResponse.ok(response, "경매방 물품 추가를 처리했습니다."));
     }
 
     @DeleteMapping("/auction-rooms/{auctionRoomId}/auction-items/{auctionItemId}")
