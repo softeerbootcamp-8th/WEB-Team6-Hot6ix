@@ -17,4 +17,15 @@ services:
       - SPRING_DATASOURCE_USERNAME=${RDS_USERNAME}
       - SPRING_DATASOURCE_PASSWORD=${RDS_PASSWORD}
       - SPRING_PROFILES_ACTIVE=prod
+      # 카카오 로그인 (application.yaml 의 oauth.kakao.*)
+      - KAKAO_CLIENT_ID=${KAKAO_CLIENT_ID}
+      - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET}
+      - KAKAO_REDIRECT_URI=${KAKAO_REDIRECT_URI}
+      # NCP SENS 문자 발송 (application.yaml 의 ncp.sms.*)
+      - NCP_ACCESS_KEY=${NCP_ACCESS_KEY}
+      - NCP_SECRET_KEY=${NCP_SECRET_KEY}
+      - NCP_SERVICE_ID=${NCP_SERVICE_ID}
+      - NCP_SENDER_PHONE=${NCP_SENDER_PHONE}
+      # 로그인 후 돌아갈 프론트 주소 (application.yaml 의 app.frontend-url)
+      - FRONTEND_URL=${FRONTEND_URL}
     restart: unless-stopped

@@ -100,18 +100,30 @@ jobs:
           proxy_host: ${{ secrets.NAT_HOST }}
           proxy_username: ${{ secrets.NAT_USERNAME }}
           proxy_key: ${{ secrets.NAT_SSH_KEY }}
-          # heredoc의 따옴표(<<'EOF')를 빼면 비밀번호 안의 $나 백틱을
-          # 원격 셸이 변수로 해석해 값이 깨진다.
+          # 값이 깨지는 곳이 두 군데다. 둘 다 막아야 한다.
+          #   1) 원격 셸 — heredoc을 <<'EOF'로 닫아 $와 백틱을 그대로 넘긴다.
+          #   2) docker compose — .env를 읽을 때 $VAR를 제 손으로 치환한다.
+          #      값을 작은따옴표로 감싸야 $·백틱·#가 살아남는다.
+          #      (따옴표를 빼면 `se$cret`이 `se`로 잘려 조용히 인증이 실패한다.)
+          # 값 자체에 작은따옴표가 들어가면 이 방식이 깨지므로 그런 키는 쓰지 않는다.
           script: |
             set -e
             cd /home/ubuntu/app
             umask 077
             cat > .env <<'EOF'
-            IMAGE_TAG=${{ github.sha }}
-            DOCKERHUB_USERNAME=${{ secrets.DOCKERHUB_USERNAME }}
-            RDS_ENDPOINT=${{ secrets.RDS_ENDPOINT }}
-            RDS_USERNAME=${{ secrets.RDS_USERNAME }}
-            RDS_PASSWORD=${{ secrets.RDS_PASSWORD }}
+            IMAGE_TAG='${{ github.sha }}'
+            DOCKERHUB_USERNAME='${{ secrets.DOCKERHUB_USERNAME }}'
+            RDS_ENDPOINT='${{ secrets.RDS_ENDPOINT }}'
+            RDS_USERNAME='${{ secrets.RDS_USERNAME }}'
+            RDS_PASSWORD='${{ secrets.RDS_PASSWORD }}'
+            KAKAO_CLIENT_ID='${{ secrets.KAKAO_CLIENT_ID }}'
+            KAKAO_CLIENT_SECRET='${{ secrets.KAKAO_CLIENT_SECRET }}'
+            KAKAO_REDIRECT_URI='${{ secrets.KAKAO_REDIRECT_URI }}'
+            NCP_ACCESS_KEY='${{ secrets.NCP_ACCESS_KEY }}'
+            NCP_SECRET_KEY='${{ secrets.NCP_SECRET_KEY }}'
+            NCP_SERVICE_ID='${{ secrets.NCP_SERVICE_ID }}'
+            NCP_SENDER_PHONE='${{ secrets.NCP_SENDER_PHONE }}'
+            FRONTEND_URL='${{ secrets.FRONTEND_URL }}'
             EOF
             docker compose pull app
             docker compose up -d
