@@ -9,7 +9,8 @@ import { PRODUCT_RESULT } from '@/features/seller/product-status'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { requireMember } from '@/lib/route-guards'
-import { useCurrentUser } from '@/lib/session'
+import { RouteError, RoutePending } from '@/components/route-states'
+import { useMySellerProfile } from '@/features/seller/use-my-seller-profile'
 
 /**
  * 판매자 정보 진입.
@@ -30,11 +31,17 @@ const PREVIEW_COUNT = 4
 const TABLE_COLS = 'grid-cols-[56px_minmax(0,1fr)_204px_120px] gap-x-5'
 
 function SellerHomePage() {
-  const user = useCurrentUser()
-  const profile = user?.sellerProfile ?? null
+  const { profile, isPending, notFound, isError, error, refetch } =
+    useMySellerProfile()
 
-  if (!profile) return <MissingProfile />
+  if (isPending) return <RoutePending />
+  if (isError && error)
+    return <RouteError error={error} reset={() => void refetch()} />
 
+  // 404 는 장애가 아니라 "아직 등록하지 않았다"는 정상 상태다.
+  if (notFound || !profile) return <MissingProfile />
+
+  // 상품·거래 숫자는 아직 목업이다 (상품 화면 연동 때 같이 걷어낸다).
   const products = MOCK_PRODUCTS
   const completedTrades = MOCK_TRADES.filter(
     (trade) => trade.role === 'SELLER' && trade.status === 'COMPLETED',
@@ -66,25 +73,20 @@ function SellerHomePage() {
             판매자 프로필
           </h2>
 
-          {/* Figma 아바타 자리(160). 지금은 목업 사진을 넣는다. */}
+          {/* Figma 아바타 자리(160). 서버에 사진이 없으면 목업 사진을 넣는다. */}
           <ProfilePhoto
-            seed={profile.shopName}
+            seed={profile.storeName ?? ''}
+            src={profile.storeImageUrl}
             size={400}
             className="mt-5 size-40 shrink-0 self-center rounded-full border border-brand-300 bg-brand-50"
           />
 
           <p className="mt-7 text-center text-[24px] font-extrabold text-foreground">
-            {profile.shopName}
+            {profile.storeName}
           </p>
 
-          {profile.verified && (
-            <span className="mt-2.5 flex h-[30px] w-[104px] items-center justify-center self-center rounded-[15px] bg-result-won-surface text-[12px] font-bold text-result-won">
-              인증 완료
-            </span>
-          )}
-
           <p className="mt-5 text-center text-[14px] font-medium text-neutral-tertiary">
-            {profile.introduction || 'SNS 미등록'}
+            {profile.storeDescription || '소개 미등록'}
           </p>
 
           <dl className="mt-8 grid grid-cols-2 gap-5">

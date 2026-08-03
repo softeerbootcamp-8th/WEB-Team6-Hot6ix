@@ -1,63 +1,132 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { TextAreaField, TextField } from '@/components/ui/field'
 import { ImageUploadField } from '@/features/seller/components/image-upload-field'
 import { formatPhoneNumber } from '@/lib/format'
 import { mockAvatarImage } from '@/mocks/images'
-import { toast } from '@/lib/toast'
-import type { SellerProfile } from '@/lib/session'
+import type {
+  SellerProfileCreateRequestDto,
+  SellerProfileResponseDto,
+} from '@/api/generated/model'
 
-interface FieldErrors {
-  shopName?: string
-  snsUrl?: string
-  contact?: string
+/** 폼이 들고 있는 입력값. 서버로 나갈 때 빈 칸은 아래 `toRequestBody` 가 걷어낸다. */
+interface FormValues {
+  storeName: string
+  snsUrl: string
+  storePhoneNumber: string
+  storeDescription: string
 }
 
-function validate(values: SellerProfile): FieldErrors {
+interface FieldErrors {
+  storeName?: string
+  snsUrl?: string
+  storePhoneNumber?: string
+  storeDescription?: string
+}
+
+/** 서버 규칙: 2~30자이며 `< > " ' \ ;` 를 포함할 수 없다. */
+const FORBIDDEN_IN_NAME = /[<>"'\\;]/
+const DESCRIPTION_MAX = 100
+
+/**
+ * SNS 주소에 빠진 `https://` 를 채워 준다.
+ *
+ * 사람들은 `instagram.com/upbid` 처럼 스킴 없이 복사해 오는데, 서버가 `@URL` 로
+ * 검사해서 스킴이 없으면 400 이다. 화면에서 붙여 주고 보낸다.
+ */
+function normalizeSnsUrl(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
+
+/** 점 있는 도메인이어야 통과. `@아이디` 같은 값이 새어 나가지 않게 막는다. */
+function isValidSnsUrl(value: string): boolean {
+  if (/\s/.test(value.trim())) return false
+
+  try {
+    return new URL(normalizeSnsUrl(value)).hostname.includes('.')
+  } catch {
+    return false
+  }
+}
+
+function validate(values: FormValues): FieldErrors {
   const errors: FieldErrors = {}
+  const storeName = values.storeName.trim()
 
-  if (!values.shopName.trim()) {
-    errors.shopName = '가게 이름을 입력해주세요.'
-  } else if (values.shopName.trim().length < 2) {
-    errors.shopName = '가게 이름은 2자 이상이어야 해요.'
+  if (!storeName) {
+    errors.storeName = '가게 이름을 입력해주세요.'
+  } else if (storeName.length < 2 || storeName.length > 30) {
+    errors.storeName = '가게 이름은 2~30자로 입력해주세요.'
+  } else if (FORBIDDEN_IN_NAME.test(storeName)) {
+    errors.storeName = `< > " ' \\ ; 문자는 쓸 수 없어요.`
   }
 
-  if (values.snsUrl.trim() && !/^https?:\/\//.test(values.snsUrl.trim())) {
-    errors.snsUrl = 'http:// 또는 https:// 로 시작하는 주소를 입력해주세요.'
+  if (values.snsUrl.trim() && !isValidSnsUrl(values.snsUrl)) {
+    errors.snsUrl = 'instagram.com/아이디 처럼 사이트 주소를 입력해주세요.'
   }
 
-  if (!/^01\d-?\d{3,4}-?\d{4}$/.test(values.contact.replace(/\s/g, ''))) {
-    errors.contact = '연락 가능한 휴대폰 번호를 입력해주세요.'
+  if (
+    !/^01\d-?\d{3,4}-?\d{4}$/.test(values.storePhoneNumber.replace(/\s/g, ''))
+  ) {
+    errors.storePhoneNumber = '연락 가능한 휴대폰 번호를 입력해주세요.'
+  }
+
+  if (values.storeDescription.trim().length > DESCRIPTION_MAX) {
+    errors.storeDescription = `한 줄 소개는 ${DESCRIPTION_MAX}자까지 쓸 수 있어요.`
   }
 
   return errors
 }
 
+/**
+ * 빈 선택 필드는 **키 자체를 빼고** 보낸다.
+ *
+ * 서버가 `snsUrl` 에 `.*\S.*` 패턴을 걸어 둬서 빈 문자열은 400 이다. null 은 통과한다.
+ */
+function toRequestBody(values: FormValues): SellerProfileCreateRequestDto {
+  const optional = (value: string) => value.trim() || undefined
+
+  return {
+    storeName: values.storeName.trim(),
+    snsUrl: optional(normalizeSnsUrl(values.snsUrl)),
+    storePhoneNumber: optional(values.storePhoneNumber),
+    storeDescription: optional(values.storeDescription),
+  }
+}
+
 const FIELDS = [
   {
-    key: 'shopName' as const,
+    key: 'storeName' as const,
     label: '가게 이름',
     placeholder: '예: 오늘의 빈티지',
-    hint: '구매자에게 보이는 이름이에요.',
+    hint: '구매자에게 보이는 이름이에요. 2~30자.',
     type: 'text',
     autoComplete: 'organization',
+    maxLength: 30,
   },
   {
     key: 'snsUrl' as const,
     label: 'SNS 링크',
-    placeholder: 'SNS 주소를 입력해 주세요',
+    placeholder: 'instagram.com/upbid',
     hint: '경매를 안내하는 채널이 있으면 적어주세요. (선택)',
-    type: 'url',
+    // `url` 로 두면 브라우저 기본 검증이 https:// 없는 입력을 먼저 막아버려서,
+    // 스킴을 붙여 주는 처리가 실행될 기회조차 없다.
+    type: 'text',
     autoComplete: 'url',
+    maxLength: undefined,
   },
   {
-    key: 'contact' as const,
+    key: 'storePhoneNumber' as const,
     label: '연락처',
     placeholder: '010-1234-5678',
     hint: '낙찰자에게만 공개됩니다.',
     type: 'tel',
     autoComplete: 'tel',
+    maxLength: 13,
   },
 ]
 
@@ -72,48 +141,39 @@ const FIELDS = [
  * 등록은 POST, 수정은 PUT(전체 교체)이라 필드 집합이 같다.
  *
  * **삭제 버튼은 두 프레임 어디에도 없어서 두지 않았다.**
+ *
+ * 폼은 값과 검증만 맡는다. 어느 API 로 보낼지는 화면이 정한다.
+ * 대표 이미지도 여기서 다루지 않는다 — 업로드 API 가 아직 없고, 수정 화면은
+ * 조회로 받은 `storeImageUrl` 을 그대로 되돌려 보내야 하기 때문이다.
  */
 export function SellerProfileForm({
   initial,
   submitLabel,
   uploadText,
+  submitting,
   onSubmit,
 }: {
-  initial?: SellerProfile
+  initial?: SellerProfileResponseDto
   submitLabel: string
   /** 이미지 칸 문구. 등록은 "이미지 업로드", 수정은 "프로필 이미지 변경". */
   uploadText: string
-  onSubmit: (values: SellerProfile) => void
+  submitting: boolean
+  onSubmit: (body: SellerProfileCreateRequestDto) => void
 }) {
-  const [values, setValues] = useState<SellerProfile>(
-    initial ?? {
-      shopName: '',
-      snsUrl: '',
-      contact: '',
-      introduction: '',
-      verified: false,
-    },
-  )
+  const [values, setValues] = useState<FormValues>({
+    storeName: initial?.storeName ?? '',
+    snsUrl: initial?.snsUrl ?? '',
+    storePhoneNumber: initial?.storePhoneNumber ?? '',
+    storeDescription: initial?.storeDescription ?? '',
+  })
   const [errors, setErrors] = useState<FieldErrors>({})
-  const [saving, setSaving] = useState(false)
 
-  // 등록 성공 시 화면을 떠나므로, 남은 목업 타이머는 언마운트 때 정리한다.
-  const saveTimer = useRef<number | null>(null)
-  useEffect(
-    () => () => {
-      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current)
-    },
-    [],
-  )
-
-  const update =
-    (key: 'shopName' | 'snsUrl' | 'contact' | 'introduction') =>
-    (value: string) => {
-      // 연락처는 입력하는 동안 하이픈을 자동으로 넣어준다.
-      const next = key === 'contact' ? formatPhoneNumber(value) : value
-      setValues((prev) => ({ ...prev, [key]: next }))
-      setErrors((prev) => ({ ...prev, [key]: undefined }))
-    }
+  const update = (key: keyof FormValues) => (value: string) => {
+    // 연락처는 입력하는 동안 하이픈을 자동으로 넣어준다.
+    const next = key === 'storePhoneNumber' ? formatPhoneNumber(value) : value
+    setValues((prev) => ({ ...prev, [key]: next }))
+    setErrors((prev) => ({ ...prev, [key]: undefined }))
+  }
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
@@ -121,14 +181,7 @@ export function SellerProfileForm({
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
 
-    setSaving(true)
-    // TODO: POST/PUT /api/v1/seller-profiles 연동 (현재 목업)
-    // 대표 이미지 업로드 규격은 아직 API 명세에 없어 파일만 들고 있는다.
-    saveTimer.current = window.setTimeout(() => {
-      setSaving(false)
-      toast.success('저장했어요')
-      onSubmit(values)
-    }, 600)
+    onSubmit(toRequestBody(values))
   }
 
   return (
@@ -141,9 +194,13 @@ export function SellerProfileForm({
         label="대표 이미지"
         uploadText={uploadText}
         maxWidth={280}
-        // 등록된 프로필을 고칠 때는 지금 사진이 보여야 한다 (목업 사진).
+        // 등록된 프로필을 고칠 때는 지금 사진이 보여야 한다.
+        // 서버에 사진이 없으면 가게 이름으로 만든 목업 사진을 대신 보여준다.
         initialUrl={
-          initial ? mockAvatarImage(initial.shopName, 560) : undefined
+          initial
+            ? (initial.storeImageUrl ??
+              mockAvatarImage(initial.storeName ?? '', 560))
+            : undefined
         }
       />
 
@@ -158,7 +215,7 @@ export function SellerProfileForm({
               error={errors[field.key]}
               type={field.type}
               autoComplete={field.autoComplete}
-              maxLength={field.key === 'contact' ? 13 : undefined}
+              maxLength={field.maxLength}
               placeholder={field.placeholder}
               value={values[field.key]}
               onChange={(event) => update(field.key)(event.target.value)}
@@ -169,16 +226,18 @@ export function SellerProfileForm({
         <div className="mb-6">
           <TextAreaField
             label="한 줄 소개"
-            hint="프로필 카드에 한 줄로 보여요."
+            hint={`프로필 카드에 한 줄로 보여요. ${DESCRIPTION_MAX}자까지.`}
+            error={errors.storeDescription}
             rows={3}
+            maxLength={DESCRIPTION_MAX}
             placeholder="판매자와 상품을 소개해 주세요."
-            value={values.introduction}
-            onChange={(event) => update('introduction')(event.target.value)}
+            value={values.storeDescription}
+            onChange={(event) => update('storeDescription')(event.target.value)}
           />
         </div>
 
-        <Button type="submit" variant="brand" size="form" disabled={saving}>
-          {saving ? '저장 중…' : submitLabel}
+        <Button type="submit" variant="brand" size="form" disabled={submitting}>
+          {submitting ? '저장 중…' : submitLabel}
         </Button>
       </div>
     </form>

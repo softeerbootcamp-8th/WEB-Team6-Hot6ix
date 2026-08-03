@@ -8,7 +8,8 @@ import { MOCK_PRODUCTS } from '@/mocks/data'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
 import { NumberField, TextAreaField, TextField } from '@/components/ui/field'
 import { requireMember } from '@/lib/route-guards'
-import { useCurrentUser } from '@/lib/session'
+import { RoutePending } from '@/components/route-states'
+import { useMySellerProfile } from '@/features/seller/use-my-seller-profile'
 
 /**
  * 경매방 생성 (Figma `WEB-08 · 판매자 · 경매방 생성`).
@@ -28,7 +29,7 @@ interface DraftItem {
 
 function AuctionRoomNewPage() {
   const navigate = useNavigate()
-  const user = useCurrentUser()
+  const { profile, isPending: profilePending } = useMySellerProfile()
 
   const [title, setTitle] = useState('')
   const [intro, setIntro] = useState('')
@@ -40,8 +41,11 @@ function AuctionRoomNewPage() {
   const [titleError, setTitleError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
+  if (profilePending) return <RoutePending />
+
   // 판매자 프로필이 없으면 리다이렉트하지 않고 안내 화면을 보여준다.
-  if (!user?.sellerProfile) {
+  // 조회에 실패한 경우도 여기로 온다 — 프로필 없이 방을 만들 수는 없어서다.
+  if (!profile) {
     return (
       <AppShell title="경매방 만들기" back>
         <PageHeader title="새 경매방 만들기" />

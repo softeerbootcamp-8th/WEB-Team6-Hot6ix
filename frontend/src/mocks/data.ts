@@ -21,14 +21,14 @@ import type {
  *   `/trades/$itemId` 가 물품 id 하나로 거래를 정확히 찾는 근거다.
  * - 거래는 **내 거래만** 있다. 내가 판 방(`role: 'SELLER'`)은 물품마다
  *   거래가 생기고, 남이 판 방은 내가 낙찰받은 물품에만 생긴다.
- * - 판매자 방의 판매자명은 내 가게(`MOCK_SELLER.sellerProfile.shopName`)다.
+ * - 판매자 방의 판매자명은 내 가게(아래 `MY_SHOP`)다.
  */
 
 const now = Date.now()
 
 /** 로그인한 나. `lib/session.ts` 의 `MOCK_MEMBER` 와 같은 값이어야 한다. */
 const ME = '기승민'
-/** 내 가게 이름. `lib/session.ts` 의 `MOCK_SELLER` 와 같은 값이어야 한다. */
+/** 내 가게 이름. 목업 방·거래에만 쓴다(실제 가게명은 서버가 준다). */
 const MY_SHOP = '승민이네 빈티지'
 
 /** 지금부터 n초 뒤의 ISO 시각 */
