@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -29,6 +30,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final AuctionItemRepository auctionItemRepository;
+    private final ImageUrlValidator imageUrlValidator;
 
     /**
      * 로그인한 판매자의 상품을 등록한다.
@@ -40,6 +42,8 @@ public class ProductService {
      */
     @Transactional
     public ProductResponseDto create(Long userId, ProductCreateRequestDto request) {
+
+        imageUrlValidator.validate(request.imageUrl());
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
 
@@ -80,6 +84,9 @@ public class ProductService {
      */
     @Transactional
     public ProductResponseDto update(Long userId, Long productId, ProductUpdateRequestDto request) {
+
+        // 수정은 PUT 전체 교체라 등록과 똑같이 URL이 통째로 들어온다. 등록만 막으면 검증이 없는 것과 같다.
+        imageUrlValidator.validate(request.imageUrl());
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         Product product = findOwnedProduct(sellerProfile, productId);

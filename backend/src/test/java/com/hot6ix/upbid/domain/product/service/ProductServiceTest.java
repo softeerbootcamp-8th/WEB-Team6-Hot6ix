@@ -18,6 +18,7 @@ import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -44,6 +45,10 @@ class ProductServiceTest {
 
     @Mock
     private AuctionItemRepository auctionItemRepository;
+
+    // 이미지 주소 검증은 ImageUrlValidatorTest에서 본다. 여기서는 통과시킨다.
+    @Mock
+    private ImageUrlValidator imageUrlValidator;
 
     @InjectMocks
     private ProductService productService;
