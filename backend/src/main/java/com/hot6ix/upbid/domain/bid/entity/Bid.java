@@ -9,6 +9,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -28,6 +29,11 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
  *
  * <p>제약은 값의 중복만 막는다. 서로 다른 금액이 현재가 검사를 통과한 뒤 뒤바뀐 순서로
  * 커밋되는 것은 막지 못하므로, 입찰 동시성은 물품 행 잠금으로 따로 다뤄야 한다.
+ *
+ * <p>{@code idx_bids_item_bidder_amount}는 리더보드 조회({@code findTopBidders})를 위한
+ * 것이다. 그 쿼리는 물품과 입찰자로 묶어 최고가를 뽑는데, {@code uk_bids_item_amount}는
+ * {@code bidder_user_id}를 담지 않아 테이블 본체를 다시 읽어야 한다. 세 컬럼을 순서대로
+ * 담으면 인덱스만 읽고 끝난다.
  */
 @Getter
 @Entity
@@ -35,7 +41,10 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
         name = "bids",
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_bids_item_amount",
-                columnNames = {"auction_item_id", "amount"})
+                columnNames = {"auction_item_id", "amount"}),
+        indexes = @Index(
+                name = "idx_bids_item_bidder_amount",
+                columnList = "auction_item_id, bidder_user_id, amount")
 )
 @EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
