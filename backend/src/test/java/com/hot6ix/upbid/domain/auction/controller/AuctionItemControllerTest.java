@@ -11,7 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
@@ -22,6 +24,7 @@ import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,6 +46,17 @@ class AuctionItemControllerTest extends AbstractControllerTest {
         return AuctionItemAddRequestDto.builder()
                 .productId(20L)
                 .startingPrice(50_000L)
+                .build();
+    }
+
+    private AuctionItemBulkAddRequestDto newBulkRequest(Long... productIds) {
+        return AuctionItemBulkAddRequestDto.builder()
+                .items(Arrays.stream(productIds)
+                        .map(productId -> AuctionItemAddRequestDto.builder()
+                                .productId(productId)
+                                .startingPrice(50_000L)
+                                .build())
+                        .toList())
                 .build();
     }
 
@@ -194,6 +208,74 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.message").value("경매방에 물품이 추가되었습니다."))
                 .andExpect(jsonPath("$.data.auctionItemId").value(1))
                 .andExpect(jsonPath("$.data.bidIncrement").value(1000));
+    }
+
+    @Test
+    @DisplayName("벌크로 추가하면 201과 추가·거절 목록을 함께 반환한다")
+    void addAll() throws Exception {
+
+        when(auctionItemService.addAll(eq(LOGIN_USER_ID), eq(10L), any(AuctionItemBulkAddRequestDto.class)))
+                .thenReturn(new AuctionItemBulkAddResponseDto(
+                        List.of(sampleDetail()),
+                        List.of(AuctionItemBulkAddResponseDto.Failure.of(
+                                21L, AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION))));
+
+        mockMvc.perform(post("/api/v1/auction-rooms/10/auction-items/bulk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newBulkRequest(20L, 21L))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.added[0].auctionItemId").value(1))
+                .andExpect(jsonPath("$.data.failed[0].productId").value(21))
+                .andExpect(jsonPath("$.data.failed[0].code").value(4005));
+    }
+
+    @Test
+    @DisplayName("추가할 물품이 하나도 없으면 400을 반환한다")
+    void addAllEmptyItems() throws Exception {
+
+        AuctionItemBulkAddRequestDto request = AuctionItemBulkAddRequestDto.builder()
+                .items(List.of())
+                .build();
+
+        mockMvc.perform(post("/api/v1/auction-rooms/10/auction-items/bulk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("items"));
+    }
+
+    @Test
+    @DisplayName("벌크 항목의 시작가가 0이면 400을 반환한다")
+    void addAllInvalidStartingPrice() throws Exception {
+
+        AuctionItemBulkAddRequestDto request = AuctionItemBulkAddRequestDto.builder()
+                .items(List.of(AuctionItemAddRequestDto.builder()
+                        .productId(20L)
+                        .startingPrice(0L)
+                        .build()))
+                .build();
+
+        mockMvc.perform(post("/api/v1/auction-rooms/10/auction-items/bulk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2002));
+    }
+
+    @Test
+    @DisplayName("경매방 물품 상한을 넘기면 409와 4009를 반환한다")
+    void addAllLimitExceeded() throws Exception {
+
+        when(auctionItemService.addAll(eq(LOGIN_USER_ID), eq(10L), any(AuctionItemBulkAddRequestDto.class)))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_LIMIT_EXCEEDED));
+
+        mockMvc.perform(post("/api/v1/auction-rooms/10/auction-items/bulk")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newBulkRequest(20L))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(4009));
     }
 
     @Test

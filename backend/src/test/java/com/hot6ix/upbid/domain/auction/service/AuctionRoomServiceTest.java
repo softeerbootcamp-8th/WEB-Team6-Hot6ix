@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
@@ -22,6 +23,9 @@ import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
+import com.hot6ix.upbid.global.response.CursorPageResponse;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -316,5 +320,86 @@ class AuctionRoomServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+    }
+
+    private AuctionRoomListItemResponseDto newListItem(Long auctionRoomId) {
+        return AuctionRoomListItemResponseDto.builder()
+                .auctionRoomId(auctionRoomId)
+                .name("승민의 경매방")
+                .status(AuctionRoomStatus.BEFORE)
+                .createdAt(LocalDateTime.of(2026, 8, 3, 12, 0))
+                .itemCount(2L)
+                .build();
+    }
+
+    private SellerProfile givenSellerProfileForList() {
+        SellerProfile sellerProfile = newSellerProfile();
+        ReflectionTestUtils.setField(sellerProfile, "sellerProfileId", 5L);
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        return sellerProfile;
+    }
+
+    @Test
+    @DisplayName("내 경매방 목록을 조회하면 요청한 쪽 크기만큼만 담기고 다음 커서가 채워진다")
+    void getMyRooms_hasNext() {
+
+        givenSellerProfileForList();
+
+        // size 2를 요청하면 리포지토리는 hasNext 판정용으로 3건을 돌려준다.
+        when(auctionRoomRepository.search(5L, null, null, null, 2))
+                .thenReturn(List.of(newListItem(30L), newListItem(20L), newListItem(10L)));
+
+        CursorPageResponse<AuctionRoomListItemResponseDto> response =
+                auctionRoomService.getMyRooms(1L, null, null, null, 2);
+
+        assertThat(response.content()).hasSize(2);
+        assertThat(response.hasNext()).isTrue();
+        assertThat(response.nextCursor()).isEqualTo(20L);
+    }
+
+    @Test
+    @DisplayName("마지막 쪽이면 다음 커서가 비어 있다")
+    void getMyRooms_lastPage() {
+
+        givenSellerProfileForList();
+
+        when(auctionRoomRepository.search(5L, null, null, null, 2))
+                .thenReturn(List.of(newListItem(30L)));
+
+        CursorPageResponse<AuctionRoomListItemResponseDto> response =
+                auctionRoomService.getMyRooms(1L, null, null, null, 2);
+
+        assertThat(response.content()).hasSize(1);
+        assertThat(response.hasNext()).isFalse();
+        assertThat(response.nextCursor()).isNull();
+    }
+
+    @Test
+    @DisplayName("쪽 크기를 주지 않으면 기본값으로 조회한다")
+    void getMyRooms_defaultPageSize() {
+
+        givenSellerProfileForList();
+
+        when(auctionRoomRepository.search(5L, null, null, null, AuctionRoomRepository.DEFAULT_PAGE_SIZE))
+                .thenReturn(List.of());
+
+        CursorPageResponse<AuctionRoomListItemResponseDto> response =
+                auctionRoomService.getMyRooms(1L, null, null, null, null);
+
+        assertThat(response.content()).isEmpty();
+        assertThat(response.hasNext()).isFalse();
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 목록 조회 시 예외가 발생한다")
+    void getMyRooms_sellerProfileNotFound() {
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionRoomService.getMyRooms(1L, null, null, null, null))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
     }
 }

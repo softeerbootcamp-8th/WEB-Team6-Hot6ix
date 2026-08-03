@@ -1,7 +1,9 @@
 package com.hot6ix.upbid.domain.auction.service;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.LeaderboardEntryResponseDto;
@@ -23,9 +25,13 @@ import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import com.hot6ix.upbid.global.exception.CommonErrorType;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -137,9 +143,7 @@ public class AuctionItemService {
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
 
-        if (auctionRoom.getStatus() == AuctionRoomStatus.CLOSED) {
-            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED);
-        }
+        assertRoomNotClosed(auctionRoom);
 
         Product product = findOwnedProduct(sellerProfile, request.productId());
 
@@ -147,9 +151,92 @@ public class AuctionItemService {
             throw new ApplicationException(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
         }
 
+        assertWithinLimit(auctionRoomId, 1);
+
         AuctionItem auctionItem = AuctionItem.from(auctionRoom, product, request);
 
         return AuctionItemDetailResponseDto.from(save(auctionItem));
+    }
+
+    /**
+     * 소유자 본인의 경매방에 여러 상품을 한 번에 READY 물품으로 추가한다. 판정 규칙은 단건
+     * {@link #add}와 같고, <b>다른 점은 거절된 상품이 있어도 나머지는 추가한다는 것</b>이다.
+     * 거절된 상품은 사유와 함께 응답의 {@code failed}로 돌려주므로 판매자가 상품을 처음부터
+     * 다시 고를 필요가 없다.
+     *
+     * <p>같은 판매자 프로필·경매방을 상품 수만큼 다시 조회하지 않는 것이 이 메서드의 이유다.
+     * 상품 조회와 중복 검사도 {@code IN} 절로 한 번에 끝내, 물품이 몇 개든 쿼리 수가 늘지 않는다.
+     *
+     * <p><b>부분 성공이 한 트랜잭션 안에서 성립하는 이유</b>는 거절 판정이 전부 저장 <i>전에</i>
+     * 끝나기 때문이다. 거절된 상품은 애초에 INSERT를 시도하지 않으므로 롤백할 것이 없다.
+     * 다만 {@code product_id} unique 제약 위반은 예외다 — 그건 저장 시점에 터져서 배치 전체가
+     * 롤백되므로 {@link #saveAll}이 전체 실패(409)로 바꾼다. 동시 요청이 겹친 드문 경우다.
+     *
+     * @param userId        추가를 요청한 회원의 ID
+     * @param auctionRoomId 물품을 추가할 경매방의 ID
+     * @param request       추가할 상품과 시작가 목록
+     * @return 추가된 물품과 거절된 상품
+     * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
+     *                               경매방이 없거나 본인 소유가 아닐 때(AUCTION_ROOM_NOT_FOUND),
+     *                               경매방이 종료됐을 때(AUCTION_ROOM_CLOSED),
+     *                               요청에 같은 상품이 두 번 들어왔을 때(INVALID_REQUEST),
+     *                               추가하면 경매방 물품 상한을 넘을 때(AUCTION_ITEM_LIMIT_EXCEEDED)
+     */
+    @Transactional
+    public AuctionItemBulkAddResponseDto addAll(Long userId, Long auctionRoomId,
+                                                AuctionItemBulkAddRequestDto request) {
+
+        SellerProfile sellerProfile = findActiveSellerProfile(userId);
+        AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
+
+        assertRoomNotClosed(auctionRoom);
+
+        List<Long> productIds = request.items().stream()
+                .map(AuctionItemAddRequestDto::productId)
+                .toList();
+
+        assertNoDuplicate(productIds);
+
+        Map<Long, Product> ownedProducts = productRepository
+                .findByProductIdInAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                        productIds, sellerProfile.getSellerProfileId())
+                .stream()
+                .collect(Collectors.toMap(Product::getProductId, Function.identity()));
+
+        Set<Long> alreadyInAuction = Set.copyOf(auctionItemRepository.findProductIdsIn(productIds));
+
+        List<AuctionItemBulkAddResponseDto.Failure> failed = new ArrayList<>();
+        List<AuctionItem> candidates = new ArrayList<>();
+
+        for (AuctionItemAddRequestDto item : request.items()) {
+            Product product = ownedProducts.get(item.productId());
+
+            if (product == null) {
+                failed.add(AuctionItemBulkAddResponseDto.Failure.of(
+                        item.productId(), ProductErrorType.PRODUCT_NOT_FOUND));
+                continue;
+            }
+            if (alreadyInAuction.contains(item.productId())) {
+                failed.add(AuctionItemBulkAddResponseDto.Failure.of(
+                        item.productId(), AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION));
+                continue;
+            }
+            candidates.add(AuctionItem.from(auctionRoom, product, item));
+        }
+
+        // 넣을 게 하나도 없으면 상한을 볼 이유도, 빈 배치를 flush할 이유도 없다.
+        if (candidates.isEmpty()) {
+            return new AuctionItemBulkAddResponseDto(List.of(), failed);
+        }
+
+        // 실제로 들어갈 물품만 센다. 거절된 상품까지 세면 넣지도 않을 것 때문에 상한에 걸린다.
+        assertWithinLimit(auctionRoomId, candidates.size());
+
+        List<AuctionItemDetailResponseDto> added = saveAll(candidates).stream()
+                .map(AuctionItemDetailResponseDto::from)
+                .toList();
+
+        return new AuctionItemBulkAddResponseDto(added, failed);
     }
 
     /**
@@ -332,6 +419,53 @@ public class AuctionItemService {
             return auctionItemRepository.saveAndFlush(auctionItem);
         } catch (DataIntegrityViolationException e) {
             throw new ApplicationException(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
+        }
+    }
+
+    /**
+     * {@link #save}의 벌크판. 다른 점은 <b>제약 위반이 배치 전체를 무르게 한다</b>는 것이다 —
+     * INSERT 하나가 걸려도 같은 flush에 묶인 나머지가 함께 롤백되므로, 어느 상품이 걸렸는지
+     * 가려내 부분 성공으로 만들 수 없다. 사전 검사가 정상 경로를 거르므로 여기까지 오는 것은
+     * 동시 요청이 겹친 경우뿐이고, 그때는 판매자가 다시 시도하면 사전 검사에 정확히 걸린다.
+     */
+    private List<AuctionItem> saveAll(List<AuctionItem> auctionItems) {
+        try {
+            return auctionItemRepository.saveAllAndFlush(auctionItems);
+        } catch (DataIntegrityViolationException e) {
+            throw new ApplicationException(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
+        }
+    }
+
+    private void assertRoomNotClosed(AuctionRoom auctionRoom) {
+        if (auctionRoom.getStatus() == AuctionRoomStatus.CLOSED) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED);
+        }
+    }
+
+    /**
+     * 요청 안에 같은 상품이 두 번 들어오면 거절한다. 거절 목록에 담지 않고 요청 전체를 무르는
+     * 이유는, 담으면 "중복 중 하나는 성공하고 하나는 실패"라는 뜻이 되어 어느 쪽이 들어갔는지
+     * 응답만 봐서는 알 수 없기 때문이다. 화면에서는 만들 수 없는 요청이라 방어 목적이다.
+     */
+    private void assertNoDuplicate(List<Long> productIds) {
+        if (productIds.size() != Set.copyOf(productIds).size()) {
+            throw new ApplicationException(CommonErrorType.INVALID_REQUEST);
+        }
+    }
+
+    /**
+     * 추가 후 물품 수가 경매방 상한을 넘지 않는지 확인한다. 상한을 <b>등록에서</b> 막는 이유는
+     * 목록 조회가 {@link AuctionItemRepository#MAX_SUMMARY_SIZE}건에서 끊기기 때문이다 —
+     * 그보다 많이 등록되면 뒤쪽 물품이 에러 없이 목록에서 사라진다. 그래서 두 값은 같아야 하고,
+     * 상수를 따로 두지 않고 조회 상한을 그대로 참조한다.
+     *
+     * <p>상한을 넘기면 앞에서부터 잘라 넣지 않고 요청 전체를 거절한다. 잘라 넣으면 판매자가
+     * 무엇이 빠졌는지 알 수 없다.
+     */
+    private void assertWithinLimit(Long auctionRoomId, int addCount) {
+        long current = auctionItemRepository.countByAuctionRoom_AuctionRoomId(auctionRoomId);
+        if (current + addCount > AuctionItemRepository.MAX_SUMMARY_SIZE) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_LIMIT_EXCEEDED);
         }
     }
 

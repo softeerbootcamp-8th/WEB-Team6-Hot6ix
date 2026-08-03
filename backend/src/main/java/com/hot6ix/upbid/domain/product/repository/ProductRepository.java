@@ -15,6 +15,14 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Optional<Product> findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(Long productId, Long sellerProfileId);
 
+    /**
+     * 요청자 소유의 살아있는 상품만 한 번에 조회한다. 물품 벌크 추가에서 상품 수만큼 단건
+     * 조회를 돌리지 않으려고 쓴다. <b>없거나 남의 상품인 ID는 결과에서 빠지므로</b>, 호출한
+     * 쪽이 요청 목록과 대조해 거절 목록을 만든다.
+     */
+    List<Product> findByProductIdInAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+            List<Long> productIds, Long sellerProfileId);
+
     int DEFAULT_PAGE_SIZE = 20;
 
     /**
