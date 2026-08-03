@@ -21,6 +21,7 @@ import { useGetProfile } from '@/api/generated/판매자-프로필/판매자-프
 import {
   CANDIDATE_PAGE_SIZE,
   toCandidatePage,
+  type CandidateRow,
   type CandidateStatus,
 } from '@/features/trades/adapt-candidate'
 import { toDeals } from '@/features/trades/adapt-deal'
@@ -104,6 +105,30 @@ const CANDIDATE_META: Record<CandidateStatus, { label: string; tone: Tone }> = {
   WAITING: { label: '대기', tone: 'muted' },
 }
 
+/**
+ * 후보 한 명의 결과 칸.
+ *
+ * 대기 중인 후보를 "차순위"로 따로 짚지 않는다. 서버가 5명씩 끊어 주므로 진행 중인
+ * 후보가 다른 페이지에 있으면 그 페이지의 첫 대기자가 차순위처럼 보인다 — 6순위를
+ * 보고 있는데 실제 차순위는 4순위인 식이다. 승계 순서는 순위 자체가 이미 말해 주고,
+ * "지금 차례"는 서버가 `IN_PROGRESS` 로 알려준다.
+ *
+ * 거래가 성사된 뒤에는 남은 대기자에게 차례가 오지 않는데 서버는 그들을 계속
+ * `WAITING` 으로 준다. 그대로 "대기"라고 쓰면 아직 순서를 기다리는 것처럼 읽힌다.
+ */
+function toResultBadge(
+  candidate: CandidateRow,
+  settled: boolean,
+): { label: string; tone: Tone } {
+  if (candidate.dealStatus !== 'WAITING') {
+    return CANDIDATE_META[candidate.dealStatus]
+  }
+
+  return settled
+    ? { label: '기회 없음', tone: 'muted' }
+    : CANDIDATE_META.WAITING
+}
+
 function TradeDetailPage() {
   const { itemId } = Route.useParams()
   const auctionItemId = Number(itemId)
@@ -168,6 +193,15 @@ function TradeDetailPage() {
 
   const current =
     list.rows.find((row) => row.dealStatus === 'IN_PROGRESS') ?? null
+
+  /*
+   * 거래 단계는 후보 목록에서 판단한다. 표에 "거래 성사"가 보이는데 배지가 다른
+   * 말을 하면 안 된다. 거래 내역은 성사된 후보가 다른 페이지에 있을 때를 위한
+   * 보완일 뿐이고, 그 응답이 없다고 해서 실패로 단정하지 않는다.
+   */
+  const settled =
+    list.rows.some((row) => row.dealStatus === 'COMPLETED') ||
+    deal?.status === 'COMPLETED'
 
   /*
    * 성사·실패는 서버가 확정한 뒤에만 화면에 반영한다. 실패는 차순위 승계까지
@@ -235,18 +269,6 @@ function TradeDetailPage() {
     else failMutation.mutate(variables)
   }
 
-  /*
-   * 승계를 기다리는 바로 다음 후보. 서버가 5명씩 끊어 주므로 다음 후보가 다른
-   * 페이지에 있으면 알 수 없고, 그때는 표시를 생략한다. "지금 차례"는 서버가
-   * IN_PROGRESS 로 알려주니 승계 예고가 없어도 화면은 성립한다.
-   */
-  const nextInLine =
-    list.rows.find(
-      (row) =>
-        row.dealStatus === 'WAITING' &&
-        (!current || row.candidateRank > current.candidateRank),
-    ) ?? null
-
   if (candidatesQuery.isPending || itemQuery.isPending) return <RoutePending />
 
   const notice = toAccessNotice(candidatesQuery.error?.response?.status)
@@ -282,15 +304,6 @@ function TradeDetailPage() {
   const isSeller = list.viewerRole === 'SELLER'
   const unsold = item.status === 'FAILED'
   const productName = item.productName ?? '이름 없는 물품'
-
-  /*
-   * 거래 단계는 후보 목록에서 판단한다. 표에 "거래 성사"가 보이는데 배지가 다른
-   * 말을 하면 안 된다. 거래 내역은 성사된 후보가 다른 페이지에 있을 때를 위한
-   * 보완일 뿐이고, 그 응답이 없다고 해서 실패로 단정하지 않는다.
-   */
-  const settled =
-    list.rows.some((row) => row.dealStatus === 'COMPLETED') ||
-    deal?.status === 'COMPLETED'
 
   /** 전원 실패는 후보 전체가 이 페이지에 있을 때만 단정할 수 있다. */
   const allFailed =
@@ -525,16 +538,10 @@ function TradeDetailPage() {
                */}
               <ul key={`m-${page}`} className="mt-4 space-y-2 md:hidden">
                 {list.rows.map((candidate, index) => {
-                  const meta = CANDIDATE_META[candidate.dealStatus]
                   const active = candidate.dealStatus === 'IN_PROGRESS'
                   const mine = !isSeller && candidate.isMe
-                  const succeeds =
-                    candidate.dealCandidateId === nextInLine?.dealCandidateId
-                  const resultLabel =
-                    candidate.dealStatus === 'WAITING' && succeeds
-                      ? '차순위'
-                      : meta.label
-                  const tone: Tone = mine ? 'mine' : meta.tone
+                  const result = toResultBadge(candidate, settled)
+                  const tone: Tone = mine ? 'mine' : result.tone
 
                   return (
                     <li
@@ -574,7 +581,7 @@ function TradeDetailPage() {
                             TONE[tone].text,
                           )}
                         >
-                          {succeeds && !mine ? '실패 시 승계' : resultLabel}
+                          {result.label}
                         </span>
 
                         {/* 서버가 거래 상대일 때만 연락처를 내려준다. */}
@@ -635,19 +642,13 @@ function TradeDetailPage() {
                   {/* key 로 remount 시켜 페이지를 넘길 때마다 행이 다시 올라오게 한다. */}
                   <ul key={page} className="mt-3 space-y-3.5">
                     {list.rows.map((candidate, index) => {
-                      const meta = CANDIDATE_META[candidate.dealStatus]
                       const active = candidate.dealStatus === 'IN_PROGRESS'
                       // "나" 표시는 구매자 화면에만 있다. 판매자는 목록 밖이다.
                       const mine = !isSeller && candidate.isMe
 
                       // 구매자 화면은 "결과", 판매자 화면은 "거래 상태" 열이다.
-                      const resultLabel =
-                        candidate.dealStatus === 'WAITING' &&
-                        candidate.dealCandidateId ===
-                          nextInLine?.dealCandidateId
-                          ? '차순위'
-                          : meta.label
-                      const resultTone: Tone = mine ? 'mine' : meta.tone
+                      const result = toResultBadge(candidate, settled)
+                      const resultTone: Tone = mine ? 'mine' : result.tone
 
                       return (
                         <li
@@ -710,7 +711,7 @@ function TradeDetailPage() {
                               TONE[resultTone].text,
                             )}
                           >
-                            {mine ? `내 순위 · ${resultLabel}` : resultLabel}
+                            {mine ? `내 순위 · ${result.label}` : result.label}
                           </span>
 
                           {isSeller &&
