@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { AppShell } from '@/components/layout/page-shell'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { EmptyState } from '@/components/page-header'
-import { MOCK_CANDIDATES, MOCK_ROOM_DETAIL, MOCK_TRADES } from '@/mocks/data'
+import { findMockItem, findMockTrade, mockCandidates } from '@/mocks/data'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Pager } from '@/components/pager'
 import { cn } from '@/lib/utils'
@@ -62,14 +62,14 @@ const CANDIDATE_META: Record<CandidateStatus, { label: string; tone: Tone }> = {
 function TradeDetailPage() {
   const { itemId } = Route.useParams()
 
-  const trade = MOCK_TRADES.find(
-    (candidate) => String(candidate.auctionItemId) === itemId,
-  )
-  const item = MOCK_ROOM_DETAIL.items.find(
-    (candidate) => String(candidate.id) === itemId,
-  )
+  // 주소의 `itemId` 는 물품 id 다. 물품 id 는 방을 넘어서도 겹치지 않는다.
+  const trade = findMockTrade(Number(itemId))
+  const item = findMockItem(Number(itemId))
 
-  const [candidates, setCandidates] = useState<DealCandidate[]>(MOCK_CANDIDATES)
+  // 후보는 거래마다 다르다. 유찰이면 빈 배열이라 "낙찰 후보 없음"이 뜬다.
+  const [candidates, setCandidates] = useState<DealCandidate[]>(() =>
+    mockCandidates(trade?.id ?? 0),
+  )
   const [pendingAction, setPendingAction] = useState<
     'complete' | 'fail' | null
   >(null)

@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { GuestShell } from '@/components/layout/page-shell'
 import { ProductThumbnail } from '@/components/product-thumbnail'
-import { MOCK_ROOM_DETAIL } from '@/mocks/data'
+import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { StatusBadge } from '@/components/status-badge'
 import { cn } from '@/lib/utils'
@@ -98,7 +98,8 @@ function JoinRoomPage() {
   const isGuest = user === null
   const roomTitle = room.name ?? '경매방'
   // TODO: 물품 목록은 별도 엔드포인트라 아직 목업이다.
-  const items = MOCK_ROOM_DETAIL.items
+  const items =
+    findMockRoom(room.auctionRoomId ?? 0)?.items ?? MOCK_ROOM_DETAIL.items
 
   const enter = () => {
     if (!isGuest && !agreed) return
