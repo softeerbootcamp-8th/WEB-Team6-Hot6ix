@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.LeaderboardEntryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
@@ -13,6 +14,8 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.bid.repository.BidRepository;
+import com.hot6ix.upbid.domain.bid.repository.TopBidderProjection;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
@@ -48,14 +51,22 @@ public class AuctionItemService {
      */
     private static final int MAX_IN_PROGRESS_PER_ROOM = 3;
 
+    /** 화면이 상위 3명만 그린다({@code leaderboard-rows.tsx}). 클라이언트가 정하게 두지 않는다. */
+    private static final int LEADERBOARD_SIZE = 3;
+
     private final AuctionItemRepository auctionItemRepository;
     private final AuctionRoomRepository auctionRoomRepository;
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final DomainEventPublisher domainEventPublisher;
+    private final BidRepository bidRepository;
 
     /**
-     * 경매방의 물품 목록을 상태 우선 순서로 조회한다.
+     * 경매방의 물품 목록을 상태 우선 순서로 조회한다. 물품마다 상위
+     * {@link #LEADERBOARD_SIZE}명을 함께 담는다.
+     *
+     * <p>리더보드는 쿼리 한 번으로 물품 전체를 가져와 ID로 묶는다. 물품마다 따로 조회하면
+     * 물품 수만큼 쿼리가 늘어난다. 물품이 없으면 조회 자체를 건너뛴다.
      *
      * @param auctionRoomId 조회할 경매방의 ID
      * @return 물품 요약 목록. 물품이 없으면 빈 목록
@@ -65,19 +76,48 @@ public class AuctionItemService {
         if (!auctionRoomRepository.existsByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)) {
             throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
         }
-        return auctionItemRepository.findSummaries(auctionRoomId);
+
+        List<AuctionItemSummaryResponseDto> summaries =
+                auctionItemRepository.findSummaries(auctionRoomId);
+
+        Map<Long, List<LeaderboardEntryResponseDto>> leaderboards = findLeaderboards(
+                summaries.stream().map(AuctionItemSummaryResponseDto::auctionItemId).toList());
+
+        return summaries.stream()
+                .map(summary -> summary.withLeaderboard(
+                        leaderboards.getOrDefault(summary.auctionItemId(), List.of())))
+                .toList();
     }
 
     /**
      * 물품 상세를 조회한다. 상태로 거르지 않으므로 낙찰·유찰된 물품도 조회된다.
      *
+     * <p>리더보드는 쿼리를 따로 돌려 붙인다. JPQL 생성자 표현식으로는 List 필드를 채울 수 없다.
+     *
      * @param auctionItemId 조회할 물품의 ID
-     * @return 물품 상세
+     * @return 물품 상세. 입찰이 없으면 리더보드는 빈 목록
      * @throws ApplicationException 물품이 없을 때(AUCTION_ITEM_NOT_FOUND)
      */
     public AuctionItemDetailResponseDto getDetail(Long auctionItemId) {
-        return auctionItemRepository.findDetail(auctionItemId)
+        AuctionItemDetailResponseDto detail = auctionItemRepository.findDetail(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        return detail.withLeaderboard(
+                findLeaderboards(List.of(auctionItemId))
+                        .getOrDefault(auctionItemId, List.of()));
+    }
+
+    /**
+     * 물품들의 리더보드를 쿼리 한 번으로 가져와 물품 ID로 묶는다. 물품마다 따로 조회하면
+     * 물품 수만큼 쿼리가 늘어난다.
+     *
+     * @return 물품 ID → 상위 {@link #LEADERBOARD_SIZE}명. 입찰이 없는 물품은 키가 없다
+     */
+    private Map<Long, List<LeaderboardEntryResponseDto>> findLeaderboards(List<Long> auctionItemIds) {
+        return bidRepository.findTopBidders(auctionItemIds, LEADERBOARD_SIZE).stream()
+                .collect(Collectors.groupingBy(
+                        TopBidderProjection::getAuctionItemId,
+                        Collectors.mapping(LeaderboardEntryResponseDto::from, Collectors.toList())));
     }
 
     /**

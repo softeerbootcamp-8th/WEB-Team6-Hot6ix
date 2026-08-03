@@ -104,6 +104,8 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.data").isArray())
                 .andExpect(jsonPath("$.data[0].auctionItemId").value(1))
                 .andExpect(jsonPath("$.data[0].productName").value("한정판 피규어"))
+                .andExpect(jsonPath("$.data[0].leaderboard").isArray())
+                .andExpect(jsonPath("$.data[0].leaderboard").isEmpty())
                 .andExpect(jsonPath("$.data[0].status").value("IN_PROGRESS"));
     }
 
