@@ -65,8 +65,11 @@ function AuctionRoomNewPage() {
     )
   }
 
+  // 상품은 한 번의 경매에만 쓴다. 이미 경매를 거친 상품은 고를 수 없다.
   const availableProducts = MOCK_PRODUCTS.filter(
-    (product) => !items.some((item) => item.productId === product.id),
+    (product) =>
+      product.status === 'DRAFT' &&
+      !items.some((item) => item.productId === product.id),
   )
 
   const canSubmit = title.trim().length >= 2 && items.length > 0

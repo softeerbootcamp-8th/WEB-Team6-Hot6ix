@@ -2,7 +2,6 @@ import type {
   AuctionItemDetail,
   AuctionRoomDetail,
   AuctionRoomSummary,
-  DealCandidate,
   Product,
   RoomEvent,
   TradeSummary,
@@ -13,9 +12,24 @@ import type {
  *
  * 실제 값은 API 에서 온다. 마감 시각만 화면을 열 때 기준으로 계산해서
  * 카운트다운이 실제로 흐르게 해뒀다.
+ *
+ * **한 벌로 이어져 있다.** 방 → 물품 → 거래 → 상품이 id 로 연결되고
+ * 이름·금액·낙찰자가 화면마다 같은 값을 쓴다. 한쪽만 고치면 다른 화면에서
+ * 어긋나므로 아래 규칙을 지킨다.
+ *
+ * - 물품 id 는 `방번호 * 100 + 순번` 이라 방을 넘어서도 겹치지 않는다.
+ *   `/trades/$itemId` 가 물품 id 하나로 거래를 정확히 찾는 근거다.
+ * - 거래는 **내 거래만** 있다. 내가 판 방(`role: 'SELLER'`)은 물품마다
+ *   거래가 생기고, 남이 판 방은 내가 낙찰받은 물품에만 생긴다.
+ * - 판매자 방의 판매자명은 내 가게(`MOCK_SELLER.sellerProfile.shopName`)다.
  */
 
 const now = Date.now()
+
+/** 로그인한 나. `lib/session.ts` 의 `MOCK_MEMBER` 와 같은 값이어야 한다. */
+const ME = '기승민'
+/** 내 가게 이름. `lib/session.ts` 의 `MOCK_SELLER` 와 같은 값이어야 한다. */
+const MY_SHOP = '승민이네 빈티지'
 
 /** 지금부터 n초 뒤의 ISO 시각 */
 function after(seconds: number) {
@@ -27,21 +41,26 @@ function before(minutes: number) {
   return new Date(now - minutes * 60 * 1000).toISOString()
 }
 
+/** 종료된 방의 물품 마감 시각. 방이 닫힌 날로 맞춘다. */
+function closedOn(date: string) {
+  return new Date(`${date}T21:00:00+09:00`).toISOString()
+}
+
 export const MOCK_ROOMS: AuctionRoomSummary[] = [
   {
     id: 1,
     title: '7월 셀러 라이브 경매방',
-    sellerName: '민지 셀러',
+    sellerName: '원기 셀러',
     status: 'LIVE',
     role: 'BUYER',
-    itemCount: 4,
+    itemCount: 6,
     participantCount: 128,
     closedAt: null,
   },
   {
     id: 2,
     title: '포토카드 특가전',
-    sellerName: '데님러버 셀러',
+    sellerName: MY_SHOP,
     status: 'LIVE',
     role: 'SELLER',
     itemCount: 3,
@@ -51,7 +70,7 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
   {
     id: 3,
     title: '신규 입고 테스트',
-    sellerName: '빈티지샵',
+    sellerName: MY_SHOP,
     status: 'CLOSED',
     role: 'SELLER',
     itemCount: 2,
@@ -61,7 +80,7 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
   {
     id: 4,
     title: '스니커즈 위크',
-    sellerName: '준호 셀러',
+    sellerName: '한기 셀러',
     status: 'CLOSED',
     role: 'BUYER',
     itemCount: 5,
@@ -71,7 +90,7 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
   {
     id: 5,
     title: '한정판 굿즈 정리',
-    sellerName: '민지 셀러',
+    sellerName: '서지 셀러',
     status: 'CLOSED',
     role: 'BUYER',
     itemCount: 3,
@@ -81,7 +100,7 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
   {
     id: 7,
     title: '오픈 준비 중인 방',
-    sellerName: '민지 셀러',
+    sellerName: MY_SHOP,
     status: 'READY',
     role: 'SELLER',
     itemCount: 0,
@@ -91,7 +110,7 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
   {
     id: 6,
     title: '봄 시즌 오프',
-    sellerName: '빈티지샵',
+    sellerName: MY_SHOP,
     status: 'CLOSED',
     role: 'SELLER',
     itemCount: 4,
@@ -100,19 +119,25 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
   },
 ]
 
-export const MOCK_ROOM_DETAIL: AuctionRoomDetail = {
+/**
+ * 라이브 경매방 (`/rooms/1`). 시연의 중심이 되는 방이다.
+ *
+ * 진행 중 2 · 시작 전 1 · 종료 3 으로 물품 상태를 모두 깔아 둔다.
+ * 종료된 `106` 은 내가 7위 후보로 올라 있어서 거래 상세(WEB-02)로 이어진다.
+ */
+const ROOM_1: AuctionRoomDetail = {
   id: 1,
   title: '7월 셀러 라이브 경매방',
   description: '한정판 스니커즈와 빈티지 의류를 정리합니다.',
-  sellerName: '민지 셀러',
+  sellerName: '원기 셀러',
   status: 'LIVE',
   role: 'BUYER',
   participantCount: 128,
-  shareCode: 'abc123',
+  shareCode: 'live001',
   softCloseSeconds: 30,
   items: [
     {
-      id: 1,
+      id: 101,
       roomId: 1,
       name: '한정판 조던 스니커즈',
       category: '스니커즈',
@@ -128,18 +153,20 @@ export const MOCK_ROOM_DETAIL: AuctionRoomDetail = {
       topBidderNickname: '스니커홀릭',
       extended: false,
       leaderboard: [
-        { rank: 1, nickname: '스니커홀릭', amount: 85000, isMe: true },
+        { rank: 1, nickname: '스니커홀릭', amount: 85000, isMe: false },
         { rank: 2, nickname: '조던매니아', amount: 82000, isMe: false },
-        { rank: 3, nickname: '슈즈러버', amount: 80000, isMe: false },
+        { rank: 3, nickname: ME, amount: 80000, isMe: true },
+        { rank: 4, nickname: '슈즈러버', amount: 78000, isMe: false },
+        { rank: 5, nickname: '킥스타', amount: 75000, isMe: false },
       ],
       history: [
         { id: 3, nickname: '스니커홀릭', amount: 85000, bidAt: before(1) },
         { id: 2, nickname: '조던매니아', amount: 82000, bidAt: before(3) },
-        { id: 1, nickname: '슈즈러버', amount: 80000, bidAt: before(6) },
+        { id: 1, nickname: ME, amount: 80000, bidAt: before(6) },
       ],
     },
     {
-      id: 2,
+      id: 102,
       roomId: 1,
       name: '빈티지 데님 자켓',
       category: '아우터',
@@ -150,23 +177,28 @@ export const MOCK_ROOM_DETAIL: AuctionRoomDetail = {
       startPrice: 8000,
       currentPrice: 13000,
       bidUnit: 1000,
-      endsAt: after(7200),
+      /*
+       * 시연용으로 짧게 잡았다. 화면을 열고 1분 뒤 마감되므로 마감 임박 표시,
+       * 소프트클로즈 +30초 연장(입찰 시), 자동 마감까지 한 번에 보여줄 수 있다.
+       * 새로고침하면 다시 1분부터 센다.
+       */
+      endsAt: after(60),
       bidCount: 7,
       topBidderNickname: '데님러버',
       extended: true,
       leaderboard: [
         { rank: 1, nickname: '데님러버', amount: 13000, isMe: false },
         { rank: 2, nickname: '빈티지홀릭', amount: 12000, isMe: false },
-        { rank: 3, nickname: '청청패션', amount: 11000, isMe: true },
+        { rank: 3, nickname: ME, amount: 11000, isMe: true },
       ],
       history: [
         { id: 3, nickname: '데님러버', amount: 13000, bidAt: before(1) },
         { id: 2, nickname: '빈티지홀릭', amount: 12000, bidAt: before(2) },
-        { id: 1, nickname: '청청패션', amount: 11000, bidAt: before(4) },
+        { id: 1, nickname: ME, amount: 11000, bidAt: before(4) },
       ],
     },
     {
-      id: 3,
+      id: 103,
       roomId: 1,
       name: '아이돌 포토카드 세트',
       category: '컬렉터블',
@@ -185,7 +217,7 @@ export const MOCK_ROOM_DETAIL: AuctionRoomDetail = {
       history: [],
     },
     {
-      id: 4,
+      id: 104,
       roomId: 1,
       name: '리미티드 워치',
       category: '시계',
@@ -202,7 +234,7 @@ export const MOCK_ROOM_DETAIL: AuctionRoomDetail = {
       extended: false,
       leaderboard: [
         { rank: 1, nickname: '시계덕후', amount: 56000, isMe: false },
-        { rank: 2, nickname: '스니커홀릭', amount: 54000, isMe: true },
+        { rank: 2, nickname: '스니커홀릭', amount: 54000, isMe: false },
         { rank: 3, nickname: '빈티지홀릭', amount: 52000, isMe: false },
       ],
       history: [
@@ -211,7 +243,7 @@ export const MOCK_ROOM_DETAIL: AuctionRoomDetail = {
       ],
     },
     {
-      id: 5,
+      id: 105,
       roomId: 1,
       name: '레트로 피규어',
       category: '컬렉터블',
@@ -235,7 +267,7 @@ export const MOCK_ROOM_DETAIL: AuctionRoomDetail = {
       ],
     },
     {
-      id: 6,
+      id: 106,
       roomId: 1,
       name: '핸드메이드 가죽지갑',
       category: '잡화',
@@ -253,9 +285,503 @@ export const MOCK_ROOM_DETAIL: AuctionRoomDetail = {
       leaderboard: [
         { rank: 1, nickname: '가죽공방', amount: 45000, isMe: false },
         { rank: 2, nickname: '데님러버', amount: 44000, isMe: false },
+        { rank: 3, nickname: '슈프림홀릭', amount: 43000, isMe: false },
+        { rank: 4, nickname: '오프화이트', amount: 42000, isMe: false },
+        { rank: 5, nickname: '스트릿핏', amount: 41000, isMe: false },
       ],
       history: [
-        { id: 1, nickname: '가죽공방', amount: 45000, bidAt: before(34) },
+        { id: 2, nickname: '가죽공방', amount: 45000, bidAt: before(34) },
+        { id: 1, nickname: '데님러버', amount: 44000, bidAt: before(36) },
+      ],
+    },
+  ],
+}
+
+/** 내가 연 라이브 방 (`/rooms/2`). 판매자 시점 라이브 화면을 본다. */
+const ROOM_2: AuctionRoomDetail = {
+  id: 2,
+  title: '포토카드 특가전',
+  description: '모아둔 포토카드를 한 번에 정리합니다.',
+  sellerName: MY_SHOP,
+  status: 'LIVE',
+  role: 'SELLER',
+  participantCount: 64,
+  shareCode: 'live002',
+  softCloseSeconds: 30,
+  items: [
+    {
+      id: 201,
+      roomId: 2,
+      name: '희귀 포토카드 세트',
+      category: '컬렉터블',
+      description:
+        '슬리브에 넣어 보관한 A급 포토카드 세트입니다. 모서리 눌림 없이 깨끗합니다.',
+      productUrl: 'https://example.com/photocard',
+      status: 'ACTIVE',
+      startPrice: 5000,
+      currentPrice: 22000,
+      bidUnit: 1000,
+      endsAt: after(3600),
+      bidCount: 9,
+      topBidderNickname: '피규어덕후',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '피규어덕후', amount: 22000, isMe: false },
+        { rank: 2, nickname: '앨범수집가', amount: 21000, isMe: false },
+        { rank: 3, nickname: '카드모으기', amount: 19000, isMe: false },
+      ],
+      history: [
+        { id: 2, nickname: '피규어덕후', amount: 22000, bidAt: before(2) },
+        { id: 1, nickname: '앨범수집가', amount: 21000, bidAt: before(5) },
+      ],
+    },
+    {
+      id: 202,
+      roomId: 2,
+      name: '미니앨범 한정 포토카드',
+      category: '컬렉터블',
+      description: '초동 특전으로 나온 미개봉 포토카드입니다.',
+      productUrl: 'https://example.com/mini-album',
+      status: 'ACTIVE',
+      startPrice: 3000,
+      currentPrice: 9000,
+      bidUnit: 500,
+      endsAt: after(2700),
+      bidCount: 5,
+      topBidderNickname: '앨범수집가',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '앨범수집가', amount: 9000, isMe: false },
+        { rank: 2, nickname: '카드모으기', amount: 8500, isMe: false },
+      ],
+      history: [
+        { id: 1, nickname: '앨범수집가', amount: 9000, bidAt: before(3) },
+      ],
+    },
+    {
+      id: 203,
+      roomId: 2,
+      name: '홀로그램 포토카드',
+      category: '컬렉터블',
+      description: '럭키드로우 당첨분입니다. 홀로그램 상태가 선명합니다.',
+      productUrl: 'https://example.com/hologram',
+      status: 'READY',
+      startPrice: 4000,
+      currentPrice: 4000,
+      bidUnit: 500,
+      endsAt: after(5400),
+      bidCount: 0,
+      topBidderNickname: null,
+      extended: false,
+      leaderboard: [],
+      history: [],
+    },
+  ],
+}
+
+/** 내가 연 종료된 방 (`/rooms/3`). 물품마다 내 거래가 이어진다. */
+const ROOM_3: AuctionRoomDetail = {
+  id: 3,
+  title: '신규 입고 테스트',
+  description: '새로 들어온 카메라 장비를 시험 삼아 올렸습니다.',
+  sellerName: MY_SHOP,
+  status: 'CLOSED',
+  role: 'SELLER',
+  participantCount: 41,
+  shareCode: 'done003',
+  softCloseSeconds: 30,
+  items: [
+    {
+      id: 301,
+      roomId: 3,
+      name: '레트로 필름 카메라',
+      category: '카메라',
+      description:
+        '작동 확인을 마친 필름 카메라입니다. 케이스가 함께 있습니다.',
+      productUrl: 'https://example.com/film-camera',
+      status: 'CLOSED',
+      startPrice: 40000,
+      currentPrice: 40000,
+      bidUnit: 2000,
+      endsAt: closedOn('2026-07-18'),
+      bidCount: 0,
+      topBidderNickname: null,
+      extended: false,
+      leaderboard: [],
+      history: [],
+    },
+    {
+      id: 302,
+      roomId: 3,
+      name: '빈티지 필름 렌즈',
+      category: '카메라',
+      description: '곰팡이 없이 깨끗하고 헬리코이드가 부드럽습니다.',
+      productUrl: 'https://example.com/film-lens',
+      status: 'CLOSED',
+      startPrice: 20000,
+      currentPrice: 38000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-07-18'),
+      bidCount: 13,
+      topBidderNickname: '우재',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '우재', amount: 38000, isMe: false },
+        { rank: 2, nickname: '필름사랑', amount: 36000, isMe: false },
+        { rank: 3, nickname: '올드렌즈', amount: 34000, isMe: false },
+      ],
+      history: [
+        {
+          id: 1,
+          nickname: '우재',
+          amount: 38000,
+          bidAt: closedOn('2026-07-18'),
+        },
+      ],
+    },
+  ],
+}
+
+/** 남이 연 종료된 방 (`/rooms/4`). `402` 만 내가 낙찰받아 거래가 있다. */
+const ROOM_4: AuctionRoomDetail = {
+  id: 4,
+  title: '스니커즈 위크',
+  description: '일주일 동안 스니커즈만 모아 진행한 경매입니다.',
+  sellerName: '한기 셀러',
+  status: 'CLOSED',
+  role: 'BUYER',
+  participantCount: 213,
+  shareCode: 'done004',
+  softCloseSeconds: 30,
+  items: [
+    {
+      id: 401,
+      roomId: 4,
+      name: '조던 1 레트로 하이',
+      category: '스니커즈',
+      description: '270mm · 박스 포함 · 실착 2회',
+      productUrl: 'brand.com/jordan-1-retro',
+      status: 'CLOSED',
+      startPrice: 90000,
+      currentPrice: 132000,
+      bidUnit: 2000,
+      endsAt: closedOn('2026-06-20'),
+      bidCount: 24,
+      topBidderNickname: '킥스타',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '킥스타', amount: 132000, isMe: false },
+        { rank: 2, nickname: '조던매니아', amount: 128000, isMe: false },
+        { rank: 3, nickname: '슈프림홀릭', amount: 125000, isMe: false },
+      ],
+      history: [
+        {
+          id: 1,
+          nickname: '킥스타',
+          amount: 132000,
+          bidAt: closedOn('2026-06-20'),
+        },
+      ],
+    },
+    {
+      id: 402,
+      roomId: 4,
+      name: '에어포스 1 로우',
+      category: '스니커즈',
+      description: '260mm · 미착용 · 정품 확인서 포함',
+      productUrl: 'brand.com/air-force-1',
+      status: 'CLOSED',
+      startPrice: 50000,
+      currentPrice: 78000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-06-20'),
+      bidCount: 16,
+      topBidderNickname: ME,
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: ME, amount: 78000, isMe: true },
+        { rank: 2, nickname: '데일리슈', amount: 76000, isMe: false },
+        { rank: 3, nickname: '스트릿핏', amount: 74000, isMe: false },
+      ],
+      history: [
+        { id: 1, nickname: ME, amount: 78000, bidAt: closedOn('2026-06-20') },
+      ],
+    },
+    {
+      id: 403,
+      roomId: 4,
+      name: '덩크 로우 팬더',
+      category: '스니커즈',
+      description: '275mm · 2회 착용 · 박스 포함',
+      productUrl: 'brand.com/dunk-low-panda',
+      status: 'CLOSED',
+      startPrice: 100000,
+      currentPrice: 145000,
+      bidUnit: 5000,
+      endsAt: closedOn('2026-06-20'),
+      bidCount: 21,
+      topBidderNickname: '슈프림홀릭',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '슈프림홀릭', amount: 145000, isMe: false },
+        { rank: 2, nickname: '킥스타', amount: 140000, isMe: false },
+      ],
+      history: [
+        {
+          id: 1,
+          nickname: '슈프림홀릭',
+          amount: 145000,
+          bidAt: closedOn('2026-06-20'),
+        },
+      ],
+    },
+    {
+      id: 404,
+      roomId: 4,
+      name: '뉴발란스 992',
+      category: '스니커즈',
+      description: '265mm · 정품 확인서 · 밑창 마모 적음',
+      productUrl: 'brand.com/new-balance-992',
+      status: 'CLOSED',
+      startPrice: 120000,
+      currentPrice: 120000,
+      bidUnit: 5000,
+      endsAt: closedOn('2026-06-20'),
+      bidCount: 0,
+      topBidderNickname: null,
+      extended: false,
+      leaderboard: [],
+      history: [],
+    },
+    {
+      id: 405,
+      roomId: 4,
+      name: '컨버스 척테일러 70',
+      category: '스니커즈',
+      description: '280mm · 박스 없음 · 세탁 완료',
+      productUrl: 'brand.com/chuck-taylor-70',
+      status: 'CLOSED',
+      startPrice: 35000,
+      currentPrice: 52000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-06-20'),
+      bidCount: 11,
+      topBidderNickname: '데일리슈',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '데일리슈', amount: 52000, isMe: false },
+        { rank: 2, nickname: '스트릿핏', amount: 50000, isMe: false },
+      ],
+      history: [
+        {
+          id: 1,
+          nickname: '데일리슈',
+          amount: 52000,
+          bidAt: closedOn('2026-06-20'),
+        },
+      ],
+    },
+  ],
+}
+
+/** 남이 연 종료된 방 (`/rooms/5`). `502` 만 내가 낙찰받아 거래가 있다. */
+const ROOM_5: AuctionRoomDetail = {
+  id: 5,
+  title: '한정판 굿즈 정리',
+  description: '모아둔 한정판 굿즈를 정리합니다.',
+  sellerName: '서지 셀러',
+  status: 'CLOSED',
+  role: 'BUYER',
+  participantCount: 88,
+  shareCode: 'done005',
+  softCloseSeconds: 30,
+  items: [
+    {
+      id: 501,
+      roomId: 5,
+      name: '한정판 아트토이',
+      category: '컬렉터블',
+      description: '넘버링이 찍힌 한정판 아트토이입니다. 박스 포함.',
+      productUrl: 'brand.com/art-toy',
+      status: 'CLOSED',
+      startPrice: 40000,
+      currentPrice: 67000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-06-02'),
+      bidCount: 18,
+      topBidderNickname: '오프화이트',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '오프화이트', amount: 67000, isMe: false },
+        { rank: 2, nickname: '수집러버', amount: 65000, isMe: false },
+        { rank: 3, nickname: ME, amount: 62000, isMe: true },
+      ],
+      history: [
+        {
+          id: 1,
+          nickname: '오프화이트',
+          amount: 67000,
+          bidAt: closedOn('2026-06-02'),
+        },
+      ],
+    },
+    {
+      id: 502,
+      roomId: 5,
+      name: '캐릭터 피규어 세트',
+      category: '컬렉터블',
+      description: '5종 풀세트입니다. 전부 미개봉 상태입니다.',
+      productUrl: 'brand.com/figure-set',
+      status: 'CLOSED',
+      startPrice: 18000,
+      currentPrice: 31000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-06-02'),
+      bidCount: 9,
+      topBidderNickname: ME,
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: ME, amount: 31000, isMe: true },
+        { rank: 2, nickname: '수집러버', amount: 30000, isMe: false },
+      ],
+      history: [
+        { id: 1, nickname: ME, amount: 31000, bidAt: closedOn('2026-06-02') },
+      ],
+    },
+    {
+      id: 503,
+      roomId: 5,
+      name: '굿즈 포스터 세트',
+      category: '컬렉터블',
+      description: '튜브에 넣어 보관해 접힘이 없습니다.',
+      productUrl: 'brand.com/poster-set',
+      status: 'CLOSED',
+      startPrice: 15000,
+      currentPrice: 15000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-06-02'),
+      bidCount: 0,
+      topBidderNickname: null,
+      extended: false,
+      leaderboard: [],
+      history: [],
+    },
+  ],
+}
+
+/** 내가 연 종료된 방 (`/rooms/6`). 물품 4개 모두 내 거래로 이어진다. */
+const ROOM_6: AuctionRoomDetail = {
+  id: 6,
+  title: '봄 시즌 오프',
+  description: '봄에 입던 옷과 잡화를 정리합니다.',
+  sellerName: MY_SHOP,
+  status: 'CLOSED',
+  role: 'SELLER',
+  participantCount: 57,
+  shareCode: 'done006',
+  softCloseSeconds: 30,
+  items: [
+    {
+      id: 601,
+      roomId: 6,
+      name: '트렌치 코트',
+      category: '아우터',
+      description: '95 사이즈 · 드라이 완료 · 벨트 포함',
+      productUrl: 'https://example.com/trench-coat',
+      status: 'CLOSED',
+      startPrice: 25000,
+      currentPrice: 45000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-05-11'),
+      bidCount: 14,
+      topBidderNickname: '코트러버',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '코트러버', amount: 45000, isMe: false },
+        { rank: 2, nickname: '봄바람', amount: 43000, isMe: false },
+        { rank: 3, nickname: '데일리핏', amount: 41000, isMe: false },
+      ],
+      history: [
+        {
+          id: 1,
+          nickname: '코트러버',
+          amount: 45000,
+          bidAt: closedOn('2026-05-11'),
+        },
+      ],
+    },
+    {
+      id: 602,
+      roomId: 6,
+      name: '니트 가디건',
+      category: '상의',
+      description: '오버핏 · 보풀 없음 · 단추 여분 있음',
+      productUrl: 'https://example.com/knit-cardigan',
+      status: 'CLOSED',
+      startPrice: 12000,
+      currentPrice: 23000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-05-11'),
+      bidCount: 8,
+      topBidderNickname: '니트홀릭',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '니트홀릭', amount: 23000, isMe: false },
+        { rank: 2, nickname: '데일리핏', amount: 22000, isMe: false },
+      ],
+      history: [
+        {
+          id: 1,
+          nickname: '니트홀릭',
+          amount: 23000,
+          bidAt: closedOn('2026-05-11'),
+        },
+      ],
+    },
+    {
+      id: 603,
+      roomId: 6,
+      name: '가죽 크로스백',
+      category: '잡화',
+      description: '스크래치가 적고 스트랩 길이 조절이 됩니다.',
+      productUrl: 'https://example.com/leather-bag',
+      status: 'CLOSED',
+      startPrice: 30000,
+      currentPrice: 30000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-05-11'),
+      bidCount: 0,
+      topBidderNickname: null,
+      extended: false,
+      leaderboard: [],
+      history: [],
+    },
+    {
+      id: 604,
+      roomId: 6,
+      name: '캔버스 스니커즈',
+      category: '스니커즈',
+      description: '250mm · 세탁 완료 · 끈 여분 포함',
+      productUrl: 'https://example.com/canvas-sneakers',
+      status: 'CLOSED',
+      startPrice: 18000,
+      currentPrice: 31000,
+      bidUnit: 1000,
+      endsAt: closedOn('2026-05-11'),
+      bidCount: 10,
+      topBidderNickname: '데일리슈',
+      extended: false,
+      leaderboard: [
+        { rank: 1, nickname: '데일리슈', amount: 31000, isMe: false },
+        { rank: 2, nickname: '봄바람', amount: 30000, isMe: false },
+      ],
+      history: [
+        {
+          id: 1,
+          nickname: '데일리슈',
+          amount: 31000,
+          bidAt: closedOn('2026-05-11'),
+        },
       ],
     },
   ],
@@ -271,272 +797,172 @@ export const MOCK_EMPTY_ROOM: AuctionRoomDetail = {
   id: 7,
   title: '오픈 준비 중인 방',
   description: '아직 물품을 편성하지 않았어요.',
-  sellerName: '민지 셀러',
+  sellerName: MY_SHOP,
   status: 'READY',
   role: 'SELLER',
   participantCount: 0,
-  shareCode: 'ready7',
+  shareCode: 'ready007',
   softCloseSeconds: 30,
   items: [],
 }
 
-/**
- * 방 테마별 물품 이름.
- *
- * 상세 목업은 한 벌뿐이라 어느 방을 열어도 같은 물품이 나왔다. 방 제목과
- * 물품이 따로 놀지 않도록 이름·분류·설명만 테마에 맞게 갈아 끼운다.
- * (금액·순위 같은 수치는 그대로 두므로 화면 검증에는 영향이 없다.)
- */
-const ROOM_ITEM_THEMES: Record<
-  number,
-  { name: string; category: string; description: string }[]
-> = {
-  // 포토카드 특가전
-  2: [
-    {
-      name: '아이돌 포토카드 세트',
-      category: '컬렉터블',
-      description: '슬리브 포함 · 상태 A급',
-    },
-    {
-      name: '미니앨범 한정 포토카드',
-      category: '컬렉터블',
-      description: '초동 특전 · 미개봉',
-    },
-    {
-      name: '팬미팅 포토카드',
-      category: '컬렉터블',
-      description: '현장 수령 · 1인 1매 한정',
-    },
-    {
-      name: '시즌그리팅 포토카드',
-      category: '컬렉터블',
-      description: '2026 시즌 · 풀세트',
-    },
-    {
-      name: '홀로그램 포토카드',
-      category: '컬렉터블',
-      description: '럭키드로우 당첨분',
-    },
-    {
-      name: '포토카드 바인더',
-      category: '컬렉터블',
-      description: '30포켓 · 미사용',
-    },
-  ],
-  // 신규 입고 테스트 — 전자제품
-  3: [
-    {
-      name: '무선 이어폰',
-      category: '전자제품',
-      description: '충전 케이스 포함 · 배터리 정상',
-    },
-    {
-      name: '노이즈캔슬링 헤드폰',
-      category: '전자제품',
-      description: '패드 교체 완료 · 잡음 없음',
-    },
-    {
-      name: '기계식 키보드',
-      category: '전자제품',
-      description: '적축 · 키캡 세트 포함',
-    },
-    {
-      name: '스마트워치',
-      category: '전자제품',
-      description: '스트랩 2종 · 액정 무기스',
-    },
-    {
-      name: '무선 충전기',
-      category: '전자제품',
-      description: '15W · 정품 어댑터 포함',
-    },
-    {
-      name: '스마트폰',
-      category: '전자제품',
-      description: '배터리 성능 92% · 케이스 증정',
-    },
-  ],
-  // 스니커즈 위크
-  4: [
-    {
-      name: '조던 1 레트로 하이',
-      category: '스니커즈',
-      description: '270mm · 박스 포함',
-    },
-    {
-      name: '에어포스 1 로우',
-      category: '스니커즈',
-      description: '260mm · 미착용',
-    },
-    {
-      name: '덩크 로우 팬더',
-      category: '스니커즈',
-      description: '275mm · 2회 착용',
-    },
-    {
-      name: '뉴발란스 992',
-      category: '스니커즈',
-      description: '265mm · 정품 확인서',
-    },
-    {
-      name: '컨버스 척테일러 70',
-      category: '스니커즈',
-      description: '280mm · 박스 없음',
-    },
-    {
-      name: '러닝화 한정판',
-      category: '스니커즈',
-      description: '270mm · 미착용',
-    },
-  ],
-  // 한정판 굿즈 정리
-  5: [
-    {
-      name: '레트로 피규어',
-      category: '컬렉터블',
-      description: '미개봉 · 초판',
-    },
-    {
-      name: '한정판 아트토이',
-      category: '컬렉터블',
-      description: '넘버링 · 박스 포함',
-    },
-    {
-      name: '캐릭터 피규어 세트',
-      category: '컬렉터블',
-      description: '5종 풀세트',
-    },
-    {
-      name: '한정판 키링',
-      category: '잡화',
-      description: '미사용 · 태그 부착',
-    },
-    {
-      name: '아크릴 스탠드',
-      category: '컬렉터블',
-      description: '특전 · 미개봉',
-    },
-    {
-      name: '굿즈 포스터 세트',
-      category: '컬렉터블',
-      description: '튜브 포장 · 접힘 없음',
-    },
-  ],
-  // 봄 시즌 오프 — 패션
-  6: [
-    {
-      name: '빈티지 데님 자켓',
-      category: '아우터',
-      description: 'L · 90년대 리바이스',
-    },
-    {
-      name: '트렌치 코트',
-      category: '아우터',
-      description: '95 사이즈 · 드라이 완료',
-    },
-    {
-      name: '니트 가디건',
-      category: '상의',
-      description: '오버핏 · 보풀 없음',
-    },
-    { name: '린넨 셔츠', category: '상의', description: 'M · 여름용' },
-    { name: '가죽 크로스백', category: '잡화', description: '스크래치 적음' },
-    {
-      name: '캔버스 스니커즈',
-      category: '스니커즈',
-      description: '250mm · 세탁 완료',
-    },
-  ],
+/** 방 번호로 찾는 상세 목업. 방마다 자기 물품을 가진다. */
+export const MOCK_ROOM_DETAILS: Record<number, AuctionRoomDetail> = {
+  1: ROOM_1,
+  2: ROOM_2,
+  3: ROOM_3,
+  4: ROOM_4,
+  5: ROOM_5,
+  6: ROOM_6,
+  7: MOCK_EMPTY_ROOM,
 }
 
-/**
- * 방 번호에 맞게 물품 테마를 입힌다. 테마가 없는 방은 목업 그대로 쓴다.
- */
-export function themedRoomItems(
-  roomId: number,
-  items: AuctionItemDetail[],
-): AuctionItemDetail[] {
-  const theme = ROOM_ITEM_THEMES[roomId]
-  if (!theme) return items
-  return items.map((item, index) =>
-    theme[index] ? { ...item, ...theme[index] } : item,
+/** 라이브 경매방 목업. 방을 지정하지 않는 화면이 기본값으로 쓴다. */
+export const MOCK_ROOM_DETAIL = ROOM_1
+
+/** 방 번호로 상세 목업을 찾는다. 없는 방이면 `undefined`. */
+export function findMockRoom(roomId: number): AuctionRoomDetail | undefined {
+  return MOCK_ROOM_DETAILS[roomId]
+}
+
+/** 공유 코드로 상세 목업을 찾는다. `/join/$shareCode` 가 쓴다. */
+export function findMockRoomByShareCode(
+  shareCode: string,
+): AuctionRoomDetail | undefined {
+  return Object.values(MOCK_ROOM_DETAILS).find(
+    (room) => room.shareCode === shareCode,
   )
 }
 
-export const MOCK_ROOM_EVENTS: RoomEvent[] = [
-  {
-    id: 6,
-    at: before(1),
-    kind: 'BID',
-    message: '스니커홀릭님이 85,000원 입찰',
-    subtitle: '한정판 조던 스니커즈',
-    emphasized: true,
-  },
-  {
-    id: 5,
-    at: before(2),
-    kind: 'EXTEND',
-    message: '마감 1분 전 입찰 발생 · 마감 +30초 자동 연장',
-    subtitle: '빈티지 데님 자켓',
-    emphasized: true,
-  },
-  {
-    id: 4,
-    at: before(3),
-    kind: 'BID',
-    message: '데님러버님이 13,000원 입찰',
-    subtitle: '빈티지 데님 자켓',
-  },
-  {
-    id: 3,
-    at: before(4),
-    kind: 'CLOSE',
-    message: '빈티지 데님 자켓 마감 1분 전',
-  },
-  {
-    id: 2,
-    at: before(7),
-    kind: 'CLOSE',
-    message: '핸드메이드 가죽지갑 낙찰 확정',
-    subtitle: '45,000원 · 가죽공방님',
-    emphasized: true,
-  },
-  {
-    id: 1,
-    at: before(10),
-    kind: 'START',
-    message: '한정판 조던 스니커즈 경매가 시작됐어요',
-  },
-]
+/** 모든 방의 물품을 한 줄로 편다. 물품 id 는 방을 넘어서도 겹치지 않는다. */
+const ALL_ITEMS: AuctionItemDetail[] = Object.values(MOCK_ROOM_DETAILS).flatMap(
+  (room) => room.items,
+)
 
+/** 물품 id 로 물품을 찾는다. 어느 방에 있든 상관없다. */
+export function findMockItem(itemId: number): AuctionItemDetail | undefined {
+  return ALL_ITEMS.find((item) => item.id === itemId)
+}
+
+/** 라이브 방에 들어갔을 때 이미 쌓여 있는 이벤트. 방마다 자기 물품 이름을 쓴다. */
+const ROOM_EVENTS: Record<number, RoomEvent[]> = {
+  1: [
+    {
+      id: 6,
+      at: before(1),
+      kind: 'BID',
+      message: '스니커홀릭님이 85,000원 입찰',
+      subtitle: '한정판 조던 스니커즈',
+      emphasized: true,
+    },
+    {
+      id: 5,
+      at: before(2),
+      kind: 'EXTEND',
+      message: '마감 1분 전 입찰 발생 · 마감 +30초 자동 연장',
+      subtitle: '빈티지 데님 자켓',
+      emphasized: true,
+    },
+    {
+      id: 4,
+      at: before(3),
+      kind: 'BID',
+      message: '데님러버님이 13,000원 입찰',
+      subtitle: '빈티지 데님 자켓',
+    },
+    {
+      id: 3,
+      at: before(4),
+      kind: 'CLOSE',
+      message: '빈티지 데님 자켓 마감 1분 전',
+    },
+    {
+      id: 2,
+      at: before(7),
+      kind: 'CLOSE',
+      message: '핸드메이드 가죽지갑 낙찰 확정',
+      subtitle: '45,000원 · 가죽공방님',
+      emphasized: true,
+    },
+    {
+      id: 1,
+      at: before(10),
+      kind: 'START',
+      message: '한정판 조던 스니커즈 경매가 시작됐어요',
+    },
+  ],
+  2: [
+    {
+      id: 4,
+      at: before(2),
+      kind: 'BID',
+      message: '피규어덕후님이 22,000원 입찰',
+      subtitle: '희귀 포토카드 세트',
+      emphasized: true,
+    },
+    {
+      id: 3,
+      at: before(3),
+      kind: 'BID',
+      message: '앨범수집가님이 9,000원 입찰',
+      subtitle: '미니앨범 한정 포토카드',
+    },
+    {
+      id: 2,
+      at: before(6),
+      kind: 'START',
+      message: '미니앨범 한정 포토카드 경매가 시작됐어요',
+    },
+    {
+      id: 1,
+      at: before(9),
+      kind: 'START',
+      message: '희귀 포토카드 세트 경매가 시작됐어요',
+    },
+  ],
+}
+
+/** 라이브 방 이벤트 피드의 초기값. 실시간 이벤트가 이 위에 쌓인다. */
+export function mockRoomEvents(roomId: number): RoomEvent[] {
+  return ROOM_EVENTS[roomId] ?? []
+}
+
+/** 라이브 방(1번) 이벤트. 방을 지정하지 않는 화면이 쓴다. */
+export const MOCK_ROOM_EVENTS = ROOM_EVENTS[1]
+
+/**
+ * 내 상품.
+ *
+ * 내가 연 방(2·3·6번)에 올린 물품과 이름·분류가 같고, 상태는 그 경매의
+ * 결과와 맞춰 둔다. `DRAFT` 3개는 경매방을 새로 만들 때 고를 수 있게 남긴다.
+ */
 export const MOCK_PRODUCTS: Product[] = [
   {
     id: 1,
-    name: '한정판 조던 스니커즈',
-    category: '스니커즈',
-    description: '275mm · 미착용 · 박스 포함',
-    productUrl: 'https://example.com/jordan',
-    status: 'IN_AUCTION',
-    createdAt: '2026-07-20',
-  },
-  {
-    id: 2,
-    name: '빈티지 데님 자켓',
-    category: '아우터',
-    description: 'L 사이즈 · 90년대 리바이스',
-    productUrl: 'https://example.com/denim',
-    status: 'SOLD',
-    createdAt: '2026-07-19',
-  },
-  {
-    id: 3,
     name: '희귀 포토카드 세트',
     category: '컬렉터블',
     description: '슬리브 포함 · 상태 A급',
     productUrl: 'https://example.com/photocard',
-    status: 'DRAFT',
-    createdAt: '2026-07-15',
+    status: 'IN_AUCTION',
+    createdAt: '2026-07-28',
+  },
+  {
+    id: 2,
+    name: '미니앨범 한정 포토카드',
+    category: '컬렉터블',
+    description: '초동 특전 · 미개봉',
+    productUrl: 'https://example.com/mini-album',
+    status: 'IN_AUCTION',
+    createdAt: '2026-07-28',
+  },
+  {
+    id: 3,
+    name: '홀로그램 포토카드',
+    category: '컬렉터블',
+    description: '럭키드로우 당첨분',
+    productUrl: 'https://example.com/hologram',
+    status: 'IN_AUCTION',
+    createdAt: '2026-07-27',
   },
   {
     id: 4,
@@ -545,82 +971,125 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '작동 확인 완료 · 케이스 포함',
     productUrl: 'https://example.com/film-camera',
     status: 'UNSOLD',
-    createdAt: '2026-07-02',
+    createdAt: '2026-07-10',
   },
   {
     id: 5,
-    name: '핸드메이드 가죽지갑',
-    category: '잡화',
-    description: '베지터블 태닝 · 각인 가능',
-    productUrl: 'https://example.com/leather-wallet',
-    status: 'SOLD',
-    createdAt: '2026-06-28',
-  },
-  {
-    id: 6,
-    name: '리미티드 워치',
-    category: '시계',
-    description: '정품 보증서 포함 · 스크래치 없음',
-    productUrl: 'https://example.com/limited-watch',
-    status: 'DRAFT',
-    createdAt: '2026-06-21',
-  },
-  {
-    id: 7,
-    name: '레트로 피규어',
-    category: '컬렉터블',
-    description: '미개봉 · 초판',
-    productUrl: 'https://example.com/retro-figure',
-    status: 'UNSOLD',
-    createdAt: '2026-06-14',
-  },
-  {
-    id: 8,
     name: '빈티지 필름 렌즈',
     category: '카메라',
     description: '곰팡이 없음 · 헬리코이드 부드러움',
     productUrl: 'https://example.com/film-lens',
+    status: 'SOLD',
+    createdAt: '2026-07-10',
+  },
+  {
+    id: 6,
+    name: '트렌치 코트',
+    category: '아우터',
+    description: '95 사이즈 · 드라이 완료',
+    productUrl: 'https://example.com/trench-coat',
+    status: 'SOLD',
+    createdAt: '2026-05-02',
+  },
+  {
+    id: 7,
+    name: '니트 가디건',
+    category: '상의',
+    description: '오버핏 · 보풀 없음',
+    productUrl: 'https://example.com/knit-cardigan',
+    status: 'SOLD',
+    createdAt: '2026-05-02',
+  },
+  {
+    id: 8,
+    name: '가죽 크로스백',
+    category: '잡화',
+    description: '스크래치 적음 · 스트랩 조절 가능',
+    productUrl: 'https://example.com/leather-bag',
+    status: 'UNSOLD',
+    createdAt: '2026-05-01',
+  },
+  {
+    id: 9,
+    name: '캔버스 스니커즈',
+    category: '스니커즈',
+    description: '250mm · 세탁 완료',
+    productUrl: 'https://example.com/canvas-sneakers',
+    status: 'SOLD',
+    createdAt: '2026-05-01',
+  },
+  {
+    id: 10,
+    name: '러닝화 한정판',
+    category: '스니커즈',
+    description: '270mm · 미착용 · 박스 포함',
+    productUrl: 'https://example.com/running-shoes',
     status: 'DRAFT',
-    createdAt: '2026-06-02',
+    createdAt: '2026-08-01',
+  },
+  {
+    id: 11,
+    name: '기계식 키보드',
+    category: '전자제품',
+    description: '적축 · 키캡 세트 포함',
+    productUrl: 'https://example.com/keyboard',
+    status: 'DRAFT',
+    createdAt: '2026-07-30',
+  },
+  {
+    id: 12,
+    name: '무선 이어폰',
+    category: '전자제품',
+    description: '충전 케이스 포함 · 배터리 정상',
+    productUrl: 'https://example.com/earbuds',
+    status: 'DRAFT',
+    createdAt: '2026-07-25',
   },
 ]
 
+/**
+ * 내 거래.
+ *
+ * 물품에서 그대로 파생된다. `auctionItemId` 는 실제 물품 id 이고
+ * 이름·금액은 그 물품의 낙찰 결과와 같다. 내가 판 방은 물품마다,
+ * 남이 판 방은 내가 낙찰받은 물품에만 거래가 생긴다.
+ */
 export const MOCK_TRADES: TradeSummary[] = [
   {
     id: 1,
-    auctionItemId: 3,
-    productName: '아이돌 포토카드 세트',
-    category: '컬렉터블',
+    auctionItemId: 106,
+    productName: '핸드메이드 가죽지갑',
+    category: '잡화',
     roomId: 1,
     roomTitle: '7월 셀러 라이브 경매방',
     role: 'BUYER',
     status: 'IN_PROGRESS',
-    amount: 22000,
-    partnerNickname: '피규어덕후',
+    amount: 45000,
+    partnerNickname: '원기 셀러',
     partnerPhone: '010-2345-6789',
-    closedAt: '2026-07-30',
+    closedAt: '2026-08-03',
   },
   {
     id: 2,
-    auctionItemId: 2,
-    productId: 2,
-    productName: '빈티지 데님 자켓',
-    category: '아우터',
-    roomId: 4,
-    roomTitle: '스니커즈 위크',
+    auctionItemId: 302,
+    productId: 5,
+    productName: '빈티지 필름 렌즈',
+    category: '카메라',
+    roomId: 3,
+    roomTitle: '신규 입고 테스트',
     role: 'SELLER',
-    status: 'COMPLETED',
-    amount: 12000,
-    partnerNickname: '스니커홀릭',
-    partnerPhone: '010-1234-5678',
-    closedAt: '2026-06-20',
+    status: 'IN_PROGRESS',
+    amount: 38000,
+    partnerNickname: '우재',
+    partnerPhone: '010-3456-7890',
+    closedAt: '2026-07-18',
   },
   {
     id: 3,
-    auctionItemId: 5,
-    productId: 7,
-    productName: '레트로 피규어',
-    category: '컬렉터블',
+    auctionItemId: 301,
+    productId: 4,
+    productName: '레트로 필름 카메라',
+    category: '카메라',
     roomId: 3,
     roomTitle: '신규 입고 테스트',
     role: 'SELLER',
@@ -632,155 +1101,95 @@ export const MOCK_TRADES: TradeSummary[] = [
   },
   {
     id: 4,
-    auctionItemId: 1,
-    productName: '스니커즈 한정판',
+    auctionItemId: 402,
+    productName: '에어포스 1 로우',
     category: '스니커즈',
-    roomId: 1,
-    roomTitle: '7월 셀러 라이브 경매방',
+    roomId: 4,
+    roomTitle: '스니커즈 위크',
     role: 'BUYER',
-    status: 'IN_PROGRESS',
-    amount: 13000,
-    partnerNickname: '조던수집가',
-    partnerPhone: '010-3456-7890',
-    closedAt: '2026-07-29',
+    status: 'COMPLETED',
+    amount: 78000,
+    partnerNickname: '한기 셀러',
+    partnerPhone: '010-4567-8901',
+    closedAt: '2026-06-20',
   },
   {
     id: 5,
-    auctionItemId: 6,
-    productId: 5,
-    productName: '핸드메이드 가죽지갑',
-    category: '잡화',
+    auctionItemId: 502,
+    productName: '캐릭터 피규어 세트',
+    category: '컬렉터블',
+    roomId: 5,
+    roomTitle: '한정판 굿즈 정리',
+    role: 'BUYER',
+    status: 'COMPLETED',
+    amount: 31000,
+    partnerNickname: '서지 셀러',
+    partnerPhone: '010-2345-6789',
+    closedAt: '2026-06-02',
+  },
+  {
+    id: 6,
+    auctionItemId: 601,
+    productId: 6,
+    productName: '트렌치 코트',
+    category: '아우터',
     roomId: 6,
     roomTitle: '봄 시즌 오프',
     role: 'SELLER',
     status: 'COMPLETED',
     amount: 45000,
-    partnerNickname: '가죽공방',
-    partnerPhone: '010-4567-8901',
+    partnerNickname: '코트러버',
+    partnerPhone: '010-5678-9012',
     closedAt: '2026-05-11',
   },
   {
-    id: 6,
-    auctionItemId: 7,
-    productId: 4,
-    productName: '레트로 필름 카메라',
-    category: '카메라',
-    roomId: 5,
-    roomTitle: '한정판 굿즈 정리',
+    id: 7,
+    auctionItemId: 602,
+    productId: 7,
+    productName: '니트 가디건',
+    category: '상의',
+    roomId: 6,
+    roomTitle: '봄 시즌 오프',
+    role: 'SELLER',
+    status: 'COMPLETED',
+    amount: 23000,
+    partnerNickname: '니트홀릭',
+    partnerPhone: '010-6789-0123',
+    closedAt: '2026-05-11',
+  },
+  {
+    id: 8,
+    auctionItemId: 603,
+    productId: 8,
+    productName: '가죽 크로스백',
+    category: '잡화',
+    roomId: 6,
+    roomTitle: '봄 시즌 오프',
     role: 'SELLER',
     status: 'UNSOLD',
     amount: 0,
     partnerNickname: '유효한 낙찰자 없음',
     partnerPhone: '-',
-    closedAt: '2026-06-02',
-  },
-]
-
-/**
- * 낙찰 후보 / 최종 순위.
- *
- * Figma `WEB-03 · 판매자 · 거래 상세`(1~5위)와 `WEB-02 · 구매자 · 거래 상세`
- * (6~10위, 2페이지)에 그려진 값을 그대로 옮겼다. 두 화면 모두 5명씩 끊어
- * 보여주고 하단에 "총 12명 · 5명씩"이 붙으므로 12명을 채워둔다.
- *
- * 1위는 거래 실패해 2위로 승계된 상태다. 구매자 화면의 "나"는 7위다.
- */
-export const MOCK_CANDIDATES: DealCandidate[] = [
-  {
-    id: 1,
-    rank: 1,
-    nickname: '스니커홀릭',
-    phone: '010-1234-5678',
-    amount: 85000,
-    status: 'FAILED',
-  },
-  {
-    id: 2,
-    rank: 2,
-    nickname: '조던매니아',
-    phone: '010-2345-6789',
-    amount: 82000,
-    status: 'IN_PROGRESS',
-  },
-  {
-    id: 3,
-    rank: 3,
-    nickname: '수집러버',
-    phone: '010-3456-7890',
-    amount: 80000,
-    status: 'WAITING',
-  },
-  {
-    id: 4,
-    rank: 4,
-    nickname: '발망러버',
-    phone: '010-4567-8901',
-    amount: 78000,
-    status: 'WAITING',
-  },
-  {
-    id: 5,
-    rank: 5,
-    nickname: '킥스타',
-    phone: '010-5678-9012',
-    amount: 75000,
-    status: 'WAITING',
-  },
-  {
-    id: 6,
-    rank: 6,
-    nickname: '슈프림홀릭',
-    phone: '010-6789-0123',
-    amount: 68000,
-    status: 'WAITING',
-  },
-  {
-    id: 7,
-    rank: 7,
-    nickname: '빈티지러버',
-    phone: '010-7890-1234',
-    amount: 66000,
-    status: 'WAITING',
-    isMe: true,
-  },
-  {
-    id: 8,
-    rank: 8,
-    nickname: '조던킥스',
-    phone: '010-8901-2345',
-    amount: 64000,
-    status: 'WAITING',
+    closedAt: '2026-05-11',
   },
   {
     id: 9,
-    rank: 9,
-    nickname: '데일리슈',
-    phone: '010-9012-3456',
-    amount: 62000,
-    status: 'WAITING',
-  },
-  {
-    id: 10,
-    rank: 10,
-    nickname: '오프화이트',
-    phone: '010-0123-4567',
-    amount: 60000,
-    status: 'WAITING',
-  },
-  {
-    id: 11,
-    rank: 11,
-    nickname: '스트릿핏',
-    phone: '010-1357-2468',
-    amount: 58000,
-    status: 'WAITING',
-  },
-  {
-    id: 12,
-    rank: 12,
-    nickname: '주말경매러',
-    phone: '010-2468-1357',
-    amount: 56000,
-    status: 'WAITING',
+    auctionItemId: 604,
+    productId: 9,
+    productName: '캔버스 스니커즈',
+    category: '스니커즈',
+    roomId: 6,
+    roomTitle: '봄 시즌 오프',
+    role: 'SELLER',
+    status: 'COMPLETED',
+    amount: 31000,
+    partnerNickname: '데일리슈',
+    partnerPhone: '010-7890-1234',
+    closedAt: '2026-05-11',
   },
 ]
+
+/** 물품 id 로 이어지는 거래를 찾는다. 없으면 내 거래가 아닌 물품이다. */
+export function findMockTrade(itemId: number): TradeSummary | undefined {
+  return MOCK_TRADES.find((trade) => trade.auctionItemId === itemId)
+}

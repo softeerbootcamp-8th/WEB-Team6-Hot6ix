@@ -19,6 +19,11 @@ export interface AuctionRoomCreateRequestDto {
   liveUrl?: string;
   /**
    * @minimum 1
+   * @maximum 1000000000000
+   */
+  bidIncrement: number;
+  /**
+   * @minimum 1
    * @maximum 3600
    */
   softCloseTriggerSeconds: number;

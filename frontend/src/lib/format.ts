@@ -65,3 +65,24 @@ export function formatPhoneNumber(value: string): string {
   }
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`
 }
+
+/**
+ * 앞 글자의 받침에 맞는 조사를 고른다. `josa(nickname, '과', '와')`
+ *
+ * 닉네임·상품명이 서버 값이라 문구에 조사를 박아 둘 수 없다. 한글 음절은
+ * 유니코드에 종성까지 규칙적으로 배열돼 있어 나머지 연산으로 받침을 알 수 있다.
+ * 한글이 아닌 글자로 끝나면 판단할 근거가 없어 받침 없는 쪽을 쓴다.
+ */
+export function josa(
+  word: string,
+  withBatchim: string,
+  withoutBatchim: string,
+): string {
+  const last = word.at(-1)
+  if (!last) return withoutBatchim
+
+  const code = last.charCodeAt(0)
+  if (code < 0xac00 || code > 0xd7a3) return withoutBatchim
+
+  return (code - 0xac00) % 28 === 0 ? withoutBatchim : withBatchim
+}

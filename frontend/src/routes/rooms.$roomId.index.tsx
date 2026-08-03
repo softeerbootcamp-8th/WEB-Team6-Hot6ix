@@ -15,7 +15,7 @@ import {
   getGetSummariesQueryKey,
   useGetDetail1,
   useGetSummaries,
-} from '@/api/generated/경매-물품-조회/경매-물품-조회'
+} from '@/api/generated/경매-물품/경매-물품'
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { toAuctionItemDetail, toAuctionItems } from '@/features/live/adapt-item'
 import { toBidErrorMessage } from '@/features/live/bid-error'
@@ -30,11 +30,11 @@ import { ItemDetailPanel } from '@/features/live/components/item-detail-panel'
 import { LiveItemList } from '@/features/live/components/live-item-list'
 import { useListFlip } from '@/features/live/use-list-flip'
 import {
-  MOCK_EMPTY_ROOM,
+  findMockRoom,
   MOCK_PRODUCTS,
   MOCK_ROOM_DETAIL,
-  themedRoomItems,
   MOCK_ROOMS,
+  mockRoomEvents,
 } from '@/mocks/data'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
@@ -88,26 +88,13 @@ function LiveRoomPage() {
 
   const isGuest = user === null
 
-  // 목록의 방 요약으로 제목·상태를 맞춘다. 상세 물품은 목업 하나를 공유한다.
+  // 방마다 자기 물품을 가진 목업 상세가 있다. 없는 방 번호면 라이브 방을 쓴다.
+  const room = findMockRoom(Number(roomId)) ?? MOCK_ROOM_DETAIL
+  const roomClosed = room.status === 'CLOSED'
+  // 종료 날짜만 목록 쪽에 있다.
   const summary = MOCK_ROOMS.find(
     (candidate) => String(candidate.id) === roomId,
   )
-  const roomClosed = summary?.status === 'CLOSED'
-  // 아직 아무것도 없는 방은 빈 상태를 그대로 보여준다.
-  const base =
-    summary?.id === MOCK_EMPTY_ROOM.id ? MOCK_EMPTY_ROOM : MOCK_ROOM_DETAIL
-  const room = {
-    ...base,
-    id: summary?.id ?? base.id,
-    title: summary?.title ?? base.title,
-    sellerName: summary?.sellerName ?? base.sellerName,
-    participantCount: summary?.participantCount ?? base.participantCount,
-    status: summary?.status ?? base.status,
-    // 방 제목과 물품이 따로 놀지 않도록 테마를 맞춘다 (목업 한정).
-    items: themedRoomItems(summary?.id ?? base.id, base.items),
-    // 이걸 빼먹어서 목록의 역할이 무시되고 항상 BUYER 로 굳어 있었다.
-    role: summary?.role ?? base.role,
-  }
 
   const [keyword, setKeyword] = useState('')
   const [panel, setPanel] = useState<RightPanel>('leaderboard')
@@ -142,8 +129,16 @@ function LiveRoomPage() {
     [summaries.data],
   )
 
+  /*
+   * 서버가 물품을 주면 그 값을 쓰고, 비었거나 못 받았으면 목업으로 채운다.
+   *
+   * 백엔드에 이 방 데이터가 없으면 화면이 통째로 비어서 방을 볼 수가 없다.
+   * 서버가 하나라도 주는 순간 그쪽이 이기므로 실제 연동은 그대로 살아 있다.
+   * **시연용 임시 조치다.** 이 방 물품이 실제 API 로 넘어가면 목업 쪽을 지운다.
+   */
+  const usingMockItems = serverItems.length === 0
   // 편성을 바꾸기 전까지는 서버가 준 목록을 그대로 쓴다.
-  const roomItems = items ?? serverItems
+  const roomItems = items ?? (usingMockItems ? room.items : serverItems)
   const roomItemsRef = useRef(roomItems)
   useEffect(() => {
     roomItemsRef.current = roomItems
@@ -290,7 +285,8 @@ function LiveRoomPage() {
         <div key={row} className="h-[76px] animate-skeleton rounded-2xl" />
       ))}
     </div>
-  ) : summaries.isError ? (
+  ) : // 목업으로 대신 채웠으면 에러를 띄우지 않는다. 보여줄 물품이 이미 있다.
+  summaries.isError && roomItems.length === 0 ? (
     <div className="mt-2.5 rounded-2xl border bg-card px-4 py-8 text-center">
       <p className="text-[13px] font-medium text-neutral-muted">
         물품 목록을 불러오지 못했어요.
@@ -306,7 +302,11 @@ function LiveRoomPage() {
     </div>
   ) : null
 
-  const roomEvents = extraEvents
+  // 방에 들어가면 지금까지 쌓인 이벤트가 이미 보이고, 그 위에 실시간이 붙는다.
+  const roomEvents = useMemo(
+    () => [...mockRoomEvents(auctionRoomId), ...extraEvents],
+    [auctionRoomId, extraEvents],
+  )
 
   // 방을 만든 사람만 물품을 넣고 뺄 수 있다.
   /*
@@ -349,7 +349,8 @@ function LiveRoomPage() {
    */
   const listItem = roomItems.find((item) => item.id === detailItemId) ?? null
   const detailQuery = useGetDetail1(detailItemId ?? 0, {
-    query: { enabled: detailItemId !== null },
+    // 목업 물품은 서버에 없다. 부르면 매번 404 만 쌓인다.
+    query: { enabled: detailItemId !== null && !usingMockItems },
   })
   const detailItem = useMemo(() => {
     if (!listItem) return null
@@ -394,8 +395,70 @@ function LiveRoomPage() {
     })
   }
 
+  /**
+   * 목업 물품 입찰을 화면에서 처리한다.
+   *
+   * 서버에 없는 물품이라 API 를 부르면 반드시 실패한다. 시연에서 입찰 흐름을
+   * 보여줄 수 있도록 현재가·리더보드·이벤트 피드만 직접 갱신한다.
+   *
+   * "서버 확정 전에 성공으로 표시하지 않는다"(루트 CLAUDE.md)를 **목업
+   * 물품에 한해** 비켜 간다. 서버가 준 물품은 아래 실제 경로로 가므로
+   * 실 서비스 규칙은 그대로다. 물품이 API 로 넘어가면 이 함수를 지운다.
+   */
+  const applyMockBid = (item: AuctionItemDetail, amount: number) => {
+    const nickname = user?.nickname ?? '나'
+    const at = new Date().toISOString()
+
+    setItems(
+      roomItems.map((candidate) =>
+        candidate.id === item.id
+          ? {
+              ...candidate,
+              currentPrice: amount,
+              topBidderNickname: nickname,
+              bidCount: candidate.bidCount + 1,
+              leaderboard: [
+                { rank: 1, nickname, amount, isMe: true },
+                ...candidate.leaderboard.filter((entry) => !entry.isMe),
+              ]
+                .slice(0, 5)
+                .map((entry, index) => ({ ...entry, rank: index + 1 })),
+              history: [
+                { id: Date.now(), nickname, amount, bidAt: at },
+                ...candidate.history,
+              ],
+            }
+          : candidate,
+      ),
+    )
+    setExtraEvents((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        at,
+        kind: 'BID',
+        message: `${nickname}님이 ${formatWon(amount)} 입찰`,
+        subtitle: item.name,
+        emphasized: true,
+      },
+    ])
+  }
+
   const submitDetailBid = async () => {
     if (!detailItem) return
+
+    if (usingMockItems) {
+      applyMockBid(detailItem, detailAmount)
+      setDetailFeedback({
+        tone: 'success',
+        message: `${formatWon(detailAmount)} 입찰이 등록됐어요.`,
+      })
+      toast.success('입찰이 등록됐어요', {
+        description: `${detailItem.name} · ${formatWon(detailAmount)}`,
+      })
+      return
+    }
+
     setDetailPending(true)
     setDetailFeedback(null)
 
@@ -514,7 +577,9 @@ function LiveRoomPage() {
 
   // 이 방에 아직 없는 상품만 고를 수 있게 한다.
   const availableProducts = MOCK_PRODUCTS.filter(
-    (product) => !roomItems.some((item) => item.name === product.name),
+    (product) =>
+      product.status === 'DRAFT' &&
+      !roomItems.some((item) => item.name === product.name),
   )
 
   /*
@@ -535,7 +600,7 @@ function LiveRoomPage() {
    */
   const closedRoom = {
     ...room,
-    items: room.items.map((item) =>
+    items: roomItems.map((item) =>
       item.status === 'CLOSED'
         ? item
         : {
@@ -550,6 +615,17 @@ function LiveRoomPage() {
 
   const confirmBid = async () => {
     if (!pendingBid) return
+
+    if (usingMockItems) {
+      applyMockBid(pendingBid.item, pendingBid.amount)
+      toast.success('입찰이 등록됐어요', {
+        description: `${pendingBid.item.name} · ${formatWon(pendingBid.amount)}`,
+      })
+      setPendingBid(null)
+      setPanel('leaderboard')
+      return
+    }
+
     setSubmitting(true)
 
     /*

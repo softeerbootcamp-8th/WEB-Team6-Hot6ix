@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
@@ -24,6 +25,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
@@ -40,6 +43,12 @@ class AuctionItemControllerTest extends AbstractControllerTest {
         return AuctionItemAddRequestDto.builder()
                 .productId(20L)
                 .startingPrice(50_000L)
+                .build();
+    }
+
+    private AuctionItemStartRequestDto newStartRequest(Integer durationMinutes) {
+        return AuctionItemStartRequestDto.builder()
+                .durationMinutes(durationMinutes)
                 .build();
     }
 
@@ -368,6 +377,154 @@ class AuctionItemControllerTest extends AbstractControllerTest {
         비로그인_상태로_바꾼다();
 
         mockMvc.perform(delete("/api/v1/auction-rooms/10/auction-items/30"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(1005));
+    }
+
+    @Test
+    @DisplayName("물품 경매를 시작하면 200과 갱신된 물품 상세를 반환한다")
+    void start() throws Exception {
+
+        when(auctionItemService.start(eq(30L), eq(LOGIN_USER_ID), any(AuctionItemStartRequestDto.class)))
+                .thenReturn(sampleDetail());
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(30))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.endAt").exists());
+    }
+
+    @Test
+    @DisplayName("경매 시간이 없으면 시작 시 400을 반환한다")
+    void startWithoutDuration() throws Exception {
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(null))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("durationMinutes"));
+    }
+
+    @Test
+    @DisplayName("경매 시간이 0이면 시작 시 400을 반환한다")
+    void startWithZeroDuration() throws Exception {
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(0))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("durationMinutes"));
+    }
+
+    /**
+     * 거절만 검증하면 상한·하한이 한 칸 어긋나 있어도 통과한다. 경계 안쪽 값이 실제로
+     * 받아들여지는지 함께 본다.
+     */
+    @ParameterizedTest
+    @ValueSource(ints = {1, 43_200})
+    @DisplayName("경매 시간이 1분과 43200분이면 시작이 받아들여진다")
+    void startAcceptsBoundaryDuration(int durationMinutes) throws Exception {
+
+        when(auctionItemService.start(eq(30L), eq(LOGIN_USER_ID), any(AuctionItemStartRequestDto.class)))
+                .thenReturn(sampleDetail());
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(durationMinutes))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("경매 시간이 30일을 넘으면 시작 시 400을 반환한다")
+    void startWithDurationOutOfRange() throws Exception {
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(43_201))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("durationMinutes"));
+    }
+
+    @Test
+    @DisplayName("없거나 남의 물품을 시작하면 404와 4001을 반환한다")
+    void startItemNotFound() throws Exception {
+
+        when(auctionItemService.start(eq(999L), eq(LOGIN_USER_ID), any(AuctionItemStartRequestDto.class)))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        mockMvc.perform(post("/api/v1/auction-items/999/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(30))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4001));
+    }
+
+    @Test
+    @DisplayName("종료된 경매방의 물품을 시작하면 409와 4004를 반환한다")
+    void startRoomClosed() throws Exception {
+
+        when(auctionItemService.start(eq(30L), eq(LOGIN_USER_ID), any(AuctionItemStartRequestDto.class)))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED));
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(30))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4004));
+    }
+
+    @Test
+    @DisplayName("대기 중이 아닌 물품을 시작하면 409와 4007을 반환한다")
+    void startItemNotReady() throws Exception {
+
+        when(auctionItemService.start(eq(30L), eq(LOGIN_USER_ID), any(AuctionItemStartRequestDto.class)))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_READY));
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(30))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4007));
+    }
+
+    @Test
+    @DisplayName("이미 3개가 진행 중이면 시작 시 409와 4008을 반환한다")
+    void startLimitExceeded() throws Exception {
+
+        when(auctionItemService.start(eq(30L), eq(LOGIN_USER_ID), any(AuctionItemStartRequestDto.class)))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_START_LIMIT_EXCEEDED));
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(30))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4008));
+    }
+
+    @Test
+    @DisplayName("비로그인 사용자는 물품을 시작할 수 없다")
+    void startRejectsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+
+        mockMvc.perform(post("/api/v1/auction-items/30/start")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(newStartRequest(30))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(1005));

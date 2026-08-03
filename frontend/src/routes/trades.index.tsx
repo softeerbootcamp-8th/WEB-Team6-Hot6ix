@@ -5,11 +5,12 @@ import { useMemo, useState } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { EmptyState, PageHeader } from '@/components/page-header'
-import { MOCK_TRADES } from '@/mocks/data'
+import { RouteError, RoutePending } from '@/components/route-states'
+import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
+import { toDeals, type DealItemStatus } from '@/features/trades/adapt-deal'
 import { cn } from '@/lib/utils'
-import { formatWon } from '@/lib/format'
+import { formatWon, josa } from '@/lib/format'
 import { requireMember } from '@/lib/route-guards'
-import type { TradeStatus } from '@/mocks/types'
 
 /**
  * 거래 내역 (Figma `WEB-01 · 공통 · 거래 내역`).
@@ -24,15 +25,20 @@ export const Route = createFileRoute('/trades/')({
 
 /** 상태별 배지 색. Figma 값을 그대로 쓴다. */
 const STATUS_STYLE: Record<
-  TradeStatus,
+  DealItemStatus,
   {
     label: string
     chip: string
     text: string
     mini: string
     value: string
-    /** 모바일 카드 둘째 줄. Figma MOB-01 문구를 상태별로 그대로 쓴다. */
-    hint: (partnerNickname: string) => string
+    /**
+     * 모바일 카드 둘째 줄. Figma MOB-01 문구를 상태별로 쓴다.
+     *
+     * 상대가 없을 수 있다. 유찰이거나, 후보가 전원 실패해 서버가 아직
+     * `IN_PROGRESS` 로 내려주는 물품이다.
+     */
+    hint: (partnerNickname: string | null) => string
   }
 > = {
   IN_PROGRESS: {
@@ -41,7 +47,10 @@ const STATUS_STYLE: Record<
     text: 'text-result-progress',
     mini: 'bg-[#fff8e9]',
     value: 'text-result-progress',
-    hint: (partner: string) => `거래: 1순위 ${partner}와 진행 중`,
+    hint: (partner) =>
+      partner
+        ? `거래: ${partner}${josa(partner, '과', '와')} 진행 중`
+        : '거래: 후보가 모두 실패해 상대가 없어요.',
   },
   COMPLETED: {
     label: '거래 완료',
@@ -49,7 +58,8 @@ const STATUS_STYLE: Record<
     text: 'text-result-won',
     mini: 'bg-result-won-surface',
     value: 'text-result-won',
-    hint: (partner: string) => `거래: ${partner} · 거래 완료`,
+    hint: (partner) =>
+      partner ? `거래: ${partner} · 거래 완료` : '거래: 거래 완료',
   },
   UNSOLD: {
     label: '유찰',
@@ -61,17 +71,18 @@ const STATUS_STYLE: Record<
   },
 }
 
-type Filter = 'ALL' | 'BUYER' | 'SELLER' | TradeStatus
+type Filter = 'ALL' | 'BUYER' | 'SELLER' | DealItemStatus
 
 /** 모바일 필터 바에 들어가는 4개. */
 const MOBILE_FILTERS: Filter[] = ['ALL', 'BUYER', 'SELLER', 'IN_PROGRESS']
 
 function TradesPage() {
   const [filter, setFilter] = useState<Filter>('ALL')
-  const trades = MOCK_TRADES
 
-  const countBy = (status: TradeStatus) =>
-    trades.filter((trade) => trade.status === status).length
+  // 서버가 필터 없이 전체를 최근 마감 순으로 준다. 역할·상태 거르기와 건수
+  // 세기는 화면 몫이다.
+  const deals = useGetDeals()
+  const trades = useMemo(() => toDeals(deals.data?.data), [deals.data])
 
   const visible = useMemo(() => {
     if (filter === 'ALL') return trades
@@ -80,6 +91,14 @@ function TradesPage() {
     }
     return trades.filter((trade) => trade.status === filter)
   }, [trades, filter])
+
+  if (deals.isPending) return <RoutePending />
+  if (deals.isError) {
+    return <RouteError error={deals.error} reset={() => void deals.refetch()} />
+  }
+
+  const countBy = (status: DealItemStatus) =>
+    trades.filter((trade) => trade.status === status).length
 
   const FILTERS: { key: Filter; label: string }[] = [
     { key: 'ALL', label: `전체 ${trades.length}` },
@@ -95,7 +114,7 @@ function TradesPage() {
     { key: 'COMPLETED', label: `거래 완료 ${countBy('COMPLETED')}` },
   ]
 
-  const MINI: { status: TradeStatus }[] = [
+  const MINI: { status: DealItemStatus }[] = [
     { status: 'IN_PROGRESS' },
     { status: 'COMPLETED' },
     { status: 'UNSOLD' },
@@ -217,11 +236,27 @@ function TradesPage() {
               {visible.map((trade) => {
                 const style = STATUS_STYLE[trade.status]
                 const isSeller = trade.role === 'SELLER'
-                const unsold = trade.status === 'UNSOLD'
+
+                /*
+                 * 유찰은 금액을 비운다. 서버가 주는 `amount` 는 판매 건일 때
+                 * 물품의 현재가인데, 입찰이 없으면 시작가가 그대로 남는다.
+                 * 그 값을 그리면 거래된 금액처럼 읽힌다.
+                 */
+                const amount = trade.status === 'UNSOLD' ? null : trade.amount
+
+                // 경매방 이름과 거래 상대를 한 줄에 둔다. 상대가 없는 거래
+                // (유찰·후보 전원 실패)에서는 방 이름만 남는다.
+                const meta = [
+                  trade.auctionRoomName,
+                  trade.partnerNickname &&
+                    `${isSeller ? '낙찰자' : '판매자'} ${trade.partnerNickname}`,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
 
                 return (
                   <li
-                    key={trade.id}
+                    key={trade.auctionItemId}
                     className="rounded-2xl border bg-card p-3 md:rounded-[20px] md:p-4"
                   >
                     {/*
@@ -272,9 +307,7 @@ function TradesPage() {
                         </div>
 
                         <p className="mt-1.5 truncate text-[12px] font-medium text-neutral-tertiary">
-                          {trade.category}
-                          {!unsold &&
-                            ` · ${isSeller ? '낙찰자' : '판매자'} ${trade.partnerNickname}`}
+                          {meta}
                         </p>
 
                         <p className="mt-1 truncate text-[12px] font-medium text-neutral-muted">
@@ -283,7 +316,7 @@ function TradesPage() {
 
                         <div className="mt-3 flex items-center justify-between gap-3">
                           <p className="text-[17px] font-extrabold tabular-nums text-foreground md:text-[18px]">
-                            {unsold ? '—' : formatWon(trade.amount)}
+                            {amount == null ? '—' : formatWon(amount)}
                           </p>
 
                           <Link

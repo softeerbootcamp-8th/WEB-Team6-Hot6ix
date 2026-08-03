@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
@@ -24,6 +25,9 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.event.DomainEvent;
+import com.hot6ix.upbid.global.event.payload.ItemStarted;
+import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,6 +35,9 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -56,6 +63,9 @@ class AuctionItemServiceTest {
 
     @Mock
     private SellerProfileRepository sellerProfileRepository;
+
+    @Mock
+    private DomainEventPublisher domainEventPublisher;
 
     @InjectMocks
     private AuctionItemService auctionItemService;
@@ -115,6 +125,39 @@ class AuctionItemServiceTest {
                 .productId(PRODUCT_ID)
                 .startingPrice(50_000L)
                 .build();
+    }
+
+    private AuctionItemStartRequestDto newStartRequest(int durationMinutes) {
+        return AuctionItemStartRequestDto.builder()
+                .durationMinutes(durationMinutes)
+                .build();
+    }
+
+    private SellerProfile givenSellerProfile() {
+        SellerProfile sellerProfile = newSellerProfile();
+        ReflectionTestUtils.setField(sellerProfile, "sellerProfileId", 5L);
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                .thenReturn(Optional.of(sellerProfile));
+
+        return sellerProfile;
+    }
+
+    /** 시작 흐름의 프로필 → 물품 락 → 방 락까지 통과시키는 공통 스텁. */
+    private AuctionItem givenLockedItem(AuctionRoomStatus roomStatus, AuctionItemStatus itemStatus) {
+        SellerProfile sellerProfile = givenSellerProfile();
+        AuctionRoom auctionRoom = newRoom(sellerProfile, roomStatus);
+        AuctionItem auctionItem = newItem(auctionRoom, newProduct(sellerProfile), itemStatus);
+
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+        when(auctionRoomRepository.findByIdForUpdate(ROOM_ID)).thenReturn(Optional.of(auctionRoom));
+
+        return auctionItem;
+    }
+
+    private void givenInProgressCount(long count) {
+        when(auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
+                ROOM_ID, AuctionItemStatus.IN_PROGRESS)).thenReturn(count);
     }
 
     /** 프로필 → 방 소유 확인까지 통과시키는 공통 스텁. */
@@ -438,5 +481,184 @@ class AuctionItemServiceTest {
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_ALREADY_STARTED);
 
         verify(auctionItemRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("대기 중인 물품을 시작하면 진행중으로 바뀌고 마감 시각이 계산된다")
+    void startTransitionsItemAndComputesEndAt() {
+
+        AuctionItem auctionItem = givenLockedItem(AuctionRoomStatus.OPEN, AuctionItemStatus.READY);
+        givenInProgressCount(0L);
+
+        LocalDateTime before = LocalDateTime.now();
+        AuctionItemDetailResponseDto response =
+                auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30));
+        LocalDateTime after = LocalDateTime.now();
+
+        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
+        assertThat(auctionItem.getStartedAt()).isBetween(before, after);
+        assertThat(auctionItem.getOriginalEndAt()).isEqualTo(auctionItem.getStartedAt().plusMinutes(30));
+        assertThat(auctionItem.getEndAt()).isEqualTo(auctionItem.getOriginalEndAt());
+        assertThat(auctionItem.getTotalExtensionSeconds()).isZero();
+
+        assertThat(response.status()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
+        assertThat(response.endAt()).isEqualTo(auctionItem.getEndAt());
+    }
+
+    @Test
+    @DisplayName("물품을 시작하면 ItemStarted 이벤트가 발행된다")
+    void startPublishesItemStarted() {
+
+        AuctionItem auctionItem = givenLockedItem(AuctionRoomStatus.OPEN, AuctionItemStatus.READY);
+        givenInProgressCount(0L);
+
+        auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30));
+
+        ArgumentCaptor<DomainEvent> captor = ArgumentCaptor.forClass(DomainEvent.class);
+        verify(domainEventPublisher).publish(captor.capture());
+
+        assertThat(captor.getValue()).isInstanceOfSatisfying(ItemStarted.class, event -> {
+            assertThat(event.roomId()).isEqualTo(ROOM_ID);
+            assertThat(event.itemId()).isEqualTo(ITEM_ID);
+            assertThat(event.itemName()).isEqualTo("한정판 피규어");
+            assertThat(event.occurredAt()).isEqualTo(auctionItem.getStartedAt());
+            assertThat(event.endAt())
+                    .as("구독자가 재조회 없이 카운트다운을 그릴 수 있어야 한다")
+                    .isEqualTo(auctionItem.getEndAt());
+        });
+    }
+
+    @Test
+    @DisplayName("시작 전 경매방에서 물품을 시작하면 경매방이 방송 중으로 바뀐다")
+    void startOpensRoomWhenBefore() {
+
+        AuctionItem auctionItem = givenLockedItem(AuctionRoomStatus.BEFORE, AuctionItemStatus.READY);
+        givenInProgressCount(0L);
+
+        auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30));
+
+        assertThat(auctionItem.getAuctionRoom().getStatus()).isEqualTo(AuctionRoomStatus.OPEN);
+    }
+
+    @Test
+    @DisplayName("이미 진행 중인 물품이 2개면 3번째 물품은 시작된다")
+    void startSucceedsWhenBelowLimit() {
+
+        AuctionItem auctionItem = givenLockedItem(AuctionRoomStatus.OPEN, AuctionItemStatus.READY);
+        givenInProgressCount(2L);
+
+        auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30));
+
+        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("이미 진행 중인 물품이 3개면 AUCTION_ITEM_START_LIMIT_EXCEEDED 예외가 발생한다")
+    void startThrowsWhenLimitExceeded() {
+
+        AuctionItem auctionItem = givenLockedItem(AuctionRoomStatus.OPEN, AuctionItemStatus.READY);
+        givenInProgressCount(3L);
+
+        assertThatThrownBy(() -> auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_START_LIMIT_EXCEEDED);
+
+        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.READY);
+        verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 SELLER_PROFILE_NOT_FOUND 예외가 발생한다")
+    void startThrowsWhenSellerProfileNotFound() {
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 물품을 시작하면 AUCTION_ITEM_NOT_FOUND 예외가 발생한다")
+    void startThrowsWhenItemNotFound() {
+
+        givenSellerProfile();
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("삭제된 경매방의 물품을 시작하면 AUCTION_ITEM_NOT_FOUND 예외가 발생한다")
+    void startThrowsWhenRoomSoftDeleted() {
+
+        SellerProfile sellerProfile = givenSellerProfile();
+        AuctionRoom auctionRoom = newRoom(sellerProfile, AuctionRoomStatus.OPEN);
+        AuctionItem auctionItem = newItem(auctionRoom, newProduct(sellerProfile), AuctionItemStatus.READY);
+
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+        when(auctionRoomRepository.findByIdForUpdate(ROOM_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("남의 경매방 물품을 시작하면 AUCTION_ITEM_NOT_FOUND 예외가 발생한다")
+    void startThrowsWhenNotOwner() {
+
+        givenSellerProfile();
+
+        SellerProfile otherSeller = newSellerProfile();
+        ReflectionTestUtils.setField(otherSeller, "sellerProfileId", 6L);
+        AuctionRoom otherRoom = newRoom(otherSeller, AuctionRoomStatus.OPEN);
+        AuctionItem auctionItem = newItem(otherRoom, newProduct(otherSeller), AuctionItemStatus.READY);
+
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+        when(auctionRoomRepository.findByIdForUpdate(ROOM_ID)).thenReturn(Optional.of(otherRoom));
+
+        assertThatThrownBy(() -> auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
+
+        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.READY);
+    }
+
+    @Test
+    @DisplayName("종료된 경매방의 물품을 시작하면 AUCTION_ROOM_CLOSED 예외가 발생한다")
+    void startThrowsWhenRoomClosed() {
+
+        AuctionItem auctionItem = givenLockedItem(AuctionRoomStatus.CLOSED, AuctionItemStatus.READY);
+
+        assertThatThrownBy(() -> auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_CLOSED);
+
+        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.READY);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = AuctionItemStatus.class, names = {"IN_PROGRESS", "SOLD", "FAILED"})
+    @DisplayName("대기 중이 아닌 물품을 시작하면 AUCTION_ITEM_NOT_READY 예외가 발생한다")
+    void startThrowsWhenItemNotReady(AuctionItemStatus status) {
+
+        givenLockedItem(AuctionRoomStatus.OPEN, status);
+
+        assertThatThrownBy(() -> auctionItemService.start(ITEM_ID, USER_ID, newStartRequest(30)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_READY);
+
+        verify(domainEventPublisher, never()).publish(any());
     }
 }

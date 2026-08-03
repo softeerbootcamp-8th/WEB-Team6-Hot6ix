@@ -9,6 +9,8 @@ import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +33,9 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private SellerProfile newSellerProfile(String email) {
         User user = userRepository.saveAndFlush(User.builder()
@@ -164,5 +169,48 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
         boolean exists = auctionRoomRepository.existsByAuctionRoomIdAndDeletedAtIsNull(999_999L);
 
         assertThat(exists).isFalse();
+    }
+
+    /**
+     * 물품 시작의 "방당 동시 3개" 검사가 이 락에 걸려 있다. 트랜잭션이 둘 필요해 실제 차단은
+     * 볼 수 없으므로 락 모드만 단정한다. {@code clear()}가 필요한 이유는 같은 트랜잭션에서
+     * INSERT한 엔티티가 이미 쓰기 상태로 표시돼 있기 때문이다.
+     */
+    @Test
+    @DisplayName("락 조회는 경매방에 쓰기 락을 걸고 그대로 돌려준다")
+    void findByIdForUpdate_locksRoom() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller-lock@hot6ix.com");
+        AuctionRoom auctionRoom = newAuctionRoom(sellerProfile, "CODE0000000000100");
+        Long auctionRoomId = auctionRoom.getAuctionRoomId();
+        entityManager.clear();
+
+        AuctionRoom locked = auctionRoomRepository.findByIdForUpdate(auctionRoomId).orElseThrow();
+
+        assertThat(locked.getAuctionRoomId()).isEqualTo(auctionRoomId);
+        assertThat(entityManager.getLockMode(locked)).isEqualTo(LockModeType.PESSIMISTIC_WRITE);
+    }
+
+    /**
+     * 이름에 {@code DeletedAtIsNull}이 없어 오해하기 쉬운 자리라, 필터가 실제로 걸려 있는지
+     * 확인한다. 이게 빠지면 삭제된 경매방의 물품도 시작된다.
+     */
+    @Test
+    @DisplayName("soft delete된 경매방은 락 조회에서도 나오지 않는다")
+    void findByIdForUpdate_excludesDeleted() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller-lock-deleted@hot6ix.com");
+        AuctionRoom auctionRoom = newAuctionRoom(sellerProfile, "CODE0000000000101");
+        auctionRoom.softDelete(LocalDateTime.now());
+        auctionRoomRepository.flush();
+
+        assertThat(auctionRoomRepository.findByIdForUpdate(auctionRoom.getAuctionRoomId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 경매방을 락 조회하면 빈 값을 돌려준다")
+    void findByIdForUpdate_emptyWhenNotFound() {
+
+        assertThat(auctionRoomRepository.findByIdForUpdate(999_999L)).isEmpty();
     }
 }

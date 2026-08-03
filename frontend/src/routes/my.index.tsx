@@ -1,10 +1,12 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { ProfilePhoto } from '@/components/profile-photo'
 import { cn } from '@/lib/utils'
 import { requireMember } from '@/lib/route-guards'
 import { sessionStore, useCurrentUser } from '@/lib/session'
+import { useLogout } from '@/api/generated/인증/인증'
 
 /**
  * 마이페이지·계정 (Figma `WEB-01 · 공통 · 마이페이지·계정`, 713:4755).
@@ -18,15 +20,21 @@ export const Route = createFileRoute('/my/')({
 
 function MyPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const user = useCurrentUser()
+  const { mutate: logout, isPending: isLoggingOut } = useLogout({
+    mutation: {
+      onSuccess: () => {
+        queryClient.removeQueries({ queryKey: ['session'] })
+        sessionStore.signOut()
+        void navigate({ to: '/' })
+      },
+    },
+  })
 
   if (!user) return null
 
-  const handleLogout = () => {
-    // TODO: POST /api/v1/auth/logout 연동 (현재 목업)
-    sessionStore.signOut()
-    void navigate({ to: '/' })
-  }
+  const handleLogout = () => logout()
 
   return (
     <AppShell title="마이페이지" className="max-w-[1280px]">
@@ -106,9 +114,10 @@ function MyPage() {
           <button
             type="button"
             onClick={handleLogout}
-            className="ease-soft h-13 flex-1 rounded-[14px] border bg-card text-[15px] font-bold text-foreground transition-all duration-150 hover:bg-fill active:scale-95"
+            disabled={isLoggingOut}
+            className="ease-soft h-13 flex-1 rounded-[14px] border bg-card text-[15px] font-bold text-foreground transition-all duration-150 hover:bg-fill active:scale-95 disabled:opacity-60"
           >
-            로그아웃
+            {isLoggingOut ? '로그아웃 중…' : '로그아웃'}
           </button>
           <Link
             to="/my/withdraw"
@@ -198,9 +207,10 @@ function MyPage() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="ease-soft h-[52px] w-40 rounded-2xl border bg-card text-[14px] font-bold text-neutral-tertiary transition-all duration-150 hover:bg-fill active:scale-95"
+                disabled={isLoggingOut}
+                className="ease-soft h-[52px] w-40 rounded-2xl border bg-card text-[14px] font-bold text-neutral-tertiary transition-all duration-150 hover:bg-fill active:scale-95 disabled:opacity-60"
               >
-                로그아웃
+                {isLoggingOut ? '로그아웃 중…' : '로그아웃'}
               </button>
               <Link
                 to="/my/withdraw"

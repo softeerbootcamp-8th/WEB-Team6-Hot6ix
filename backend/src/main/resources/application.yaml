@@ -13,9 +13,22 @@ spring:
     password: ${DB_PASSWORD:1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+  # 기본값 1이면 마감 한 건이 입찰의 행 락을 기다리는 동안 다른 물품 마감과 SMS 정리 cron이
+  # 함께 밀린다. 값의 근거와 전용 스케줄러 분리 여부는 3주차에 측정하고 정한다.
+  task:
+    scheduling:
+      pool:
+        size: 4
+
   jpa:
     hibernate:
-      ddl-auto: update
+      # 엔티티와 실제 스키마가 벌어져서 한 번 싹 맞추려고 create로 둔다.
+      # update는 컬럼 삭제·타입 변경을 반영하지 않아 어긋난 채로 쌓인다.
+      #
+      # 주의: 한 번만 도는 게 아니라 **앱이 뜰 때마다** 테이블을 지우고 다시 만든다.
+      # 재배포는 물론 EC2 재부팅이나 컨테이너 재시작(restart: unless-stopped)에도
+      # 데이터가 사라진다. Flyway를 붙이면서 validate로 바꾼다.
+      ddl-auto: create
     properties:
       hibernate:
         format_sql: true
@@ -42,7 +55,7 @@ oauth:
     user-info-uri: https://kapi.kakao.com/v2/user/me
 
 app:
-  frontend-url: ${FRONTEND_URL:http://localhost:8080}
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
 
 ncp:
   sms:

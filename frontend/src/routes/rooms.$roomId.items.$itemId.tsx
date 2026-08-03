@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   useGetDetail1,
   useGetSummaries,
-} from '@/api/generated/경매-물품-조회/경매-물품-조회'
+} from '@/api/generated/경매-물품/경매-물품'
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { ConnectionBanner } from '@/features/live/components/connection-banner'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'
@@ -18,7 +18,12 @@ import {
   toAuctionItems,
 } from '@/features/live/adapt-item'
 import { toBidErrorMessage } from '@/features/live/bid-error'
-import { MOCK_ROOM_DETAIL, MOCK_ROOM_EVENTS } from '@/mocks/data'
+import {
+  findMockItem,
+  findMockRoom,
+  MOCK_ROOM_DETAIL,
+  mockRoomEvents,
+} from '@/mocks/data'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -70,8 +75,16 @@ function AuctionItemPage() {
     [summaries.data],
   )
 
-  // 방 제목·판매자명은 아직 목업이다. 물품 배열만 서버 값으로 바꾼다.
-  const room = { ...MOCK_ROOM_DETAIL, items: serverItems }
+  /*
+   * 방 제목·판매자명은 아직 목업이다. 물품 배열만 서버 값으로 바꾼다.
+   * 서버가 아무것도 안 주면 그 방의 목업 물품으로 채운다 (시연용 임시 조치).
+   */
+  const mockRoom = findMockRoom(auctionRoomId) ?? MOCK_ROOM_DETAIL
+  const mockItem = findMockItem(auctionItemId)
+  const room = {
+    ...mockRoom,
+    items: serverItems.length > 0 ? serverItems : mockRoom.items,
+  }
   const isGuest = user === null
 
   const [keyword, setKeyword] = useState('')
@@ -96,10 +109,11 @@ function AuctionItemPage() {
   const base = useMemo(() => {
     const listItem =
       serverItems.find((candidate) => candidate.id === auctionItemId) ??
+      mockItem ??
       fallbackItem(0)
     if (!detailDto || detailDto.auctionItemId !== auctionItemId) return listItem
     return toAuctionItemDetail(detailDto, listItem)
-  }, [serverItems, detailDto, auctionItemId])
+  }, [serverItems, detailDto, auctionItemId, mockItem])
 
   const item = override?.id === base.id ? override : base
 
@@ -227,13 +241,13 @@ function AuctionItemPage() {
 
   const itemEvents = useMemo(
     () => [
-      ...MOCK_ROOM_EVENTS.filter(
+      ...mockRoomEvents(auctionRoomId).filter(
         (event) =>
           event.subtitle === item.name || event.message.includes(item.name),
       ),
       ...extraEvents,
     ],
-    [item.name, extraEvents],
+    [item.name, extraEvents, auctionRoomId],
   )
 
   /**
@@ -311,8 +325,9 @@ function AuctionItemPage() {
    * 단독 페이지라, 상세를 못 받으면 보여줄 게 없다. 실시간 연결을 지킬 이유도
    * 없으므로 전역 상태 화면을 그대로 쓴다.
    */
-  if (detailQuery.isPending) return <RoutePending />
-  if (detailQuery.isError) {
+  // 목업 물품으로 대신 채웠으면 로딩·에러 화면으로 덮지 않는다.
+  if (detailQuery.isPending && !mockItem) return <RoutePending />
+  if (detailQuery.isError && !mockItem) {
     return (
       <RouteError
         error={detailQuery.error as Error}

@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.service;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
@@ -16,11 +17,15 @@ import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.event.payload.ItemStarted;
+import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -28,10 +33,18 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AuctionItemService {
 
+    /**
+     * 한 경매방에서 동시에 진행할 수 있는 물품 수(기능명세 D002). DB 제약으로는 표현할 수 없어
+     * {@link #start}의 경매방 행 락이 이 규칙을 지탱한다 — 물품을 진행중으로 바꾸는 코드가
+     * 그 락을 거치지 않으면 제한이 조용히 뚫린다.
+     */
+    private static final int MAX_IN_PROGRESS_PER_ROOM = 3;
+
     private final AuctionItemRepository auctionItemRepository;
     private final AuctionRoomRepository auctionRoomRepository;
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
+    private final DomainEventPublisher domainEventPublisher;
 
     /**
      * 경매방의 물품 목록을 상태 우선 순서로 조회한다.
@@ -134,6 +147,137 @@ public class AuctionItemService {
         }
 
         auctionItemRepository.delete(auctionItem);
+    }
+
+    /**
+     * 소유자 본인의 대기(READY) 물품 경매를 시작한다. 상태를 진행중으로 바꾸고 마감 시각을
+     * 확정한 뒤 {@code ItemStarted}를 발행한다. <b>마감 스케줄 등록은 하지 않는다</b> —
+     * 스케줄러를 만드는 후속 작업이 등록까지 함께 맡는다.
+     *
+     * <p>첫 물품이 시작되면 경매방도 {@code BEFORE}에서 {@code OPEN}으로 바뀐다. 판매자가 물품을
+     * 시작하는 순간이 곧 방송 시작이라는 뜻이다. 이 값은 <b>입장을 막는 데 쓰이지 않는다</b> —
+     * 경매방 조회는 상태와 무관하게 누구에게나 열려 있고, 구매자 화면이 "시작 전"과 "LIVE"
+     * 표시를 가르는 데만 쓴다.
+     *
+     * <p><b>행 두 개에 쓰기 락을 건다. 순서는 항상 물품 → 경매방이다.</b> 물품 락은 같은 물품을
+     * 두고 시작·제외·입찰이 엉키는 것을 막고, 경매방 락은 "방당 동시 3개" 검사를 지탱한다 —
+     * 개수를 세고 나서 바꾸는 흐름이라 물품 락만으로는 <b>서로 다른</b> 물품에 대한 동시 요청
+     * 두 건이 함께 통과할 수 있다. 반대 순서로 잡는 코드를 만들면 데드락이 생긴다.
+     *
+     * <p>경매방 락이 3개 제한을 지탱한다는 것은, 물품을 진행중으로 바꾸는 경로가 이 메서드
+     * 하나뿐이고 그 경로가 모두 이 락을 지난다는 뜻이다. 락을 거치지 않고 진행중으로 바꾸는
+     * 코드가 생기면 제한은 조용히 뚫린다. DB 제약으로는 "3개까지"를 표현할 수 없다.
+     *
+     * <p><b>{@code READ_COMMITTED}가 3개 제한의 나머지 절반이다.</b> 기본값인 REPEATABLE READ에서는
+     * 트랜잭션의 첫 일반 조회(여기서는 판매자 프로필 조회) 시점에 읽기 뷰가 고정되고, 이후 일반
+     * 조회는 그 시점의 스냅샷만 본다. 그러면 <b>경매방 락을 기다리는 동안 다른 요청이 커밋한
+     * 진행중 물품을 개수 세기가 보지 못해</b>, 락이 요청을 줄 세워도 낡은 값으로 통과시킨다.
+     * Testcontainers MySQL에서 실측한 결과가
+     * {@code AuctionItemStartIsolationTest}에 회귀 테스트로 남아 있다.
+     *
+     * @param auctionItemId 시작할 물품의 ID
+     * @param userId        시작을 요청한 회원의 ID
+     * @param request       경매 시간(분)
+     * @return 시작된 물품. 갱신된 상태와 마감 시각이 담긴다
+     * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
+     *                               물품이 없거나 본인 소유가 아닐 때(AUCTION_ITEM_NOT_FOUND),
+     *                               경매방이 종료됐을 때(AUCTION_ROOM_CLOSED),
+     *                               대기 중인 물품이 아닐 때(AUCTION_ITEM_NOT_READY),
+     *                               이미 3개가 진행 중일 때(AUCTION_ITEM_START_LIMIT_EXCEEDED)
+     */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AuctionItemDetailResponseDto start(Long auctionItemId, Long userId,
+                                              AuctionItemStartRequestDto request) {
+
+        SellerProfile sellerProfile = findActiveSellerProfile(userId);
+
+        AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(auctionItemId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        AuctionRoom auctionRoom = findRoomForUpdate(auctionItem);
+
+        assertRoomOwnedBy(auctionRoom, sellerProfile);
+        validateStartable(auctionRoom, auctionItem);
+
+        auctionItem.start(request, LocalDateTime.now());
+
+        if (auctionRoom.getStatus() == AuctionRoomStatus.BEFORE) {
+            auctionRoom.open();
+        }
+
+        // 리스너가 커밋 후에만 받으므로(DomainEventSseListener) 여기서 발행해도 롤백되면 나가지 않는다.
+        domainEventPublisher.publish(ItemStarted.of(
+                auctionRoom.getAuctionRoomId(),
+                auctionItem.getAuctionItemId(),
+                auctionItem.getProduct().getName(),
+                auctionItem.getStartedAt(),
+                auctionItem.getEndAt()));
+
+        return AuctionItemDetailResponseDto.from(auctionItem);
+    }
+
+    /**
+     * 물품이 속한 경매방을 쓰기 락을 걸고 읽는다. 시작 API 경로에는 경매방 ID가 없어 물품에서
+     * 꺼내 쓴다. 프록시에서 식별자만 꺼내는 것은 초기화를 일으키지 않아 추가 쿼리가 없다.
+     *
+     * <p>방을 못 찾으면(soft delete된 경우) 4002가 아니라 <b>4001</b>이다. 여기서의 경매방 ID는
+     * 요청자가 준 값이 아니라 물품에서 나온 값이라, 방이 없다는 것은 곧 그 물품에 도달할 수
+     * 없다는 뜻이기 때문이다.
+     */
+    private AuctionRoom findRoomForUpdate(AuctionItem auctionItem) {
+        return auctionRoomRepository
+                .findByIdForUpdate(auctionItem.getAuctionRoom().getAuctionRoomId())
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+    }
+
+    /**
+     * 시작을 받을 수 없는 요청을 거른다. 소유자 확인을 마친 뒤 호출한다.
+     *
+     * <p>진행 중인 물품 수를 세는 마지막 검사가 셋 중 유일하게 쿼리를 쓰므로 맨 뒤에 둔다.
+     * 앞의 두 검사에서 걸리는 요청은 쿼리 없이 끝난다.
+     */
+    private void validateStartable(AuctionRoom auctionRoom, AuctionItem auctionItem) {
+
+        if (auctionRoom.getStatus() == AuctionRoomStatus.CLOSED) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED);
+        }
+
+        if (auctionItem.getStatus() != AuctionItemStatus.READY) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_READY);
+        }
+
+        if (countInProgress(auctionRoom) >= MAX_IN_PROGRESS_PER_ROOM) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_START_LIMIT_EXCEEDED);
+        }
+    }
+
+    /**
+     * 경매방이 요청자 소유인지 확인한다. 남의 방이면 물품의 존재 자체를 숨기려고 4001로 응답한다.
+     */
+    private void assertRoomOwnedBy(AuctionRoom auctionRoom, SellerProfile sellerProfile) {
+        if (!auctionRoom.getSellerProfile().getSellerProfileId()
+                .equals(sellerProfile.getSellerProfileId())) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
+        }
+    }
+
+    /**
+     * 경매방에서 진행 중인 물품 수를 센다. 이 조회 자체에는 락이 없다. 정확한 값이 나오려면
+     * <b>두 가지가 모두</b> 필요하다.
+     *
+     * <ol>
+     *   <li>호출 시점에 경매방 행 락을 쥐고 있을 것 — 세는 동안 다른 시작 요청이 끼어들지 못한다.
+     *   <li>트랜잭션이 {@code READ_COMMITTED}일 것 — 기본값인 REPEATABLE READ에서는 락을
+     *       <b>기다리는 동안</b> 다른 요청이 커밋한 물품이 스냅샷에 안 잡혀, 락을 잡고도 낡은
+     *       값을 센다.
+     * </ol>
+     *
+     * 락만으로 충분하다고 보면 안 된다. 락은 "잡은 뒤"만 막고, 위험 구간은 읽기 뷰가 만들어진
+     * 뒤부터 락을 잡기 전까지다.
+     */
+    private long countInProgress(AuctionRoom auctionRoom) {
+        return auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
+                auctionRoom.getAuctionRoomId(), AuctionItemStatus.IN_PROGRESS);
     }
 
     /**

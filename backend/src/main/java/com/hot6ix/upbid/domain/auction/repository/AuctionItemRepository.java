@@ -46,6 +46,12 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     long countByAuctionRoom_AuctionRoomId(Long auctionRoomId);
 
     /**
+     * 경매방에서 지정 상태인 물품 개수를 센다. 물품 시작 시 "방당 동시 3개" 제한을
+     * 검증하는 데 쓴다. 세고 나서 바꾸는 흐름이라 호출 전에 경매방 행을 잠가야 한다.
+     */
+    long countByAuctionRoom_AuctionRoomIdAndStatus(Long auctionRoomId, AuctionItemStatus status);
+
+    /**
      * 목록 정렬 순위를 만드는 식. 진행중 → 대기 → 낙찰 → 유찰 순이며
      * {@code AuctionItemStatus} 선언 순서와 다르므로 식으로 계산한다.
      * 별칭 {@code ai}에 묶여 있으므로 다른 별칭을 쓰는 쿼리에 그대로 가져다 쓸 수 없다.
