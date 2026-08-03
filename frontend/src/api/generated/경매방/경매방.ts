@@ -32,7 +32,9 @@ import type {
   AuctionRoomCreateRequestDto,
   AuctionRoomUpdateRequestDto,
   CommonResponseAuctionRoomPublicResponseDto,
-  CommonResponseAuctionRoomShareResponseDto
+  CommonResponseAuctionRoomShareResponseDto,
+  CommonResponseCursorPageResponseAuctionRoomListItemResponseDto,
+  GetMyRoomsParams
 } from '.././model';
 
 import { customInstance } from '../../mutator/custom-instance';
@@ -441,6 +443,100 @@ export function useGetRoomByShareCode<TData = Awaited<ReturnType<typeof getRoomB
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetRoomByShareCodeQueryOptions(shareCode,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
+ * 로그인한 판매자 본인이 만든 경매방을 auctionRoomId 최신순으로 조회한다. 정렬 키를 항상 불변인 auctionRoomId로 고정해 커서 페이지네이션이 안정적으로 동작하며, 상태는 정렬이 아니라 필터로만 사용한다. **참여 경매방 목록이 아니다** — 내가 개설한 방만 나온다. itemCount는 그 방에 등록된 물품 수이며, participantCount는 참여자를 기록하는 코드가 아직 없어 항상 null이다.
+ * @summary 내 경매방 목록 조회
+ */
+export const getMyRooms = (
+    params?: GetMyRoomsParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseCursorPageResponseAuctionRoomListItemResponseDto>(
+      {url: `/api/v1/auction-rooms/me`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetMyRoomsQueryKey = (params?: GetMyRoomsParams,) => {
+    return [
+    `/api/v1/auction-rooms/me`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetMyRoomsQueryOptions = <TData = Awaited<ReturnType<typeof getMyRooms>>, TError = ErrorType<CommonResponseCursorPageResponseAuctionRoomListItemResponseDto>>(params?: GetMyRoomsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRooms>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyRoomsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyRooms>>> = ({ signal }) => getMyRooms(params, requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyRooms>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyRoomsQueryResult = NonNullable<Awaited<ReturnType<typeof getMyRooms>>>
+export type GetMyRoomsQueryError = ErrorType<CommonResponseCursorPageResponseAuctionRoomListItemResponseDto>
+
+
+export function useGetMyRooms<TData = Awaited<ReturnType<typeof getMyRooms>>, TError = ErrorType<CommonResponseCursorPageResponseAuctionRoomListItemResponseDto>>(
+ params: undefined |  GetMyRoomsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRooms>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyRooms>>,
+          TError,
+          Awaited<ReturnType<typeof getMyRooms>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyRooms<TData = Awaited<ReturnType<typeof getMyRooms>>, TError = ErrorType<CommonResponseCursorPageResponseAuctionRoomListItemResponseDto>>(
+ params?: GetMyRoomsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRooms>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyRooms>>,
+          TError,
+          Awaited<ReturnType<typeof getMyRooms>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyRooms<TData = Awaited<ReturnType<typeof getMyRooms>>, TError = ErrorType<CommonResponseCursorPageResponseAuctionRoomListItemResponseDto>>(
+ params?: GetMyRoomsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRooms>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 경매방 목록 조회
+ */
+
+export function useGetMyRooms<TData = Awaited<ReturnType<typeof getMyRooms>>, TError = ErrorType<CommonResponseCursorPageResponseAuctionRoomListItemResponseDto>>(
+ params?: GetMyRoomsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRooms>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetMyRoomsQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

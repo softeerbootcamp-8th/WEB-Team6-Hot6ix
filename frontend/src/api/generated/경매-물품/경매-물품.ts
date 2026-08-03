@@ -30,7 +30,9 @@ import type {
 
 import type {
   AuctionItemAddRequestDto,
+  AuctionItemBulkAddRequestDto,
   AuctionItemStartRequestDto,
+  CommonResponseAuctionItemBulkAddResponseDto,
   CommonResponseAuctionItemDetailResponseDto,
   CommonResponseListAuctionItemSummaryResponseDto,
   CommonResponseVoid
@@ -200,6 +202,72 @@ export const useAdd = <TError = ErrorType<CommonResponseAuctionItemDetailRespons
       > => {
 
       const mutationOptions = getAddMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * 소유자가 여러 상품을 한 번에 경매방에 대기(READY) 물품으로 올린다. 판정 규칙은 단건 추가와 같지만, **거절된 상품이 있어도 나머지는 추가한다.** 거절된 상품은 응답의 failed 배열에 상품 ID와 사유(code, message)로 담기며, 그 code는 단건 추가가 같은 상황에서 내보내는 값과 같다. 전부 거절돼 added가 비어도 201이다 — 성공 여부는 failed가 비었는지로 판단한다. 한 경매방에는 최대 100개까지 등록할 수 있고, 넘기면 앞에서부터 잘라 넣지 않고 요청 전체를 거절한다. 요청 배열에 같은 상품 ID가 두 번 들어오면 400이다.
+ * @summary 경매방 물품 벌크 추가
+ */
+export const addAll = (
+    auctionRoomId: number,
+    auctionItemBulkAddRequestDto: BodyType<AuctionItemBulkAddRequestDto>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseAuctionItemBulkAddResponseDto>(
+      {url: `/api/v1/auction-rooms/${auctionRoomId}/auction-items/bulk`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: auctionItemBulkAddRequestDto, signal
+    },
+      options);
+    }
+  
+
+
+export const getAddAllMutationOptions = <TError = ErrorType<CommonResponseAuctionItemBulkAddResponseDto>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addAll>>, TError,{auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof addAll>>, TError,{auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>}, TContext> => {
+
+const mutationKey = ['addAll'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addAll>>, {auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>}> = (props) => {
+          const {auctionRoomId,data} = props ?? {};
+
+          return  addAll(auctionRoomId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddAllMutationResult = NonNullable<Awaited<ReturnType<typeof addAll>>>
+    export type AddAllMutationBody = BodyType<AuctionItemBulkAddRequestDto>
+    export type AddAllMutationError = ErrorType<CommonResponseAuctionItemBulkAddResponseDto>
+
+    /**
+ * @summary 경매방 물품 벌크 추가
+ */
+export const useAddAll = <TError = ErrorType<CommonResponseAuctionItemBulkAddResponseDto>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addAll>>, TError,{auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof addAll>>,
+        TError,
+        {auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>},
+        TContext
+      > => {
+
+      const mutationOptions = getAddAllMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }
