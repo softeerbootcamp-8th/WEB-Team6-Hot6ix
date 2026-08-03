@@ -140,16 +140,22 @@ jobs:
         run: |
           aws s3 sync dist "s3://${{ secrets.FE_S3_BUCKET }}" \
             --exclude 'index.html' \
+            --exclude 'manifest.webmanifest' \
             --cache-control 'public,max-age=31536000,immutable' \
             --no-progress
 
-      # 2단계: index.html 은 항상 새로 받아야 한다. 자산보다 나중에 올려서,
-      # 새 index.html 이 참조하는 청크가 이미 S3 에 있는 상태를 보장한다.
-      - name: index.html 업로드 (캐시 금지)
+      # 2단계: 파일명에 해시가 없어 언제든 내용이 바뀔 수 있는 파일은
+      # index.html 과 마찬가지로 no-cache 로 올린다.
+      # manifest.webmanifest: PWA 설치 경로·아이콘 등을 담으며 파일명이 고정이다.
+      - name: index.html · manifest.webmanifest 업로드 (캐시 금지)
         run: |
           aws s3 cp dist/index.html "s3://${{ secrets.FE_S3_BUCKET }}/index.html" \
             --cache-control 'no-cache' \
             --content-type 'text/html; charset=utf-8' \
+            --no-progress
+          aws s3 cp dist/manifest.webmanifest "s3://${{ secrets.FE_S3_BUCKET }}/manifest.webmanifest" \
+            --cache-control 'no-cache' \
+            --content-type 'application/manifest+json' \
             --no-progress
 
       # SPA 라우트는 CloudFront 의 커스텀 오류 응답(403/404 → /index.html)으로
