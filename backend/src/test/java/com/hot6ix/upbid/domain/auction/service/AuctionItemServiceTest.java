@@ -201,6 +201,31 @@ class AuctionItemServiceTest {
     }
 
     @Test
+    @DisplayName("목록 조회는 물품마다 자기 리더보드를 담고, 입찰이 없는 물품은 빈 목록이다")
+    void getSummariesFillsLeaderboardPerItem() {
+
+        AuctionItemSummaryResponseDto withBids = new AuctionItemSummaryResponseDto(
+                1L, "한정판 피규어", "https://cdn.hot6ix.com/1.png",
+                50_000L, AuctionItemStatus.IN_PROGRESS, LocalDateTime.of(2026, 7, 29, 21, 0));
+        AuctionItemSummaryResponseDto withoutBids = new AuctionItemSummaryResponseDto(
+                2L, "키링", "https://cdn.hot6ix.com/2.png",
+                10_000L, AuctionItemStatus.IN_PROGRESS, LocalDateTime.of(2026, 7, 29, 21, 30));
+
+        when(auctionRoomRepository.existsByAuctionRoomIdAndDeletedAtIsNull(ROOM_ID)).thenReturn(true);
+        when(auctionItemRepository.findSummaries(ROOM_ID)).thenReturn(List.of(withBids, withoutBids));
+        when(bidRepository.findTopBidders(List.of(1L, 2L), 3)).thenReturn(List.of(
+                row(1L, 1, "스니커홀릭", 50_000L),
+                row(1L, 2, "조던매니아", 48_000L)));
+
+        List<AuctionItemSummaryResponseDto> result = auctionItemService.getSummaries(ROOM_ID);
+
+        assertThat(result.get(0).leaderboard())
+                .extracting(LeaderboardEntryResponseDto::nickname)
+                .containsExactly("스니커홀릭", "조던매니아");
+        assertThat(result.get(1).leaderboard()).isEmpty();
+    }
+
+    @Test
     @DisplayName("존재하지 않는 경매방을 조회하면 AUCTION_ROOM_NOT_FOUND 예외가 발생한다")
     void getSummariesThrowsWhenRoomNotFound() {
 

@@ -56,7 +56,11 @@ public class AuctionItemService {
     private final BidRepository bidRepository;
 
     /**
-     * 경매방의 물품 목록을 상태 우선 순서로 조회한다.
+     * 경매방의 물품 목록을 상태 우선 순서로 조회한다. 물품마다 상위
+     * {@link #LEADERBOARD_SIZE}명을 함께 담는다.
+     *
+     * <p>리더보드는 쿼리 한 번으로 물품 전체를 가져와 ID로 묶는다. 물품마다 따로 조회하면
+     * 물품 수만큼 쿼리가 늘어난다. 물품이 없으면 조회 자체를 건너뛴다.
      *
      * @param auctionRoomId 조회할 경매방의 ID
      * @return 물품 요약 목록. 물품이 없으면 빈 목록
@@ -66,7 +70,17 @@ public class AuctionItemService {
         if (!auctionRoomRepository.existsByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)) {
             throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
         }
-        return auctionItemRepository.findSummaries(auctionRoomId);
+
+        List<AuctionItemSummaryResponseDto> summaries =
+                auctionItemRepository.findSummaries(auctionRoomId);
+
+        Map<Long, List<LeaderboardEntryResponseDto>> leaderboards = findLeaderboards(
+                summaries.stream().map(AuctionItemSummaryResponseDto::auctionItemId).toList());
+
+        return summaries.stream()
+                .map(summary -> summary.withLeaderboard(
+                        leaderboards.getOrDefault(summary.auctionItemId(), List.of())))
+                .toList();
     }
 
     /**
