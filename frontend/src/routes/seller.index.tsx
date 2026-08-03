@@ -3,14 +3,15 @@ import { ProductThumbnail } from '@/components/product-thumbnail'
 import { ProfilePhoto } from '@/components/profile-photo'
 
 import { AppShell } from '@/components/layout/page-shell'
-import { PageHeader } from '@/components/page-header'
-import { MOCK_PRODUCTS, MOCK_TRADES } from '@/mocks/data'
-import { PRODUCT_RESULT } from '@/features/seller/product-status'
+import { EmptyState, PageHeader } from '@/components/page-header'
+import { MOCK_TRADES } from '@/mocks/data'
+import { PRODUCT_STATUS } from '@/features/seller/product-status'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { requireMember } from '@/lib/route-guards'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { useMySellerProfile } from '@/features/seller/use-my-seller-profile'
+import { useProductList } from '@/features/seller/use-product-list'
 
 /**
  * 판매자 정보 진입.
@@ -33,6 +34,8 @@ const TABLE_COLS = 'grid-cols-[56px_minmax(0,1fr)_204px_120px] gap-x-5'
 function SellerHomePage() {
   const { profile, isPending, notFound, isError, error, refetch } =
     useMySellerProfile()
+  // 미리보기라 첫 쪽만 받는다. 서버가 전체 개수를 주지 않아 더 있으면 "4+"로 적는다.
+  const products = useProductList({ size: PREVIEW_COUNT })
 
   if (isPending) return <RoutePending />
   if (isError && error)
@@ -41,8 +44,7 @@ function SellerHomePage() {
   // 404 는 장애가 아니라 "아직 등록하지 않았다"는 정상 상태다.
   if (notFound || !profile) return <MissingProfile />
 
-  // 상품·거래 숫자는 아직 목업이다 (상품 화면 연동 때 같이 걷어낸다).
-  const products = MOCK_PRODUCTS
+  // 완료 거래 수는 아직 목업이다 (거래 화면 소관).
   const completedTrades = MOCK_TRADES.filter(
     (trade) => trade.role === 'SELLER' && trade.status === 'COMPLETED',
   ).length
@@ -93,7 +95,9 @@ function SellerHomePage() {
             {[
               {
                 label: '등록 상품',
-                value: products.length,
+                value: products.isPending
+                  ? '—'
+                  : `${products.products.length}${products.hasNextPage ? '+' : ''}`,
                 accent: 'text-foreground',
               },
               {
@@ -153,117 +157,147 @@ function SellerHomePage() {
             </Link>
           </div>
 
-          {/* 모바일은 표 대신 행 카드로 흐른다 (좁은 화면 가로 스크롤 방지) */}
-          <ul className="mt-4 space-y-3 md:hidden">
-            {products.slice(0, PREVIEW_COUNT).map((product) => {
-              const result = PRODUCT_RESULT[product.status]
-
-              return (
-                <li key={product.id}>
-                  {/* 글자 규격은 상품 관리 화면과 같게 둔다. */}
-                  <Link
-                    to="/seller/products/$productId"
-                    params={{ productId: String(product.id) }}
-                    className="ease-soft flex items-center gap-4 rounded-2xl border bg-card p-3.5 transition-all duration-150 active:scale-[0.99]"
-                  >
-                    <ProductThumbnail
-                      name={product.name}
-                      size={200}
-                      iconClassName="size-6"
-                      className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
-                    />
-
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-bold text-foreground">
-                        {product.name}
-                      </span>
-                      <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
-                        {product.category} · {formatDate(product.createdAt)}
-                      </span>
-                      <span
-                        className={cn(
-                          'mt-2 flex h-6 w-[72px] items-center justify-center rounded-full text-[11px] font-bold',
-                          result.className,
-                        )}
-                      >
-                        {result.label}
-                      </span>
-                    </span>
-
-                    <span className="shrink-0 text-[13px] font-bold text-brand-500">
-                      상세 →
-                    </span>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-
-          <div className="mt-6 hidden min-h-0 overflow-x-auto md:block">
-            <div className="min-w-[560px]">
-              <div
-                className={cn(
-                  'grid h-11 items-center rounded-[14px] bg-surface-subtle pr-9 pl-5 text-[13px] font-bold text-neutral-tertiary',
-                  TABLE_COLS,
-                )}
-              >
-                <span>상품</span>
-                <span />
-                <span>등록일</span>
-                <span>경매 결과</span>
-              </div>
-
-              <ul className="mt-3 space-y-1">
-                {products.slice(0, PREVIEW_COUNT).map((product, index) => {
-                  const result = PRODUCT_RESULT[product.status]
+          {products.isPending ? (
+            <ul aria-hidden className="mt-6 space-y-2">
+              {Array.from({ length: PREVIEW_COUNT }).map((_, index) => (
+                <li
+                  key={index}
+                  className="animate-skeleton h-[76px] rounded-2xl bg-fill"
+                />
+              ))}
+            </ul>
+          ) : products.isError ? (
+            <p className="mt-6 text-[13px] font-medium text-neutral-tertiary">
+              상품을 불러오지 못했어요. 전체 상품 보기에서 다시 시도해 주세요.
+            </p>
+          ) : products.products.length === 0 ? (
+            <EmptyState
+              title="등록한 상품이 없어요"
+              description="상품을 먼저 등록하면 경매방에 물품으로 넣을 수 있어요."
+              action={
+                <Link
+                  to="/seller/products/new"
+                  className="ease-soft inline-block rounded-[14px] bg-brand-500 px-6 py-3.5 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
+                >
+                  상품 등록하기
+                </Link>
+              }
+            />
+          ) : (
+            <>
+              {/* 모바일은 표 대신 행 카드로 흐른다 (좁은 화면 가로 스크롤 방지) */}
+              <ul className="mt-4 space-y-3 md:hidden">
+                {products.products.map((product) => {
+                  const status = PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
 
                   return (
-                    <li
-                      key={product.id}
-                      style={{ animationDelay: `${index * 30}ms` }}
-                      className={cn(
-                        'animate-rise grid h-[76px] items-center rounded-2xl pr-9 pl-5 transition-colors duration-150 hover:bg-surface-subtle',
-                        TABLE_COLS,
-                      )}
-                    >
-                      <ProductThumbnail
-                        name={product.name}
-                        size={200}
-                        iconClassName="size-6"
-                        className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
-                      />
-
-                      <span className="min-w-0">
-                        <Link
-                          to="/seller/products/$productId"
-                          params={{ productId: String(product.id) }}
-                          className="block truncate text-[15px] font-bold text-foreground hover:text-brand-500 hover:underline"
-                        >
-                          {product.name}
-                        </Link>
-                        <span className="mt-1 block truncate text-[13px] font-medium text-neutral-tertiary">
-                          {product.category}
-                        </span>
-                      </span>
-
-                      <span className="text-[13px] font-medium tabular-nums text-neutral-tertiary">
-                        {formatDate(product.createdAt)}
-                      </span>
-
-                      <span
-                        className={cn(
-                          'flex h-8 w-[120px] items-center justify-center rounded-2xl text-[12px] font-bold',
-                          result.className,
-                        )}
+                    <li key={product.productId}>
+                      {/* 글자 규격은 상품 관리 화면과 같게 둔다. */}
+                      <Link
+                        to="/seller/products/$productId"
+                        params={{ productId: String(product.productId) }}
+                        className="ease-soft flex items-center gap-4 rounded-2xl border bg-card p-3.5 transition-all duration-150 active:scale-[0.99]"
                       >
-                        {result.label}
-                      </span>
+                        <ProductThumbnail
+                          name={product.name ?? ''}
+                          src={product.imageUrl}
+                          size={200}
+                          iconClassName="size-6"
+                          className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
+                        />
+
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[15px] font-bold text-foreground">
+                            {product.name}
+                          </span>
+                          <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
+                            {product.createdAt ? formatDate(product.createdAt) : '-'}
+                          </span>
+                          <span
+                            className={cn(
+                              'mt-2 flex h-6 w-[72px] items-center justify-center rounded-full text-[11px] font-bold',
+                              status.className,
+                            )}
+                          >
+                            {status.label}
+                          </span>
+                        </span>
+
+                        <span className="shrink-0 text-[13px] font-bold text-brand-500">
+                          상세 →
+                        </span>
+                      </Link>
                     </li>
                   )
                 })}
               </ul>
-            </div>
-          </div>
+
+              <div className="mt-6 hidden min-h-0 overflow-x-auto md:block">
+                <div className="min-w-[560px]">
+                  <div
+                    className={cn(
+                      'grid h-11 items-center rounded-[14px] bg-surface-subtle pr-9 pl-5 text-[13px] font-bold text-neutral-tertiary',
+                      TABLE_COLS,
+                    )}
+                  >
+                    <span>상품</span>
+                    <span />
+                    <span>등록일</span>
+                    <span>경매 상태</span>
+                  </div>
+
+                  <ul className="mt-3 space-y-1">
+                    {products.products.map((product, index) => {
+                      const status =
+                        PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
+
+                      return (
+                        <li
+                          key={product.productId}
+                          style={{ animationDelay: `${index * 30}ms` }}
+                          className={cn(
+                            'animate-rise grid h-[76px] items-center rounded-2xl pr-9 pl-5 transition-colors duration-150 hover:bg-surface-subtle',
+                            TABLE_COLS,
+                          )}
+                        >
+                          <ProductThumbnail
+                            name={product.name ?? ''}
+                            src={product.imageUrl}
+                            size={200}
+                            iconClassName="size-6"
+                            className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
+                          />
+
+                          <span className="min-w-0">
+                            <Link
+                              to="/seller/products/$productId"
+                              params={{ productId: String(product.productId) }}
+                              className="block truncate text-[15px] font-bold text-foreground hover:text-brand-500 hover:underline"
+                            >
+                              {product.name}
+                            </Link>
+                          </span>
+
+                          <span className="text-[13px] font-medium tabular-nums text-neutral-tertiary">
+                            {product.createdAt ? formatDate(product.createdAt) : '-'}
+                          </span>
+
+                          <span
+                            className={cn(
+                              'flex h-8 w-[120px] items-center justify-center rounded-2xl text-[12px] font-bold',
+                              status.className,
+                            )}
+                          >
+                            {status.label}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              </div>
+            </>
+          )}
         </section>
       </div>
     </AppShell>
