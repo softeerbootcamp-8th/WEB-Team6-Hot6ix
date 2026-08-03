@@ -77,11 +77,10 @@ function SellerProductsPage() {
     <AppShell title="상품 관리" back className="max-w-[1280px]">
       {/* 모바일(MOB-05)은 제목 없이 전체 폭 등록 버튼부터 시작한다. */}
       <div className="flex flex-wrap items-start justify-between gap-4">
+        {/* 판매자 정보·내 경매방과 같은 목록 화면 상단(20px 제목 + 13px 설명). */}
         <div className="hidden md:block">
-          <h1 className="text-[28px] font-extrabold text-foreground">
-            상품 관리
-          </h1>
-          <p className="mt-2 text-[14px] font-medium text-neutral-tertiary">
+          <h1 className="text-[20px] font-bold text-foreground">상품 관리</h1>
+          <p className="mt-2 text-[13px] font-medium text-neutral-tertiary">
             경매에 사용할 상품과 경매 상태를 관리하세요.
           </p>
         </div>
