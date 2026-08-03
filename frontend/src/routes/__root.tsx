@@ -47,8 +47,8 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         staleTime: Infinity,
       })
       // 서버 DTO → SessionUser 명시 매핑.
-      // phone·sellerProfile 은 /me 가 아직 반환하지 않으므로 기존 세션값을 유지한다.
-      // 백엔드가 이 필드들을 /me 에 추가하면 data.phone / data.sellerProfile 로 교체한다.
+      // phone 은 /me 가 아직 반환하지 않으므로 기존 세션값을 유지한다.
+      // 백엔드가 이 필드를 /me 에 추가하면 data.phone 으로 교체한다.
       const prev = sessionStore.getState()
       const prevUser = prev.status === 'member' ? prev.user : null
       sessionStore.signIn({
@@ -56,7 +56,6 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         nickname: data.nickname,
         kakaoEmail: data.email,
         phone: prevUser?.phone ?? null,
-        sellerProfile: prevUser?.sellerProfile ?? null,
       })
     } catch {
       // 401 등 인증 실패 → 게스트 유지. 앱 로드를 막지 않는다.
