@@ -4,8 +4,17 @@ import { useState, type FormEvent } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { EmptyState, PageHeader } from '@/components/page-header'
-import { MOCK_PRODUCTS } from '@/mocks/data'
-import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
+import {
+  ItemPickerModal,
+  type PickedItem,
+} from '@/features/seller/components/item-picker-modal'
+import { useAddAll } from '@/api/generated/경매-물품/경매-물품'
+import { useCreate2 } from '@/api/generated/경매방/경매방'
+import {
+  toAuctionRoomErrorMessage,
+  toFailureReason,
+} from '@/features/seller/auction-room-error'
+import { toast } from '@/lib/toast'
 import { NumberField, TextAreaField, TextField } from '@/components/ui/field'
 import { requireMember } from '@/lib/route-guards'
 import { RoutePending } from '@/components/route-states'
@@ -15,17 +24,18 @@ import { useMySellerProfile } from '@/features/seller/use-my-seller-profile'
  * 경매방 생성 (Figma `WEB-08 · 판매자 · 경매방 생성`).
  *
  * 위쪽은 기본 정보 / 입찰 규칙 두 카드가 나란히, 아래는 전체 폭 판매 물품
- * 카드다. 물품 개수 제한은 없고, 입찰 단위는 방 단위로 한 번만 정한다.
+ * 카드다. 입찰 단위는 방 단위로 한 번만 정한다.
+ *
+ * 방을 만든 뒤 물품을 벌크로 넣는 2단계다. 물품 일부가 거절돼도 방은 남으므로
+ * 만들어진 `roomId` 를 들고 있다가 재시도한다 — 없으면 누를 때마다 빈 방이 쌓인다.
  */
 export const Route = createFileRoute('/seller/rooms/new')({
   beforeLoad: requireMember,
   component: AuctionRoomNewPage,
 })
 
-interface DraftItem {
-  productId: number
-  startPrice: number
-}
+/** 서버의 경매방당 물품 상한(`AuctionItemRepository.MAX_SUMMARY_SIZE`)과 같은 값. */
+const MAX_ITEMS = 100
 
 function AuctionRoomNewPage() {
   const navigate = useNavigate()
@@ -36,10 +46,17 @@ function AuctionRoomNewPage() {
   const [bidUnit, setBidUnit] = useState(1000)
   const [thresholdMinutes, setThresholdMinutes] = useState(1)
   const [extendMinutes, setExtendMinutes] = useState(1)
-  const [items, setItems] = useState<DraftItem[]>([])
+  const [items, setItems] = useState<PickedItem[]>([])
   const [picking, setPicking] = useState(false)
   const [titleError, setTitleError] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
+
+  // 방을 만든 뒤 물품 추가가 실패하면 방은 그대로 남는다. 그 번호를 들고 있다가
+  // 재시도할 때 재사용한다 — 없으면 다시 누를 때마다 빈 방이 하나씩 쌓인다.
+  const [roomId, setRoomId] = useState<number | null>(null)
+
+  const createRoom = useCreate2()
+  const addItems = useAddAll()
+  const creating = createRoom.isPending || addItems.isPending
 
   if (profilePending) return <RoutePending />
 
@@ -69,16 +86,13 @@ function AuctionRoomNewPage() {
     )
   }
 
-  // 상품은 한 번의 경매에만 쓴다. 이미 경매를 거친 상품은 고를 수 없다.
-  const availableProducts = MOCK_PRODUCTS.filter(
-    (product) =>
-      product.status === 'DRAFT' &&
-      !items.some((item) => item.productId === product.id),
-  )
-
   const canSubmit = title.trim().length >= 2 && items.length > 0
 
-  const handleSubmit = (event: FormEvent) => {
+  // 방은 이미 만들어졌고 물품만 남은 상태면 버튼이 재시도라는 걸 드러낸다.
+  const submitLabel =
+    roomId === null ? '경매방 만들기' : `물품 ${items.length}개 다시 추가`
+
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     if (title.trim().length < 2) {
       setTitleError('경매방 이름을 2자 이상 입력해주세요.')
@@ -86,14 +100,55 @@ function AuctionRoomNewPage() {
     }
     if (items.length === 0) return
 
-    setCreating(true)
-    // TODO: POST /api/v1/auction-rooms 연동 (현재 목업)
-    window.setTimeout(() => {
-      void navigate({
-        to: '/seller/rooms/$roomId/created',
-        params: { roomId: '1' },
+    try {
+      // 방이 이미 있으면(= 직전 시도에서 물품만 실패) 다시 만들지 않는다.
+      let targetRoomId = roomId
+      if (targetRoomId === null) {
+        const created = await createRoom.mutateAsync({
+          data: {
+            name: title.trim(),
+            description: intro.trim() || undefined,
+            bidIncrement: bidUnit,
+            // 화면은 분, 서버는 초로 받는다.
+            softCloseTriggerSeconds: thresholdMinutes * 60,
+            softCloseExtendSeconds: extendMinutes * 60,
+          },
+        })
+
+        targetRoomId = created.data?.auctionRoomId ?? null
+        if (targetRoomId === null) throw new Error('auctionRoomId가 비어 있다')
+        setRoomId(targetRoomId)
+      }
+
+      const result = await addItems.mutateAsync({
+        auctionRoomId: targetRoomId,
+        data: {
+          items: items.map((item) => ({
+            productId: item.productId,
+            startingPrice: item.startingPrice,
+          })),
+        },
       })
-    }, 700)
+
+      const failed = result.data?.failed ?? []
+      if (failed.length === 0) {
+        void navigate({
+          to: '/seller/rooms/$roomId/created',
+          params: { roomId: String(targetRoomId) },
+        })
+        return
+      }
+
+      // 들어간 물품은 목록에서 지우고 거절된 것만 남겨 그대로 다시 시도하게 한다.
+      const failedIds = new Set(failed.map((failure) => failure.productId))
+      setItems((prev) => prev.filter((item) => failedIds.has(item.productId)))
+      toast.error(`물품 ${failed.length}개를 추가하지 못했어요`, {
+        description: toFailureReason(failed[0]?.code),
+      })
+    } catch (error) {
+      const message = toAuctionRoomErrorMessage(error)
+      toast.error(message.title, { description: message.description })
+    }
   }
 
   return (
@@ -103,7 +158,10 @@ function AuctionRoomNewPage() {
         description="경매방 정보와 입찰 규칙을 설정하고 판매할 물품을 추가하세요."
       />
 
-      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-6">
+      <form
+        onSubmit={(event) => void handleSubmit(event)}
+        className="mt-6 flex flex-col gap-6"
+      >
         <div className="grid gap-6 xl:grid-cols-2">
           {/* 기본 정보 */}
           <section className="rounded-[20px] border bg-card p-7">
@@ -131,15 +189,17 @@ function AuctionRoomNewPage() {
                 <span className="block text-[14px] font-bold text-foreground">
                   대표 이미지
                 </span>
-                <button
-                  type="button"
-                  className="ease-soft mt-2.5 flex h-[184px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 text-brand-500 transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
-                >
+                {/*
+                  이미지 업로드 수단이 아직 없어 서버로 보내지 않는다(별도 작업).
+                  누를 수 있게 두면 눌러도 아무 일이 없어서 고장으로 보인다.
+                */}
+                <div className="mt-2.5 flex h-[184px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed bg-surface-subtle text-neutral-muted">
                   <ImagePlus aria-hidden className="size-6" />
-                  <span className="text-[14px] font-bold">
-                    커버 이미지 추가
+                  <span className="text-[14px] font-bold">준비 중이에요</span>
+                  <span className="text-[12px] font-medium">
+                    커버 이미지는 곧 추가할 수 있어요
                   </span>
-                </button>
+                </div>
               </div>
 
               <div>
@@ -218,97 +278,60 @@ function AuctionRoomNewPage() {
 
           {items.length > 0 && (
             <ul className="mt-6 space-y-7">
-              {items.map((item) => {
-                const product = MOCK_PRODUCTS.find(
-                  (candidate) => candidate.id === item.productId,
-                )
-                if (!product) return null
-
-                return (
-                  <li
-                    key={item.productId}
-                    className="flex flex-wrap items-center gap-4"
+              {items.map((item) => (
+                <li
+                  key={item.productId}
+                  className="flex flex-wrap items-center gap-4"
+                >
+                  <span
+                    aria-hidden
+                    className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
                   >
-                    <span
-                      aria-hidden
-                      className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
-                    >
-                      <ImagePlus className="size-5" />
-                    </span>
+                    <ImagePlus className="size-5" />
+                  </span>
 
-                    <p className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
-                      {product.name}
-                    </p>
+                  <p className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
+                    {item.name}
+                  </p>
 
-                    <div className="w-full shrink-0 sm:w-[220px]">
-                      <label
-                        htmlFor={`start-price-${item.productId}`}
-                        className="block text-[11px] font-semibold text-neutral-tertiary"
-                      >
-                        시작가
-                      </label>
-                      <div className="mt-1 flex items-center gap-2">
-                        <input
-                          id={`start-price-${item.productId}`}
-                          inputMode="numeric"
-                          value={item.startPrice.toLocaleString('ko-KR')}
-                          onChange={(event) =>
-                            setItems((prev) =>
-                              prev.map((candidate) =>
-                                candidate.productId === item.productId
-                                  ? {
-                                      ...candidate,
-                                      startPrice:
-                                        Number(
-                                          event.target.value.replace(/\D/g, ''),
-                                        ) || 0,
-                                    }
-                                  : candidate,
-                              ),
-                            )
-                          }
-                          className="h-11 min-w-0 flex-1 rounded-xl border bg-card px-3 text-right text-[14px] font-semibold outline-none focus-visible:border-brand-400"
-                        />
-                        <span className="shrink-0 text-[13px] font-semibold text-neutral-tertiary">
-                          원
-                        </span>
-                      </div>
-                    </div>
+                  {/* 시작가는 물품 선택 모달에서 받는다. 여기서는 확인만 한다. */}
+                  <p className="shrink-0 text-[14px] font-semibold tabular-nums text-neutral-secondary">
+                    시작가 {item.startingPrice.toLocaleString('ko-KR')}원
+                  </p>
 
-                    <button
-                      type="button"
-                      aria-label={`${product.name} 제외`}
-                      onClick={() =>
-                        setItems((prev) =>
-                          prev.filter(
-                            (candidate) =>
-                              candidate.productId !== item.productId,
-                          ),
-                        )
-                      }
-                      className="ease-soft flex size-8 shrink-0 items-center justify-center rounded-2xl bg-live-surface text-live transition-all duration-150 hover:opacity-80 active:scale-95"
-                    >
-                      <Minus aria-hidden className="size-4" strokeWidth={3} />
-                    </button>
-                  </li>
-                )
-              })}
+                  <button
+                    type="button"
+                    aria-label={`${item.name} 제외`}
+                    onClick={() =>
+                      setItems((prev) =>
+                        prev.filter(
+                          (candidate) => candidate.productId !== item.productId,
+                        ),
+                      )
+                    }
+                    className="ease-soft flex size-8 shrink-0 items-center justify-center rounded-2xl bg-live-surface text-live transition-all duration-150 hover:opacity-80 active:scale-95"
+                  >
+                    <Minus aria-hidden className="size-4" strokeWidth={3} />
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
 
           <button
             type="button"
+            disabled={items.length >= MAX_ITEMS}
             onClick={() => setPicking(true)}
-            className="ease-soft mt-6 h-13 w-full rounded-[14px] border border-brand-200 bg-card text-[14px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-50 active:scale-[0.99]"
+            className="ease-soft mt-6 h-13 w-full rounded-[14px] border border-brand-200 bg-card text-[14px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-50 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
           >
             + 물품 추가
           </button>
 
-          {items.length === 0 && (
-            <p className="mt-3 text-center text-[12px] font-medium text-neutral-muted">
-              등록한 상품에서 골라 추가하세요. 개수 제한은 없습니다.
-            </p>
-          )}
+          <p className="mt-3 text-center text-[12px] font-medium text-neutral-muted">
+            {items.length >= MAX_ITEMS
+              ? `한 경매방에는 최대 ${MAX_ITEMS}개까지 담을 수 있어요.`
+              : `등록한 상품에서 골라 추가하세요. 최대 ${MAX_ITEMS}개까지 추가할 수 있어요.`}
+          </p>
         </section>
 
         <button
@@ -316,7 +339,7 @@ function AuctionRoomNewPage() {
           disabled={!canSubmit || creating}
           className="ease-soft h-14 w-full rounded-[14px] bg-brand-500 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
         >
-          {creating ? '만드는 중…' : '경매방 만들기'}
+          {creating ? '만드는 중…' : submitLabel}
         </button>
       </form>
 
@@ -324,17 +347,8 @@ function AuctionRoomNewPage() {
       <ItemPickerModal
         open={picking}
         onClose={() => setPicking(false)}
-        products={availableProducts}
-        onConfirm={(productIds) =>
-          setItems((prev) => [
-            ...prev,
-            // 시작가는 Figma 안내대로 이 화면에서 정한다.
-            ...productIds.map((productId) => ({
-              productId,
-              startPrice: 10000,
-            })),
-          ])
-        }
+        excludeProductIds={items.map((item) => item.productId)}
+        onConfirm={(picked) => setItems((prev) => [...prev, ...picked])}
       />
     </AppShell>
   )
