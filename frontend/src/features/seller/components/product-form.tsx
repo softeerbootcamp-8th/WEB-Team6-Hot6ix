@@ -3,7 +3,13 @@ import { useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { TextAreaField, TextField } from '@/components/ui/field'
 import { ImageUploadField } from '@/features/seller/components/image-upload-field'
+import {
+  ImageUploadError,
+  useImageUpload,
+} from '@/features/seller/use-image-upload'
+import { toast } from '@/lib/toast'
 import { mockProductImage } from '@/mocks/images'
+import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
 import type {
   ProductCreateRequestDto,
   ProductResponseDto,
@@ -85,11 +91,15 @@ function validate(values: FormValues): FieldErrors {
  *
  * 서버가 `referenceUrl` 에 `.*\S.*` 패턴을 걸어 둬서 빈 문자열은 400 이다.
  */
-function toRequestBody(values: FormValues): ProductCreateRequestDto {
+function toRequestBody(
+  values: FormValues,
+  imageUrl: string | undefined,
+): ProductCreateRequestDto {
   const optional = (value: string) => value.trim() || undefined
 
   return {
     name: values.name.trim(),
+    imageUrl,
     referenceUrl: optional(normalizeUrl(values.referenceUrl)),
     description: optional(values.description),
   }
@@ -105,9 +115,14 @@ function toRequestBody(values: FormValues): ProductCreateRequestDto {
  * (상품명 52 / 참고 링크 52 / 상품 설명 126 / 버튼 56)이다. 두 프레임은
  * 문구와 채워진 값만 다르고 레이아웃은 같다.
  *
- * 폼은 값과 검증만 맡는다. 어느 API 로 보낼지는 화면이 정한다.
- * 상품 이미지도 여기서 다루지 않는다 — 업로드 API 가 아직 없고, 수정 화면은
- * 조회로 받은 `imageUrl` 을 그대로 되돌려 보내야 하기 때문이다.
+ * 폼은 값과 검증을 맡는다. 상품을 어느 API 로 보낼지는 화면이 정한다.
+ *
+ * **상품 이미지 업로드만 예외로 폼이 직접 부른다.** 고른 파일을 들고 있는 게 폼이고,
+ * 4개 화면이 저마다 올리면 같은 코드가 네 벌이 된다. 저장 버튼을 누르면 먼저 S3 에 올리고,
+ * 받은 주소를 `imageUrl` 에 넣어 `onSubmit` 으로 넘긴다.
+ *
+ * 파일을 새로 고르지 않았으면 조회로 받은 `initial.imageUrl` 을 그대로 되돌려 보낸다.
+ * 수정은 PUT 전체 교체라 이 값을 빼면 서버에서 `null` 로 덮어써 기존 사진이 지워진다.
  */
 export function ProductForm({
   initial,
@@ -129,30 +144,53 @@ export function ProductForm({
     description: initial?.description ?? '',
   })
   const [errors, setErrors] = useState<FieldErrors>({})
+  const [imageFile, setImageFile] = useState<File | null>(null)
+
+  const { uploadImage, uploading } = useImageUpload(
+    PresignedUrlRequestDtoDomain.PRODUCT,
+  )
 
   const update = (key: keyof FormValues) => (value: string) => {
     setValues((prev) => ({ ...prev, [key]: value }))
     setErrors((prev) => ({ ...prev, [key]: undefined }))
   }
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     const nextErrors = validate(values)
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
 
-    onSubmit(toRequestBody(values))
+    // 파일을 새로 고르지 않았으면 지금 사진 주소를 그대로 되돌려 보낸다.
+    let imageUrl = initial?.imageUrl ?? undefined
+
+    if (imageFile) {
+      try {
+        imageUrl = await uploadImage(imageFile)
+      } catch (error) {
+        toast.error(
+          error instanceof ImageUploadError
+            ? error.message
+            : '이미지를 올리지 못했어요.',
+          { description: '잠시 뒤에 다시 시도해 주세요.' },
+        )
+        return
+      }
+    }
+
+    onSubmit(toRequestBody(values, imageUrl))
   }
 
   return (
     <form
-      onSubmit={handleSubmit}
+      onSubmit={(event) => void handleSubmit(event)}
       className="grid gap-8 rounded-[20px] border bg-card p-8 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-10"
     >
       <ImageUploadField
         label="상품 이미지"
         uploadText={uploadText}
         maxWidth={360}
+        onFileChange={setImageFile}
         // 등록된 상품을 고칠 때는 지금 사진이 보여야 한다.
         // 서버에 사진이 없으면 상품 이름으로 만든 목업 사진을 대신 보여준다.
         initialUrl={
@@ -211,9 +249,13 @@ export function ProductForm({
           variant="brand"
           size="cta"
           className="mt-auto"
-          disabled={submitting}
+          disabled={submitting || uploading}
         >
-          {submitting ? '저장 중…' : submitLabel}
+          {uploading
+            ? '이미지 올리는 중…'
+            : submitting
+              ? '저장 중…'
+              : submitLabel}
         </Button>
       </div>
     </form>

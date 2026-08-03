@@ -35,6 +35,10 @@ const BY_CODE: Record<number, ProfileErrorMessage> = {
     title: '등록된 프로필이 없어요',
     description: '먼저 판매자 프로필을 등록해 주세요.',
   },
+  10002: {
+    title: '이미지를 다시 올려주세요',
+    description: '업로드가 끝나기 전에 저장했거나 주소가 만료됐어요.',
+  },
 }
 
 const UNKNOWN: ProfileErrorMessage = {

@@ -10,6 +10,7 @@
  * OpenAPI spec version: v1
  */
 import type { AuctionItemDetailResponseDtoStatus } from './auctionItemDetailResponseDtoStatus';
+import type { LeaderboardEntryResponseDto } from './leaderboardEntryResponseDto';
 
 export interface AuctionItemDetailResponseDto {
   auctionItemId?: number;
@@ -23,4 +24,5 @@ export interface AuctionItemDetailResponseDto {
   bidIncrement?: number;
   status?: AuctionItemDetailResponseDtoStatus;
   endAt?: string;
+  leaderboard?: LeaderboardEntryResponseDto[];
 }

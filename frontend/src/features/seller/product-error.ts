@@ -39,6 +39,10 @@ const BY_CODE: Record<number, ProductErrorMessage> = {
     title: '경매방에 담겨 있는 상품이에요',
     description: '경매방에서 물품을 먼저 뺀 뒤 삭제해 주세요.',
   },
+  10002: {
+    title: '이미지를 다시 올려주세요',
+    description: '업로드가 끝나기 전에 저장했거나 주소가 만료됐어요.',
+  },
 }
 
 const UNKNOWN: ProductErrorMessage = {
