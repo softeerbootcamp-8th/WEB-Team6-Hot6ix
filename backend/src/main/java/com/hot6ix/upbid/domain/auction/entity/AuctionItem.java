@@ -127,6 +127,17 @@ public class AuctionItem extends BaseTimeEntity {
     }
 
     /**
+     * 진행 중인 경매를 마감한다. 최고 입찰자가 있으면 낙찰({@code SOLD}), 없으면
+     * 유찰({@code FAILED})이다. 상태 검증은 Service가 마치고 호출한다.
+     *
+     * <p>{@code end_at}은 건드리지 않는다. 실제로 언제 닫혔는지가 아니라 <b>언제 닫히기로
+     * 했는지</b>를 남기는 값이라, 마감이 락을 기다리다 늦게 실행돼도 그대로 둔다.
+     */
+    public void close() {
+        this.status = leaderUser != null ? AuctionItemStatus.SOLD : AuctionItemStatus.FAILED;
+    }
+
+    /**
      * 입찰을 반영해 현재가와 최고 입찰자를 갱신한다.
      *
      * @param bidder 입찰자
