@@ -82,6 +82,7 @@
 | 서랍이 하단 바 아래에 깔림             | `sticky` + `z-index` 가 쌓임 맥락을 만들어 자식 `z-50` 이 갇힘                       | 상위 헤더 `z-30` 이상으로 올림                   |
 | 모바일에서 폼 쓰고 나면 화면이 확대됨  | iOS 는 16px 미만 입력칸에 포커스하면 확대하고 되돌리지 않음                          | 모바일 입력 글자 16px (globals base layer)       |
 | 768~1023px 에서 페이지가 통째로 스크롤 | 레이아웃은 `lg`, 트리 분기는 `md` 로 서로 다른 기준을 씀                             | `useIsDesktop()` 을 `lg`(1024)로 통일            |
+| 모달 안 빈 곳을 눌렀는데 모달이 닫힘   | 배경 판정을 `event.target === dialog` 로 함 — 제목·본문 사이 여백과 dialog 자신의 padding 도 target 이 dialog 다 | 커서 좌표가 `getBoundingClientRect()` 밖일 때만 닫는다 (`Modal`) |
 
 ## 5. 접근성·정리
 

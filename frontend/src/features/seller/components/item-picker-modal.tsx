@@ -119,7 +119,8 @@ export function ItemPickerModal({
         물품 추가
       </h2>
       <p className="mt-2 text-[14px] font-medium text-neutral-tertiary">
-        등록한 상품 중 이번 경매에서 판매할 물품을 선택하세요.
+        여러 개를 한 번에 고르고 시작가까지 정한 뒤 마지막에 한 번만 확인하면
+        돼요.
       </p>
 
       <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_372px]">
