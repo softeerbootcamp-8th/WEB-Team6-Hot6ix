@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { ImagePlus, Minus, Store } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
@@ -9,7 +10,11 @@ import {
   type PickedItem,
 } from '@/features/seller/components/item-picker-modal'
 import { useAddAll } from '@/api/generated/경매-물품/경매-물품'
-import { useCreate2 } from '@/api/generated/경매방/경매방'
+import {
+  getGetMyRoomsQueryKey,
+  useCreate2,
+} from '@/api/generated/경매방/경매방'
+import { getGetListQueryKey } from '@/api/generated/상품/상품'
 import {
   toAuctionRoomErrorMessage,
   toFailureReason,
@@ -54,6 +59,7 @@ function AuctionRoomNewPage() {
   // 재시도할 때 재사용한다 — 없으면 다시 누를 때마다 빈 방이 하나씩 쌓인다.
   const [roomId, setRoomId] = useState<number | null>(null)
 
+  const queryClient = useQueryClient()
   const createRoom = useCreate2()
   const addItems = useAddAll()
   const creating = createRoom.isPending || addItems.isPending
@@ -118,6 +124,12 @@ function AuctionRoomNewPage() {
         targetRoomId = created.data?.auctionRoomId ?? null
         if (targetRoomId === null) throw new Error('auctionRoomId가 비어 있다')
         setRoomId(targetRoomId)
+
+        // 방이 늘었으니 "내가 만든 방" 목록을 다시 받는다. staleTime 이 1분이라
+        // 지우지 않으면 방금 만든 방이 한동안 목록에 안 보인다.
+        void queryClient.invalidateQueries({
+          queryKey: getGetMyRoomsQueryKey(),
+        })
       }
 
       const result = await addItems.mutateAsync({
@@ -129,6 +141,14 @@ function AuctionRoomNewPage() {
           })),
         },
       })
+
+      /*
+       * 물품이 들어가면 그 상품의 파생 상태가 UNREGISTERED → READY 로 바뀐다.
+       * 상품 목록 캐시를 지우지 않으면 물품 선택 모달이 방금 넣은 상품을 한동안
+       * "고를 수 있는 상품"으로 계속 보여주고, 골라서 넣으면 409 로 거절된다.
+       */
+      void queryClient.invalidateQueries({ queryKey: getGetListQueryKey() })
+      void queryClient.invalidateQueries({ queryKey: getGetMyRoomsQueryKey() })
 
       const failed = result.data?.failed ?? []
       if (failed.length === 0) {
