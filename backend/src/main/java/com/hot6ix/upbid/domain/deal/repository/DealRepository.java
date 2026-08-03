@@ -22,11 +22,96 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
      */
     int MAX_DEAL_SIZE = 100;
 
+    /**
+     * 경매방 하나의 마감된 물품별 거래 현황을 조회한다. 판매자가 자기 방의 진행 상황을 한
+     * 화면에서 보는 용도이고, 소유자 검증은 서비스가 마치고 호출한다.
+     *
+     * <p>거래 상대를 고르는 규칙은 {@link #findDeals}와 같다 — 성사된 후보가 있으면 그 사람,
+     * 없으면 순서를 기다리는 최저 순위 후보다. 실패한 후보는 이미 지나간 상대라 제외하고,
+     * 탈퇴 회원도 후보로 취급하지 않으므로 순위가 다음 후보에게 넘어가 있다.
+     *
+     * <p><b>금액을 {@code ai.current_price}가 아니라 그 후보의 {@code bid_amount}에서 가져온다.</b>
+     * {@link #findDeals}의 판매 쪽은 낙찰가(1순위 금액)를 내리지만, 이 화면에서 판매자가 알아야
+     * 하는 것은 지금 이 상대와 얼마에 거래하는지다. 1순위가 실패해 차순위로 넘어가면 금액도
+     * 함께 바뀌어야 상대와 금액이 어긋나지 않는다.
+     *
+     * <p>상대·금액·후보 ID를 각각의 서브쿼리로 세 번 고른다. 같은 후보를 세 번 찾는 셈이지만,
+     * 물품당 후보 수가 크지 않고 조인으로 풀면 상대가 없는 물품이 결과에서 빠진다.
+     *
+     * <p>상한을 두지 않는다. 한 경매방의 물품 수는 {@code AuctionItemRepository.MAX_SUMMARY_SIZE}
+     * 규모라는 전제이고, 물품 목록 조회가 이미 같은 전제로 동작한다.
+     */
+    default List<RoomDealStatusProjection> findRoomDealStatuses(Long auctionRoomId) {
+        return findRoomDealStatuses(auctionRoomId,
+                AuctionItemStatus.SOLD.name(),
+                AuctionItemStatus.FAILED.name(),
+                DealCandidateStatus.COMPLETED.name(),
+                DealCandidateStatus.WAITING.name(),
+                DealCandidateStatus.FAILED.name());
+    }
+
+    @Query(value = """
+            SELECT ai.auction_item_id AS auctionItemId,
+                   p.name             AS productName,
+                   ai.status          AS itemStatus,
+                   EXISTS (SELECT 1 FROM deal_candidates c
+                            WHERE c.auction_item_id = ai.auction_item_id
+                              AND c.status = :completedStatus) AS dealCompleted,
+                   EXISTS (SELECT 1 FROM deal_candidates c
+                            WHERE c.auction_item_id = ai.auction_item_id
+                              AND c.status = :waitingStatus) AS hasWaitingCandidate,
+                   (SELECT c.deal_candidate_id
+                      FROM deal_candidates c
+                      JOIN users bu ON bu.user_id = c.bidder_user_id
+                                   AND bu.deleted_at IS NULL
+                     WHERE c.auction_item_id = ai.auction_item_id
+                       AND c.status <> :failedCandidateStatus
+                     ORDER BY CASE WHEN c.status = :completedStatus THEN 0 ELSE 1 END,
+                              c.candidate_rank
+                     LIMIT 1)         AS dealCandidateId,
+                   (SELECT c.bid_amount
+                      FROM deal_candidates c
+                      JOIN users bu ON bu.user_id = c.bidder_user_id
+                                   AND bu.deleted_at IS NULL
+                     WHERE c.auction_item_id = ai.auction_item_id
+                       AND c.status <> :failedCandidateStatus
+                     ORDER BY CASE WHEN c.status = :completedStatus THEN 0 ELSE 1 END,
+                              c.candidate_rank
+                     LIMIT 1)         AS amount,
+                   (SELECT bu.nickname
+                      FROM deal_candidates c
+                      JOIN users bu ON bu.user_id = c.bidder_user_id
+                                   AND bu.deleted_at IS NULL
+                     WHERE c.auction_item_id = ai.auction_item_id
+                       AND c.status <> :failedCandidateStatus
+                     ORDER BY CASE WHEN c.status = :completedStatus THEN 0 ELSE 1 END,
+                              c.candidate_rank
+                     LIMIT 1)         AS partnerNickname,
+                   (SELECT COUNT(*) FROM deal_candidates c
+                     WHERE c.auction_item_id = ai.auction_item_id) AS candidateCount,
+                   (SELECT COUNT(*) FROM deal_candidates c
+                     WHERE c.auction_item_id = ai.auction_item_id
+                       AND c.status = :failedCandidateStatus)       AS failedCandidateCount
+              FROM auction_items ai
+              JOIN products p ON p.product_id = ai.product_id
+             WHERE ai.auction_room_id = :auctionRoomId
+               AND ai.status IN (:soldStatus, :failedStatus)
+             ORDER BY ai.end_at DESC, ai.auction_item_id DESC
+            """, nativeQuery = true)
+    List<RoomDealStatusProjection> findRoomDealStatuses(
+            @Param("auctionRoomId") Long auctionRoomId,
+            @Param("soldStatus") String soldStatus,
+            @Param("failedStatus") String failedStatus,
+            @Param("completedStatus") String completedStatus,
+            @Param("waitingStatus") String waitingStatus,
+            @Param("failedCandidateStatus") String failedCandidateStatus);
+
     default List<DealSummaryProjection> findDeals(Long userId) {
         return findDeals(userId,
                 AuctionItemStatus.SOLD.name(),
                 AuctionItemStatus.FAILED.name(),
                 DealCandidateStatus.COMPLETED.name(),
+                DealCandidateStatus.WAITING.name(),
                 DealCandidateStatus.FAILED.name(),
                 MAX_DEAL_SIZE);
     }
@@ -72,6 +157,9 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    EXISTS (SELECT 1 FROM deal_candidates c
                             WHERE c.auction_item_id = ai.auction_item_id
                               AND c.status = :completedStatus) AS dealCompleted,
+                   EXISTS (SELECT 1 FROM deal_candidates c
+                            WHERE c.auction_item_id = ai.auction_item_id
+                              AND c.status = :waitingStatus) AS hasWaitingCandidate,
                    ai.current_price     AS amount,
                    (SELECT bu.nickname
                       FROM deal_candidates c
@@ -101,6 +189,9 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    EXISTS (SELECT 1 FROM deal_candidates c
                             WHERE c.auction_item_id = ai.auction_item_id
                               AND c.status = :completedStatus) AS dealCompleted,
+                   EXISTS (SELECT 1 FROM deal_candidates c
+                            WHERE c.auction_item_id = ai.auction_item_id
+                              AND c.status = :waitingStatus) AS hasWaitingCandidate,
                    dc.bid_amount        AS amount,
                    su.nickname          AS partnerNickname,
                    sp.seller_profile_id AS sellerProfileId,
@@ -120,6 +211,7 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                                           @Param("soldStatus") String soldStatus,
                                           @Param("failedStatus") String failedStatus,
                                           @Param("completedStatus") String completedStatus,
+                                          @Param("waitingStatus") String waitingStatus,
                                           @Param("failedCandidateStatus") String failedCandidateStatus,
                                           @Param("size") int size);
 }

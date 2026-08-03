@@ -32,6 +32,12 @@ public interface DealSummaryProjection {
     /** 이 물품에 성사된 후보가 있으면 1이다. */
     Integer getDealCompleted();
 
+    /**
+     * 이 물품에 아직 처리되지 않은 후보가 있으면 1이다. 성사된 후보도 대기 후보도 없으면
+     * 후보가 전원 실패한 것이라, 이 값이 유찰과 전원 실패를 가른다.
+     */
+    Integer getHasWaitingCandidate();
+
     Long getAmount();
 
     /** 판매 건이면 거래 상대 후보, 구매 건이면 판매자. 거래 상대가 없으면 {@code null} */
