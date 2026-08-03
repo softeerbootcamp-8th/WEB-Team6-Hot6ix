@@ -127,6 +127,7 @@ export function ItemPickerModal({
       open={open}
       onClose={close}
       labelledBy="pick-item-title"
+      closeButton
       className="max-w-[760px] p-5 md:p-7"
     >
       <div className="flex max-h-[calc(100svh-7rem)] flex-col">
