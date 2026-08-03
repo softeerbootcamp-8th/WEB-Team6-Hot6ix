@@ -32,28 +32,28 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * 현재 세션을 무효화한다. 세션 쿠키(SESSION)도 함께 만료되므로 이후 요청은 인증되지 않은 요청으로 처리된다. 세션이 이미 없거나 만료된 상태로 호출해도 성공으로 응답한다(멱등) — 로그아웃의 목적이 이미 달성된 상태이며, 만료된 세션으로 로그아웃을 시도하는 것이 정상적인 흐름이기 때문이다.
- * @summary 로그아웃
+ * 테스트 유저(provider=dev)로 세션을 발급합니다. 최초 호출 시 유저를 자동 생성합니다.
+ * @summary [로컬 전용] 테스트 로그인
  */
-export const logout = (
+export const devLogin = (
     
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
       
       return customInstance<CommonResponseVoid>(
-      {url: `/api/v1/auth/logout`, method: 'POST', signal
+      {url: `/api/v1/auth/dev-login`, method: 'POST', signal
     },
       options);
     }
   
 
 
-export const getLogoutMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext> => {
+export const getDevLoginMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,void, TContext> => {
 
-const mutationKey = ['logout'];
+const mutationKey = ['devLogin'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -63,10 +63,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logout>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof devLogin>>, void> = () => {
           
 
-          return  logout(requestOptions)
+          return  devLogin(requestOptions)
         }
 
         
@@ -74,23 +74,23 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type LogoutMutationResult = NonNullable<Awaited<ReturnType<typeof logout>>>
+    export type DevLoginMutationResult = NonNullable<Awaited<ReturnType<typeof devLogin>>>
     
-    export type LogoutMutationError = ErrorType<unknown>
+    export type DevLoginMutationError = ErrorType<unknown>
 
     /**
- * @summary 로그아웃
+ * @summary [로컬 전용] 테스트 로그인
  */
-export const useLogout = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
+export const useDevLogin = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof logout>>,
+        Awaited<ReturnType<typeof devLogin>>,
         TError,
         void,
         TContext
       > => {
 
-      const mutationOptions = getLogoutMutationOptions(options);
+      const mutationOptions = getDevLoginMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }
