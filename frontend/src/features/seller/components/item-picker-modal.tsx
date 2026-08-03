@@ -244,7 +244,6 @@ export function ItemPickerModal({
                         <input
                           id={`picker-start-price-${productId}`}
                           inputMode="numeric"
-                          autoFocus
                           value={
                             picked.startingPrice
                               ? Number(picked.startingPrice).toLocaleString(

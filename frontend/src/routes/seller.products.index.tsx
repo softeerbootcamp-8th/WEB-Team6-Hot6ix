@@ -297,7 +297,7 @@ function SellerProductsPage() {
                 </div>
               </div>
 
-              <p className="mt-5 text-center text-[12px] font-medium text-neutral-tertiary md:hidden">
+              <p className="mt-5 text-center text-[12px] font-medium break-keep text-neutral-tertiary md:hidden">
                 상품은 한 번의 경매에만 사용할 수 있어요.
               </p>
 

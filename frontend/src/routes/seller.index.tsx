@@ -144,23 +144,29 @@ function SellerHomePage() {
 
         {/* 상품 현황 — 812×560 */}
         <section className="flex flex-col rounded-[20px] border bg-card p-7 lg:h-[calc(100svh-14rem)] lg:min-h-[560px]">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-[18px] font-extrabold text-foreground">
+          <div>
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="min-w-0 text-[18px] font-extrabold text-foreground">
                 상품 현황
               </h2>
-              <p className="mt-2.5 text-[13px] font-medium text-neutral-tertiary">
-                상품은 한 번의 경매에만 사용할 수 있어요.
-              </p>
+
+              {/* 목록 맨 아래가 아니라 섹션 오른쪽 위에 둔다. */}
+              <Link
+                to="/seller/products"
+                className="ease-soft shrink-0 rounded-lg px-1 py-0.5 text-[13px] font-bold text-brand-500 transition-colors duration-150 hover:bg-brand-50"
+              >
+                전체 상품 보기 →
+              </Link>
             </div>
 
-            {/* 목록 맨 아래가 아니라 섹션 오른쪽 위에 둔다. */}
-            <Link
-              to="/seller/products"
-              className="ease-soft shrink-0 rounded-lg px-1 py-0.5 text-[13px] font-bold text-brand-500 transition-colors duration-150 hover:bg-brand-50"
-            >
-              전체 상품 보기 →
-            </Link>
+            {/*
+              설명은 링크와 같은 줄에 두지 않는다. 좁은 화면에서 링크가 폭을
+              가져가 문장이 중간에 끊긴다. `break-keep` 은 한국어를 어절 단위로
+              끊어 어쩔 수 없이 줄이 넘어갈 때도 단어가 쪼개지지 않게 한다.
+            */}
+            <p className="mt-2.5 text-[13px] font-medium break-keep text-neutral-tertiary">
+              상품은 한 번의 경매에만 사용할 수 있어요.
+            </p>
           </div>
 
           {products.isPending ? (
