@@ -86,9 +86,10 @@ function SellerProductsPage() {
           </p>
         </div>
 
+        {/* 판매자 정보·내 경매방 화면의 상단 버튼과 같은 규격으로 맞춘다. */}
         <Link
           to="/seller/products/new"
-          className="ease-soft flex h-11 w-full shrink-0 items-center justify-center rounded-[14px] bg-brand-500 text-[15px] font-medium text-white transition-all duration-150 hover:opacity-90 active:scale-95 md:h-[52px] md:w-40 md:font-bold"
+          className="ease-soft flex h-11 w-full shrink-0 items-center justify-center rounded-[14px] bg-brand-500 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95 md:h-9 md:w-[148px]"
         >
           + 상품 등록
         </Link>

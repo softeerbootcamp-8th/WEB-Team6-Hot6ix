@@ -61,23 +61,17 @@ function SellerHomePage() {
         </div>
 
         {/*
-          상품 등록이 주버튼이다. 순서가 상품 → 경매방이라, 상품이 하나도 없으면
-          경매방을 만들어도 넣을 물품이 없다.
+          이 화면이 다루는 건 프로필과 상품뿐이라 주 액션도 상품 등록 하나다.
+          경매방 만들기는 `/rooms` 상단에 있다 — 화면마다 액션 하나씩 둔다.
+          크기·글자는 상품 관리·내 경매방 화면의 상단 버튼과 같은 규격이다
+          (모바일 h-11 전체폭 / 데스크톱 h-9 · 148px · 13px bold).
         */}
-        <div className="flex w-full shrink-0 gap-2 md:w-auto">
-          <Link
-            to="/seller/products/new"
-            className="ease-soft flex h-11 flex-1 items-center justify-center rounded-[14px] bg-brand-500 px-5 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95 md:h-9 md:w-[124px] md:flex-none"
-          >
-            + 상품 등록
-          </Link>
-          <Link
-            to="/seller/rooms/new"
-            className="ease-soft flex h-11 flex-1 items-center justify-center rounded-[14px] border border-brand-300 bg-card px-5 text-[13px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-50 active:scale-95 md:h-9 md:w-[124px] md:flex-none"
-          >
-            경매방 만들기
-          </Link>
-        </div>
+        <Link
+          to="/seller/products/new"
+          className="ease-soft flex h-11 w-full shrink-0 items-center justify-center rounded-[14px] bg-brand-500 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95 md:h-9 md:w-[148px]"
+        >
+          + 상품 등록
+        </Link>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
