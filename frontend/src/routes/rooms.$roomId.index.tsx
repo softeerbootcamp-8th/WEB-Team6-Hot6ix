@@ -22,7 +22,6 @@ import { toBidErrorMessage } from '@/features/live/bid-error'
 
 import { BidConfirmPanel } from '@/features/live/components/bid-confirm-panel'
 import { ClosedRoomView } from '@/features/live/components/closed-room-view'
-import { ConnectionBanner } from '@/features/live/components/connection-banner'
 import { EventFeed } from '@/features/live/components/event-feed'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
@@ -286,7 +285,19 @@ function LiveRoomPage() {
     [roomItems],
   )
 
-  const { status, retry } = useRealtimeStatus(roomId, handleSseEvent)
+  const { status } = useRealtimeStatus(roomId, handleSseEvent)
+
+  const disconnectNotifiedRef = useRef(false)
+  useEffect(() => {
+    if (status === 'reconnecting' || status === 'failed') {
+      if (!disconnectNotifiedRef.current) {
+        disconnectNotifiedRef.current = true
+        toast.error('실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.')
+      }
+    } else if (status === 'connected') {
+      disconnectNotifiedRef.current = false
+    }
+  }, [status])
 
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
@@ -739,14 +750,12 @@ function LiveRoomPage() {
       <>
         <MobileLiveView
           room={room}
-          status={status}
           isGuest={isGuest}
           events={roomEvents}
           items={roomItems}
           itemsPlaceholder={itemsPlaceholder}
           liveItems={liveItems}
           rankedItems={rankedItems}
-          onRetry={retry}
           onShare={() => setPanel('share')}
           onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
           onBack={() => void navigate({ to: '/rooms' })}
@@ -1090,7 +1099,6 @@ function LiveRoomPage() {
         }
         center={
           <>
-            <ConnectionBanner status={status} onRetry={retry} />
             {isGuest && <GuestNotice redirectTo={`/rooms/${roomId}`} />}
 
             <EventFeed events={roomEvents} />
