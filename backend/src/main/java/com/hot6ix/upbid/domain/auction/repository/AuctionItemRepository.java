@@ -91,6 +91,31 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
             @Param("auctionRoomId") Long auctionRoomId, Limit limit);
 
     /**
+     * 경매방의 물품별 결과를 최대 {@link #MAX_SUMMARY_SIZE}건 조회한다. 정렬과 상한을
+     * {@link #findSummaries}와 같게 두는 이유는 두 목록이 같은 방을 보여주기 때문이다 —
+     * 순서가 다르면 물품 목록과 결과 목록에서 같은 물품이 다른 자리에 있게 된다.
+     *
+     * <p>최고 입찰자를 {@code left join}으로 가져온다. 입찰이 한 번도 없었으면
+     * {@code leaderUser}가 없고, 그런 물품이 결과에서 빠지면 유찰을 셀 수 없다.
+     *
+     * <p>탈퇴한 회원도 걸러내지 않는다. 낙찰은 지나간 사실이라 낙찰자가 나갔다고 결과에서
+     * 사라지면 안 된다 — {@code DealRepository.findDeals}가 거래 내역에서 같은 판단을 한다.
+     */
+    default List<AuctionItemResultProjection> findResults(Long auctionRoomId) {
+        return findResults(auctionRoomId, Limit.of(MAX_SUMMARY_SIZE));
+    }
+
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection("
+            + "  ai.auctionItemId, p.name, p.imageUrl, ai.status, ai.currentPrice, lu.nickname) "
+            + "from AuctionItem ai "
+            + "join ai.product p "
+            + "left join ai.leaderUser lu "
+            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId "
+            + "order by " + STATUS_RANK + " asc, ai.auctionItemId asc")
+    List<AuctionItemResultProjection> findResults(
+            @Param("auctionRoomId") Long auctionRoomId, Limit limit);
+
+    /**
      * 물품 상세를 조회한다. 상태로 거르지 않으므로 낙찰·유찰된 물품도 조회된다.
      * 유찰 화면이 시작가를 표시하므로 {@code startingPrice}도 함께 내린다 —
      * 유찰이면 입찰이 없어 {@code currentPrice}가 시작가와 같지만, 그건 결과일 뿐이다.

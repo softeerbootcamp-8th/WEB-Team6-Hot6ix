@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.deal.repository;
 
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -101,6 +102,24 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
             + "and dc.bidder.userId = :bidderUserId")
     Optional<DealCandidate> findByBidder(@Param("auctionItemId") Long auctionItemId,
                                          @Param("bidderUserId") Long bidderUserId);
+
+    /**
+     * 요청자가 이 경매방의 물품들에서 각각 몇 위였는지 한 번에 조회한다. 결과 화면이 물품마다
+     * "내 최종 순위"를 보여주는데, {@link #findByBidder}를 물품 수만큼 부르면 쿼리가 그만큼
+     * 나간다.
+     *
+     * <p>후보로 오르지 않은 물품은 행이 없다. 없는 것과 0위는 다르므로 호출하는 쪽이
+     * 물품 id로 찾아 쓰고, 없으면 순위를 비운다.
+     *
+     * @return 요청자가 후보인 물품만. 하나도 없으면 빈 목록
+     */
+    @Query("select new com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection("
+            + "  dc.auctionItem.auctionItemId, dc.candidateRank, dc.bidAmount) "
+            + "from DealCandidate dc "
+            + "where dc.auctionItem.auctionRoom.auctionRoomId = :auctionRoomId "
+            + "and dc.bidder.userId = :bidderUserId")
+    List<MyCandidateRankProjection> findMyRanksInRoom(@Param("auctionRoomId") Long auctionRoomId,
+                                                      @Param("bidderUserId") Long bidderUserId);
 
     /** 거래가 이미 끝났는지 판단한다. {@code COMPLETED} 후보가 있으면 더 바꿀 수 없다. */
     default boolean existsCompletedCandidate(Long auctionItemId) {

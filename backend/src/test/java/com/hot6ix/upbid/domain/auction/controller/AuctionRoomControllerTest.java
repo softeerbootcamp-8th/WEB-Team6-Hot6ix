@@ -11,8 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
@@ -21,6 +24,7 @@ import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -282,6 +286,55 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/auction-rooms/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    private AuctionRoomResultResponseDto sampleResultResponse() {
+        return new AuctionRoomResultResponseDto(
+                1L, "승민의 경매방", "승민상점", AuctionRoomStatus.CLOSED, null,
+                List.of(new AuctionItemResultResponseDto(
+                        101L, "한정판 피규어", null, AuctionItemStatus.SOLD,
+                        85_000L, "스니커홀릭", 7, 60_000L)));
+    }
+
+    @Test
+    @DisplayName("경매방 낙찰 결과를 조회하면 200과 물품별 결과를 반환한다")
+    void getResults() throws Exception {
+
+        when(auctionRoomService.getResults(1L, 1L)).thenReturn(sampleResultResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/1/results"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("승민의 경매방"))
+                .andExpect(jsonPath("$.data.items[0].finalPrice").value(85_000))
+                .andExpect(jsonPath("$.data.items[0].winnerNickname").value("스니커홀릭"))
+                .andExpect(jsonPath("$.data.items[0].myRank").value(7));
+    }
+
+    /** 비로그인이면 인터셉터가 userId를 담지 않으므로 서비스에 null이 넘어간다. */
+    @Test
+    @DisplayName("비로그인 사용자도 낙찰 결과를 조회할 수 있다")
+    void getResults_allowsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+        when(auctionRoomService.getResults(1L, null)).thenReturn(sampleResultResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/1/results"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 경매방의 결과를 조회하면 404를 반환한다")
+    void getResults_notFound() throws Exception {
+
+        when(auctionRoomService.getResults(999L, 1L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/999/results"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(4002));

@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.auction.api.AuctionRoomApi;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
@@ -45,6 +46,17 @@ public class AuctionRoomController implements AuctionRoomApi {
         AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(roomId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매방 정보 조회에 성공했습니다."));
+    }
+
+    @GetMapping("/{roomId}/results")
+    @GuestAllowed
+    @Override
+    public ResponseEntity<CommonResponse<AuctionRoomResultResponseDto>> getResults(
+            @PathVariable Long roomId, Long userId) {
+
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(roomId, userId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "경매방 낙찰 결과 조회에 성공했습니다."));
     }
 
     @GetMapping("/{roomId}/share")
