@@ -3,7 +3,10 @@ import { useQueryClient } from '@tanstack/react-query'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { EmptyState } from '@/components/page-header'
-import { PRODUCT_STATUS, canEditProduct } from '@/features/seller/product-status'
+import {
+  PRODUCT_STATUS,
+  canEditProduct,
+} from '@/features/seller/product-status'
 import { ProductForm } from '@/features/seller/components/product-form'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { cn } from '@/lib/utils'

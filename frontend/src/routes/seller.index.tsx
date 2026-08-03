@@ -188,7 +188,8 @@ function SellerHomePage() {
               {/* 모바일은 표 대신 행 카드로 흐른다 (좁은 화면 가로 스크롤 방지) */}
               <ul className="mt-4 space-y-3 md:hidden">
                 {products.products.map((product) => {
-                  const status = PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
+                  const status =
+                    PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
 
                   return (
                     <li key={product.productId}>
@@ -211,7 +212,9 @@ function SellerHomePage() {
                             {product.name}
                           </span>
                           <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
-                            {product.createdAt ? formatDate(product.createdAt) : '-'}
+                            {product.createdAt
+                              ? formatDate(product.createdAt)
+                              : '-'}
                           </span>
                           <span
                             className={cn(
@@ -279,7 +282,9 @@ function SellerHomePage() {
                           </span>
 
                           <span className="text-[13px] font-medium tabular-nums text-neutral-tertiary">
-                            {product.createdAt ? formatDate(product.createdAt) : '-'}
+                            {product.createdAt
+                              ? formatDate(product.createdAt)
+                              : '-'}
                           </span>
 
                           <span

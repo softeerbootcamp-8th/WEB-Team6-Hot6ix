@@ -7,7 +7,10 @@ import { AppShell } from '@/components/layout/page-shell'
 import { Button } from '@/components/ui/button'
 import { Dropdown } from '@/components/ui/dropdown'
 import { EmptyState } from '@/components/page-header'
-import { PRODUCT_STATUS, canEditProduct } from '@/features/seller/product-status'
+import {
+  PRODUCT_STATUS,
+  canEditProduct,
+} from '@/features/seller/product-status'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
@@ -153,7 +156,8 @@ function SellerProductsPage() {
                */}
               <ul className="mt-4 space-y-3 md:hidden">
                 {products.map((product, index) => {
-                  const status = PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
+                  const status =
+                    PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
                   const editable = canEditProduct(product.status)
 
                   return (
@@ -162,7 +166,9 @@ function SellerProductsPage() {
                       <Link
                         to="/seller/products/$productId"
                         params={{ productId: String(product.productId) }}
-                        style={{ animationDelay: `${(index % PAGE_SIZE) * 30}ms` }}
+                        style={{
+                          animationDelay: `${(index % PAGE_SIZE) * 30}ms`,
+                        }}
                         className="animate-rise ease-soft flex items-center gap-4 rounded-2xl border bg-card p-3.5 transition-all duration-150 active:scale-[0.99]"
                       >
                         <ProductThumbnail
@@ -178,7 +184,9 @@ function SellerProductsPage() {
                             {product.name}
                           </span>
                           <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
-                            {product.createdAt ? formatDate(product.createdAt) : '-'}
+                            {product.createdAt
+                              ? formatDate(product.createdAt)
+                              : '-'}
                           </span>
                           <span
                             className={cn(
@@ -252,7 +260,9 @@ function SellerProductsPage() {
                           </span>
 
                           <span className="text-[13px] font-medium tabular-nums text-neutral-tertiary">
-                            {product.createdAt ? formatDate(product.createdAt) : '-'}
+                            {product.createdAt
+                              ? formatDate(product.createdAt)
+                              : '-'}
                           </span>
 
                           <span
