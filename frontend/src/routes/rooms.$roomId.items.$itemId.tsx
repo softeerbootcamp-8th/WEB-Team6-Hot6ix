@@ -1,13 +1,12 @@
 import { Search, X } from 'lucide-react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   useGetDetail1,
   useGetSummaries,
 } from '@/api/generated/경매-물품/경매-물품'
 import { usePlace } from '@/api/generated/입찰/입찰'
-import { ConnectionBanner } from '@/features/live/components/connection-banner'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'
 import { ItemDetailPanel } from '@/features/live/components/item-detail-panel'
 import { LiveItemList } from '@/features/live/components/live-item-list'
@@ -213,12 +212,48 @@ function AuctionItemPage() {
             }
           })
           break
+
+        case 'ItemEnded':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'CLOSE',
+              message: payload.winnerNickname
+                ? `${payload.itemName} 낙찰 확정`
+                : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
+              ...(payload.winnerNickname && {
+                subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
+                emphasized: true,
+              }),
+            },
+          ])
+          setOverride((prev) => ({
+            ...(prev ?? item),
+            status: 'CLOSED' as const,
+          }))
+          break
       }
     },
     [item],
   )
 
-  const { status, retry } = useRealtimeStatus(roomId, handleSseEvent)
+  const { status } = useRealtimeStatus(roomId, handleSseEvent)
+
+  const disconnectNotifiedRef = useRef(false)
+  useEffect(() => {
+    if (status === 'reconnecting' || status === 'failed') {
+      if (!disconnectNotifiedRef.current) {
+        disconnectNotifiedRef.current = true
+        toast.error(
+          '실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.',
+        )
+      }
+    } else if (status === 'connected') {
+      disconnectNotifiedRef.current = false
+    }
+  }, [status])
 
   const remaining = useCountdown(item.endsAt)
   const closed = item.status === 'CLOSED'
@@ -434,7 +469,6 @@ function AuctionItemPage() {
       }
       center={
         <>
-          <ConnectionBanner status={status} onRetry={retry} />
           {isGuest && (
             <GuestNotice redirectTo={`/rooms/${roomId}/items/${itemId}`} />
           )}
