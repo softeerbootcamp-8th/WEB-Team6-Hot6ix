@@ -66,7 +66,7 @@ function DesktopBackLink() {
     <button
       type="button"
       onClick={() => void router.history.back()}
-      className="ease-soft absolute top-3.5 left-7 hidden items-center gap-1 rounded-lg py-1 pr-2 text-[13px] font-semibold text-neutral-tertiary transition-colors duration-150 hover:text-foreground md:inline-flex"
+      className="ease-soft absolute top-1.5 left-7 hidden items-center gap-1 rounded-lg py-1 pr-2 text-[13px] font-semibold text-neutral-tertiary transition-colors duration-150 hover:text-foreground md:inline-flex"
     >
       <ChevronLeft aria-hidden className="size-4" />
       뒤로
