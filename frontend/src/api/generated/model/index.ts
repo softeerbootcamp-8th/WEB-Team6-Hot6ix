@@ -56,6 +56,7 @@ export * from './getListParams';
 export * from './getListStatus';
 export * from './getMyRoomsParams';
 export * from './getMyRoomsStatus';
+export * from './leaderboardEntryResponseDto';
 export * from './pageResponseDealCandidateResponseDto';
 export * from './productCreateRequestDto';
 export * from './productResponseDto';
