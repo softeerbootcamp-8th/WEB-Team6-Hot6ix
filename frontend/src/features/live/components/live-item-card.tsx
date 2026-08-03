@@ -34,8 +34,10 @@ export function LiveItemCard({
   canStart = false,
   dimmed = false,
   justClosed = false,
+  starting = false,
   rowRef,
   onSelect,
+  onStart,
 }: {
   item: AuctionItemDetail
   selected?: boolean
@@ -45,9 +47,13 @@ export function LiveItemCard({
   dimmed?: boolean
   /** 방금 마감된 물품. 잠깐 "경매 종료" 도장이 찍힌다. */
   justClosed?: boolean
+  /** 이 물품의 시작 요청을 서버가 아직 처리 중이다. */
+  starting?: boolean
   /** 목록이 자리를 옮길 때 쓰는 FLIP 참조 */
   rowRef?: (element: HTMLLIElement | null) => void
   onSelect?: () => void
+  /** 진행 시간(분)을 정해 경매를 시작한다. 실제 호출은 라우트가 한다. */
+  onStart?: (minutes: number) => void
 }) {
   const remaining = useCountdown(item.endsAt)
   const active = item.status === 'ACTIVE'
@@ -149,9 +155,13 @@ export function LiveItemCard({
       )}
 
       {/* 시작 전 물품은 방 주인이 진행 시간을 정해 바로 시작할 수 있다. */}
-      {ready && canStart && (
+      {ready && canStart && onStart && (
         <div className="px-3 pb-3">
-          <StartControl itemName={item.name} />
+          <StartControl
+            itemName={item.name}
+            pending={starting}
+            onStart={onStart}
+          />
         </div>
       )}
     </li>
@@ -178,7 +188,15 @@ function clamp(value: number) {
   return Math.min(MAX_MINUTES, Math.max(MIN_MINUTES, value))
 }
 
-function StartControl({ itemName }: { itemName: string }) {
+function StartControl({
+  itemName,
+  pending,
+  onStart,
+}: {
+  itemName: string
+  pending: boolean
+  onStart: (minutes: number) => void
+}) {
   const [minutes, setMinutes] = useState(DEFAULT_MINUTES)
   /** 입력 중에는 지우는 순간(빈 문자열)도 허용해야 해서 따로 들고 있는다. */
   const [draft, setDraft] = useState(String(DEFAULT_MINUTES))
@@ -195,7 +213,7 @@ function StartControl({ itemName }: { itemName: string }) {
         <button
           type="button"
           onClick={() => shift(-MINUTE_STEP)}
-          disabled={minutes <= MIN_MINUTES}
+          disabled={pending || minutes <= MIN_MINUTES}
           aria-label={`${itemName} 진행 시간 ${MINUTE_STEP}분 줄이기`}
           className="ease-soft flex h-full w-8 shrink-0 items-center justify-center rounded-l-[10px] text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95 disabled:opacity-40"
         >
@@ -207,6 +225,7 @@ function StartControl({ itemName }: { itemName: string }) {
           <input
             inputMode="numeric"
             aria-label={`${itemName} 진행 시간(분)`}
+            disabled={pending}
             value={draft}
             onChange={(event) => {
               const next = event.target.value.replace(/\D/g, '').slice(0, 3)
@@ -232,7 +251,7 @@ function StartControl({ itemName }: { itemName: string }) {
         <button
           type="button"
           onClick={() => shift(MINUTE_STEP)}
-          disabled={minutes >= MAX_MINUTES}
+          disabled={pending || minutes >= MAX_MINUTES}
           aria-label={`${itemName} 진행 시간 ${MINUTE_STEP}분 늘리기`}
           className="ease-soft flex h-full w-8 shrink-0 items-center justify-center rounded-r-[10px] text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95 disabled:opacity-40"
         >
@@ -243,10 +262,18 @@ function StartControl({ itemName }: { itemName: string }) {
       <button
         type="button"
         aria-label={`${itemName} 경매 ${minutes}분 진행으로 시작`}
-        className="ease-soft flex h-[34px] w-[86px] shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-success text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
+        disabled={pending}
+        onClick={() => onStart(minutes)}
+        className="ease-soft flex h-[34px] w-[86px] shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-success text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
       >
-        <Play aria-hidden className="size-2.5 fill-current" />
-        시작
+        {pending ? (
+          '시작 중…'
+        ) : (
+          <>
+            <Play aria-hidden className="size-2.5 fill-current" />
+            시작
+          </>
+        )}
       </button>
     </div>
   )

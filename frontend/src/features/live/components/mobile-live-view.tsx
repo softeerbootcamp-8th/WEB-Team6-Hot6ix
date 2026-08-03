@@ -32,11 +32,13 @@ export function MobileLiveView({
   liveItems,
   rankedItems,
   justClosedId = null,
+  startingItemId = null,
   devTools,
   onShare,
   onCloseRoom,
   onBack,
   onOpenItem,
+  onStart,
   onBid,
 }: {
   room: AuctionRoomDetail
@@ -54,6 +56,8 @@ export function MobileLiveView({
   rankedItems: AuctionItemDetail[]
   /** 방금 마감된 물품 id. 카드에 "경매 종료" 도장을 찍는다. */
   justClosedId?: number | null
+  /** 시작 요청이 서버에서 처리 중인 물품 id */
+  startingItemId?: number | null
   /** 개발용 조작. 프로덕션에서는 넘기지 않는다. */
   devTools?: {
     sellerView: boolean
@@ -65,6 +69,8 @@ export function MobileLiveView({
   onCloseRoom?: () => void
   onBack: () => void
   onOpenItem: (itemId: number) => void
+  /** 진행 시간(분)을 정해 경매를 시작한다. 판매자가 아니면 넘기지 않는다. */
+  onStart?: (item: AuctionItemDetail, minutes: number) => void
   onBid: () => void
 }) {
   const [tab, setTab] = useState<'events' | 'leaderboard'>('events')
@@ -205,7 +211,9 @@ export function MobileLiveView({
                   // 판매자는 모바일에서도 시간 조절과 시작 버튼을 쓸 수 있어야 한다.
                   canStart={isOwner}
                   justClosedId={justClosedId}
+                  startingItemId={startingItemId}
                   onSelect={(item) => onOpenItem(item.id)}
+                  onStart={onStart}
                 />
               ))}
           </section>
