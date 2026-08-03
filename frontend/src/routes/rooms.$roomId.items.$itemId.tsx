@@ -246,7 +246,9 @@ function AuctionItemPage() {
     if (status === 'reconnecting' || status === 'failed') {
       if (!disconnectNotifiedRef.current) {
         disconnectNotifiedRef.current = true
-        toast.error('실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.')
+        toast.error(
+          '실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.',
+        )
       }
     } else if (status === 'connected') {
       disconnectNotifiedRef.current = false
