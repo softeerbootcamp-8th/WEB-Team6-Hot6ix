@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
-import { MOCK_TRADES } from '@/mocks/data'
+import { findMockTrade } from '@/mocks/data'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
@@ -17,42 +17,24 @@ import type { AuctionRoomDetail } from '@/mocks/types'
  * 왼쪽 종료된 물품 목록 / 가운데 종료 요약 + 전체 낙찰 결과.
  */
 /**
- * 물품에 이어지는 거래를 찾는다.
- *
- * 지금은 물품–거래를 잇는 키가 없어 이름으로 맞춘다(목업 한정).
- * 목업 방마다 물품 이름을 테마로 갈아 끼우다 보니 이름이 안 맞는 방이 있는데,
- * 그때도 거래 화면을 볼 수 있도록 물품 id 로 하나를 정해 이어 둔다.
- * API 가 붙으면 물품 응답의 거래 id 로 바꾼다.
- */
-function findTrade(itemName: string, itemId: number) {
-  const byName = MOCK_TRADES.find(
-    (trade) =>
-      trade.productName === itemName ||
-      trade.productName.includes(itemName) ||
-      itemName.includes(trade.productName),
-  )
-  if (byName) return byName
-  return MOCK_TRADES[itemId % MOCK_TRADES.length]
-}
-
-/**
  * 결과 한 줄. 이어지는 거래가 있으면 그 거래 상세로 보낸다.
  *
  * 종료된 방에서 라이브 물품 상세로 보내면 진행 중 화면이 떠 버린다.
- * 거래가 없으면(유찰) 갈 곳이 없으므로 누를 수 없게 둔다.
+ * 내 거래가 아닌 물품(남이 낙찰받은 것)은 볼 권한이 없으므로 누를 수 없다.
+ *
+ * 예전에는 이름으로 거래를 찾다 실패하면 `itemId % 거래수` 로 아무 거래나
+ * 골라서, 물품을 눌렀는데 전혀 다른 물품의 거래가 떴다.
  */
 function ResultRow({
-  itemName,
   itemId,
   className,
   children,
 }: {
-  itemName: string
   itemId: number
   className?: string
   children: ReactNode
 }) {
-  const trade = findTrade(itemName, itemId)
+  const trade = findMockTrade(itemId)
   if (!trade) return <div className={className}>{children}</div>
 
   return (
@@ -202,7 +184,6 @@ export function ClosedRoomView({
                 return (
                   <li key={item.id}>
                     <ResultRow
-                      itemName={item.name}
                       itemId={item.id}
                       className={cn(
                         'flex items-center gap-2 rounded-xl border px-3 py-2.5',
@@ -316,7 +297,6 @@ export function ClosedRoomView({
                          */}
                         {/* 누르면 그 물품의 거래 상세로 간다. */}
                         <ResultRow
-                          itemName={item.name}
                           itemId={item.id}
                           className={cn(
                             'flex gap-3 rounded-2xl border p-3',
@@ -460,7 +440,6 @@ export function ClosedRoomView({
                       return (
                         <li key={item.id}>
                           <ResultRow
-                            itemName={item.name}
                             itemId={item.id}
                             className="flex h-14 items-center rounded-[10px] border bg-card px-4 text-[13px]"
                           >

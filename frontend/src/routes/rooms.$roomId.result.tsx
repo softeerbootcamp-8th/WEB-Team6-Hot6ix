@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { GuestShell } from '@/components/layout/page-shell'
-import { MOCK_ROOM_DETAIL } from '@/mocks/data'
+import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { StatusBadge } from '@/components/status-badge'
 import { formatWon } from '@/lib/format'
 
@@ -11,7 +11,8 @@ export const Route = createFileRoute('/rooms/$roomId/result')({
 
 function RoomResultPage() {
   const { roomId } = Route.useParams()
-  const room = MOCK_ROOM_DETAIL
+  // 주소의 방 번호로 그 방의 결과를 보여준다. 없는 방이면 라이브 방을 쓴다.
+  const room = findMockRoom(Number(roomId)) ?? MOCK_ROOM_DETAIL
 
   const results = room.items.map((item) => {
     const winner = item.leaderboard[0] ?? null

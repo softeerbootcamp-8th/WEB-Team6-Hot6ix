@@ -13,6 +13,8 @@ import type { AuctionRoomSummary } from '@/mocks/types'
  */
 export function RoomCard({ room }: { room: AuctionRoomSummary }) {
   const isLive = room.status === 'LIVE'
+  // 아직 시작 전인 방을 종료로 묶으면 판매자가 방을 못 찾는다.
+  const isClosed = room.status === 'CLOSED'
 
   return (
     <li className="rounded-2xl border bg-card p-4">
@@ -33,9 +35,13 @@ export function RoomCard({ room }: { room: AuctionRoomSummary }) {
                 />
                 LIVE
               </span>
-            ) : (
+            ) : isClosed ? (
               <span className="flex h-[22px] items-center rounded-md bg-fill px-2 text-[11px] font-bold text-neutral-tertiary">
                 종료
+              </span>
+            ) : (
+              <span className="flex h-[22px] items-center rounded-md bg-notice-surface px-2 text-[11px] font-bold text-notice">
+                준비 중
               </span>
             )}
 
@@ -78,13 +84,15 @@ export function RoomCard({ room }: { room: AuctionRoomSummary }) {
                 입장하기
               </Link>
             ) : (
-              // 종료된 방도 같은 경로로 들어간다. 방 상태를 보고 종료 화면을 그린다.
+              // 어느 상태든 같은 경로로 들어간다. 방 상태를 보고 화면을 나눈다.
               <Link
                 to="/rooms/$roomId"
                 params={{ roomId: String(room.id) }}
                 className="ease-soft ml-auto flex h-9 items-center rounded-[10px] border px-4 text-[13px] font-semibold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95"
               >
-                종료 {room.closedAt ? formatDate(room.closedAt) : ''}
+                {isClosed
+                  ? `종료 ${room.closedAt ? formatDate(room.closedAt) : ''}`
+                  : '방 준비하기'}
               </Link>
             )}
           </div>

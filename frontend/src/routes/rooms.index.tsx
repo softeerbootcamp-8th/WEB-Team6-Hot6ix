@@ -27,11 +27,7 @@ function MyRoomsPage() {
 
   const visible = useMemo(() => {
     const byStatus =
-      filter === 'ALL'
-        ? rooms
-        : rooms.filter((room) =>
-            filter === 'LIVE' ? room.status === 'LIVE' : room.status !== 'LIVE',
-          )
+      filter === 'ALL' ? rooms : rooms.filter((room) => room.status === filter)
 
     const trimmed = keyword.trim()
     if (!trimmed) return byStatus
@@ -39,7 +35,9 @@ function MyRoomsPage() {
   }, [rooms, filter, keyword])
 
   const visibleLive = visible.filter((room) => room.status === 'LIVE')
-  const visibleClosed = visible.filter((room) => room.status !== 'LIVE')
+  // 시작 전인 방을 종료로 묶으면 방금 만든 방이 "종료"로 보인다.
+  const visibleReady = visible.filter((room) => room.status === 'READY')
+  const visibleClosed = visible.filter((room) => room.status === 'CLOSED')
 
   const FILTERS: { key: StatusFilter; label: string; count: number }[] = [
     { key: 'ALL', label: '전체', count: rooms.length },
@@ -150,6 +148,24 @@ function MyRoomsPage() {
                   </div>
                   <ul className="mt-3 grid gap-4 xl:grid-cols-2">
                     {visibleLive.map((room) => (
+                      <RoomCard key={room.id} room={room} />
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {visibleReady.length > 0 && (
+                <section>
+                  <div className="flex items-baseline gap-3">
+                    <h2 className="text-[13px] font-bold text-foreground">
+                      준비 중인 경매방 ({visibleReady.length})
+                    </h2>
+                    <p className="text-[12px] font-medium text-neutral-muted">
+                      물품을 편성하면 시작할 수 있어요
+                    </p>
+                  </div>
+                  <ul className="mt-3 grid gap-4 xl:grid-cols-2">
+                    {visibleReady.map((room) => (
                       <RoomCard key={room.id} room={room} />
                     ))}
                   </ul>
