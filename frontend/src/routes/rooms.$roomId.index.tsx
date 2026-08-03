@@ -577,7 +577,9 @@ function LiveRoomPage() {
 
   // 이 방에 아직 없는 상품만 고를 수 있게 한다.
   const availableProducts = MOCK_PRODUCTS.filter(
-    (product) => !roomItems.some((item) => item.name === product.name),
+    (product) =>
+      product.status === 'DRAFT' &&
+      !roomItems.some((item) => item.name === product.name),
   )
 
   /*
