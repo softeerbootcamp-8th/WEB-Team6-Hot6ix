@@ -33,9 +33,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
       const { data } = await context.queryClient.fetchQuery({
         queryKey: ['session', 'me'],
         queryFn: () =>
-          axiosInstance
-            .get<MeResponse>('/api/v1/users/me')
-            .then((r) => r.data),
+          axiosInstance.get<MeResponse>('/api/v1/users/me').then((r) => r.data),
         // 한 번 가져오면 페이지 내에서는 재요청하지 않는다.
         // 로그아웃 시 queryClient.removeQueries({ queryKey: ['session'] }) 로 초기화한다.
         staleTime: Infinity,

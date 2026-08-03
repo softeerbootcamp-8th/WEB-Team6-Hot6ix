@@ -1,5 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Minus, Plus, Search, X } from 'lucide-react'
 
@@ -165,7 +172,11 @@ function LiveRoomPage() {
           setItems(
             roomItems.map((item) =>
               item.id === payload.itemId
-                ? { ...item, status: 'ACTIVE' as const, endsAt: payload.endedTime }
+                ? {
+                    ...item,
+                    status: 'ACTIVE' as const,
+                    endsAt: payload.endedTime,
+                  }
                 : item,
             ),
           )
@@ -205,8 +216,15 @@ function LiveRoomPage() {
                     topBidderNickname: payload.bidderNickname,
                     bidCount: item.bidCount + 1,
                     leaderboard: [
-                      { rank: 1, nickname: payload.bidderNickname, amount: payload.bidPrice, isMe: false },
-                      ...item.leaderboard.filter((entry) => entry.nickname !== payload.bidderNickname),
+                      {
+                        rank: 1,
+                        nickname: payload.bidderNickname,
+                        amount: payload.bidPrice,
+                        isMe: false,
+                      },
+                      ...item.leaderboard.filter(
+                        (entry) => entry.nickname !== payload.bidderNickname,
+                      ),
                     ]
                       .slice(0, 5)
                       .map((entry, index) => ({ ...entry, rank: index + 1 })),
@@ -234,7 +252,8 @@ function LiveRoomPage() {
                 ? {
                     ...item,
                     endsAt: new Date(
-                      new Date(item.endsAt).getTime() + payload.extendSeconds * 1000,
+                      new Date(item.endsAt).getTime() +
+                        payload.extendSeconds * 1000,
                     ).toISOString(),
                   }
                 : item,
@@ -416,8 +435,7 @@ function LiveRoomPage() {
       const now = Date.now()
       const expired = current.filter(
         (item) =>
-          item.status === 'ACTIVE' &&
-          new Date(item.endsAt).getTime() <= now,
+          item.status === 'ACTIVE' && new Date(item.endsAt).getTime() <= now,
       )
       if (expired.length === 0) return
 
