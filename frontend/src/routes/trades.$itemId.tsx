@@ -1,14 +1,22 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { keepPreviousData } from '@tanstack/react-query'
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { EmptyState } from '@/components/page-header'
 import { RouteError, RoutePending } from '@/components/route-states'
-import { useGetCandidates } from '@/api/generated/낙찰-후보/낙찰-후보'
+import {
+  getGetCandidatesQueryKey,
+  useComplete,
+  useFail,
+  useGetCandidates,
+} from '@/api/generated/낙찰-후보/낙찰-후보'
+import {
+  getGetDealsQueryKey,
+  useGetDeals,
+} from '@/api/generated/거래-내역/거래-내역'
 import { useGetDetail1 } from '@/api/generated/경매-물품/경매-물품'
-import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
 import { useGetProfile } from '@/api/generated/판매자-프로필/판매자-프로필'
 import {
   CANDIDATE_PAGE_SIZE,
@@ -16,11 +24,13 @@ import {
   type CandidateStatus,
 } from '@/features/trades/adapt-candidate'
 import { toDeals } from '@/features/trades/adapt-deal'
+import { toDealErrorMessage } from '@/features/trades/deal-error'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Pager } from '@/components/pager'
 import { cn } from '@/lib/utils'
-import { formatWon } from '@/lib/format'
+import { formatWon, josa } from '@/lib/format'
 import { requireMember } from '@/lib/route-guards'
+import { toast } from '@/lib/toast'
 
 /**
  * 거래 상세.
@@ -97,6 +107,7 @@ const CANDIDATE_META: Record<CandidateStatus, { label: string; tone: Tone }> = {
 function TradeDetailPage() {
   const { itemId } = Route.useParams()
   const auctionItemId = Number(itemId)
+  const queryClient = useQueryClient()
 
   const [page, setPage] = useState(0)
   // myRank 로 옮기는 건 한 번뿐이다. 그 뒤 사용자가 넘긴 페이지를 되돌리면 안 된다.
@@ -159,6 +170,72 @@ function TradeDetailPage() {
     list.rows.find((row) => row.dealStatus === 'IN_PROGRESS') ?? null
 
   /*
+   * 성사·실패는 서버가 확정한 뒤에만 화면에 반영한다. 실패는 차순위 승계까지
+   * 서버가 계산하므로 화면이 흉내 낼 수도 없다 (루트 CLAUDE.md 규칙).
+   *
+   * 거래 내역도 같이 무효화한다. 한 물품을 처리하면 목록의 거래 상태와 거래
+   * 상대가 함께 바뀐다.
+   */
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: getGetCandidatesQueryKey(auctionItemId),
+      }),
+      queryClient.invalidateQueries({ queryKey: getGetDealsQueryKey() }),
+    ])
+
+  const onSettleError = (error: unknown) => {
+    const { title, description } = toDealErrorMessage(error)
+    toast.error(title, { description })
+    setPendingAction(null)
+  }
+
+  // 처리 대상은 항상 지금 차례인 후보다. 갱신 뒤에는 바뀌므로 미리 잡아 둔다.
+  const partnerName = current?.nickname ?? null
+
+  const completeMutation = useComplete({
+    mutation: {
+      onSuccess: async () => {
+        await refresh()
+        setPendingAction(null)
+        toast.success('거래를 성사로 확정했어요', {
+          description: partnerName
+            ? `${partnerName}${josa(partnerName, '과', '와')}의 거래가 완료로 기록됐어요.`
+            : undefined,
+        })
+      },
+      onError: onSettleError,
+    },
+  })
+
+  const failMutation = useFail({
+    mutation: {
+      onSuccess: async () => {
+        await refresh()
+        setPendingAction(null)
+        toast.success('거래 실패로 처리했어요', {
+          description: '차순위 후보가 있으면 낙찰 권한이 넘어갑니다.',
+        })
+      },
+      onError: onSettleError,
+    },
+  })
+
+  const settling = completeMutation.isPending || failMutation.isPending
+
+  const settle = (action: 'complete' | 'fail') => {
+    if (!current) return
+
+    const variables = {
+      auctionItemId,
+      candidateId: current.dealCandidateId,
+    }
+
+    if (action === 'complete') completeMutation.mutate(variables)
+    else failMutation.mutate(variables)
+  }
+
+  /*
    * 승계를 기다리는 바로 다음 후보. 서버가 5명씩 끊어 주므로 다음 후보가 다른
    * 페이지에 있으면 알 수 없고, 그때는 표시를 생략한다. "지금 차례"는 서버가
    * IN_PROGRESS 로 알려주니 승계 예고가 없어도 화면은 성립한다.
@@ -205,6 +282,35 @@ function TradeDetailPage() {
   const isSeller = list.viewerRole === 'SELLER'
   const unsold = item.status === 'FAILED'
   const productName = item.productName ?? '이름 없는 물품'
+
+  /*
+   * 거래 단계는 후보 목록에서 판단한다. 표에 "거래 성사"가 보이는데 배지가 다른
+   * 말을 하면 안 된다. 거래 내역은 성사된 후보가 다른 페이지에 있을 때를 위한
+   * 보완일 뿐이고, 그 응답이 없다고 해서 실패로 단정하지 않는다.
+   */
+  const settled =
+    list.rows.some((row) => row.dealStatus === 'COMPLETED') ||
+    deal?.status === 'COMPLETED'
+
+  /** 전원 실패는 후보 전체가 이 페이지에 있을 때만 단정할 수 있다. */
+  const allFailed =
+    list.rows.length > 0 &&
+    list.rows.length === list.totalElements &&
+    list.rows.every((row) => row.dealStatus === 'FAILED')
+
+  /** 물품 패널·순위 패널이 같이 쓰는 상태 알약. */
+  const badge: { label: string; tone: Tone } = unsold
+    ? { label: '유찰', tone: 'live' }
+    : settled
+      ? { label: '거래 완료', tone: 'success' }
+      : current
+        ? {
+            label: `${current.candidateRank}순위 · ${CANDIDATE_META[current.dealStatus].label}`,
+            tone: 'notice',
+          }
+        : allFailed
+          ? { label: '후보가 모두 실패했어요', tone: 'muted' }
+          : { label: '진행 중인 후보 없음', tone: 'muted' }
 
   return (
     <AppShell title="거래 상세" back className="max-w-[1280px]">
@@ -317,15 +423,11 @@ function TradeDetailPage() {
             <span
               className={cn(
                 'mt-5 flex h-[34px] w-fit shrink-0 items-center justify-center rounded-[17px] px-4 text-[12px] font-bold',
-                unsold ? TONE.live.surface : TONE.notice.surface,
-                unsold ? TONE.live.text : TONE.notice.text,
+                TONE[badge.tone].surface,
+                TONE[badge.tone].text,
               )}
             >
-              {unsold
-                ? '유찰'
-                : current
-                  ? `${current.candidateRank}순위 · ${CANDIDATE_META[current.dealStatus].label}`
-                  : '진행 중인 후보 없음'}
+              {badge.label}
             </span>
           ) : (
             <>
@@ -363,22 +465,24 @@ function TradeDetailPage() {
               </p>
             </div>
 
+            {/*
+             * 판매자는 물품의 거래 단계를, 구매자는 자기 순위를 본다.
+             * 구매자 쪽은 유찰이어도 순위 자리를 그대로 쓴다.
+             */}
             <span
               className={cn(
                 'flex h-[34px] shrink-0 items-center justify-center rounded-[17px] px-4 text-[12px] font-bold',
-                unsold
-                  ? cn(TONE.live.surface, TONE.live.text)
-                  : isSeller
-                    ? cn(TONE.notice.surface, TONE.notice.text)
+                isSeller
+                  ? cn(TONE[badge.tone].surface, TONE[badge.tone].text)
+                  : unsold
+                    ? cn(TONE.live.surface, TONE.live.text)
                     : cn(TONE.brand.surface, TONE.brand.text),
               )}
             >
-              {unsold
-                ? '유찰'
-                : isSeller
-                  ? current
-                    ? `${current.candidateRank}순위 거래 진행 중`
-                    : '진행 중인 후보 없음'
+              {isSeller
+                ? badge.label
+                : unsold
+                  ? '유찰'
                   : /* 내 순위는 다른 페이지에 있어도 서버가 알려준다. */
                     list.myRank != null
                     ? `내 순위 ${list.myRank}위`
@@ -487,15 +591,17 @@ function TradeDetailPage() {
                           <span className="ml-auto flex gap-1.5">
                             <button
                               type="button"
+                              disabled={settling}
                               onClick={() => setPendingAction('complete')}
-                              className="ease-soft h-8 rounded-lg bg-brand-500 px-2.5 text-[12px] font-bold text-white transition-all duration-150 active:scale-95"
+                              className="ease-soft h-8 rounded-lg bg-brand-500 px-2.5 text-[12px] font-bold text-white transition-all duration-150 active:scale-95 disabled:opacity-50"
                             >
                               거래 성사
                             </button>
                             <button
                               type="button"
+                              disabled={settling}
                               onClick={() => setPendingAction('fail')}
-                              className="ease-soft h-8 rounded-lg border border-live/50 bg-card px-2.5 text-[12px] font-bold text-live transition-all duration-150 active:scale-95"
+                              className="ease-soft h-8 rounded-lg border border-live/50 bg-card px-2.5 text-[12px] font-bold text-live transition-all duration-150 active:scale-95 disabled:opacity-50"
                             >
                               거래 실패
                             </button>
@@ -612,15 +718,17 @@ function TradeDetailPage() {
                               <span className="flex items-center justify-center gap-2">
                                 <button
                                   type="button"
+                                  disabled={settling}
                                   onClick={() => setPendingAction('fail')}
-                                  className="ease-soft h-8 w-16 rounded-2xl border border-[#ffc0c3] bg-card text-[12px] font-bold text-live transition-all duration-150 hover:bg-[#fff5f5] active:scale-95"
+                                  className="ease-soft h-8 w-16 rounded-2xl border border-[#ffc0c3] bg-card text-[12px] font-bold text-live transition-all duration-150 hover:bg-[#fff5f5] active:scale-95 disabled:opacity-50"
                                 >
                                   실패
                                 </button>
                                 <button
                                   type="button"
+                                  disabled={settling}
                                   onClick={() => setPendingAction('complete')}
-                                  className="ease-soft h-8 w-[68px] rounded-2xl bg-brand-500 text-[12px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
+                                  className="ease-soft h-8 w-[68px] rounded-2xl bg-brand-500 text-[12px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95 disabled:opacity-50"
                                 >
                                   성사
                                 </button>
@@ -659,13 +767,12 @@ function TradeDetailPage() {
         }
         description={
           pendingAction === 'complete'
-            ? `${current?.nickname} 님과의 거래가 완료된 것으로 기록됩니다. 되돌릴 수 없어요.`
-            : `${current?.nickname} 님과의 거래가 실패로 기록되고, 차순위 후보에게 기회가 넘어갑니다.`
+            ? `${partnerName ?? '현재 후보'} 님과의 거래가 완료된 것으로 기록됩니다. 되돌릴 수 없어요.`
+            : `${partnerName ?? '현재 후보'} 님과의 거래가 실패로 기록되고, 차순위 후보에게 기회가 넘어갑니다.`
         }
         confirmLabel={pendingAction === 'complete' ? '거래 성사' : '거래 실패'}
         onCancel={() => setPendingAction(null)}
-        // TODO: POST .../deal-candidates/{id}/{complete|fail} 연동 (별도 작업)
-        onConfirm={() => setPendingAction(null)}
+        onConfirm={() => pendingAction && settle(pendingAction)}
       />
     </AppShell>
   )
