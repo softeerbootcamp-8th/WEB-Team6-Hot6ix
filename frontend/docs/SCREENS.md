@@ -65,10 +65,10 @@ cd frontend && pnpm install && pnpm dev
 |---|---|---|---|
 | `/rooms` | `rooms.index.tsx` | ✓ | 참여 경매방 목록 |
 | `/rooms/1` | `rooms.$roomId.index.tsx` | | **라이브 경매방** (웹 3열 / 모바일 전용 뷰) |
-| `/rooms/3` | 〃 | | **종료된 경매방** (`ClosedRoomView` 로 분기) |
+| `/rooms/3` | 〃 | | **종료된 경매방** (`ClosedRoomView` 로 분기, 결과·거래 현황 API 연동) |
 | `/rooms/7` | 〃 | | **빈 경매방** — 물품·이벤트 0 (`MOCK_EMPTY_ROOM`) |
 | `/rooms/1/items/1` | `rooms.$roomId.items.$itemId.tsx` | | 물품 상세 (LIVE) |
-| `/rooms/1/result` | `rooms.$roomId.result.tsx` | | 경매방 종료 요약 |
+| `/rooms/1/result` | `rooms.$roomId.result.tsx` | | 경매방 종료 요약 (`GET /auction-rooms/{roomId}/results` 연동) |
 | `/join/{shareCode}` | `join.$shareCode.tsx` | ✓ | 링크 입장 — 정상 / 종료 / 유효하지 않은 링크 |
 
 `/join` 은 **실제 API 로 동작한다** — `GET /api/v1/auction-rooms/share/{shareCode}`

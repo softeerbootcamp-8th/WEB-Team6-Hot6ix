@@ -16,8 +16,10 @@ import {
   useGetDetail1,
   useGetSummaries,
 } from '@/api/generated/경매-물품/경매-물품'
+import { useGetResults } from '@/api/generated/경매방/경매방'
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { toAuctionItemDetail, toAuctionItems } from '@/features/live/adapt-item'
+import { toRoomResult } from '@/features/live/adapt-result'
 import { toBidErrorMessage } from '@/features/live/bid-error'
 
 import { BidConfirmPanel } from '@/features/live/components/bid-confirm-panel'
@@ -32,7 +34,6 @@ import {
   findMockRoom,
   MOCK_PRODUCTS,
   MOCK_ROOM_DETAIL,
-  MOCK_ROOMS,
   mockRoomEvents,
 } from '@/mocks/data'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
@@ -40,8 +41,11 @@ import { MobileItemDetailView } from '@/features/live/components/mobile-item-det
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { EmptyState } from '@/components/page-header'
+import { GuestShell } from '@/components/layout/page-shell'
 import { Modal } from '@/components/ui/modal'
 import { QuickBidOverlay } from '@/features/live/components/quick-bid-overlay'
+import { RouteError, RoutePending } from '@/components/route-states'
 import { SharePanel } from '@/features/live/components/share-panel'
 import { cn } from '@/lib/utils'
 import { useCountdown } from '@/hooks/use-countdown'
@@ -90,10 +94,6 @@ function LiveRoomPage() {
   // 방마다 자기 물품을 가진 목업 상세가 있다. 없는 방 번호면 라이브 방을 쓴다.
   const room = findMockRoom(Number(roomId)) ?? MOCK_ROOM_DETAIL
   const roomClosed = room.status === 'CLOSED'
-  // 종료 날짜만 목록 쪽에 있다.
-  const summary = MOCK_ROOMS.find(
-    (candidate) => String(candidate.id) === roomId,
-  )
 
   const [keyword, setKeyword] = useState('')
   const [panel, setPanel] = useState<RightPanel>('leaderboard')
@@ -127,6 +127,11 @@ function LiveRoomPage() {
     () => toAuctionItems(summaries.data?.data ?? []),
     [summaries.data],
   )
+
+  // 진행 중인 방에서는 결과를 볼 일이 없다. 방이 닫혔을 때만 요청한다.
+  const resultsQuery = useGetResults(auctionRoomId, {
+    query: { enabled: roomClosed && Number.isInteger(auctionRoomId) },
+  })
 
   /*
    * 서버가 물품을 주면 그 값을 쓰고, 비었거나 못 받았으면 목업으로 채운다.
@@ -630,27 +635,6 @@ function LiveRoomPage() {
    */
   const openItem = (itemId: number) => setDetailItemId(itemId)
 
-  /**
-   * 종료된 방의 물품은 전부 끝난 것으로 본다.
-   *
-   * 목업 물품은 마감 시각이 미래라, 방이 종료됐는데도 카운트다운이
-   * 계속 흘렀다. 상태와 마감 시각을 함께 과거로 맞춘다.
-   */
-  const closedRoom = {
-    ...room,
-    items: roomItems.map((item) =>
-      item.status === 'CLOSED'
-        ? item
-        : {
-            ...item,
-            status: 'CLOSED' as const,
-            endsAt: summary?.closedAt
-              ? new Date(summary.closedAt).toISOString()
-              : new Date(Date.now() - 60_000).toISOString(),
-          },
-    ),
-  }
-
   const confirmBid = async () => {
     if (!pendingBid) return
 
@@ -700,12 +684,30 @@ function LiveRoomPage() {
   }
 
   if (roomClosed) {
+    if (resultsQuery.isPending) return <RoutePending />
+    if (resultsQuery.isError) {
+      return (
+        <RouteError
+          error={resultsQuery.error}
+          reset={() => void resultsQuery.refetch()}
+        />
+      )
+    }
+
+    const result = toRoomResult(resultsQuery.data?.data)
+    if (!result) {
+      return (
+        <GuestShell title="종료된 경매방" back>
+          <EmptyState
+            title="결과를 찾을 수 없어요"
+            description="삭제되었거나 존재하지 않는 경매방입니다."
+          />
+        </GuestShell>
+      )
+    }
+
     return (
-      <ClosedRoomView
-        room={closedRoom}
-        isGuest={isGuest}
-        closedAt={summary?.closedAt ?? ''}
-      />
+      <ClosedRoomView result={result} isGuest={isGuest} isOwner={isOwner} />
     )
   }
 
