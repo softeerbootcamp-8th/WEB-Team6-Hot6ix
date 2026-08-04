@@ -35,8 +35,24 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
      * 하는 것은 지금 이 상대와 얼마에 거래하는지다. 1순위가 실패해 차순위로 넘어가면 금액도
      * 함께 바뀌어야 상대와 금액이 어긋나지 않는다.
      *
-     * <p>상대·금액·후보 ID를 각각의 서브쿼리로 세 번 고른다. 같은 후보를 세 번 찾는 셈이지만,
-     * 물품당 후보 수가 크지 않고 조인으로 풀면 상대가 없는 물품이 결과에서 빠진다.
+     * <p><b>거래 상대를 한 번만 고른다.</b> 후보 ID·금액·닉네임을 각자의 서브쿼리로 뽑으면
+     * 세 번 독립적으로 정렬하는 셈이라, 같은 순위가 둘 있으면 서로 다른 후보를 가리킬 수 있다
+     * (닉네임은 A인데 금액은 B의 것). {@code auction_items} 행 락이 순위 중복을 막고 있지만
+     * DB 제약은 아니라서, 애초에 어긋날 수 없는 모양으로 둔다. {@code LATERAL}이 한 행을 골라
+     * 세 컬럼을 함께 내주므로 정합성이 쿼리 모양에서 나온다.
+     *
+     * <p>정렬 마지막 키가 {@code deal_candidate_id}인 것도 같은 이유다. 순위가 겹쳐도 순서가
+     * 하나로 정해져 요청마다 다른 상대가 나오지 않는다.
+     *
+     * <p>집계도 {@code LATERAL}이다. 파생 테이블을 {@code GROUP BY auction_item_id}로 만들어
+     * 조인하면 방 조건이 안쪽에 없어 {@code deal_candidates} <b>전체</b>를 집계한 뒤 붙이게 된다
+     * (조인 조건은 derived condition pushdown 대상이 아니다). {@code LATERAL}은 상관되어 물품
+     * 하나의 후보만 읽고, 그 후보를 한 번 훑어 세 값을 다 만든다 — {@code EXISTS} 두 개와
+     * {@code COUNT} 두 개로 나누면 같은 집합을 네 번 읽는다.
+     *
+     * <p>모두 {@code COUNT(CASE ...)}로 센다. {@code SUM}은 MySQL에서 DECIMAL을 돌려주고,
+     * {@code MAX}는 후보가 없을 때 {@code NULL}이 되어 {@code COALESCE}가 붙는다.
+     * {@code COUNT}는 둘 다 아니어서 유찰 물품도 0으로 떨어진다.
      *
      * <p>상한을 두지 않는다. 한 경매방의 물품 수는 {@code AuctionItemRepository.MAX_SUMMARY_SIZE}
      * 규모라는 전제이고, 물품 목록 조회가 이미 같은 전제로 동작한다.
@@ -46,54 +62,40 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                 AuctionItemStatus.SOLD.name(),
                 AuctionItemStatus.FAILED.name(),
                 DealCandidateStatus.COMPLETED.name(),
-                DealCandidateStatus.WAITING.name(),
                 DealCandidateStatus.FAILED.name());
     }
 
     @Query(value = """
-            SELECT ai.auction_item_id AS auctionItemId,
-                   p.name             AS productName,
-                   ai.status          AS itemStatus,
-                   EXISTS (SELECT 1 FROM deal_candidates c
-                            WHERE c.auction_item_id = ai.auction_item_id
-                              AND c.status = :completedStatus) AS dealCompleted,
-                   EXISTS (SELECT 1 FROM deal_candidates c
-                            WHERE c.auction_item_id = ai.auction_item_id
-                              AND c.status = :waitingStatus) AS hasWaitingCandidate,
-                   (SELECT c.deal_candidate_id
-                      FROM deal_candidates c
-                      JOIN users bu ON bu.user_id = c.bidder_user_id
-                                   AND bu.deleted_at IS NULL
-                     WHERE c.auction_item_id = ai.auction_item_id
-                       AND c.status <> :failedCandidateStatus
-                     ORDER BY CASE WHEN c.status = :completedStatus THEN 0 ELSE 1 END,
-                              c.candidate_rank
-                     LIMIT 1)         AS dealCandidateId,
-                   (SELECT c.bid_amount
-                      FROM deal_candidates c
-                      JOIN users bu ON bu.user_id = c.bidder_user_id
-                                   AND bu.deleted_at IS NULL
-                     WHERE c.auction_item_id = ai.auction_item_id
-                       AND c.status <> :failedCandidateStatus
-                     ORDER BY CASE WHEN c.status = :completedStatus THEN 0 ELSE 1 END,
-                              c.candidate_rank
-                     LIMIT 1)         AS amount,
-                   (SELECT bu.nickname
-                      FROM deal_candidates c
-                      JOIN users bu ON bu.user_id = c.bidder_user_id
-                                   AND bu.deleted_at IS NULL
-                     WHERE c.auction_item_id = ai.auction_item_id
-                       AND c.status <> :failedCandidateStatus
-                     ORDER BY CASE WHEN c.status = :completedStatus THEN 0 ELSE 1 END,
-                              c.candidate_rank
-                     LIMIT 1)         AS partnerNickname,
-                   (SELECT COUNT(*) FROM deal_candidates c
-                     WHERE c.auction_item_id = ai.auction_item_id) AS candidateCount,
-                   (SELECT COUNT(*) FROM deal_candidates c
-                     WHERE c.auction_item_id = ai.auction_item_id
-                       AND c.status = :failedCandidateStatus)       AS failedCandidateCount
+            SELECT ai.auction_item_id       AS auctionItemId,
+                   p.name                   AS productName,
+                   ai.status                AS itemStatus,
+                   stats.candidateCount     AS candidateCount,
+                   stats.failedCount        AS failedCandidateCount,
+                   stats.completedCount     AS dealCompleted,
+                   partner.deal_candidate_id AS dealCandidateId,
+                   partner.bid_amount        AS amount,
+                   partner.nickname          AS partnerNickname
               FROM auction_items ai
               JOIN products p ON p.product_id = ai.product_id
+              LEFT JOIN LATERAL (
+                  SELECT COUNT(*)                                                     AS candidateCount,
+                         COUNT(CASE WHEN c.status = :failedCandidateStatus THEN 1 END) AS failedCount,
+                         COUNT(CASE WHEN c.status = :completedStatus THEN 1 END)       AS completedCount
+                    FROM deal_candidates c
+                   WHERE c.auction_item_id = ai.auction_item_id
+              ) stats ON TRUE
+              LEFT JOIN LATERAL (
+                  SELECT c.deal_candidate_id, c.bid_amount, bu.nickname
+                    FROM deal_candidates c
+                    JOIN users bu ON bu.user_id = c.bidder_user_id
+                                 AND bu.deleted_at IS NULL
+                   WHERE c.auction_item_id = ai.auction_item_id
+                     AND c.status <> :failedCandidateStatus
+                   ORDER BY CASE WHEN c.status = :completedStatus THEN 0 ELSE 1 END,
+                            c.candidate_rank,
+                            c.deal_candidate_id
+                   LIMIT 1
+              ) partner ON TRUE
              WHERE ai.auction_room_id = :auctionRoomId
                AND ai.status IN (:soldStatus, :failedStatus)
              ORDER BY ai.end_at DESC, ai.auction_item_id DESC
@@ -103,7 +105,6 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
             @Param("soldStatus") String soldStatus,
             @Param("failedStatus") String failedStatus,
             @Param("completedStatus") String completedStatus,
-            @Param("waitingStatus") String waitingStatus,
             @Param("failedCandidateStatus") String failedCandidateStatus);
 
     default List<DealSummaryProjection> findDeals(Long userId) {

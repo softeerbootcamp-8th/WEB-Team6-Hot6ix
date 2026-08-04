@@ -219,7 +219,7 @@ class DealServiceTest {
     }
 
     private RoomDealStatusProjection roomItem(
-            AuctionItemStatus itemStatus, int dealCompleted, int hasWaitingCandidate,
+            AuctionItemStatus itemStatus, int dealCompleted,
             Long dealCandidateId, Long amount, String partnerNickname,
             int candidateCount, int failedCandidateCount) {
 
@@ -238,10 +238,6 @@ class DealServiceTest {
 
             public Integer getDealCompleted() {
                 return dealCompleted;
-            }
-
-            public Integer getHasWaitingCandidate() {
-                return hasWaitingCandidate;
             }
 
             public Long getDealCandidateId() {
@@ -274,7 +270,7 @@ class DealServiceTest {
         소유자로_인정한다(sellerProfile);
         when(dealRepository.findRoomDealStatuses(ROOM_ID)).thenReturn(List.of(
                 // 1순위가 실패해 2순위로 넘어간 상태. 금액도 2순위가 부른 값이어야 한다.
-                roomItem(AuctionItemStatus.SOLD, 0, 1, 55L, 12_000L, "원기", 3, 1)));
+                roomItem(AuctionItemStatus.SOLD, 0, 55L, 12_000L, "원기", 3, 1)));
 
         AuctionRoomDealStatusResponseDto response = dealService.getRoomDeals(ROOM_ID, USER_ID);
 
@@ -296,10 +292,10 @@ class DealServiceTest {
 
         소유자로_인정한다(newSellerProfile());
         when(dealRepository.findRoomDealStatuses(ROOM_ID)).thenReturn(List.of(
-                roomItem(AuctionItemStatus.SOLD, 1, 0, 55L, 12_000L, "원기", 2, 0),
-                roomItem(AuctionItemStatus.FAILED, 0, 0, null, null, null, 0, 0),
+                roomItem(AuctionItemStatus.SOLD, 1, 55L, 12_000L, "원기", 2, 0),
+                roomItem(AuctionItemStatus.FAILED, 0, null, null, null, 0, 0),
                 // 후보 3명이 전부 실패해 상대가 없다.
-                roomItem(AuctionItemStatus.SOLD, 0, 0, null, null, null, 3, 3)));
+                roomItem(AuctionItemStatus.SOLD, 0, null, null, null, 3, 3)));
 
         assertThat(dealService.getRoomDeals(ROOM_ID, USER_ID).items())
                 .extracting(AuctionItemDealStatusResponseDto::dealStatus)
@@ -307,6 +303,29 @@ class DealServiceTest {
                         DealItemStatus.COMPLETED,
                         DealItemStatus.UNSOLD,
                         DealItemStatus.ALL_FAILED);
+    }
+
+    /**
+     * 후보가 남아 있어도 거래할 수 있는 상대가 없으면 거래 중이 아니다. 유일한 대기 후보가
+     * 탈퇴한 경우가 그렇다 — 대기 여부를 따로 세면 여기서 IN_PROGRESS 가 나와, 판매자가 오지
+     * 않을 상대를 기다린다.
+     */
+    @Test
+    @DisplayName("대기 후보가 남아도 상대를 고를 수 없으면 ALL_FAILED다")
+    void getRoomDealsWhenOnlyWaitingCandidateIsUnavailable() {
+
+        소유자로_인정한다(newSellerProfile());
+        when(dealRepository.findRoomDealStatuses(ROOM_ID)).thenReturn(List.of(
+                // 후보는 1명 있고 실패로 처리된 적도 없는데, 상대로 뽑히지 않았다.
+                roomItem(AuctionItemStatus.SOLD, 0, null, null, null, 1, 0)));
+
+        AuctionItemDealStatusResponseDto item =
+                dealService.getRoomDeals(ROOM_ID, USER_ID).items().getFirst();
+
+        assertThat(item.dealStatus()).isEqualTo(DealItemStatus.ALL_FAILED);
+        assertThat(item.partnerNickname()).isNull();
+        assertThat(item.candidateCount()).isEqualTo(1);
+        assertThat(item.failedCandidateCount()).isZero();
     }
 
     @Test

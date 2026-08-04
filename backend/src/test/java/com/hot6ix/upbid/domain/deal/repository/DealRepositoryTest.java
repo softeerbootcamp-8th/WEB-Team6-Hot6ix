@@ -293,7 +293,6 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(row.getDealCandidateId()).isEqualTo(second.getDealCandidateId());
         assertThat(row.getCandidateCount()).isEqualTo(2);
         assertThat(row.getFailedCandidateCount()).isEqualTo(1);
-        assertThat(row.getHasWaitingCandidate()).isNotZero();
         assertThat(row.getDealCompleted()).isZero();
     }
 
@@ -330,7 +329,28 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(row.getDealCandidateId()).isNull();
         assertThat(row.getCandidateCount()).isEqualTo(1);
         assertThat(row.getFailedCandidateCount()).isEqualTo(1);
-        assertThat(row.getHasWaitingCandidate()).isZero();
+    }
+
+    /**
+     * 유일한 대기 후보가 탈퇴한 경우. 후보 수는 1인데 상대는 뽑히지 않아야 한다 — 서비스가 이
+     * 조합을 ALL_FAILED 로 판정한다. 대기 여부를 따로 셌다면 여기서 "거래 중"이 나왔다.
+     */
+    @Test
+    @DisplayName("유일한 대기 후보가 탈퇴하면 후보 수는 남고 상대만 비워진다")
+    void findRoomDealStatusesWhenOnlyWaitingCandidateWithdrew() {
+
+        AuctionItem item = newItem("포토카드", AuctionItemStatus.SOLD, END_AT);
+        User withdrawn = newUser("gone@hot6ix.com", "탈퇴자");
+        newCandidate(item, withdrawn, 1, 20_000L);
+        withdrawn.softDelete(LocalDateTime.of(2026, 7, 29, 22, 0));
+
+        RoomDealStatusProjection row = findRoomDealStatuses().getFirst();
+
+        assertThat(row.getDealCandidateId()).isNull();
+        assertThat(row.getPartnerNickname()).isNull();
+        assertThat(row.getAmount()).isNull();
+        assertThat(row.getCandidateCount()).isEqualTo(1);
+        assertThat(row.getFailedCandidateCount()).isZero();
     }
 
     /** 유찰 물품은 후보가 아예 없다. left join이 아니라 서브쿼리라 행 자체는 남아야 한다. */

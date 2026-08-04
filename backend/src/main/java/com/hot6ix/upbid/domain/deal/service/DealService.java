@@ -79,11 +79,14 @@ public class DealService {
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
     }
 
+    /** 상대의 유무를 {@code dealCandidateId}로 본다. 상태와 상대가 같은 한 행에서 나와 어긋나지 않는다. */
     private AuctionItemDealStatusResponseDto toItemDealStatus(RoomDealStatusProjection item) {
         return new AuctionItemDealStatusResponseDto(
                 item.getAuctionItemId(),
                 item.getProductName(),
-                toItemStatus(item.getItemStatus(), item.getDealCompleted(), item.getHasWaitingCandidate()),
+                toItemStatus(item.getItemStatus(),
+                        item.getDealCompleted() != 0,
+                        item.getDealCandidateId() != null),
                 item.getAmount(),
                 item.getDealCandidateId(),
                 item.getPartnerNickname(),
@@ -99,7 +102,9 @@ public class DealService {
                 deal.getProductName(),
                 deal.getAuctionRoomName(),
                 isSeller(deal) ? DealRole.SELLER : DealRole.BUYER,
-                toItemStatus(deal),
+                toItemStatus(deal.getItemStatus(),
+                        deal.getDealCompleted() != 0,
+                        deal.getHasWaitingCandidate() != 0),
                 deal.getAmount(),
                 deal.getPartnerNickname(),
                 deal.getSellerProfileId(),
@@ -119,24 +124,24 @@ public class DealService {
      * <p>성사도 대기도 없으면 후보가 전원 실패한 것이다({@code ALL_FAILED}). 거래할 상대가
      * 없다는 점에서 유찰과 같지만, 후보가 있었다는 점이 달라 판매자가 취할 조치도 다르다.
      */
-    private DealItemStatus toItemStatus(DealSummaryProjection deal) {
-        return toItemStatus(deal.getItemStatus(), deal.getDealCompleted(), deal.getHasWaitingCandidate());
-    }
-
     /**
-     * 거래 내역과 경매방 거래 현황이 같은 판정을 쓴다. 두 화면이 같은 물품에 다른 상태를
+     * 거래 내역과 경매방 거래 현황이 같은 상태 머신을 쓴다. 두 화면이 같은 물품에 다른 상태를
      * 보여주면 어느 쪽이 맞는지 알 수 없다.
+     *
+     * <p>세 인자는 각자의 쿼리가 계산한다. "거래할 상대가 있나"를 거래 내역은 대기 후보
+     * 존재로, 거래 현황은 실제로 고른 상대의 유무로 답한다 — 후자가 탈퇴 회원까지 반영하므로
+     * 더 정확하다.
+     *
+     * @param hasPartner 지금 거래할 상대가 있는지
      */
-    private DealItemStatus toItemStatus(String itemStatus, Integer dealCompleted, Integer hasWaitingCandidate) {
+    private DealItemStatus toItemStatus(String itemStatus, boolean dealCompleted, boolean hasPartner) {
 
         if (AuctionItemStatus.valueOf(itemStatus) == AuctionItemStatus.FAILED) {
             return DealItemStatus.UNSOLD;
         }
-        if (dealCompleted != 0) {
+        if (dealCompleted) {
             return DealItemStatus.COMPLETED;
         }
-        return hasWaitingCandidate != 0
-                ? DealItemStatus.IN_PROGRESS
-                : DealItemStatus.ALL_FAILED;
+        return hasPartner ? DealItemStatus.IN_PROGRESS : DealItemStatus.ALL_FAILED;
     }
 }
