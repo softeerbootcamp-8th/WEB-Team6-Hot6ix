@@ -104,7 +104,14 @@ export function toAuctionItemDetail(
     roomId: detail.auctionRoomId ?? fallback.roomId,
     name: dto.productName ?? fallback.name,
     description: detail.description ?? fallback.description,
-    productUrl: detail.referenceUrl ?? fallback.productUrl,
+    /*
+     * 목업으로 떨어지지 않는다. 목업 링크(`brand.com/…`)는 팀이 가진 도메인이
+     * 아니라서, 누르면 관계없는 사이트가 새 창으로 열린다. 없으면 링크를
+     * 감추는 게 맞다.
+     *
+     * 목록 응답에는 애초에 링크가 없다. 물품을 열어 상세를 받은 뒤에 뜬다.
+     */
+    productUrl: detail.referenceUrl ?? null,
     status,
     /*
      * 목록 응답에는 시작가가 없다. 아직 입찰이 없으면 현재가가 곧 시작가이므로
@@ -162,7 +169,8 @@ export function mergeItemDetail(
   return {
     ...live,
     description: dto.description ?? live.description,
-    productUrl: dto.referenceUrl ?? live.productUrl,
+    // 목록 값으로 되돌리지 않는다. 목록에는 링크가 없어서 목업만 남는다.
+    productUrl: dto.referenceUrl ?? null,
     bidUnit: dto.bidIncrement ?? live.bidUnit,
     /*
      * 목록에서 온 `startPrice` 는 진행 중인 물품이면 현재가라 틀리다
