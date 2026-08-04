@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auth.oauth.kakao;
 
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.auth.oauth.service.OAuthClient;
 import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
 import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
@@ -42,7 +43,7 @@ public class KakaoOauthClient implements OAuthClient {
                 .map(KakaoUserInfoResponse.Profile::nickname)
                 .orElse(null);
 
-        return new OAuthUserInfo("kakao", String.valueOf(userInfo.id()), phoneNumber, email, nickname);
+        return new OAuthUserInfo(OauthProvider.KAKAO, String.valueOf(userInfo.id()), phoneNumber, email, nickname);
     }
 
     private KakaoTokenResponse issueToken(String authorizationCode) {

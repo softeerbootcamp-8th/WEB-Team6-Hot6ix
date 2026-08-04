@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.auth.oauth.kakao.KakaoApiClient;
 import com.hot6ix.upbid.domain.auth.oauth.kakao.KakaoOauthClient;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -40,7 +41,7 @@ class KakaoOauthClientTest {
 
         OAuthUserInfo result = kakaoOauthClient.getUserInfo("code");
 
-        assertThat(result).isEqualTo(new OAuthUserInfo("kakao", "1", "010-1234-5678", "a@b.com", "닉네임"));
+        assertThat(result).isEqualTo(new OAuthUserInfo(OauthProvider.KAKAO, "1", "010-1234-5678", "a@b.com", "닉네임"));
     }
 
     @Test

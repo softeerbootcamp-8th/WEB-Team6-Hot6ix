@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.user.dto.response.UserMeResponseDto;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
@@ -28,7 +29,7 @@ class UserServiceTest {
 
     private User newUser() {
         return User.builder()
-                .provider("kakao")
+                .provider(OauthProvider.KAKAO)
                 .providerId("kakao-123")
                 .nickname("테스트유저")
                 .email("test@hot6ix.com")

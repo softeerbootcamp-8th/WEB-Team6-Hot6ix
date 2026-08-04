@@ -23,7 +23,7 @@ public class UserService {
     @Transactional
     public UserOAuthLoginDto findOrCreateByOAuth(OAuthUserInfo userInfo) {
 
-        Optional<User> found = userRepository.findByProviderId(userInfo.providerId());
+        Optional<User> found = userRepository.findByProviderAndProviderId(userInfo.provider(), userInfo.providerId());
 
         if (found.isPresent()) {
             return UserOAuthLoginDto.of(verifyNotWithdrawn(found.get()), false);
@@ -37,7 +37,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserOAuthLoginDto getByOAuth(OAuthUserInfo userInfo) {
 
-        User user = userRepository.findByProviderId(userInfo.providerId())
+        User user = userRepository.findByProviderAndProviderId(userInfo.provider(), userInfo.providerId())
                 .orElseThrow(() -> new ApplicationException(AuthErrorType.OAUTH_LOGIN_FAILED));
 
         return UserOAuthLoginDto.of(verifyNotWithdrawn(user), false);

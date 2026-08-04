@@ -1,9 +1,12 @@
 package com.hot6ix.upbid.domain.user.entity;
 
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
 import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -19,8 +22,8 @@ import lombok.NoArgsConstructor;
 @Table(
         name = "users",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_users_provider_id",
-                columnNames = "provider_id"
+                name = "uk_users_provider_provider_id",
+                columnNames = {"provider", "provider_id"}
         )
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -31,7 +34,9 @@ public class User extends BaseEntity {
     @Column(name = "user_id")
     private Long userId;
 
-    private String provider;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "provider", length = 20)
+    private OauthProvider provider;
 
     @Column(name = "provider_id", length = 100)
     private String providerId;
@@ -52,7 +57,7 @@ public class User extends BaseEntity {
     private String profileImageUrl;
 
     @Builder
-    private User(String provider, String providerId, String email, String password,
+    private User(OauthProvider provider, String providerId, String email, String password,
                  String nickname, String phoneNumber, String profileImageUrl) {
         this.provider = provider;
         this.providerId = providerId;
