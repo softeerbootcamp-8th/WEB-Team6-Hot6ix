@@ -268,24 +268,17 @@ class AuctionRoomServiceTest {
     }
 
     @Test
-    @DisplayName("물품이 하나도 시작되지 않았으면 경매방 설정을 수정할 수 있다")
+    @DisplayName("물품이 하나도 시작되지 않았으면 경매방 설정을 전부 수정할 수 있다")
     void update_succeedsWhenNoItemStarted() {
 
         SellerProfile sellerProfile = newSellerProfile();
-        AuctionRoom auctionRoom = AuctionRoom.builder()
-                .bidIncrement(1_000L)
-                .sellerProfile(sellerProfile)
-                .name("승민의 경매방")
-                .softCloseTriggerSeconds(30)
-                .softCloseExtendSeconds(60)
-                .build();
+        AuctionRoom auctionRoom = newUpdatableRoom(sellerProfile, AuctionRoomStatus.BEFORE);
         AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
                 .name("새로운 경매방 이름")
+                .description("새로운 소개")
                 .build();
 
-        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
-        when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-                10L, sellerProfile.getSellerProfileId())).thenReturn(Optional.of(auctionRoom));
+        stubOwnedRoom(sellerProfile, auctionRoom);
         when(auctionItemRepository.existsByAuctionRoom_AuctionRoomIdAndStatusNot(10L, AuctionItemStatus.READY))
                 .thenReturn(false);
 
@@ -293,27 +286,21 @@ class AuctionRoomServiceTest {
 
         assertThat(response.name()).isEqualTo("새로운 경매방 이름");
         assertThat(auctionRoom.getName()).isEqualTo("새로운 경매방 이름");
+        assertThat(auctionRoom.getDescription()).isEqualTo("새로운 소개");
     }
 
     @Test
-    @DisplayName("물품 중 하나라도 시작된 적 있으면 경매방 설정 수정 시 예외가 발생한다")
+    @DisplayName("물품 중 하나라도 시작된 적 있으면 이름 밖의 설정 수정 시 예외가 발생한다")
     void update_throwsWhenItemAlreadyStarted() {
 
         SellerProfile sellerProfile = newSellerProfile();
-        AuctionRoom auctionRoom = AuctionRoom.builder()
-                .bidIncrement(1_000L)
-                .sellerProfile(sellerProfile)
-                .name("승민의 경매방")
-                .softCloseTriggerSeconds(30)
-                .softCloseExtendSeconds(60)
-                .build();
+        AuctionRoom auctionRoom = newUpdatableRoom(sellerProfile, AuctionRoomStatus.OPEN);
         AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
                 .name("새로운 경매방 이름")
+                .description("새로운 소개")
                 .build();
 
-        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
-        when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-                10L, sellerProfile.getSellerProfileId())).thenReturn(Optional.of(auctionRoom));
+        stubOwnedRoom(sellerProfile, auctionRoom);
         when(auctionItemRepository.existsByAuctionRoom_AuctionRoomIdAndStatusNot(10L, AuctionItemStatus.READY))
                 .thenReturn(true);
 
@@ -321,6 +308,46 @@ class AuctionRoomServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_ALREADY_STARTED);
+
+        assertThat(auctionRoom.getName()).isEqualTo("승민의 경매방");
+    }
+
+    @Test
+    @DisplayName("이름만 바꾸는 요청은 물품이 시작된 뒤에도 통과한다")
+    void update_nameOnlySucceedsAfterStart() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoom auctionRoom = newUpdatableRoom(sellerProfile, AuctionRoomStatus.OPEN);
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .name("오타를 고친 이름")
+                .build();
+
+        stubOwnedRoom(sellerProfile, auctionRoom);
+
+        AuctionRoomPublicResponseDto response = auctionRoomService.update(1L, 10L, request);
+
+        assertThat(response.name()).isEqualTo("오타를 고친 이름");
+        // 시작 여부를 아예 묻지 않는다 — 이름은 진행 중에도 열려 있어서다.
+        verify(auctionItemRepository, never())
+                .existsByAuctionRoom_AuctionRoomIdAndStatusNot(any(), any());
+    }
+
+    @Test
+    @DisplayName("종료된 경매방은 이름만 바꾸려 해도 예외가 발생한다")
+    void update_throwsWhenRoomClosed() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoom auctionRoom = newUpdatableRoom(sellerProfile, AuctionRoomStatus.CLOSED);
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .name("새로운 경매방 이름")
+                .build();
+
+        stubOwnedRoom(sellerProfile, auctionRoom);
+
+        assertThatThrownBy(() -> auctionRoomService.update(1L, 10L, request))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_CLOSED);
 
         assertThat(auctionRoom.getName()).isEqualTo("승민의 경매방");
     }
@@ -354,6 +381,23 @@ class AuctionRoomServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+    }
+
+    private AuctionRoom newUpdatableRoom(SellerProfile sellerProfile, AuctionRoomStatus status) {
+        return AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(sellerProfile)
+                .name("승민의 경매방")
+                .status(status)
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+    }
+
+    private void stubOwnedRoom(SellerProfile sellerProfile, AuctionRoom auctionRoom) {
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                10L, sellerProfile.getSellerProfileId())).thenReturn(Optional.of(auctionRoom));
     }
 
     private AuctionRoomListItemResponseDto newListItem(Long auctionRoomId) {
