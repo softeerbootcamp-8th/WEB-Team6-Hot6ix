@@ -130,8 +130,8 @@ function LiveRoomPage() {
     query: { enabled: validRoomId },
   })
   const serverItems = useMemo(
-    () => toAuctionItems(summaries.data?.data ?? []),
-    [summaries.data],
+    () => toAuctionItems(summaries.data?.data ?? [], user?.nickname ?? null),
+    [summaries.data, user?.nickname],
   )
 
   /*
@@ -290,7 +290,12 @@ function LiveRoomPage() {
           setItems(
             roomItems.map((item) =>
               item.id === payload.itemId
-                ? { ...item, status: 'CLOSED' as const }
+                ? {
+                    ...item,
+                    status: 'CLOSED' as const,
+                    // 낙찰자가 실렸으면 낙찰, 비었으면 유찰이다.
+                    sold: payload.winnerNickname !== null,
+                  }
                 : item,
             ),
           )
@@ -414,8 +419,8 @@ function LiveRoomPage() {
     const dto = detailQuery.data?.data
     // 물품을 갈아탄 직후에는 이전 물품의 상세가 남아 있다. 그때는 목록 값을 쓴다.
     if (!dto || dto.auctionItemId !== listItem.id) return listItem
-    return toAuctionItemDetail(dto, listItem)
-  }, [listItem, detailQuery.data])
+    return toAuctionItemDetail(dto, listItem, user?.nickname ?? null)
+  }, [listItem, detailQuery.data, user?.nickname])
 
   const detailMinimum = detailItem
     ? detailItem.currentPrice + detailItem.bidUnit

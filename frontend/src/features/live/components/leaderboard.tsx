@@ -72,7 +72,7 @@ export function ItemLeaderboard({
           {item.name}
         </h3>
         <span className="ml-auto shrink-0 text-[12px] font-medium text-neutral-tertiary">
-          {closed ? '낙찰가' : '현재가'}
+          {closed ? (item.sold ? '낙찰가' : '유찰') : '현재가'}
         </span>
         <span className="shrink-0 text-[14px] font-bold tabular-nums text-brand-500">
           {formatWon(item.currentPrice)}

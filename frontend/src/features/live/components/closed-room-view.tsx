@@ -70,7 +70,9 @@ export function ClosedRoomView({
     return items.filter((item) => item.name.includes(trimmed))
   }, [items, keyword])
 
-  const sold = items.filter((item) => item.leaderboard.length > 0)
+  // 낙찰 여부는 서버가 준 값을 그대로 쓴다. 리더보드가 비었는지로 추측하면
+  // 아직 리더보드를 못 받은 물품이 유찰로 잡힌다.
+  const sold = items.filter((item) => item.sold)
   const totalAmount = sold.reduce(
     (sum, item) => sum + (item.leaderboard[0]?.amount ?? 0),
     0,
@@ -320,12 +322,12 @@ export function ClosedRoomView({
                             <span
                               className={cn(
                                 'flex h-5 w-11 items-center justify-center rounded-full text-[10px] font-bold',
-                                item.leaderboard.length > 0
+                                item.sold
                                   ? 'bg-result-won-surface text-result-won'
                                   : 'bg-result-failed-surface text-result-failed',
                               )}
                             >
-                              {item.leaderboard.length > 0 ? '낙찰' : '유찰'}
+                              {item.sold ? '낙찰' : '유찰'}
                             </span>
                             <span className="mt-1.5 block truncate text-[14px] font-bold text-foreground">
                               {item.name}
@@ -336,14 +338,12 @@ export function ClosedRoomView({
                             <span
                               className={cn(
                                 'mt-auto text-right text-[15px] tabular-nums',
-                                item.leaderboard.length > 0
+                                item.sold
                                   ? 'font-bold text-foreground'
                                   : 'font-medium text-neutral-muted',
                               )}
                             >
-                              {item.leaderboard.length > 0
-                                ? formatWon(item.currentPrice)
-                                : '—'}
+                              {item.sold ? formatWon(item.currentPrice) : '—'}
                             </span>
                           </span>
                         </ResultRow>

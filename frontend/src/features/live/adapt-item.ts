@@ -1,9 +1,14 @@
 import type {
   AuctionItemDetailResponseDto,
   AuctionItemSummaryResponseDto,
+  LeaderboardEntryResponseDto,
 } from '@/api/generated/model'
 import { MOCK_ROOM_DETAIL } from '@/mocks/data'
-import type { AuctionItemDetail, ItemStatus } from '@/mocks/types'
+import type {
+  AuctionItemDetail,
+  ItemStatus,
+  LeaderboardEntry,
+} from '@/mocks/types'
 
 /**
  * 서버 물품 DTO 를 화면이 쓰는 `AuctionItemDetail` 로 바꾼다.
@@ -20,7 +25,12 @@ import type { AuctionItemDetail, ItemStatus } from '@/mocks/types'
  * 사진을 서버 값으로 바꾸는 건 `API-INTEGRATION.md` 대응표에 남은 별도 작업이다.
  */
 
-/** 서버 상태 4가지를 화면 상태 3가지로 좁힌다. 낙찰·유찰은 화면에선 둘 다 종료다. */
+/**
+ * 서버 상태 4가지를 화면 상태 3가지로 좁힌다. 낙찰·유찰은 화면에선 둘 다 종료다.
+ *
+ * **낙찰인지 유찰인지가 여기서 사라지므로 {@code sold} 로 따로 남긴다.** 그 구분을
+ * 버리면 화면이 "닫혔으면 곧 낙찰"로 단정하게 되어, 입찰이 없던 물품에도 낙찰가가 붙는다.
+ */
 function toItemStatus(status: string | undefined): ItemStatus {
   switch (status) {
     case 'IN_PROGRESS':
@@ -31,6 +41,24 @@ function toItemStatus(status: string | undefined): ItemStatus {
     default:
       return 'READY'
   }
+}
+
+/**
+ * 서버 리더보드를 화면 타입으로 바꾼다.
+ *
+ * `isMe` 는 서버에 없어서 닉네임으로 판단한다. 닉네임이 겹치면 남의 입찰이 내 것으로
+ * 보일 수 있지만, 서버가 입찰자 ID 를 내려주기 전까지는 이게 가진 전부다.
+ */
+function toLeaderboard(
+  entries: LeaderboardEntryResponseDto[] | undefined,
+  viewerNickname: string | null,
+): LeaderboardEntry[] {
+  return (entries ?? []).map((entry, index) => ({
+    rank: entry.rank ?? index + 1,
+    nickname: entry.nickname ?? '',
+    amount: entry.amount ?? 0,
+    isMe: viewerNickname !== null && entry.nickname === viewerNickname,
+  }))
 }
 
 /**
@@ -45,9 +73,11 @@ export function fallbackItem(index: number): AuctionItemDetail {
 export function toAuctionItemDetail(
   dto: AuctionItemSummaryResponseDto | AuctionItemDetailResponseDto,
   fallback: AuctionItemDetail,
+  viewerNickname: string | null = null,
 ): AuctionItemDetail {
   // 상세 DTO 에만 있는 필드. 목록 응답이면 undefined 라 목업으로 떨어진다.
   const detail = dto as AuctionItemDetailResponseDto
+  const leaderboard = toLeaderboard(dto.leaderboard, viewerNickname)
 
   return {
     ...fallback,
@@ -71,12 +101,26 @@ export function toAuctionItemDetail(
      * 배포 서버가 UTC 로 돌면 여기서 티가 난다.
      */
     endsAt: dto.endAt ?? fallback.endsAt,
+    /*
+     * 낙찰·유찰은 status 에서 사라지므로 따로 남긴다. 이게 없으면 화면이 "닫혔으면
+     * 낙찰"로 단정해, 입찰이 한 번도 없던 물품에 낙찰가가 붙는다.
+     */
+    sold: dto.status === 'SOLD',
+    /*
+     * 리더보드는 목업으로 떨어뜨리지 않는다. 서버가 빈 배열을 주는 것과 "아직 못
+     * 받았다"를 구분할 수 없어서, 목업으로 메우면 입찰이 없는 물품에 남의 입찰이 뜬다.
+     */
+    leaderboard,
+    topBidderNickname: leaderboard[0]?.nickname ?? null,
   }
 }
 
 /** 목록 응답을 화면 배열로 바꾼다. */
 export function toAuctionItems(
   dtos: AuctionItemSummaryResponseDto[],
+  viewerNickname: string | null = null,
 ): AuctionItemDetail[] {
-  return dtos.map((dto, index) => toAuctionItemDetail(dto, fallbackItem(index)))
+  return dtos.map((dto, index) =>
+    toAuctionItemDetail(dto, fallbackItem(index), viewerNickname),
+  )
 }

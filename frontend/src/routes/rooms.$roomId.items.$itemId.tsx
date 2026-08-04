@@ -65,8 +65,8 @@ function AuctionItemPage() {
   const placeBid = usePlace()
 
   const serverItems = useMemo(
-    () => toAuctionItems(summaries.data?.data ?? []),
-    [summaries.data],
+    () => toAuctionItems(summaries.data?.data ?? [], user?.nickname ?? null),
+    [summaries.data, user?.nickname],
   )
 
   /*
@@ -106,8 +106,8 @@ function AuctionItemPage() {
       mockItem ??
       fallbackItem(0)
     if (!detailDto || detailDto.auctionItemId !== auctionItemId) return listItem
-    return toAuctionItemDetail(detailDto, listItem)
-  }, [serverItems, detailDto, auctionItemId, mockItem])
+    return toAuctionItemDetail(detailDto, listItem, user?.nickname ?? null)
+  }, [serverItems, detailDto, auctionItemId, mockItem, user?.nickname])
 
   const item = override?.id === base.id ? override : base
 
@@ -229,6 +229,8 @@ function AuctionItemPage() {
           setOverride((prev) => ({
             ...(prev ?? item),
             status: 'CLOSED' as const,
+            // 낙찰자가 실렸으면 낙찰, 비었으면 유찰이다.
+            sold: payload.winnerNickname !== null,
           }))
           break
       }

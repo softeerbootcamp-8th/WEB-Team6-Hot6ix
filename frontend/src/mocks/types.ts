@@ -49,6 +49,13 @@ export interface AuctionItemDetail {
   /** 외부 상품 링크. 없을 수 있다. */
   productUrl: string | null
   status: ItemStatus
+  /**
+   * 낙찰로 끝났는지. `status` 가 `CLOSED` 여도 입찰이 없었으면 유찰이라 false 다.
+   *
+   * 화면 상태 3가지로는 낙찰과 유찰을 구분할 수 없어서 따로 둔다. 이게 없으면
+   * "닫혔으면 곧 낙찰"로 단정하게 되어 유찰 물품에도 낙찰가가 붙는다.
+   */
+  sold: boolean
   startPrice: number
   currentPrice: number
   bidUnit: number

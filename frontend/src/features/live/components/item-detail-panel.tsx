@@ -90,7 +90,13 @@ export function ItemDetailPanel({
               {item.name}
             </h2>
             <span className="ml-auto shrink-0 text-[12px] font-medium text-neutral-tertiary">
-              {closed ? '낙찰가' : ready ? '시작가' : '현재 최고가'}
+              {closed
+                ? item.sold
+                  ? '낙찰가'
+                  : '유찰 · 시작가'
+                : ready
+                  ? '시작가'
+                  : '현재 최고가'}
             </span>
             <span className="shrink-0 text-[14px] font-bold tabular-nums text-neutral-secondary">
               {formatWon(ready ? item.startPrice : item.currentPrice)}
