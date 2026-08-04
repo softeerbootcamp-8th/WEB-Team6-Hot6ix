@@ -27,7 +27,7 @@ class OauthClientManagerTest {
     @DisplayName("KAKAO provider로 요청하면 KakaoOauthClient에 위임한다")
     void delegatesToKakaoClient() {
         OauthClientManager manager = new OauthClientManager(kakaoOauthClient);
-        OAuthUserInfo expected = new OAuthUserInfo(OauthProvider.KAKAO, "1", "010-1234-5678", "a@b.com", "닉네임");
+        OAuthUserInfo expected = new OAuthUserInfo(OauthProvider.KAKAO, "1", "a@b.com", "닉네임");
         when(kakaoOauthClient.getUserInfo("code")).thenReturn(expected);
 
         OAuthUserInfo actual = manager.getUserInfo(OauthProvider.KAKAO, "code");

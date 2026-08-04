@@ -33,7 +33,7 @@ class KakaoOauthClientTest {
     private KakaoOauthClient kakaoOauthClient;
 
     @Test
-    @DisplayName("전화번호가 있으면 OAuthUserInfo로 변환한다")
+    @DisplayName("카카오 응답을 OAuthUserInfo로 변환한다")
     void mapsToOAuthUserInfo() {
         when(kakaoApiClient.issueToken("code")).thenReturn(new KakaoTokenResponse("access-token"));
         when(kakaoApiClient.getUserInfo("access-token")).thenReturn(new KakaoUserInfoResponse(
@@ -41,20 +41,31 @@ class KakaoOauthClientTest {
 
         OAuthUserInfo result = kakaoOauthClient.getUserInfo("code");
 
-        assertThat(result).isEqualTo(new OAuthUserInfo(OauthProvider.KAKAO, "1", "010-1234-5678", "a@b.com", "닉네임"));
+        assertThat(result).isEqualTo(new OAuthUserInfo(OauthProvider.KAKAO, "1", "a@b.com", "닉네임"));
     }
 
     @Test
-    @DisplayName("전화번호가 없으면 예외가 발생한다")
-    void throwsWhenPhoneNumberMissing() {
+    @DisplayName("카카오 계정에 전화번호가 없어도 로그인할 수 있다 - 전화번호는 별도 인증으로 받는다")
+    void allowsMissingPhoneNumber() {
         when(kakaoApiClient.issueToken("code")).thenReturn(new KakaoTokenResponse("access-token"));
         when(kakaoApiClient.getUserInfo("access-token")).thenReturn(new KakaoUserInfoResponse(
                 1L, new KakaoAccount(null, "a@b.com", new Profile("닉네임"))));
 
-        assertThatThrownBy(() -> kakaoOauthClient.getUserInfo("code"))
-                .isInstanceOf(ApplicationException.class)
-                .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(AuthErrorType.KAKAO_PHONE_NUMBER_REQUIRED);
+        OAuthUserInfo result = kakaoOauthClient.getUserInfo("code");
+
+        assertThat(result).isEqualTo(new OAuthUserInfo(OauthProvider.KAKAO, "1", "a@b.com", "닉네임"));
+    }
+
+    @Test
+    @DisplayName("이메일·닉네임 동의를 하지 않아 kakao_account가 없어도 변환된다")
+    void allowsMissingKakaoAccount() {
+        when(kakaoApiClient.issueToken("code")).thenReturn(new KakaoTokenResponse("access-token"));
+        when(kakaoApiClient.getUserInfo("access-token"))
+                .thenReturn(new KakaoUserInfoResponse(1L, null));
+
+        OAuthUserInfo result = kakaoOauthClient.getUserInfo("code");
+
+        assertThat(result).isEqualTo(new OAuthUserInfo(OauthProvider.KAKAO, "1", null, null));
     }
 
     @Test

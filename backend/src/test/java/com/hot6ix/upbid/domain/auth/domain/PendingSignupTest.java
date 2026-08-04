@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 class PendingSignupTest {
 
     private static final OAuthUserInfo USER_INFO = new OAuthUserInfo(
-            OauthProvider.KAKAO, "1234567890", "010-1234-5678", "user@hot6ix.com", "승민");
+            OauthProvider.KAKAO, "1234567890", "user@hot6ix.com", "승민");
 
     @Test
     @DisplayName("OAuthUserInfo로 만들면 인증되지 않은 상태이다")
@@ -23,15 +23,6 @@ class PendingSignupTest {
         assertThat(pendingSignup.nickname()).isEqualTo("승민");
         assertThat(pendingSignup.verifiedPhoneNumber()).isNull();
         assertThat(pendingSignup.isVerified()).isFalse();
-    }
-
-    @Test
-    @DisplayName("OAuth 제공자가 준 전화번호는 담지 않는다 - 별도 인증을 거친 번호만 신뢰한다")
-    void from_doesNotTrustProviderPhoneNumber() {
-
-        PendingSignup pendingSignup = PendingSignup.from(USER_INFO);
-
-        assertThat(pendingSignup.verifiedPhoneNumber()).isNotEqualTo(USER_INFO.phoneNumber());
     }
 
     @Test

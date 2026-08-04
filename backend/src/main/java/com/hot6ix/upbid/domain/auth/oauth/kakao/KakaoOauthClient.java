@@ -12,7 +12,6 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClientException;
 
 @Slf4j
@@ -29,11 +28,6 @@ public class KakaoOauthClient implements OAuthClient {
 
         KakaoAccount kakaoAccount = userInfo.kakaoAccount();
 
-        String phoneNumber = Optional.ofNullable(kakaoAccount)
-                .map(KakaoAccount::phoneNumber)
-                .filter(StringUtils::hasText)
-                .orElseThrow(() -> new ApplicationException(AuthErrorType.KAKAO_PHONE_NUMBER_REQUIRED));
-
         String email = Optional.ofNullable(kakaoAccount)
                 .map(KakaoAccount::email)
                 .orElse(null);
@@ -43,7 +37,7 @@ public class KakaoOauthClient implements OAuthClient {
                 .map(KakaoUserInfoResponse.Profile::nickname)
                 .orElse(null);
 
-        return new OAuthUserInfo(OauthProvider.KAKAO, String.valueOf(userInfo.id()), phoneNumber, email, nickname);
+        return new OAuthUserInfo(OauthProvider.KAKAO, String.valueOf(userInfo.id()), email, nickname);
     }
 
     private KakaoTokenResponse issueToken(String authorizationCode) {

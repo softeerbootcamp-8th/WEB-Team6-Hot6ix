@@ -57,7 +57,7 @@ class AuthServiceTest {
     private final MockHttpServletRequest request = new MockHttpServletRequest();
 
     private OAuthUserInfo kakaoUserInfo() {
-        return new OAuthUserInfo(OauthProvider.KAKAO, "1", "010-1234-5678", "a@b.com", "닉네임");
+        return new OAuthUserInfo(OauthProvider.KAKAO, "1", "a@b.com", "닉네임");
     }
 
     @Test
@@ -226,7 +226,7 @@ class AuthServiceTest {
     @DisplayName("OAuth 응답에 식별자가 없으면 OAUTH_LOGIN_FAILED 예외가 발생한다")
     void login_missingProviderId() {
 
-        OAuthUserInfo userInfo = new OAuthUserInfo(OauthProvider.KAKAO, "", "010-1234-5678", "a@b.com", "닉네임");
+        OAuthUserInfo userInfo = new OAuthUserInfo(OauthProvider.KAKAO, "", "a@b.com", "닉네임");
         when(oauthClientManager.getUserInfo(OauthProvider.KAKAO, AUTHORIZATION_CODE)).thenReturn(userInfo);
 
         assertThatThrownBy(() -> authService.login(request, AUTHORIZATION_CODE))
