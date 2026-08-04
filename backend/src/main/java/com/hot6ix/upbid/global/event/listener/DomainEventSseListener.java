@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.sse.dto.BidPlacedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemClosingSoonDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemStartedDto;
+import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
 import com.hot6ix.upbid.domain.sse.dto.SoftCloseExtendedDto;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
 import com.hot6ix.upbid.global.event.DomainEvent;
@@ -12,6 +13,7 @@ import com.hot6ix.upbid.global.event.payload.BidPlaced;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
+import com.hot6ix.upbid.global.event.payload.RoomClosed;
 import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +52,7 @@ public class DomainEventSseListener {
     private Object toDto(DomainEvent event) {
         return switch (event) {
 
+            case RoomClosed e -> new RoomClosedDto(e.roomTitle(), e.occurredAt());
             case ItemStarted e -> new ItemStartedDto(e.itemId(), e.itemName(), e.endAt());
             case ItemClosingSoon e -> new ItemClosingSoonDto(e.itemId(), e.itemName());
             case BidPlaced e -> new BidPlacedDto(e.itemId(), e.itemName(), e.bidPrice(), e.bidderNickname());
