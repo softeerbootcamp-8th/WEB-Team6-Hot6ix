@@ -32,6 +32,7 @@ import type {
   AuctionRoomCreateRequestDto,
   AuctionRoomUpdateRequestDto,
   CommonResponseAuctionRoomPublicResponseDto,
+  CommonResponseAuctionRoomResultResponseDto,
   CommonResponseAuctionRoomShareResponseDto,
   CommonResponseCursorPageResponseAuctionRoomListItemResponseDto,
   GetMyRoomsParams
@@ -111,7 +112,70 @@ export const useCreate2 = <TError = ErrorType<CommonResponseAuctionRoomPublicRes
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 경매방의 공개 정보를 조회한다. 인증이 필요 없으며, 경매 시작 전(BEFORE)을 포함한 모든 상태에서 동일하게 노출한다.
+ * 소유자가 방송을 끝내고 경매방을 종료한다. 요청 본문은 없다. 진행 중이던 물품은 모두 그 자리에서 마감되어 입찰이 있으면 낙찰(SOLD), 없으면 유찰(FAILED)로 확정된다. **아직 시작하지 않은 READY 물품은 그대로 남는다** — 시작한 적 없는 물품을 유찰로 적으면 결과 집계에서 실제 유찰과 섞이기 때문이다. 물품을 하나도 시작하지 않은 방(BEFORE)도 종료할 수 있다. 종료된 방에서는 물품 추가·시작이 모두 막히며, **되돌리는 API는 없다.** 응답의 closedAt이 종료 시각이고, 종료를 참여자에게 알리는 ROOM_CLOSED 이벤트가 SSE로 함께 나간다.
+ * @summary 경매방 종료
+ */
+export const close = (
+    roomId: number,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseAuctionRoomPublicResponseDto>(
+      {url: `/api/v1/auction-rooms/${roomId}/close`, method: 'POST', signal
+    },
+      options);
+    }
+  
+
+
+export const getCloseMutationOptions = <TError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof close>>, TError,{roomId: number}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof close>>, TError,{roomId: number}, TContext> => {
+
+const mutationKey = ['close'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof close>>, {roomId: number}> = (props) => {
+          const {roomId} = props ?? {};
+
+          return  close(roomId,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CloseMutationResult = NonNullable<Awaited<ReturnType<typeof close>>>
+    
+    export type CloseMutationError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>
+
+    /**
+ * @summary 경매방 종료
+ */
+export const useClose = <TError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof close>>, TError,{roomId: number}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof close>>,
+        TError,
+        {roomId: number},
+        TContext
+      > => {
+
+      const mutationOptions = getCloseMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * 경매방의 공개 정보를 조회한다. 인증이 필요 없으며, 경매 시작 전(BEFORE)을 포함한 모든 상태에서 동일하게 노출한다. isOwner만 보는 사람에 따라 달라진다 — 방 주인이 로그인한 상태로 조회했을 때만 true이며, 화면이 판매자 조작(물품 추가·빼기·시작) UI를 띄울지 정하는 값이다. 실제 권한은 각 조작 API가 다시 검증하므로 이 값을 권한의 근거로 쓰지 않는다.
  * @summary 경매방 정보 조회
  */
 export const getRoom = (
@@ -350,6 +414,99 @@ export function useGetShareInfo<TData = Awaited<ReturnType<typeof getShareInfo>>
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetShareInfoQueryOptions(roomId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
+ * 경매방의 물품별 낙찰·유찰 결과를 한 번에 조회한다. 인증이 필요 없고, 로그인한 요청에만 물품마다 요청자의 최종 순위(myRank)와 부른 최고가(myAmount)가 함께 담긴다. 낙찰가와 낙찰자는 낙찰(SOLD)인 물품에만 있다 — 유찰 물품의 현재가는 아무도 부르지 않은 시작가라 가격으로 내리지 않는다. 방 상태로 거르지 않으므로 아직 열려 있는 방도 조회되며, 진행 중인 물품은 status로 드러난다. 낙찰 건수·유찰 건수·총 낙찰액은 화면이 items에서 직접 세므로 응답에 없다. 참여자 수도 없다 — 종료된 방의 참여자 수는 입찰한 사람 수인지 방송을 보던 사람 수인지 구분되지 않아 내리지 않는다.
+ * @summary 경매방 낙찰 결과 조회
+ */
+export const getResults = (
+    roomId: number,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseAuctionRoomResultResponseDto>(
+      {url: `/api/v1/auction-rooms/${roomId}/results`, method: 'GET', signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetResultsQueryKey = (roomId?: number,) => {
+    return [
+    `/api/v1/auction-rooms/${roomId}/results`
+    ] as const;
+    }
+
+    
+export const getGetResultsQueryOptions = <TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(roomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetResultsQueryKey(roomId);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getResults>>> = ({ signal }) => getResults(roomId, requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(roomId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetResultsQueryResult = NonNullable<Awaited<ReturnType<typeof getResults>>>
+export type GetResultsQueryError = ErrorType<CommonResponseAuctionRoomResultResponseDto>
+
+
+export function useGetResults<TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(
+ roomId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getResults>>,
+          TError,
+          Awaited<ReturnType<typeof getResults>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetResults<TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(
+ roomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getResults>>,
+          TError,
+          Awaited<ReturnType<typeof getResults>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetResults<TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(
+ roomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 경매방 낙찰 결과 조회
+ */
+
+export function useGetResults<TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(
+ roomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetResultsQueryOptions(roomId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

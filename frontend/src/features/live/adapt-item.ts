@@ -57,6 +57,12 @@ export function toAuctionItemDetail(
     description: detail.description ?? fallback.description,
     productUrl: detail.referenceUrl ?? fallback.productUrl,
     status: toItemStatus(dto.status),
+    /*
+     * 목록 응답에는 시작가가 없다. 아직 입찰이 없으면 현재가가 곧 시작가이므로
+     * 그 값을 쓴다. 목업으로 두면 **판매자가 방금 입력한 시작가와 다른 숫자**가
+     * 카드에 뜬다(시작 전 카드는 이 값을 "시작가"로 그린다).
+     */
+    startPrice: detail.startingPrice ?? dto.currentPrice ?? fallback.startPrice,
     currentPrice: dto.currentPrice ?? fallback.currentPrice,
     bidUnit: detail.bidIncrement ?? fallback.bidUnit,
     /*

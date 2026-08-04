@@ -19,7 +19,7 @@ public class SseController implements SseApi {
 
     @GuestAllowed
     @GetMapping(value = "/auction-rooms/{roomId}/subscribe", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter subscribe(@PathVariable Long roomId){
-        return sseService.subscribe(roomId);
+    public SseEmitter subscribe(Long userId, @PathVariable Long roomId){
+        return sseService.subscribe(userId, roomId);
     }
 }

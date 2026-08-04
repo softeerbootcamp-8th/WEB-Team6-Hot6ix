@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.sse.api;
 
+import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -20,6 +21,7 @@ public interface SseApi {
             @ApiResponse(responseCode = "200", description = "구독 성공, text/event-stream 연결 유지")
     })
     SseEmitter subscribe(
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "구독할 경매방 ID", required = true)
             @PathVariable Long roomId);
 }

@@ -96,8 +96,11 @@ public class AuctionRoomCloseService {
         domainEventPublisher.publish(
                 RoomClosed.of(auctionRoomId, auctionRoom.getName(), closedAt));
 
+        // 소유 확인을 통과했으므로 요청자가 곧 소유자다.
         return AuctionRoomPublicResponseDto.from(
-                auctionRoom, auctionItemRepository.countByAuctionRoom_AuctionRoomId(auctionRoomId));
+                auctionRoom,
+                auctionItemRepository.countByAuctionRoom_AuctionRoomId(auctionRoomId),
+                true);
     }
 
     /**

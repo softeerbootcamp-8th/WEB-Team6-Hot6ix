@@ -58,7 +58,8 @@ export function ClosedRoomView({
 }: {
   room: AuctionRoomDetail
   isGuest: boolean
-  closedAt: string
+  /** 방이 종료된 시각. 서버 응답에 아직 없어서, 없으면 그 줄을 그리지 않는다. */
+  closedAt?: string
 }) {
   const [keyword, setKeyword] = useState('')
 
@@ -111,9 +112,11 @@ export function ClosedRoomView({
             <p className="mt-2 text-[13px] font-medium text-neutral-tertiary">
               모든 물품의 경매가 종료되었습니다.
             </p>
-            <p className="mt-2 text-[11px] font-medium text-neutral-muted">
-              종료 {closedAt}
-            </p>
+            {closedAt && (
+              <p className="mt-2 text-[11px] font-medium text-neutral-muted">
+                종료 {closedAt}
+              </p>
+            )}
           </section>
 
           <dl className="mt-4 grid grid-cols-2 gap-2">
@@ -249,9 +252,11 @@ export function ClosedRoomView({
             <h1 className="text-[17px] font-bold text-foreground">
               {room.title}
             </h1>
-            <p className="text-[12px] font-medium text-neutral-tertiary">
-              종료 {closedAt}
-            </p>
+            {closedAt && (
+              <p className="text-[12px] font-medium text-neutral-tertiary">
+                종료 {closedAt}
+              </p>
+            )}
 
             <button
               type="button"

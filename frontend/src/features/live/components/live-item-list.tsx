@@ -22,8 +22,10 @@ export function LiveItemList({
   isSelected,
   isDimmed,
   justClosedId,
+  startingItemId,
   className,
   onSelect,
+  onStart,
 }: {
   items: AuctionItemDetail[]
   canStart?: boolean
@@ -31,9 +33,12 @@ export function LiveItemList({
   isDimmed?: (item: AuctionItemDetail) => boolean
   /** 방금 마감된 물품 id. 도장 애니메이션에 쓴다. */
   justClosedId?: number | null
+  /** 시작 요청이 서버에서 처리 중인 물품 id */
+  startingItemId?: number | null
   /** 바깥 레이아웃에 맞춰 스크롤 영역 크기를 바꿀 때 쓴다. */
   className?: string
   onSelect: (item: AuctionItemDetail) => void
+  onStart?: (item: AuctionItemDetail, minutes: number) => void
 }) {
   // 상태가 바뀌면 묶음이 달라진다. 그 이동을 눈에 보이게 한다.
   const rows = useListFlip<HTMLLIElement>(
@@ -75,9 +80,13 @@ export function LiveItemList({
                   }}
                   justClosed={justClosedId === item.id}
                   canStart={canStart}
+                  starting={startingItemId === item.id}
                   selected={isSelected?.(item) ?? false}
                   dimmed={isDimmed?.(item) ?? false}
                   onSelect={() => onSelect(item)}
+                  onStart={
+                    onStart ? (minutes) => onStart(item, minutes) : undefined
+                  }
                 />
               ))}
             </ul>
