@@ -62,9 +62,6 @@ import type { AuctionItemDetail, Product, RoomEvent } from '@/mocks/types'
  * 왼쪽 물품 목록, 가운데 실시간 이벤트 + 입찰 CTA, 오른쪽 열.
  * 오른쪽 열은 상황에 따라 리더보드 / 빠른 입찰 / 입찰 확인 / 공유로 바뀐다.
  */
-/** 자동 마감으로 생기는 이벤트 id 시작값. 목업 이벤트와 겹치지 않게 띄운다. */
-const CLOSE_EVENT_BASE = 90_000
-
 export const Route = createFileRoute('/rooms/$roomId/')({
   component: LiveRoomPage,
 })
@@ -138,10 +135,6 @@ function LiveRoomPage() {
   const usingMockItems = serverItems.length === 0
   // 편성을 바꾸기 전까지는 서버가 준 목록을 그대로 쓴다.
   const roomItems = items ?? (usingMockItems ? room.items : serverItems)
-  const roomItemsRef = useRef(roomItems)
-  useEffect(() => {
-    roomItemsRef.current = roomItems
-  })
 
   /**
    * SSE 이벤트 수신 핸들러.
@@ -278,10 +271,11 @@ function LiveRoomPage() {
                 : item,
             ),
           )
+          // "경매 종료" 도장. 서버가 마감을 확정했을 때만 띄운다.
+          setJustClosedId(payload.itemId)
           break
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [roomItems],
   )
 
@@ -523,49 +517,6 @@ function LiveRoomPage() {
       setDetailPending(false)
     }
   }
-
-  /**
-   * 마감 시각이 지난 물품을 종료로 넘긴다.
-   *
-   * 실시간 연동 전이라 클라이언트가 대신 본다. **서버가 확정한 상태가
-   * 오면 그 값이 우선**이고, 이건 화면이 멈춰 보이지 않게 하는 임시 처리다.
-   */
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const current = roomItemsRef.current
-      const now = Date.now()
-      const expired = current.filter(
-        (item) =>
-          item.status === 'ACTIVE' && new Date(item.endsAt).getTime() <= now,
-      )
-      if (expired.length === 0) return
-
-      const ids = new Set(expired.map((item) => item.id))
-      setItems(
-        current.map((item) =>
-          ids.has(item.id) ? { ...item, status: 'CLOSED' as const } : item,
-        ),
-      )
-      setJustClosedId(expired[0].id)
-      setExtraEvents((prev) => [
-        ...prev,
-        ...expired.map((item, index) => ({
-          id: CLOSE_EVENT_BASE + prev.length + index,
-          at: new Date().toISOString(),
-          kind: 'CLOSE' as const,
-          message: `${item.name} 경매가 종료됐어요`,
-          subtitle: item.topBidderNickname
-            ? `${item.topBidderNickname} 낙찰 · ${formatWon(item.currentPrice)}`
-            : undefined,
-          emphasized: true,
-        })),
-      ])
-    }, 1000)
-
-    return () => window.clearInterval(timer)
-    // roomItemsRef 를 통해 항상 최신값을 읽으므로 deps 없이 한 번만 등록한다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   // 도장은 한 번만 보여주고 지운다.
   useEffect(() => {
