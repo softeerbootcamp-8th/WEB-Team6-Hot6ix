@@ -24,6 +24,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
@@ -44,15 +45,25 @@ class UserServiceTest {
                 .build();
     }
 
+    /**
+     * userId는 저장 시점에 DB가 채우는 값이라 빌더로는 설정할 수 없다.
+     * 조회 결과로 돌려줄 회원은 ID가 있어야 하므로 직접 주입한다.
+     */
+    private User savedUser(Long userId) {
+        User user = newUser();
+        ReflectionTestUtils.setField(user, "userId", userId);
+        return user;
+    }
+
     @Test
     @DisplayName("가입 대기 정보로 회원을 저장하고 userId를 반환한다")
     void create() {
 
         PendingSignup pendingSignup = new PendingSignup(
                 OauthProvider.KAKAO, "kakao-123", "test@hot6ix.com", "테스트유저", "01099998888");
-        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userRepository.saveAndFlush(any(User.class))).thenReturn(savedUser(1L));
 
-        userService.create(pendingSignup);
+        assertThat(userService.create(pendingSignup)).isEqualTo(1L);
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).saveAndFlush(captor.capture());
@@ -69,9 +80,9 @@ class UserServiceTest {
     void findByOAuth_existingUser() {
 
         when(userRepository.findByProviderAndProviderId(OauthProvider.KAKAO, "kakao-123"))
-                .thenReturn(Optional.of(newUser()));
+                .thenReturn(Optional.of(savedUser(1L)));
 
-        assertThat(userService.findByOAuth(OauthProvider.KAKAO, "kakao-123")).isPresent();
+        assertThat(userService.findByOAuth(OauthProvider.KAKAO, "kakao-123")).contains(1L);
     }
 
     @Test
