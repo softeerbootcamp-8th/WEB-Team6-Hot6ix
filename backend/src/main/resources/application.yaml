@@ -28,7 +28,7 @@ spring:
       # 주의: 한 번만 도는 게 아니라 **앱이 뜰 때마다** 테이블을 지우고 다시 만든다.
       # 재배포는 물론 EC2 재부팅이나 컨테이너 재시작(restart: unless-stopped)에도
       # 데이터가 사라진다. Flyway를 붙이면서 validate로 바꾼다.
-      ddl-auto: update
+      ddl-auto: create
     properties:
       hibernate:
         format_sql: true
