@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -23,5 +24,6 @@ public interface SseApi {
     SseEmitter subscribe(
             @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "구독할 경매방 ID", required = true)
-            @PathVariable Long roomId);
+            @PathVariable Long roomId,
+            @Parameter(hidden = true) HttpServletResponse response);
 }

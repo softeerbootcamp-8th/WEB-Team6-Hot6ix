@@ -13,6 +13,11 @@ services:
       - "8080:8080"
     mem_limit: 700m
     environment:
+      # 베이스 이미지 기본값이 UTC라 LocalDateTime이 UTC 벽시계로 만들어진다.
+      # 응답에는 오프셋이 없어서(예: "2026-08-04T07:55:00") 브라우저가 KST로 읽고,
+      # 마감 시각이 9시간 과거가 되어 카운트다운이 0에서 멈춘다.
+      # 응답에 오프셋을 담는 근본 해결은 공용 계약 변경이라 #156에서 따로 다룬다.
+      - TZ=Asia/Seoul
       - SPRING_DATASOURCE_URL=jdbc:mysql://${RDS_ENDPOINT}:3306/upbid
       - SPRING_DATASOURCE_USERNAME=${RDS_USERNAME}
       - SPRING_DATASOURCE_PASSWORD=${RDS_PASSWORD}
