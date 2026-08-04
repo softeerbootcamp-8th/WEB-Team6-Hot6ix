@@ -41,7 +41,7 @@ import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { ItemDetailPanel } from '@/features/live/components/item-detail-panel'
 import { LiveItemList } from '@/features/live/components/live-item-list'
 import { useListFlip } from '@/features/live/use-list-flip'
-import { findMockRoom, MOCK_ROOM_DETAIL, mockRoomEvents } from '@/mocks/data'
+import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
@@ -357,11 +357,11 @@ function LiveRoomPage() {
     </div>
   ) : null
 
-  // 방에 들어가면 지금까지 쌓인 이벤트가 이미 보이고, 그 위에 실시간이 붙는다.
-  const roomEvents = useMemo(
-    () => [...mockRoomEvents(auctionRoomId), ...extraEvents],
-    [auctionRoomId, extraEvents],
-  )
+  /*
+   * 실시간으로 받은 이벤트만 보여준다. 방에 들어온 뒤 실제로 일어난 일만 쌓이므로
+   * 처음에는 비어 있고, 지난 이벤트를 돌려받는 API 가 생기기 전까지는 그대로다.
+   */
+  const roomEvents = extraEvents
 
   // 방을 만든 사람만 물품을 넣고 뺄 수 있다.
   /*

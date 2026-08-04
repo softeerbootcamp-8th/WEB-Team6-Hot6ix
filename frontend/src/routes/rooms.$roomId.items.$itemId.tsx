@@ -17,12 +17,7 @@ import {
   toAuctionItems,
 } from '@/features/live/adapt-item'
 import { toBidErrorMessage } from '@/features/live/bid-error'
-import {
-  findMockItem,
-  findMockRoom,
-  MOCK_ROOM_DETAIL,
-  mockRoomEvents,
-} from '@/mocks/data'
+import { findMockItem, findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -274,16 +269,8 @@ function AuctionItemPage() {
     return room.items.filter((candidate) => candidate.name.includes(trimmed))
   }, [room.items, keyword])
 
-  const itemEvents = useMemo(
-    () => [
-      ...mockRoomEvents(auctionRoomId).filter(
-        (event) =>
-          event.subtitle === item.name || event.message.includes(item.name),
-      ),
-      ...extraEvents,
-    ],
-    [item.name, extraEvents, auctionRoomId],
-  )
+  // 실시간으로 받은 이벤트만 보여준다. 처음 들어오면 비어 있다.
+  const itemEvents = extraEvents
 
   /**
    * 개발용 데모 입찰. 경매방 화면의 같은 버튼과 짝을 맞춘다.
