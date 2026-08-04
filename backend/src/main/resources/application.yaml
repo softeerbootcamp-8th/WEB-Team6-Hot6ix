@@ -70,3 +70,17 @@ ncp:
     connect-timeout: 5s
     read-timeout: 10s
 
+# 이미지 업로드용 S3.
+#
+# 액세스 키·시크릿은 여기에도 환경변수에도 두지 않는다. app EC2에 붙인 인스턴스 역할
+# upbid-ec2-role을 DefaultCredentialsProvider가 찾아 쓴다. 로컬은 aws configure로
+# 만든 ~/.aws/credentials를 같은 provider가 찾는다. 그래서 설정이 환경마다 갈리지 않는다.
+#
+# public-base-url을 bucket·region에서 조립하지 않고 따로 적는다. 나중에 CloudFront를
+# 앞에 두면 읽는 주소만 그 도메인으로 바뀌고 버킷 이름은 그대로이기 때문이다.
+aws:
+  region: ap-northeast-2
+  s3:
+    bucket: upbid-bucket
+    public-base-url: https://upbid-bucket.s3.ap-northeast-2.amazonaws.com
+

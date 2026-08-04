@@ -3,8 +3,14 @@ import { useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { TextAreaField, TextField } from '@/components/ui/field'
 import { ImageUploadField } from '@/features/seller/components/image-upload-field'
+import {
+  ImageUploadError,
+  useImageUpload,
+} from '@/features/seller/use-image-upload'
 import { formatPhoneNumber } from '@/lib/format'
+import { toast } from '@/lib/toast'
 import { mockAvatarImage } from '@/mocks/images'
+import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
 import type {
   SellerProfileCreateRequestDto,
   SellerProfileResponseDto,
@@ -87,11 +93,15 @@ function validate(values: FormValues): FieldErrors {
  *
  * 서버가 `snsUrl` 에 `.*\S.*` 패턴을 걸어 둬서 빈 문자열은 400 이다. null 은 통과한다.
  */
-function toRequestBody(values: FormValues): SellerProfileCreateRequestDto {
+function toRequestBody(
+  values: FormValues,
+  storeImageUrl: string | undefined,
+): SellerProfileCreateRequestDto {
   const optional = (value: string) => value.trim() || undefined
 
   return {
     storeName: values.storeName.trim(),
+    storeImageUrl,
     snsUrl: optional(normalizeSnsUrl(values.snsUrl)),
     storePhoneNumber: optional(values.storePhoneNumber),
     storeDescription: optional(values.storeDescription),
@@ -142,9 +152,14 @@ const FIELDS = [
  *
  * **삭제 버튼은 두 프레임 어디에도 없어서 두지 않았다.**
  *
- * 폼은 값과 검증만 맡는다. 어느 API 로 보낼지는 화면이 정한다.
- * 대표 이미지도 여기서 다루지 않는다 — 업로드 API 가 아직 없고, 수정 화면은
- * 조회로 받은 `storeImageUrl` 을 그대로 되돌려 보내야 하기 때문이다.
+ * 폼은 값과 검증을 맡는다. 프로필을 어느 API 로 보낼지는 화면이 정한다.
+ *
+ * **대표 이미지 업로드만 예외로 폼이 직접 부른다.** 고른 파일을 들고 있는 게 폼이고,
+ * 4개 화면이 저마다 올리면 같은 코드가 네 벌이 된다. 저장 버튼을 누르면 먼저 S3 에 올리고,
+ * 받은 주소를 `storeImageUrl` 에 넣어 `onSubmit` 으로 넘긴다.
+ *
+ * 파일을 새로 고르지 않았으면 조회로 받은 `initial.storeImageUrl` 을 그대로 되돌려 보낸다.
+ * 수정은 PUT 전체 교체라 이 값을 빼면 서버에서 `null` 로 덮어써 기존 사진이 지워진다.
  */
 export function SellerProfileForm({
   initial,
@@ -167,6 +182,11 @@ export function SellerProfileForm({
     storeDescription: initial?.storeDescription ?? '',
   })
   const [errors, setErrors] = useState<FieldErrors>({})
+  const [imageFile, setImageFile] = useState<File | null>(null)
+
+  const { uploadImage, uploading } = useImageUpload(
+    PresignedUrlRequestDtoDomain.SELLER_PROFILE,
+  )
 
   const update = (key: keyof FormValues) => (value: string) => {
     // 연락처는 입력하는 동안 하이픈을 자동으로 넣어준다.
@@ -175,18 +195,35 @@ export function SellerProfileForm({
     setErrors((prev) => ({ ...prev, [key]: undefined }))
   }
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
     const nextErrors = validate(values)
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
 
-    onSubmit(toRequestBody(values))
+    // 파일을 새로 고르지 않았으면 지금 사진 주소를 그대로 되돌려 보낸다.
+    let storeImageUrl = initial?.storeImageUrl ?? undefined
+
+    if (imageFile) {
+      try {
+        storeImageUrl = await uploadImage(imageFile)
+      } catch (error) {
+        toast.error(
+          error instanceof ImageUploadError
+            ? error.message
+            : '이미지를 올리지 못했어요.',
+          { description: '잠시 뒤에 다시 시도해 주세요.' },
+        )
+        return
+      }
+    }
+
+    onSubmit(toRequestBody(values, storeImageUrl))
   }
 
   return (
     <form
-      onSubmit={handleSubmit}
+      onSubmit={(event) => void handleSubmit(event)}
       className="grid gap-8 rounded-[20px] border bg-card p-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-12"
     >
       {/* 대표 이미지 — 280×280 */}
@@ -194,6 +231,7 @@ export function SellerProfileForm({
         label="대표 이미지"
         uploadText={uploadText}
         maxWidth={280}
+        onFileChange={setImageFile}
         // 등록된 프로필을 고칠 때는 지금 사진이 보여야 한다.
         // 서버에 사진이 없으면 가게 이름으로 만든 목업 사진을 대신 보여준다.
         initialUrl={
@@ -236,8 +274,17 @@ export function SellerProfileForm({
           />
         </div>
 
-        <Button type="submit" variant="brand" size="form" disabled={submitting}>
-          {submitting ? '저장 중…' : submitLabel}
+        <Button
+          type="submit"
+          variant="brand"
+          size="form"
+          disabled={submitting || uploading}
+        >
+          {uploading
+            ? '이미지 올리는 중…'
+            : submitting
+              ? '저장 중…'
+              : submitLabel}
         </Button>
       </div>
     </form>

@@ -108,6 +108,12 @@ if (rooms.length === 0) return <EmptyState ... />
   빼기, 거래 성사/실패)은 서버에서도 막혀 있어야 한다.
 - **직접 `axios`/`fetch` 를 부르지 않는다.** 모든 요청은 Orval 훅 →
   `custom-instance` 를 통과해야 인증·에러·개발 도구가 한 곳에서 걸린다.
+  - **예외는 S3 이미지 업로드 하나다** (`features/seller/use-image-upload.ts`).
+    발급받은 presigned URL 로 보내는 `PUT` 은 우리 서버가 아니라 S3 로 간다.
+    `custom-instance` 는 `withCredentials: true` 라 세션 쿠키를 싣는데, S3 는 서명
+    말고 다른 인증 정보가 붙으면 403 으로 거절한다. 그래서 순수 `fetch` 에
+    `credentials: 'omit'` 으로 보낸다. **presigned URL 을 받는 요청 자체는**
+    Orval 훅(`useCreatePresignedUrl`)을 그대로 쓴다.
 - 쿼리 키는 Orval 이 만든 것을 쓰고, 뮤테이션 뒤에는 관련 쿼리를
   `invalidateQueries` 로 무효화한다.
 
