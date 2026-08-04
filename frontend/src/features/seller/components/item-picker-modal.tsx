@@ -1,11 +1,16 @@
-import { Link } from '@tanstack/react-router'
 import { ProductThumbnail } from '@/components/product-thumbnail'
-import { Search } from 'lucide-react'
+import { ChevronLeft, Plus, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
+import { getGetListQueryKey, useCreate1 } from '@/api/generated/상품/상품'
+import type { ProductCreateRequestDto } from '@/api/generated/model'
 import { Modal } from '@/components/ui/modal'
+import { ProductForm } from '@/features/seller/components/product-form'
+import { toProductErrorMessage } from '@/features/seller/product-error'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
+import { toast } from '@/lib/toast'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useProductList } from '@/features/seller/use-product-list'
 
@@ -54,6 +59,9 @@ export function ItemPickerModal({
   const [keyword, setKeyword] = useState('')
   const debouncedKeyword = useDebouncedValue(keyword.trim())
 
+  const queryClient = useQueryClient()
+  const createProduct = useCreate1()
+
   // 시작가는 입력 중 빈 문자열일 수 있어 문자열로 들고 있다가 확정할 때 숫자로 바꾼다.
   const [selected, setSelected] = useState<
     { productId: number; name: string; startingPrice: string }[]
@@ -64,10 +72,18 @@ export function ItemPickerModal({
   const initialItemsRef = useRef(initialItems)
   initialItemsRef.current = initialItems
 
+  /*
+   * 상품이 없으면 여기서 바로 등록할 수 있어야 한다. 새 페이지로 보내면 고르던
+   * 선택과 시작가가 통째로 날아가서, 모달은 그대로 두고 내용만 바꾼다.
+   * `<dialog>` 를 하나 더 열지 않는 이유는 UI-RULES 의 `inert` 지뢰 때문이다.
+   */
+  const [mode, setMode] = useState<'pick' | 'create'>('pick')
+
   useEffect(() => {
     if (!open) return
 
     setKeyword('')
+    setMode('pick')
     setSelected(
       initialItemsRef.current.map((item) => ({
         productId: item.productId,
@@ -122,212 +138,275 @@ export function ItemPickerModal({
    */
   const canConfirm = selected.every((item) => Number(item.startingPrice) > 0)
 
+  /*
+   * 등록만 하고 고르기 화면으로 돌아온다. 자동으로 체크해 주지는 않는다 —
+   * 여러 개를 연달아 등록하고 나중에 고르는 흐름이 막히기 때문이다.
+   * 목록 쿼리를 비워야 방금 만든 상품이 바로 보인다(`staleTime` 이 1분이다).
+   */
+  const handleCreateProduct = (body: ProductCreateRequestDto) =>
+    createProduct.mutate(
+      { data: body },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({ queryKey: getGetListQueryKey() })
+          toast.success('상품을 등록했어요')
+          setKeyword('')
+          setMode('pick')
+        },
+        onError: (error) => {
+          const { title, description } = toProductErrorMessage(error)
+          toast.error(title, { description })
+        },
+      },
+    )
+
   return (
     <Modal
       open={open}
       onClose={close}
       labelledBy="pick-item-title"
+      closeButton
       className="max-w-[760px] p-5 md:p-7"
     >
       <div className="flex max-h-[calc(100svh-7rem)] flex-col">
+        {mode === 'create' && (
+          <button
+            type="button"
+            onClick={() => setMode('pick')}
+            className="ease-soft -ml-1 mb-2 flex w-fit shrink-0 items-center gap-0.5 rounded-lg py-1 pr-2 text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
+          >
+            <ChevronLeft aria-hidden className="size-4" />
+            고르기로 돌아가기
+          </button>
+        )}
+
         <h2
           id="pick-item-title"
           className="shrink-0 text-[20px] font-extrabold text-foreground md:text-[24px]"
         >
-          물품 추가
+          {mode === 'create' ? '새 상품 등록' : '물품 추가'}
         </h2>
         <p className="mt-2 shrink-0 text-[14px] font-medium text-neutral-tertiary">
-          고른 물품마다 시작가를 적고, 마지막에 한 번만 확인하면 돼요.
+          {mode === 'create'
+            ? '등록하면 아래 목록에 바로 나타나요. 고르던 물품은 그대로 있어요.'
+            : '고른 물품마다 시작가를 적고, 마지막에 한 번만 확인하면 돼요.'}
         </p>
 
-        <div className="mt-5 flex min-h-0 flex-1 flex-col">
-          <div className="relative shrink-0">
-            <Search
-              aria-hidden
-              className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-neutral-muted"
-            />
-            <input
-              type="search"
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder="상품명으로 검색"
-              aria-label="상품명으로 검색"
-              className="ease-soft h-12 w-full rounded-[14px] border bg-surface-subtle pr-4 pl-11 text-[14px] font-medium transition-colors duration-150 outline-none placeholder:text-neutral-muted focus-visible:border-brand-400"
+        {mode === 'create' ? (
+          <div className="mt-5 min-h-0 flex-1 overflow-y-auto">
+            <ProductForm
+              submitLabel="상품 등록"
+              uploadText="이미지 업로드"
+              submitting={createProduct.isPending}
+              // 모달이 이미 카드라 테두리와 여백이 겹친다.
+              className="rounded-none border-0 bg-transparent p-0 lg:grid-cols-1"
+              onSubmit={handleCreateProduct}
             />
           </div>
-
-          <p className="mt-4 shrink-0 text-[13px] font-bold text-neutral-secondary">
-            {/* 커서 페이지네이션이라 전체 개수를 모른다. 더 있으면 "+"로 적는다. */}
-            등록 상품 {visible.length}
-            {hasNextPage ? '+' : ''}개
-          </p>
-
-          {isPending ? (
-            <ul aria-hidden className="mt-3 space-y-3">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <li
-                  key={index}
-                  className="animate-skeleton h-[84px] rounded-[18px] bg-fill"
+        ) : (
+          <>
+            <div className="mt-5 flex min-h-0 flex-1 flex-col">
+              <div className="relative shrink-0">
+                <Search
+                  aria-hidden
+                  className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-neutral-muted"
                 />
-              ))}
-            </ul>
-          ) : isError ? (
-            <p className="mt-3 rounded-[18px] bg-surface-subtle px-4 py-10 text-center text-[13px] font-medium text-neutral-tertiary">
-              상품을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.
-            </p>
-          ) : visible.length === 0 ? (
-            <p className="mt-3 rounded-[18px] bg-surface-subtle px-4 py-10 text-center text-[13px] font-medium text-neutral-muted">
-              {debouncedKeyword ? (
-                '검색 결과가 없어요.'
-              ) : (
-                <>
-                  추가할 수 있는 상품이 없어요.{' '}
-                  <Link
-                    to="/seller/products/new"
-                    className="font-bold text-brand-500 hover:underline"
-                  >
-                    상품 등록하기
-                  </Link>
-                </>
-              )}
-            </p>
-          ) : (
-            <ul className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-              {visible.map((product) => {
-                const productId = product.productId as number
-                const name = product.name ?? ''
-                const picked = selected.find(
-                  (item) => item.productId === productId,
-                )
-                const checked = picked !== undefined
+                <input
+                  type="search"
+                  value={keyword}
+                  onChange={(event) => setKeyword(event.target.value)}
+                  placeholder="상품명으로 검색"
+                  aria-label="상품명으로 검색"
+                  className="ease-soft h-12 w-full rounded-[14px] border bg-surface-subtle pr-4 pl-11 text-[14px] font-medium transition-colors duration-150 outline-none placeholder:text-neutral-muted focus-visible:border-brand-400"
+                />
+              </div>
 
-                return (
-                  <li
-                    key={productId}
-                    className={cn(
-                      'ease-soft flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[18px] border p-3 transition-colors duration-150',
-                      checked
-                        ? 'border-brand-300 bg-brand-50/40'
-                        : 'bg-card hover:border-border-strong',
-                    )}
-                  >
-                    {/* 행 전체가 체크박스다. 시작가 칸은 button 안에 둘 수 없어 형제로 뺀다. */}
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={checked}
-                      onClick={() => toggle(productId, name)}
-                      className="flex min-w-[220px] flex-1 items-center gap-3 text-left"
-                    >
-                      <span
-                        aria-hidden
+              <div className="mt-4 flex shrink-0 items-center justify-between gap-3">
+                <p className="text-[13px] font-bold text-neutral-secondary">
+                  {/* 커서 페이지네이션이라 전체 개수를 모른다. 더 있으면 "+"로 적는다. */}
+                  등록 상품 {visible.length}
+                  {hasNextPage ? '+' : ''}개
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setMode('create')}
+                  className="ease-soft flex h-8 items-center gap-1 rounded-lg border bg-card px-2.5 text-[12px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-50 active:scale-95"
+                >
+                  <Plus aria-hidden className="size-3.5" />새 상품 등록
+                </button>
+              </div>
+
+              {isPending ? (
+                <ul aria-hidden className="mt-3 space-y-3">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <li
+                      key={index}
+                      className="animate-skeleton h-[84px] rounded-[18px] bg-fill"
+                    />
+                  ))}
+                </ul>
+              ) : isError ? (
+                <p className="mt-3 rounded-[18px] bg-surface-subtle px-4 py-10 text-center text-[13px] font-medium text-neutral-tertiary">
+                  상품을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.
+                </p>
+              ) : visible.length === 0 ? (
+                <p className="mt-3 rounded-[18px] bg-surface-subtle px-4 py-10 text-center text-[13px] font-medium text-neutral-muted">
+                  {debouncedKeyword ? (
+                    '검색 결과가 없어요.'
+                  ) : (
+                    <>
+                      추가할 수 있는 상품이 없어요.{' '}
+                      <button
+                        type="button"
+                        onClick={() => setMode('create')}
+                        className="font-bold text-brand-500 hover:underline"
+                      >
+                        상품 등록하기
+                      </button>
+                    </>
+                  )}
+                </p>
+              ) : (
+                <ul className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                  {visible.map((product) => {
+                    const productId = product.productId as number
+                    const name = product.name ?? ''
+                    const picked = selected.find(
+                      (item) => item.productId === productId,
+                    )
+                    const checked = picked !== undefined
+
+                    return (
+                      <li
+                        key={productId}
                         className={cn(
-                          'flex size-7 shrink-0 items-center justify-center rounded-lg border text-[14px] font-extrabold text-white',
-                          checked ? 'border-brand-500 bg-brand-500' : 'bg-card',
+                          'ease-soft flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[18px] border p-3 transition-colors duration-150',
+                          checked
+                            ? 'border-brand-300 bg-brand-50/40'
+                            : 'bg-card hover:border-border-strong',
                         )}
                       >
-                        {checked && '✓'}
-                      </span>
-
-                      <ProductThumbnail
-                        name={name}
-                        src={product.imageUrl}
-                        size={200}
-                        iconClassName="size-5"
-                        className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
-                      />
-
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[15px] font-bold text-foreground">
-                          {name}
-                        </span>
-                        <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
-                          {product.createdAt
-                            ? `${formatDate(product.createdAt)} 등록`
-                            : '-'}
-                        </span>
-                      </span>
-                    </button>
-
-                    {/* 고른 물품에만 나타난다. 좁은 화면에서는 아래 줄로 흐른다. */}
-                    {checked && (
-                      <div className="flex shrink-0 items-center gap-2">
-                        <label
-                          htmlFor={`picker-start-price-${productId}`}
-                          className="text-[12px] font-semibold text-neutral-tertiary"
+                        {/* 행 전체가 체크박스다. 시작가 칸은 button 안에 둘 수 없어 형제로 뺀다. */}
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={checked}
+                          onClick={() => toggle(productId, name)}
+                          className="flex min-w-[220px] flex-1 items-center gap-3 text-left"
                         >
-                          시작가
-                        </label>
-                        <input
-                          id={`picker-start-price-${productId}`}
-                          inputMode="numeric"
-                          value={
-                            picked.startingPrice
-                              ? Number(picked.startingPrice).toLocaleString(
-                                  'ko-KR',
-                                )
-                              : ''
-                          }
-                          placeholder="0"
-                          onChange={(event) =>
-                            setStartingPrice(productId, event.target.value)
-                          }
-                          className="h-11 w-[120px] rounded-xl border bg-card px-3 text-right text-[14px] font-semibold outline-none focus-visible:border-brand-400"
-                        />
-                        <span className="text-[13px] font-semibold text-neutral-tertiary">
-                          원
-                        </span>
-                      </div>
-                    )}
-                  </li>
-                )
-              })}
+                          <span
+                            aria-hidden
+                            className={cn(
+                              'flex size-7 shrink-0 items-center justify-center rounded-lg border text-[14px] font-extrabold text-white',
+                              checked
+                                ? 'border-brand-500 bg-brand-500'
+                                : 'bg-card',
+                            )}
+                          >
+                            {checked && '✓'}
+                          </span>
 
-              {hasNextPage && (
-                <li>
-                  <button
-                    type="button"
-                    disabled={isFetchingNextPage}
-                    onClick={() => void fetchNextPage()}
-                    className="ease-soft h-12 w-full rounded-[14px] border bg-card text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-[0.99] disabled:opacity-50"
-                  >
-                    {isFetchingNextPage ? '불러오는 중…' : '더 보기'}
-                  </button>
-                </li>
+                          <ProductThumbnail
+                            name={name}
+                            src={product.imageUrl}
+                            size={200}
+                            iconClassName="size-5"
+                            className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
+                          />
+
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[15px] font-bold text-foreground">
+                              {name}
+                            </span>
+                            <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
+                              {product.createdAt
+                                ? `${formatDate(product.createdAt)} 등록`
+                                : '-'}
+                            </span>
+                          </span>
+                        </button>
+
+                        {/* 고른 물품에만 나타난다. 좁은 화면에서는 아래 줄로 흐른다. */}
+                        {checked && (
+                          <div className="flex shrink-0 items-center gap-2">
+                            <label
+                              htmlFor={`picker-start-price-${productId}`}
+                              className="text-[12px] font-semibold text-neutral-tertiary"
+                            >
+                              시작가
+                            </label>
+                            <input
+                              id={`picker-start-price-${productId}`}
+                              inputMode="numeric"
+                              value={
+                                picked.startingPrice
+                                  ? Number(picked.startingPrice).toLocaleString(
+                                      'ko-KR',
+                                    )
+                                  : ''
+                              }
+                              placeholder="0"
+                              onChange={(event) =>
+                                setStartingPrice(productId, event.target.value)
+                              }
+                              className="h-11 w-[120px] rounded-xl border bg-card px-3 text-right text-[14px] font-semibold outline-none focus-visible:border-brand-400"
+                            />
+                            <span className="text-[13px] font-semibold text-neutral-tertiary">
+                              원
+                            </span>
+                          </div>
+                        )}
+                      </li>
+                    )
+                  })}
+
+                  {hasNextPage && (
+                    <li>
+                      <button
+                        type="button"
+                        disabled={isFetchingNextPage}
+                        onClick={() => void fetchNextPage()}
+                        className="ease-soft h-12 w-full rounded-[14px] border bg-card text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-[0.99] disabled:opacity-50"
+                      >
+                        {isFetchingNextPage ? '불러오는 중…' : '더 보기'}
+                      </button>
+                    </li>
+                  )}
+                </ul>
               )}
-            </ul>
-          )}
-        </div>
+            </div>
 
-        {/* 목록이 길어져도 늘 보이도록 아래에 고정한다. */}
-        <div className="mt-5 flex shrink-0 items-center gap-3 border-t pt-5">
-          <p className="text-[13px] font-bold text-neutral-secondary">
-            {selected.length}개 선택
-            {selected.length > 0 && !canConfirm && (
-              <span className="ml-2 font-semibold text-live">
-                시작가를 모두 입력해 주세요
-              </span>
-            )}
-          </p>
+            {/* 목록이 길어져도 늘 보이도록 아래에 고정한다. */}
+            <div className="mt-5 flex shrink-0 items-center gap-3 border-t pt-5">
+              <p className="text-[13px] font-bold text-neutral-secondary">
+                {selected.length}개 선택
+                {selected.length > 0 && !canConfirm && (
+                  <span className="ml-2 font-semibold text-live">
+                    시작가를 모두 입력해 주세요
+                  </span>
+                )}
+              </p>
 
-          <button
-            type="button"
-            disabled={!canConfirm}
-            onClick={() => {
-              onConfirm(
-                selected.map((item) => ({
-                  productId: item.productId,
-                  name: item.name,
-                  startingPrice: Number(item.startingPrice),
-                })),
-              )
-              close()
-            }}
-            className="ease-soft ml-auto flex h-12 min-w-[140px] items-center justify-center rounded-[14px] bg-brand-500 px-6 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
-          >
-            선택 완료
-          </button>
-        </div>
+              <button
+                type="button"
+                disabled={!canConfirm}
+                onClick={() => {
+                  onConfirm(
+                    selected.map((item) => ({
+                      productId: item.productId,
+                      name: item.name,
+                      startingPrice: Number(item.startingPrice),
+                    })),
+                  )
+                  close()
+                }}
+                className="ease-soft ml-auto flex h-12 min-w-[140px] items-center justify-center rounded-[14px] bg-brand-500 px-6 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
+              >
+                선택 완료
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   )

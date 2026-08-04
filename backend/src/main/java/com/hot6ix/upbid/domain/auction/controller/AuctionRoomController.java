@@ -44,9 +44,10 @@ public class AuctionRoomController implements AuctionRoomApi {
     @GetMapping("/{roomId}")
     @GuestAllowed
     @Override
-    public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(@PathVariable Long roomId) {
+    public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(
+            Long userId, @PathVariable Long roomId) {
 
-        AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(roomId);
+        AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(roomId, userId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매방 정보 조회에 성공했습니다."));
     }
@@ -87,9 +88,9 @@ public class AuctionRoomController implements AuctionRoomApi {
     @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoomByShareCode(
-            @PathVariable String shareCode) {
+            Long userId, @PathVariable String shareCode) {
 
-        AuctionRoomPublicResponseDto response = auctionRoomService.getRoomByShareCode(shareCode);
+        AuctionRoomPublicResponseDto response = auctionRoomService.getRoomByShareCode(shareCode, userId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매방 정보 조회에 성공했습니다."));
     }

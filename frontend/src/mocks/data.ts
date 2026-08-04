@@ -3,7 +3,6 @@ import type {
   AuctionRoomDetail,
   AuctionRoomSummary,
   Product,
-  RoomEvent,
   TradeSummary,
 } from '@/mocks/types'
 
@@ -843,92 +842,6 @@ const ALL_ITEMS: AuctionItemDetail[] = Object.values(MOCK_ROOM_DETAILS).flatMap(
 export function findMockItem(itemId: number): AuctionItemDetail | undefined {
   return ALL_ITEMS.find((item) => item.id === itemId)
 }
-
-/** 라이브 방에 들어갔을 때 이미 쌓여 있는 이벤트. 방마다 자기 물품 이름을 쓴다. */
-const ROOM_EVENTS: Record<number, RoomEvent[]> = {
-  1: [
-    {
-      id: 6,
-      at: before(1),
-      kind: 'BID',
-      message: '스니커홀릭님이 85,000원 입찰',
-      subtitle: '한정판 조던 스니커즈',
-      emphasized: true,
-    },
-    {
-      id: 5,
-      at: before(2),
-      kind: 'EXTEND',
-      message: '마감 1분 전 입찰 발생 · 마감 +30초 자동 연장',
-      subtitle: '빈티지 데님 자켓',
-      emphasized: true,
-    },
-    {
-      id: 4,
-      at: before(3),
-      kind: 'BID',
-      message: '데님러버님이 13,000원 입찰',
-      subtitle: '빈티지 데님 자켓',
-    },
-    {
-      id: 3,
-      at: before(4),
-      kind: 'CLOSE',
-      message: '빈티지 데님 자켓 마감 1분 전',
-    },
-    {
-      id: 2,
-      at: before(7),
-      kind: 'CLOSE',
-      message: '핸드메이드 가죽지갑 낙찰 확정',
-      subtitle: '45,000원 · 가죽공방님',
-      emphasized: true,
-    },
-    {
-      id: 1,
-      at: before(10),
-      kind: 'START',
-      message: '한정판 조던 스니커즈 경매가 시작됐어요',
-    },
-  ],
-  2: [
-    {
-      id: 4,
-      at: before(2),
-      kind: 'BID',
-      message: '피규어덕후님이 22,000원 입찰',
-      subtitle: '희귀 포토카드 세트',
-      emphasized: true,
-    },
-    {
-      id: 3,
-      at: before(3),
-      kind: 'BID',
-      message: '앨범수집가님이 9,000원 입찰',
-      subtitle: '미니앨범 한정 포토카드',
-    },
-    {
-      id: 2,
-      at: before(6),
-      kind: 'START',
-      message: '미니앨범 한정 포토카드 경매가 시작됐어요',
-    },
-    {
-      id: 1,
-      at: before(9),
-      kind: 'START',
-      message: '희귀 포토카드 세트 경매가 시작됐어요',
-    },
-  ],
-}
-
-/** 라이브 방 이벤트 피드의 초기값. 실시간 이벤트가 이 위에 쌓인다. */
-export function mockRoomEvents(roomId: number): RoomEvent[] {
-  return ROOM_EVENTS[roomId] ?? []
-}
-
-/** 라이브 방(1번) 이벤트. 방을 지정하지 않는 화면이 쓴다. */
-export const MOCK_ROOM_EVENTS = ROOM_EVENTS[1]
 
 /**
  * 내 상품.

@@ -47,7 +47,10 @@ public interface AuctionRoomApi {
     @Operation(
             summary = "경매방 정보 조회",
             description = "경매방의 공개 정보를 조회한다. 인증이 필요 없으며, 경매 시작 전(BEFORE)을 포함한 "
-                    + "모든 상태에서 동일하게 노출한다."
+                    + "모든 상태에서 동일하게 노출한다. "
+                    + "isOwner만 보는 사람에 따라 달라진다 — 방 주인이 로그인한 상태로 조회했을 때만 true이며, "
+                    + "화면이 판매자 조작(물품 추가·빼기·시작) UI를 띄울지 정하는 값이다. "
+                    + "실제 권한은 각 조작 API가 다시 검증하므로 이 값을 권한의 근거로 쓰지 않는다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -55,6 +58,7 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "404", description = "존재하지 않거나 삭제된 경매방 (code 4002)")
     })
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "조회할 경매방 ID", required = true)
             @PathVariable Long roomId);
 
@@ -133,6 +137,7 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
     })
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoomByShareCode(
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "경매방 공유 코드", required = true)
             @PathVariable String shareCode);
 
