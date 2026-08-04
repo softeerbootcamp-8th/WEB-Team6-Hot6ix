@@ -4,7 +4,12 @@ import { Link } from '@tanstack/react-router'
 import { ItemEventList } from '@/features/live/components/item-event-list'
 import { LeaderboardRows } from '@/features/live/components/leaderboard-rows'
 import { ProductThumbnail } from '@/components/product-thumbnail'
-import { formatRemaining, formatWon } from '@/lib/format'
+import {
+  formatRemaining,
+  formatUrlLabel,
+  formatWon,
+  toHref,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 
@@ -105,13 +110,13 @@ export function ItemDetailPanel({
 
           {item.productUrl && (
             <a
-              href={`https://${item.productUrl}`}
+              href={toHref(item.productUrl)}
               target="_blank"
               rel="noreferrer noopener"
               className="mt-4 flex items-center gap-1.5 text-[13px] font-semibold text-brand-500 hover:underline"
             >
               <Share2 aria-hidden className="size-3.5" />
-              상품 링크 · {item.productUrl}
+              상품 링크 · {formatUrlLabel(item.productUrl)}
             </a>
           )}
 
