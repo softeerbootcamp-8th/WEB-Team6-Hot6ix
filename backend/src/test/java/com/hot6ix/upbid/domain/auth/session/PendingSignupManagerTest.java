@@ -5,18 +5,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
 import com.hot6ix.upbid.global.session.SessionKeys;
+import java.time.Duration;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class PendingSignupManagerTest {
 
     private static final PendingSignup PENDING_SIGNUP = new PendingSignup(
             OauthProvider.KAKAO, "1234567890", "user@hot6ix.com", "승민", null);
 
+    private static final Duration ONBOARDING_TIMEOUT = Duration.ofMinutes(10);
+
     private final PendingSignupManager pendingSignupManager = new PendingSignupManager();
     private final MockHttpServletRequest request = new MockHttpServletRequest();
+
+    @BeforeEach
+    void 온보딩_세션_수명을_주입한다() {
+        ReflectionTestUtils.setField(pendingSignupManager, "onboardingTimeout", ONBOARDING_TIMEOUT);
+    }
 
     @Nested
     @DisplayName("save")
@@ -31,6 +41,16 @@ class PendingSignupManagerTest {
             assertThat(request.getSession(false)).isNotNull();
             assertThat(request.getSession(false).getAttribute(SessionKeys.PENDING_SIGNUP))
                     .isEqualTo(PENDING_SIGNUP);
+        }
+
+        @Test
+        @DisplayName("세션 수명을 온보딩용으로 짧게 조정한다")
+        void appliesOnboardingTimeout() {
+
+            pendingSignupManager.save(request, PENDING_SIGNUP);
+
+            assertThat(request.getSession(false).getMaxInactiveInterval())
+                    .isEqualTo((int) ONBOARDING_TIMEOUT.toSeconds());
         }
 
         @Test
