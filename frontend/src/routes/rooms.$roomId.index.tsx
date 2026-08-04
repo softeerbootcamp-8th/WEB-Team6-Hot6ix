@@ -368,6 +368,24 @@ function LiveRoomPage() {
         case 'ParticipantCount':
           setParticipantCount(payload.participantCount)
           break
+
+        /*
+         * 판매자가 물품을 넣거나 뺐다. 목록만 다시 읽고 이벤트 피드에는 쌓지 않는다
+         * — 편성 변경은 입찰·마감 같은 경매 진행 사건이 아니고, 벌크로 20개를 넣으면
+         * 피드가 그것만으로 가득 찬다.
+         *
+         * 판매자 본인 화면도 `handleAdd`·`handleRemove` 에서 같은 방식으로 목록을
+         * 다시 읽는다. 양쪽이 같은 경로라 이벤트와 응답이 겹쳐도 물품이 두 번
+         * 들어가지 않는다 — `setItems(null)` 이 화면 편성분을 버리고 서버 목록으로
+         * 되돌리기 때문이다.
+         */
+        case 'ItemAdded':
+        case 'ItemRemoved':
+          setItems(null)
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(auctionRoomId),
+          })
+          break
       }
     },
     [roomItems, myNickname, auctionRoomId, queryClient],
