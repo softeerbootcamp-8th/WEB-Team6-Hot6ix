@@ -33,7 +33,6 @@ import {
   MOCK_PRODUCTS,
   MOCK_ROOM_DETAIL,
   MOCK_ROOMS,
-  mockRoomEvents,
 } from '@/mocks/data'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
@@ -86,6 +85,8 @@ function LiveRoomPage() {
   const isDesktop = useIsDesktop()
 
   const isGuest = user === null
+  /** 리더보드에서 내 줄을 찾는 기준. 서버가 `isMe` 를 안 줘서 닉네임으로 맞춘다. */
+  const myNickname = user?.nickname ?? null
 
   // 방마다 자기 물품을 가진 목업 상세가 있다. 없는 방 번호면 라이브 방을 쓴다.
   const room = findMockRoom(Number(roomId)) ?? MOCK_ROOM_DETAIL
@@ -131,20 +132,19 @@ function LiveRoomPage() {
     query: { enabled: Number.isInteger(auctionRoomId) },
   })
   const serverItems = useMemo(
-    () => toAuctionItems(summaries.data?.data ?? []),
-    [summaries.data],
+    () => toAuctionItems(summaries.data?.data ?? [], myNickname),
+    [summaries.data, myNickname],
   )
 
   /*
-   * 서버가 물품을 주면 그 값을 쓰고, 비었거나 못 받았으면 목업으로 채운다.
+   * 물품은 서버 값만 쓴다.
    *
-   * 백엔드에 이 방 데이터가 없으면 화면이 통째로 비어서 방을 볼 수가 없다.
-   * 서버가 하나라도 주는 순간 그쪽이 이기므로 실제 연동은 그대로 살아 있다.
-   * **시연용 임시 조치다.** 이 방 물품이 실제 API 로 넘어가면 목업 쪽을 지운다.
+   * 예전에는 서버가 빈 목록을 주면 목업 물품으로 갈아탔다. 화면은 채워지지만
+   * 리더보드·현재가가 실제 입찰과 무관한 가짜였고, 화면상 구분이 되지 않아
+   * 백엔드가 값을 안 주고 있다는 사실 자체가 가려졌다. 비어 보이는 게 낫다.
    */
-  const usingMockItems = serverItems.length === 0
   // 편성을 바꾸기 전까지는 서버가 준 목록을 그대로 쓴다.
-  const roomItems = items ?? (usingMockItems ? room.items : serverItems)
+  const roomItems = items ?? serverItems
   const roomItemsRef = useRef(roomItems)
   useEffect(() => {
     roomItemsRef.current = roomItems
@@ -221,7 +221,7 @@ function LiveRoomPage() {
                         rank: 1,
                         nickname: payload.bidderNickname,
                         amount: payload.bidPrice,
-                        isMe: false,
+                        isMe: payload.bidderNickname === myNickname,
                       },
                       ...item.leaderboard.filter(
                         (entry) => entry.nickname !== payload.bidderNickname,
@@ -299,7 +299,7 @@ function LiveRoomPage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [roomItems],
+    [roomItems, myNickname],
   )
 
   const { status } = useRealtimeStatus(roomId, handleSseEvent)
@@ -340,7 +340,7 @@ function LiveRoomPage() {
         <div key={row} className="h-[76px] animate-skeleton rounded-2xl" />
       ))}
     </div>
-  ) : // 목업으로 대신 채웠으면 에러를 띄우지 않는다. 보여줄 물품이 이미 있다.
+  ) : // 편성을 바꿔서 보여줄 물품이 있으면 에러를 띄우지 않는다.
   summaries.isError && roomItems.length === 0 ? (
     <div className="mt-2.5 rounded-2xl border bg-card px-4 py-8 text-center">
       <p className="text-[13px] font-medium text-neutral-muted">
@@ -355,13 +355,29 @@ function LiveRoomPage() {
         다시 시도
       </Button>
     </div>
+  ) : roomItems.length === 0 ? (
+    /*
+     * 서버가 빈 목록을 준 경우. 목업으로 채우지 않으므로 이 자리가 실제로
+     * 보인다. 열이 통째로 비면 로딩이 멈춘 것처럼 보여서 한 줄이라도 남긴다.
+     */
+    <div className="mt-2.5 rounded-2xl border bg-card px-4 py-8 text-center">
+      <p className="text-[13px] font-medium text-neutral-muted">
+        아직 등록된 물품이 없어요.
+      </p>
+    </div>
   ) : null
 
-  // 방에 들어가면 지금까지 쌓인 이벤트가 이미 보이고, 그 위에 실시간이 붙는다.
-  const roomEvents = useMemo(
-    () => [...mockRoomEvents(auctionRoomId), ...extraEvents],
-    [auctionRoomId, extraEvents],
-  )
+  /*
+   * 이벤트 피드는 SSE 로 들어온 것만 보여준다.
+   *
+   * 예전에는 목업 이벤트를 초기값으로 깔았다. 방에 들어가자마자 피드가 차 있어
+   * 그럴듯해 보였지만 전부 가짜였고, 실시간 이벤트가 그 위에 섞여 들어와
+   * 어느 줄이 실제 입찰인지 구분할 수 없었다.
+   *
+   * 입장 전에 쌓인 이벤트를 되살리려면 서버에 이벤트 이력 API 가 필요하다.
+   * 그때까지 피드는 입장 후부터 채워진다.
+   */
+  const roomEvents = extraEvents
 
   // 방을 만든 사람만 물품을 넣고 뺄 수 있다.
   /*
@@ -404,16 +420,15 @@ function LiveRoomPage() {
    */
   const listItem = roomItems.find((item) => item.id === detailItemId) ?? null
   const detailQuery = useGetDetail1(detailItemId ?? 0, {
-    // 목업 물품은 서버에 없다. 부르면 매번 404 만 쌓인다.
-    query: { enabled: detailItemId !== null && !usingMockItems },
+    query: { enabled: detailItemId !== null },
   })
   const detailItem = useMemo(() => {
     if (!listItem) return null
     const dto = detailQuery.data?.data
     // 물품을 갈아탄 직후에는 이전 물품의 상세가 남아 있다. 그때는 목록 값을 쓴다.
     if (!dto || dto.auctionItemId !== listItem.id) return listItem
-    return toAuctionItemDetail(dto, listItem)
-  }, [listItem, detailQuery.data])
+    return toAuctionItemDetail(dto, listItem, myNickname)
+  }, [listItem, detailQuery.data, myNickname])
 
   const detailMinimum = detailItem
     ? detailItem.currentPrice + detailItem.bidUnit
@@ -450,69 +465,8 @@ function LiveRoomPage() {
     })
   }
 
-  /**
-   * 목업 물품 입찰을 화면에서 처리한다.
-   *
-   * 서버에 없는 물품이라 API 를 부르면 반드시 실패한다. 시연에서 입찰 흐름을
-   * 보여줄 수 있도록 현재가·리더보드·이벤트 피드만 직접 갱신한다.
-   *
-   * "서버 확정 전에 성공으로 표시하지 않는다"(루트 CLAUDE.md)를 **목업
-   * 물품에 한해** 비켜 간다. 서버가 준 물품은 아래 실제 경로로 가므로
-   * 실 서비스 규칙은 그대로다. 물품이 API 로 넘어가면 이 함수를 지운다.
-   */
-  const applyMockBid = (item: AuctionItemDetail, amount: number) => {
-    const nickname = user?.nickname ?? '나'
-    const at = new Date().toISOString()
-
-    setItems(
-      roomItems.map((candidate) =>
-        candidate.id === item.id
-          ? {
-              ...candidate,
-              currentPrice: amount,
-              topBidderNickname: nickname,
-              bidCount: candidate.bidCount + 1,
-              leaderboard: [
-                { rank: 1, nickname, amount, isMe: true },
-                ...candidate.leaderboard.filter((entry) => !entry.isMe),
-              ]
-                .slice(0, 5)
-                .map((entry, index) => ({ ...entry, rank: index + 1 })),
-              history: [
-                { id: Date.now(), nickname, amount, bidAt: at },
-                ...candidate.history,
-              ],
-            }
-          : candidate,
-      ),
-    )
-    setExtraEvents((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        at,
-        kind: 'BID',
-        message: `${nickname}님이 ${formatWon(amount)} 입찰`,
-        subtitle: item.name,
-        emphasized: true,
-      },
-    ])
-  }
-
   const submitDetailBid = async () => {
     if (!detailItem) return
-
-    if (usingMockItems) {
-      applyMockBid(detailItem, detailAmount)
-      setDetailFeedback({
-        tone: 'success',
-        message: `${formatWon(detailAmount)} 입찰이 등록됐어요.`,
-      })
-      toast.success('입찰이 등록됐어요', {
-        description: `${detailItem.name} · ${formatWon(detailAmount)}`,
-      })
-      return
-    }
 
     setDetailPending(true)
     setDetailFeedback(null)
@@ -670,16 +624,6 @@ function LiveRoomPage() {
 
   const confirmBid = async () => {
     if (!pendingBid) return
-
-    if (usingMockItems) {
-      applyMockBid(pendingBid.item, pendingBid.amount)
-      toast.success('입찰이 등록됐어요', {
-        description: `${pendingBid.item.name} · ${formatWon(pendingBid.amount)}`,
-      })
-      setPendingBid(null)
-      setPanel('leaderboard')
-      return
-    }
 
     setSubmitting(true)
 

@@ -17,12 +17,7 @@ import {
   toAuctionItems,
 } from '@/features/live/adapt-item'
 import { toBidErrorMessage } from '@/features/live/bid-error'
-import {
-  findMockItem,
-  findMockRoom,
-  MOCK_ROOM_DETAIL,
-  mockRoomEvents,
-} from '@/mocks/data'
+import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -69,20 +64,22 @@ function AuctionItemPage() {
   })
   const placeBid = usePlace()
 
+  /** 리더보드에서 내 줄을 찾는 기준. 서버가 `isMe` 를 안 줘서 닉네임으로 맞춘다. */
+  const myNickname = user?.nickname ?? null
+
   const serverItems = useMemo(
-    () => toAuctionItems(summaries.data?.data ?? []),
-    [summaries.data],
+    () => toAuctionItems(summaries.data?.data ?? [], myNickname),
+    [summaries.data, myNickname],
   )
 
   /*
-   * 방 제목·판매자명은 아직 목업이다. 물품 배열만 서버 값으로 바꾼다.
-   * 서버가 아무것도 안 주면 그 방의 목업 물품으로 채운다 (시연용 임시 조치).
+   * 방 제목·판매자명은 아직 목업이다. 물품 배열은 서버 값만 쓴다 —
+   * 목업으로 채우면 실제 입찰과 무관한 현재가·리더보드가 그대로 보인다.
    */
   const mockRoom = findMockRoom(auctionRoomId) ?? MOCK_ROOM_DETAIL
-  const mockItem = findMockItem(auctionItemId)
   const room = {
     ...mockRoom,
-    items: serverItems.length > 0 ? serverItems : mockRoom.items,
+    items: serverItems,
   }
   const isGuest = user === null
 
@@ -101,18 +98,19 @@ function AuctionItemPage() {
    * 상세 API 가 원본이고, 목록은 왼쪽 열용이다.
    *
    * 아직 아무것도 못 받았으면 목업 하나를 자리에 놓는다. 훅 순서를 지키려면
-   * 렌더 도중에 빠져나갈 수 없어서다. 실제로 목업이 보이는 일은 없다 —
-   * 아래에서 로딩·에러를 먼저 걸러낸다.
+   * 렌더 도중에 빠져나갈 수 없어서다. **이 목업이 화면에 보이는 일은 없다** —
+   * 아래에서 로딩·에러를 먼저 걸러내고 돌려보낸다. 서버 값이 도착하면 이름·
+   * 금액·리더보드는 전부 덮이고, 서버에 없는 필드(카테고리·입찰 수·이력)만
+   * 남는다.
    */
   const detailDto = detailQuery.data?.data
   const base = useMemo(() => {
     const listItem =
       serverItems.find((candidate) => candidate.id === auctionItemId) ??
-      mockItem ??
       fallbackItem(0)
     if (!detailDto || detailDto.auctionItemId !== auctionItemId) return listItem
-    return toAuctionItemDetail(detailDto, listItem)
-  }, [serverItems, detailDto, auctionItemId, mockItem])
+    return toAuctionItemDetail(detailDto, listItem, myNickname)
+  }, [serverItems, detailDto, auctionItemId, myNickname])
 
   const item = override?.id === base.id ? override : base
 
@@ -184,7 +182,7 @@ function AuctionItemPage() {
                   rank: 1,
                   nickname: payload.bidderNickname,
                   amount: payload.bidPrice,
-                  isMe: false,
+                  isMe: payload.bidderNickname === myNickname,
                 },
                 ...base.leaderboard.filter(
                   (entry) => entry.nickname !== payload.bidderNickname,
@@ -242,7 +240,7 @@ function AuctionItemPage() {
           break
       }
     },
-    [item],
+    [item, myNickname],
   )
 
   const { status } = useRealtimeStatus(roomId, handleSseEvent)
@@ -280,16 +278,14 @@ function AuctionItemPage() {
     return room.items.filter((candidate) => candidate.name.includes(trimmed))
   }, [room.items, keyword])
 
-  const itemEvents = useMemo(
-    () => [
-      ...mockRoomEvents(auctionRoomId).filter(
-        (event) =>
-          event.subtitle === item.name || event.message.includes(item.name),
-      ),
-      ...extraEvents,
-    ],
-    [item.name, extraEvents, auctionRoomId],
-  )
+  /*
+   * 이벤트 피드는 SSE 로 들어온 것만 보여준다. 목업 초기값을 깔면 실시간
+   * 이벤트와 섞여서 어느 줄이 실제 입찰인지 구분할 수 없다.
+   *
+   * 이 화면의 `extraEvents` 는 이미 이 물품 것만 담긴다 — SSE 핸들러가
+   * `payload.itemId !== item.id` 를 먼저 걸러낸다.
+   */
+  const itemEvents = extraEvents
 
   /**
    * 개발용 데모 입찰. 경매방 화면의 같은 버튼과 짝을 맞춘다.
@@ -366,9 +362,8 @@ function AuctionItemPage() {
    * 단독 페이지라, 상세를 못 받으면 보여줄 게 없다. 실시간 연결을 지킬 이유도
    * 없으므로 전역 상태 화면을 그대로 쓴다.
    */
-  // 목업 물품으로 대신 채웠으면 로딩·에러 화면으로 덮지 않는다.
-  if (detailQuery.isPending && !mockItem) return <RoutePending />
-  if (detailQuery.isError && !mockItem) {
+  if (detailQuery.isPending) return <RoutePending />
+  if (detailQuery.isError) {
     return (
       <RouteError
         error={detailQuery.error as Error}
