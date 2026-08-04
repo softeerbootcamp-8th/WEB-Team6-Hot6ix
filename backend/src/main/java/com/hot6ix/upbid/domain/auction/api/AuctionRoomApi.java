@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
@@ -82,6 +83,27 @@ public interface AuctionRoomApi {
             @RequestParam(required = false) @Positive(message = "cursor는 양수여야 합니다.") Long cursor,
             @Parameter(description = "페이지 크기, 기본값 20")
             @RequestParam(required = false) @Min(value = 1, message = "size는 1 이상이어야 합니다.") Integer size);
+
+    @Operation(
+            summary = "경매방 낙찰 결과 조회",
+            description = "경매방의 물품별 낙찰·유찰 결과를 한 번에 조회한다. 인증이 필요 없고, 로그인한 "
+                    + "요청에만 물품마다 요청자의 최종 순위(myRank)와 부른 최고가(myAmount)가 함께 담긴다. "
+                    + "낙찰가와 낙찰자는 낙찰(SOLD)인 물품에만 있다 — 유찰 물품의 현재가는 아무도 부르지 "
+                    + "않은 시작가라 가격으로 내리지 않는다. "
+                    + "방 상태로 거르지 않으므로 아직 열려 있는 방도 조회되며, 진행 중인 물품은 status로 드러난다. "
+                    + "낙찰 건수·유찰 건수·총 낙찰액은 화면이 items에서 직접 세므로 응답에 없다. "
+                    + "참여자 수도 없다 — 종료된 방의 참여자 수는 입찰한 사람 수인지 방송을 보던 사람 수인지 "
+                    + "구분되지 않아 내리지 않는다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "400", description = "경로 변수가 숫자가 아니라면 code 2002"),
+            @ApiResponse(responseCode = "404", description = "존재하지 않거나 삭제된 경매방 (code 4002)")
+    })
+    ResponseEntity<CommonResponse<AuctionRoomResultResponseDto>> getResults(
+            @Parameter(description = "결과를 조회할 경매방 ID", required = true)
+            @PathVariable Long roomId,
+            @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
             summary = "경매방 공유 링크 조회",

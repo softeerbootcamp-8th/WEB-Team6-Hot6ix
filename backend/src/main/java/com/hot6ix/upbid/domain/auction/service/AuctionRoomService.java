@@ -2,14 +2,19 @@ package com.hot6ix.upbid.domain.auction.service;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
+import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -17,6 +22,8 @@ import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
 import com.hot6ix.upbid.global.response.CursorPageResponse;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -34,6 +41,11 @@ public class AuctionRoomService {
     private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final AuctionRoomShareService auctionRoomShareService;
+    /**
+     * 결과 화면의 "내 최종 순위"만을 위해 거래 도메인을 읽는다. 낙찰자는 경매 물품에, 순위는
+     * 낙찰 후보에 있어 한쪽은 반드시 경계를 넘어야 한다. 읽기만 하고 상태를 바꾸지 않는다.
+     */
+    private final DealCandidateRepository dealCandidateRepository;
 
     /**
      * 판매자의 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며(충돌 시 재시도),
@@ -123,6 +135,64 @@ public class AuctionRoomService {
         Long nextCursor = hasNext ? content.get(content.size() - 1).auctionRoomId() : null;
 
         return CursorPageResponse.of(content, nextCursor);
+    }
+
+    /**
+     * 경매방의 물품별 낙찰 결과를 조회한다. 인증이 필요 없으며, 로그인한 요청에만 물품마다
+     * 요청자의 최종 순위를 함께 담는다.
+     *
+     * <p>상태로 거르지 않는다. 방이 아직 열려 있어도 마감된 물품의 결과는 볼 수 있어야 하고,
+     * 어느 물품이 아직 진행 중인지는 {@code status}로 드러난다.
+     *
+     * <p>쿼리는 두 번이다 — 물품과 낙찰자를 한 번, 요청자의 순위를 한 번. 물품마다 후보를
+     * 조회하면 물품 수만큼 쿼리가 나간다.
+     *
+     * @param auctionRoomId 조회할 경매방의 ID
+     * @param userId        요청자의 회원 ID. 비로그인이면 {@code null}
+     * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
+     */
+    public AuctionRoomResultResponseDto getResults(Long auctionRoomId, Long userId) {
+
+        AuctionRoom auctionRoom = auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        Map<Long, MyCandidateRankProjection> myRanks = findMyRanks(auctionRoomId, userId);
+
+        List<AuctionItemResultResponseDto> items = auctionItemRepository.findResults(auctionRoomId).stream()
+                .map(item -> toResult(item, myRanks.get(item.auctionItemId())))
+                .toList();
+
+        return AuctionRoomResultResponseDto.of(auctionRoom, items);
+    }
+
+    /** 비로그인이면 조회하지 않는다. 순위를 물어볼 사람이 없다. */
+    private Map<Long, MyCandidateRankProjection> findMyRanks(Long auctionRoomId, Long userId) {
+        if (userId == null) {
+            return Map.of();
+        }
+        return dealCandidateRepository.findMyRanksInRoom(auctionRoomId, userId).stream()
+                .collect(Collectors.toMap(MyCandidateRankProjection::auctionItemId, rank -> rank));
+    }
+
+    /**
+     * 낙찰자와 낙찰가는 {@code SOLD}일 때만 채운다. {@code leaderUser}는 입찰이 들어올 때마다
+     * 갱신되므로 진행 중인 물품에도 값이 있는데, 그 사람은 아직 낙찰자가 아니다.
+     * 유찰 물품의 {@code currentPrice}가 시작가로 남아 있는 것도 같은 이유로 내리지 않는다.
+     */
+    private AuctionItemResultResponseDto toResult(
+            AuctionItemResultProjection item, MyCandidateRankProjection myRank) {
+
+        boolean sold = item.status() == AuctionItemStatus.SOLD;
+
+        return new AuctionItemResultResponseDto(
+                item.auctionItemId(),
+                item.productName(),
+                item.imageUrl(),
+                item.status(),
+                sold ? item.currentPrice() : null,
+                sold ? item.leaderNickname() : null,
+                myRank == null ? null : myRank.candidateRank(),
+                myRank == null ? null : myRank.bidAmount());
     }
 
     /**

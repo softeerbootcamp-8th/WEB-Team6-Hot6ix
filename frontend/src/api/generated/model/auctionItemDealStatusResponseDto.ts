@@ -9,14 +9,15 @@
 **그 외 환경**: 카카오 로그인 후 발급된 SESSION 쿠키가 자동으로 포함됩니다.
  * OpenAPI spec version: v1
  */
+import type { AuctionItemDealStatusResponseDtoDealStatus } from './auctionItemDealStatusResponseDtoDealStatus';
 
-export type DealSummaryResponseDtoStatus = typeof DealSummaryResponseDtoStatus[keyof typeof DealSummaryResponseDtoStatus];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const DealSummaryResponseDtoStatus = {
-  IN_PROGRESS: 'IN_PROGRESS',
-  COMPLETED: 'COMPLETED',
-  UNSOLD: 'UNSOLD',
-  ALL_FAILED: 'ALL_FAILED',
-} as const;
+export interface AuctionItemDealStatusResponseDto {
+  auctionItemId?: number;
+  productName?: string;
+  dealStatus?: AuctionItemDealStatusResponseDtoDealStatus;
+  amount?: number;
+  dealCandidateId?: number;
+  partnerNickname?: string;
+  candidateCount?: number;
+  failedCandidateCount?: number;
+}

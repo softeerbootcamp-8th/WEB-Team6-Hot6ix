@@ -10,13 +10,12 @@
  * OpenAPI spec version: v1
  */
 
-export type DealSummaryResponseDtoStatus = typeof DealSummaryResponseDtoStatus[keyof typeof DealSummaryResponseDtoStatus];
+export type AuctionRoomResultResponseDtoStatus = typeof AuctionRoomResultResponseDtoStatus[keyof typeof AuctionRoomResultResponseDtoStatus];
 
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export const DealSummaryResponseDtoStatus = {
-  IN_PROGRESS: 'IN_PROGRESS',
-  COMPLETED: 'COMPLETED',
-  UNSOLD: 'UNSOLD',
-  ALL_FAILED: 'ALL_FAILED',
+export const AuctionRoomResultResponseDtoStatus = {
+  BEFORE: 'BEFORE',
+  OPEN: 'OPEN',
+  CLOSED: 'CLOSED',
 } as const;

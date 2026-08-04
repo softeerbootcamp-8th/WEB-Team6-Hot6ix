@@ -285,7 +285,8 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
 
         assertThat(dealRepository.findDeals(seller.getUserId(),
                 AuctionItemStatus.SOLD.name(), AuctionItemStatus.FAILED.name(),
-                DealCandidateStatus.COMPLETED.name(), DealCandidateStatus.FAILED.name(), 1))
+                DealCandidateStatus.COMPLETED.name(), DealCandidateStatus.WAITING.name(),
+                DealCandidateStatus.FAILED.name(), 1))
                 .extracting(DealSummaryProjection::getProductName)
                 .containsExactly("최근물품");
     }

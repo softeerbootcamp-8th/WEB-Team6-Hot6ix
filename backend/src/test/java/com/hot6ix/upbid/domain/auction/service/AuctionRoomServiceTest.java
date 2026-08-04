@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auction.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -11,12 +12,16 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
+import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -50,6 +55,9 @@ class AuctionRoomServiceTest {
 
     @Mock
     private AuctionRoomShareService auctionRoomShareService;
+
+    @Mock
+    private DealCandidateRepository dealCandidateRepository;
 
     @InjectMocks
     private AuctionRoomService auctionRoomService;
@@ -401,5 +409,118 @@ class AuctionRoomServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+    }
+
+    private AuctionRoom newClosedRoom() {
+        return AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .status(AuctionRoomStatus.CLOSED)
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+    }
+
+    /** 낙찰 1건 + 유찰 1건. 결과 화면이 둘을 나눠 세는 최소 조합이다. */
+    private List<AuctionItemResultProjection> newResultRows() {
+        return List.of(
+                new AuctionItemResultProjection(
+                        101L, "한정판 피규어", "https://cdn.hot6ix.com/1.png",
+                        AuctionItemStatus.SOLD, 85_000L, "스니커홀릭"),
+                new AuctionItemResultProjection(
+                        102L, "빈티지 자켓", null,
+                        AuctionItemStatus.FAILED, 30_000L, null));
+    }
+
+    @Test
+    @DisplayName("낙찰 물품은 낙찰가와 낙찰자가, 유찰 물품은 둘 다 비어서 조회된다")
+    void getResults() {
+
+        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L))
+                .thenReturn(Optional.of(newClosedRoom()));
+        when(auctionItemRepository.findResults(10L)).thenReturn(newResultRows());
+        when(dealCandidateRepository.findMyRanksInRoom(10L, 1L)).thenReturn(List.of());
+
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(10L, 1L);
+
+        assertThat(response.name()).isEqualTo("승민의 경매방");
+        assertThat(response.sellerStoreName()).isEqualTo("승민상점");
+        assertThat(response.status()).isEqualTo(AuctionRoomStatus.CLOSED);
+        assertThat(response.items()).hasSize(2);
+
+        assertThat(response.items().getFirst().finalPrice()).isEqualTo(85_000L);
+        assertThat(response.items().getFirst().winnerNickname()).isEqualTo("스니커홀릭");
+
+        // 유찰 물품의 currentPrice(30,000)는 아무도 부르지 않은 시작가라 가격으로 내리지 않는다.
+        assertThat(response.items().getLast().finalPrice()).isNull();
+        assertThat(response.items().getLast().winnerNickname()).isNull();
+    }
+
+    @Test
+    @DisplayName("진행 중인 물품은 최고 입찰자가 있어도 낙찰자로 내려가지 않는다")
+    void getResults_inProgressItemHasNoWinner() {
+
+        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L))
+                .thenReturn(Optional.of(newClosedRoom()));
+        when(auctionItemRepository.findResults(10L)).thenReturn(List.of(
+                new AuctionItemResultProjection(
+                        103L, "진행 중인 물품", null,
+                        AuctionItemStatus.IN_PROGRESS, 50_000L, "지금1위")));
+        when(dealCandidateRepository.findMyRanksInRoom(10L, 1L)).thenReturn(List.of());
+
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(10L, 1L);
+
+        assertThat(response.items().getFirst().status()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
+        assertThat(response.items().getFirst().winnerNickname()).isNull();
+        assertThat(response.items().getFirst().finalPrice()).isNull();
+    }
+
+    @Test
+    @DisplayName("후보로 오른 물품에만 내 순위가 담긴다")
+    void getResults_fillsMyRankOnlyWhereCandidate() {
+
+        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L))
+                .thenReturn(Optional.of(newClosedRoom()));
+        when(auctionItemRepository.findResults(10L)).thenReturn(newResultRows());
+        when(dealCandidateRepository.findMyRanksInRoom(10L, 1L))
+                .thenReturn(List.of(new MyCandidateRankProjection(101L, 7, 60_000L)));
+
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(10L, 1L);
+
+        assertThat(response.items().getFirst().myRank()).isEqualTo(7);
+        assertThat(response.items().getFirst().myAmount()).isEqualTo(60_000L);
+        assertThat(response.items().getLast().myRank()).isNull();
+        assertThat(response.items().getLast().myAmount()).isNull();
+    }
+
+    @Test
+    @DisplayName("비로그인 요청은 내 순위를 조회하지 않고 전부 비운다")
+    void getResults_guestHasNoMyRank() {
+
+        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L))
+                .thenReturn(Optional.of(newClosedRoom()));
+        when(auctionItemRepository.findResults(10L)).thenReturn(newResultRows());
+
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(10L, null);
+
+        assertThat(response.items())
+                .allSatisfy(item -> {
+                    assertThat(item.myRank()).isNull();
+                    assertThat(item.myAmount()).isNull();
+                });
+        verify(dealCandidateRepository, never()).findMyRanksInRoom(any(), any());
+    }
+
+    @Test
+    @DisplayName("존재하지 않거나 삭제된 경매방의 결과를 조회하면 예외가 발생한다")
+    void getResults_notFound() {
+
+        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionRoomService.getResults(999L, 1L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
     }
 }
