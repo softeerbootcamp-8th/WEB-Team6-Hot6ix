@@ -144,3 +144,30 @@ export function toAuctionItems(
     toAuctionItemDetail(dto, fallbackItem(index), myNickname),
   )
 }
+
+/**
+ * 층으로 띄운 물품 상세에 상세 응답을 얹는다.
+ *
+ * **상세 응답은 목록에 없는 필드만 채운다.** 실시간으로 바뀌는 값(현재가·
+ * 리더보드·최고 입찰자·마감 시각·상태)은 `live` 가 원본이다.
+ *
+ * 상세는 물품을 열 때 한 번만 부르고, 남의 입찰로는 다시 부르지 않는다. 그래서
+ * `toAuctionItemDetail` 을 쓰면 SSE 로 갱신한 값을 낡은 응답이 덮어써서 상세가
+ * 실시간으로 안 바뀐다 — 목록은 바뀌는데 상세만 멈춘 것처럼 보였다.
+ */
+export function mergeItemDetail(
+  dto: AuctionItemDetailResponseDto,
+  live: AuctionItemDetail,
+): AuctionItemDetail {
+  return {
+    ...live,
+    description: dto.description ?? live.description,
+    productUrl: dto.referenceUrl ?? live.productUrl,
+    bidUnit: dto.bidIncrement ?? live.bidUnit,
+    /*
+     * 목록에서 온 `startPrice` 는 진행 중인 물품이면 현재가라 틀리다
+     * (목록 응답에 시작가가 없어 현재가로 대신한다). 상세 값이 있으면 그게 맞다.
+     */
+    startPrice: dto.startingPrice ?? live.startPrice,
+  }
+}
