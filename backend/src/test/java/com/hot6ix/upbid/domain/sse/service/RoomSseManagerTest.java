@@ -2,6 +2,12 @@ package com.hot6ix.upbid.domain.sse.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +24,7 @@ class RoomSseManagerTest {
 
     private static final Long ROOM_ID = 1L;
     private static final String EVENT_NAME = "TEST_EVENT";
+    private static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
 
     private final RoomSseManager roomSseManager = new RoomSseManager();
 
@@ -105,6 +112,52 @@ class RoomSseManagerTest {
                 .doesNotThrowAnyException();
 
         assertThat(roomSseManager.getParticipantCount(ROOM_ID)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("heartbeat 가 응답하지 않는 구독을 걷어낸다")
+    void sweepsDeadSubscriberOnHeartbeat() {
+
+        roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload");
+        SseEmitter dead = roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload");
+
+        dead.complete();
+
+        assertThatCode(roomSseManager::sendHeartbeat).doesNotThrowAnyException();
+
+        assertThat(roomSseManager.getParticipantCount(ROOM_ID)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("heartbeat 로 구독을 걷어내면 남은 구독에 참여자 수를 다시 알린다")
+    void broadcastsCountAfterHeartbeatSweep() {
+
+        RoomSseManager manager = spy(new RoomSseManager());
+
+        manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
+        SseEmitter dead = manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
+        dead.complete();
+
+        clearInvocations(manager);
+
+        manager.sendHeartbeat();
+
+        verify(manager).sendBroadCast(eq(PARTICIPANT_COUNT_EVENT), eq(ROOM_ID), any());
+    }
+
+    @Test
+    @DisplayName("걷어낼 구독이 없으면 참여자 수를 다시 알리지 않는다")
+    void doesNotBroadcastCountWhenNothingSwept() {
+
+        RoomSseManager manager = spy(new RoomSseManager());
+
+        manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
+
+        clearInvocations(manager);
+
+        manager.sendHeartbeat();
+
+        verify(manager, never()).sendBroadCast(eq(PARTICIPANT_COUNT_EVENT), eq(ROOM_ID), any());
     }
 
     @Test
