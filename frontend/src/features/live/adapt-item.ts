@@ -52,27 +52,26 @@ function toItemStatus(status: string | undefined): ItemStatus {
  * `isMe` 는 서버가 내려주지 않아 세션 닉네임으로 비교한다. 닉네임에 unique
  * 제약이 없어서(카카오 이름을 그대로 쓴다) **동명이인이면 남의 줄이 내 순위로
  * 강조된다.** 정확히 하려면 응답에 `isMe` 가 필요하다.
+ *
+ * 닉네임 없는 줄은 그릴 수 없으니 버린다. springdoc 이 모든 필드를 optional 로
+ * 내보내서 타입에만 나타나는 경우이고, 실제 응답에는 늘 채워져 있다. 버린 줄이
+ * 있으면 서버 순위에 구멍이 생기므로 남은 순서로 다시 매긴다.
  */
 function toLeaderboard(
   entries: LeaderboardEntryResponseDto[] | undefined,
   myNickname: string | null,
 ): LeaderboardEntry[] {
-  return (entries ?? [])
-    /*
-     * 닉네임 없는 줄은 그릴 수 없으니 버린다. springdoc 이 모든 필드를
-     * optional 로 내보내서 타입에만 나타나는 경우이고, 실제 응답에는 늘 있다.
-     */
-    .filter(
-      (entry): entry is LeaderboardEntryResponseDto & { nickname: string } =>
-        entry.nickname !== undefined,
-    )
-    .map((entry, index) => ({
-      // 버린 줄이 있으면 서버 순위에 구멍이 생기므로 남은 순서로 다시 매긴다.
-      rank: entry.rank ?? index + 1,
-      nickname: entry.nickname,
-      amount: entry.amount ?? 0,
-      isMe: myNickname !== null && entry.nickname === myNickname,
-    }))
+  const named = (entries ?? []).filter(
+    (entry): entry is LeaderboardEntryResponseDto & { nickname: string } =>
+      entry.nickname !== undefined,
+  )
+
+  return named.map((entry, index) => ({
+    rank: entry.rank ?? index + 1,
+    nickname: entry.nickname,
+    amount: entry.amount ?? 0,
+    isMe: myNickname !== null && entry.nickname === myNickname,
+  }))
 }
 
 /**
