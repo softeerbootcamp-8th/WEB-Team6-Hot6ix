@@ -1,7 +1,8 @@
 package com.hot6ix.upbid.domain.user.service;
 
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
+import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
 import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
-import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
 import com.hot6ix.upbid.domain.user.dto.response.UserMeResponseDto;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
@@ -20,11 +21,19 @@ public class UserService {
     private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
-    public Optional<Long> findByOAuth(OAuthUserInfo userInfo) {
+    public Optional<Long> findByOAuth(OauthProvider provider, String providerId) {
 
-        return userRepository.findByProviderAndProviderId(userInfo.provider(), userInfo.providerId())
+        return userRepository.findByProviderAndProviderId(provider, providerId)
                 .map(this::verifyNotWithdrawn)
                 .map(User::getUserId);
+    }
+
+    @Transactional
+    public Long create(PendingSignup pendingSignup) {
+
+        User user = userRepository.saveAndFlush(User.ofPendingSignup(pendingSignup));
+
+        return user.getUserId();
     }
 
     @Transactional(readOnly = true)

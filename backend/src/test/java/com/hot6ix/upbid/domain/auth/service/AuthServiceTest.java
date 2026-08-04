@@ -27,6 +27,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 @ExtendWith(MockitoExtension.class)
@@ -64,7 +66,7 @@ class AuthServiceTest {
 
         OAuthUserInfo userInfo = kakaoUserInfo();
         when(oauthClientManager.getUserInfo(OauthProvider.KAKAO, AUTHORIZATION_CODE)).thenReturn(userInfo);
-        when(userService.findByOAuth(userInfo)).thenReturn(Optional.of(1L));
+        when(userService.findByOAuth(userInfo.provider(), userInfo.providerId())).thenReturn(Optional.of(1L));
 
         OAuthLoginResult result = authService.login(request, AUTHORIZATION_CODE);
 
@@ -79,7 +81,7 @@ class AuthServiceTest {
 
         OAuthUserInfo userInfo = kakaoUserInfo();
         when(oauthClientManager.getUserInfo(OauthProvider.KAKAO, AUTHORIZATION_CODE)).thenReturn(userInfo);
-        when(userService.findByOAuth(userInfo)).thenReturn(Optional.empty());
+        when(userService.findByOAuth(userInfo.provider(), userInfo.providerId())).thenReturn(Optional.empty());
 
         OAuthLoginResult result = authService.login(request, AUTHORIZATION_CODE);
 
@@ -139,6 +141,85 @@ class AuthServiceTest {
                 .isInstanceOf(ApplicationException.class);
 
         verify(pendingSignupManager, never()).save(any(), any());
+    }
+
+    @Test
+    @DisplayName("인증까지 마친 가입 대기 정보로 회원을 저장하고 로그인 세션을 발급한다")
+    void signup() {
+
+        PendingSignup verified = new PendingSignup(
+                OauthProvider.KAKAO, "1", "a@b.com", "닉네임", "01012345678");
+        when(pendingSignupManager.find(request)).thenReturn(Optional.of(verified));
+        when(userService.create(verified)).thenReturn(10L);
+
+        authService.signup(request);
+
+        verify(userService).create(verified);
+        verify(pendingSignupManager).clear(request);
+        verify(sessionManager).create(request, 10L);
+    }
+
+    @Test
+    @DisplayName("가입 대기 정보가 없으면 PENDING_SIGNUP_NOT_FOUND 예외가 발생한다")
+    void signup_withoutPendingSignup() {
+
+        when(pendingSignupManager.find(request)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.signup(request))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuthErrorType.PENDING_SIGNUP_NOT_FOUND);
+
+        verify(userService, never()).create(any());
+    }
+
+    @Test
+    @DisplayName("전화번호 인증을 마치지 않았으면 PHONE_NOT_VERIFIED 예외가 발생하고 회원을 저장하지 않는다")
+    void signup_phoneNotVerified() {
+
+        PendingSignup notVerified = new PendingSignup(
+                OauthProvider.KAKAO, "1", "a@b.com", "닉네임", null);
+        when(pendingSignupManager.find(request)).thenReturn(Optional.of(notVerified));
+
+        assertThatThrownBy(() -> authService.signup(request))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuthErrorType.PHONE_NOT_VERIFIED);
+
+        verify(userService, never()).create(any());
+        verify(sessionManager, never()).create(any(), any());
+    }
+
+    @Test
+    @DisplayName("동시 가입으로 유니크 제약을 위반하면 먼저 저장된 회원으로 로그인시킨다")
+    void signup_duplicateKeyRace() {
+
+        PendingSignup verified = new PendingSignup(
+                OauthProvider.KAKAO, "1", "a@b.com", "닉네임", "01012345678");
+        when(pendingSignupManager.find(request)).thenReturn(Optional.of(verified));
+        when(userService.create(verified)).thenThrow(new DuplicateKeyException("duplicate"));
+        when(userService.findByOAuth(OauthProvider.KAKAO, "1")).thenReturn(Optional.of(7L));
+
+        authService.signup(request);
+
+        verify(sessionManager).create(request, 7L);
+    }
+
+    @Test
+    @DisplayName("유니크 제약이 아닌 데이터 오류는 USER_INFO_INVALID 예외로 변환한다")
+    void signup_nonDuplicateDataIntegrityViolation() {
+
+        PendingSignup verified = new PendingSignup(
+                OauthProvider.KAKAO, "1", "a@b.com", "닉네임", "01012345678");
+        when(pendingSignupManager.find(request)).thenReturn(Optional.of(verified));
+        when(userService.create(verified)).thenThrow(new DataIntegrityViolationException("data too long"));
+
+        assertThatThrownBy(() -> authService.signup(request))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuthErrorType.USER_INFO_INVALID);
+
+        verify(sessionManager, never()).create(any(), any());
     }
 
     @Test

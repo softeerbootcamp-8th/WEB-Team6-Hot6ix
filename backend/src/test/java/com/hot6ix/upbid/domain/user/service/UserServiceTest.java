@@ -8,7 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
-import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
+import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
 import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
 import com.hot6ix.upbid.domain.user.dto.response.UserMeResponseDto;
 import com.hot6ix.upbid.domain.user.entity.User;
@@ -20,6 +20,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -43,8 +44,24 @@ class UserServiceTest {
                 .build();
     }
 
-    private OAuthUserInfo kakaoUserInfo() {
-        return new OAuthUserInfo(OauthProvider.KAKAO, "kakao-123", "010-1234-5678", "test@hot6ix.com", "테스트유저");
+    @Test
+    @DisplayName("가입 대기 정보로 회원을 저장하고 userId를 반환한다")
+    void create() {
+
+        PendingSignup pendingSignup = new PendingSignup(
+                OauthProvider.KAKAO, "kakao-123", "test@hot6ix.com", "테스트유저", "01099998888");
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        userService.create(pendingSignup);
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(captor.capture());
+
+        User saved = captor.getValue();
+        assertThat(saved.getProvider()).isEqualTo(OauthProvider.KAKAO);
+        assertThat(saved.getProviderId()).isEqualTo("kakao-123");
+        assertThat(saved.getNickname()).isEqualTo("테스트유저");
+        assertThat(saved.getPhoneNumber()).isEqualTo("01099998888");
     }
 
     @Test
@@ -54,7 +71,7 @@ class UserServiceTest {
         when(userRepository.findByProviderAndProviderId(OauthProvider.KAKAO, "kakao-123"))
                 .thenReturn(Optional.of(newUser()));
 
-        assertThat(userService.findByOAuth(kakaoUserInfo())).isPresent();
+        assertThat(userService.findByOAuth(OauthProvider.KAKAO, "kakao-123")).isPresent();
     }
 
     @Test
@@ -64,7 +81,7 @@ class UserServiceTest {
         when(userRepository.findByProviderAndProviderId(OauthProvider.KAKAO, "kakao-123"))
                 .thenReturn(Optional.empty());
 
-        assertThat(userService.findByOAuth(kakaoUserInfo())).isEmpty();
+        assertThat(userService.findByOAuth(OauthProvider.KAKAO, "kakao-123")).isEmpty();
         verify(userRepository, never()).save(any());
     }
 
@@ -78,7 +95,7 @@ class UserServiceTest {
         when(userRepository.findByProviderAndProviderId(OauthProvider.KAKAO, "kakao-123"))
                 .thenReturn(Optional.of(withdrawn));
 
-        assertThatThrownBy(() -> userService.findByOAuth(kakaoUserInfo()))
+        assertThatThrownBy(() -> userService.findByOAuth(OauthProvider.KAKAO, "kakao-123"))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuthErrorType.WITHDRAWN_USER);

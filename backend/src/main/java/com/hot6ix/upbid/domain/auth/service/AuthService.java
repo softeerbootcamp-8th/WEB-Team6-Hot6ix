@@ -13,6 +13,8 @@ import com.hot6ix.upbid.global.session.SessionManager;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -34,7 +36,7 @@ public class AuthService {
             throw new ApplicationException(AuthErrorType.OAUTH_LOGIN_FAILED);
         }
 
-        Optional<Long> userId = userService.findByOAuth(userInfo);
+        Optional<Long> userId = userService.findByOAuth(userInfo.provider(), userInfo.providerId());
 
         if (userId.isPresent()) {
             sessionManager.create(request, userId.get());
@@ -53,5 +55,34 @@ public class AuthService {
         pendingSignupManager.find(request)
                 .ifPresent(pendingSignup ->
                         pendingSignupManager.save(request, pendingSignup.withVerified(phoneNumber)));
+    }
+
+    public void signup(HttpServletRequest request) {
+
+        PendingSignup pendingSignup = pendingSignupManager.find(request)
+                .orElseThrow(() -> new ApplicationException(AuthErrorType.PENDING_SIGNUP_NOT_FOUND));
+
+        if (!pendingSignup.isVerified()) {
+            throw new ApplicationException(AuthErrorType.PHONE_NOT_VERIFIED);
+        }
+
+        Long userId = createUser(pendingSignup);
+
+        pendingSignupManager.clear(request);
+        sessionManager.create(request, userId);
+    }
+
+    private Long createUser(PendingSignup pendingSignup) {
+
+        try {
+            return userService.create(pendingSignup);
+
+        } catch (DuplicateKeyException e) {
+            return userService.findByOAuth(pendingSignup.provider(), pendingSignup.providerId())
+                    .orElseThrow(() -> new ApplicationException(AuthErrorType.OAUTH_LOGIN_FAILED));
+
+        } catch (DataIntegrityViolationException e) {
+            throw new ApplicationException(AuthErrorType.USER_INFO_INVALID);
+        }
     }
 }

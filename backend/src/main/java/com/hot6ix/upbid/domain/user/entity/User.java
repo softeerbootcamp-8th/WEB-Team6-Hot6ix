@@ -1,7 +1,7 @@
 package com.hot6ix.upbid.domain.user.entity;
 
 import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
-import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
+import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
 import com.hot6ix.upbid.global.common.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -68,13 +68,13 @@ public class User extends BaseEntity {
         this.profileImageUrl = profileImageUrl;
     }
 
-    public static User ofOAuth(OAuthUserInfo userInfo) {
+    public static User ofPendingSignup(PendingSignup pendingSignup) {
         return User.builder()
-                .provider(userInfo.provider())
-                .providerId(userInfo.providerId())
-                .nickname(userInfo.name())
-                .email(userInfo.email())
-                .phoneNumber(userInfo.phoneNumber())
+                .provider(pendingSignup.provider())
+                .providerId(pendingSignup.providerId())
+                .nickname(pendingSignup.nickname())
+                .email(pendingSignup.email())
+                .phoneNumber(pendingSignup.verifiedPhoneNumber())
                 .build();
     }
 }
