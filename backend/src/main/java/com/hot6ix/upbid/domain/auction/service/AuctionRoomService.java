@@ -137,7 +137,7 @@ public class AuctionRoomService {
         int pageSize = (size != null) ? size : AuctionRoomRepository.DEFAULT_PAGE_SIZE;
 
         List<AuctionRoomListItemResponseDto> fetched = auctionRoomRepository.search(
-                sellerProfile.getSellerProfileId(), keyword, status, cursor, pageSize);
+                sellerProfile.getUser().getUserId(), keyword, status, null, cursor, pageSize);
 
         boolean hasNext = fetched.size() > pageSize;
         List<AuctionRoomListItemResponseDto> content = hasNext ? fetched.subList(0, pageSize) : fetched;

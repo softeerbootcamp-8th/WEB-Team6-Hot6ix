@@ -381,7 +381,7 @@ class AuctionRoomServiceTest {
         givenSellerProfileForList();
 
         // size 2를 요청하면 리포지토리는 hasNext 판정용으로 3건을 돌려준다.
-        when(auctionRoomRepository.search(5L, null, null, null, 2))
+        when(auctionRoomRepository.search(5L, null, null, null, null, 2))
                 .thenReturn(List.of(newListItem(30L), newListItem(20L), newListItem(10L)));
 
         CursorPageResponse<AuctionRoomListItemResponseDto> response =
@@ -398,7 +398,7 @@ class AuctionRoomServiceTest {
 
         givenSellerProfileForList();
 
-        when(auctionRoomRepository.search(5L, null, null, null, 2))
+        when(auctionRoomRepository.search(5L, null, null, null, null, 2))
                 .thenReturn(List.of(newListItem(30L)));
 
         CursorPageResponse<AuctionRoomListItemResponseDto> response =
@@ -415,7 +415,7 @@ class AuctionRoomServiceTest {
 
         givenSellerProfileForList();
 
-        when(auctionRoomRepository.search(5L, null, null, null, AuctionRoomRepository.DEFAULT_PAGE_SIZE))
+        when(auctionRoomRepository.search(5L, null, null, null, null, AuctionRoomRepository.DEFAULT_PAGE_SIZE))
                 .thenReturn(List.of());
 
         CursorPageResponse<AuctionRoomListItemResponseDto> response =
