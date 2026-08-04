@@ -8,6 +8,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.dto.request.SellerProfileCreateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.request.SellerProfileUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.response.SellerProfileResponseDto;
@@ -35,6 +36,10 @@ class SellerProfileServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    // 이미지 주소 검증은 ImageUrlValidatorTest에서 본다. 여기서는 통과시킨다.
+    @Mock
+    private ImageUrlValidator imageUrlValidator;
 
     @InjectMocks
     private SellerProfileService sellerProfileService;

@@ -1,8 +1,12 @@
 package com.hot6ix.upbid.domain.auction.repository;
 
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -39,4 +43,44 @@ public interface AuctionRoomRepository extends JpaRepository<AuctionRoom, Long> 
     @Query("select ar from AuctionRoom ar "
             + "where ar.auctionRoomId = :auctionRoomId and ar.deletedAt is null")
     Optional<AuctionRoom> findByIdForUpdate(@Param("auctionRoomId") Long auctionRoomId);
+
+    int DEFAULT_PAGE_SIZE = 20;
+
+    /**
+     * 판매자 본인이 만든 경매방을 최신순으로 조회한다. 다음 쪽이 있는지 알아야 해서
+     * {@code size + 1}건을 읽고, 판정과 자르기는 Service가 한다(상품 목록과 같은 방식).
+     */
+    default List<AuctionRoomListItemResponseDto> search(
+            Long sellerProfileId, String keyword, AuctionRoomStatus status, Long cursor, Integer size) {
+        int limit = (size != null) ? size : DEFAULT_PAGE_SIZE;
+        return searchByLimit(sellerProfileId, keyword, status, cursor, Limit.of(limit + 1));
+    }
+
+    /**
+     * 정렬 키를 {@code auctionRoomId}로 고정해 커서를 안정적으로 만든다. {@code createdAt}은
+     * 같은 값이 겹치면 페이지 경계에서 항목이 밀리거나 빠진다.
+     *
+     * <p>물품 수는 {@code left join} + {@code group by}로 한 쿼리에서 센다. 방마다 count를
+     * 돌리면 목록 크기만큼 쿼리가 늘어난다.
+     *
+     * <p>{@code participantCount}는 생성자 표현식에서 아예 빼고 6-인자 생성자를 쓴다 —
+     * JPQL {@code new}에 bare {@code null}을 넣으면 타입 추론이 안 된다.
+     */
+    @Query("select new com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto("
+            + "  ar.auctionRoomId, ar.name, ar.coverImageUrl, ar.status, ar.createdAt, count(ai)) "
+            + "from AuctionRoom ar "
+            + "left join AuctionItem ai on ai.auctionRoom = ar "
+            + "where ar.sellerProfile.sellerProfileId = :sellerProfileId "
+            + "  and ar.deletedAt is null "
+            + "  and (:keyword is null or ar.name like concat('%', :keyword, '%')) "
+            + "  and (:status is null or ar.status = :status) "
+            + "  and (:cursor is null or ar.auctionRoomId < :cursor) "
+            + "group by ar.auctionRoomId, ar.name, ar.coverImageUrl, ar.status, ar.createdAt "
+            + "order by ar.auctionRoomId desc")
+    List<AuctionRoomListItemResponseDto> searchByLimit(
+            @Param("sellerProfileId") Long sellerProfileId,
+            @Param("keyword") String keyword,
+            @Param("status") AuctionRoomStatus status,
+            @Param("cursor") Long cursor,
+            Limit limit);
 }

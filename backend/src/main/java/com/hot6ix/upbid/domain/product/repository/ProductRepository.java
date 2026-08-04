@@ -15,6 +15,14 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Optional<Product> findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(Long productId, Long sellerProfileId);
 
+    /**
+     * 요청자 소유의 살아있는 상품만 한 번에 조회한다. 물품 벌크 추가에서 상품 수만큼 단건
+     * 조회를 돌리지 않으려고 쓴다. <b>없거나 남의 상품인 ID는 결과에서 빠지므로</b>, 호출한
+     * 쪽이 요청 목록과 대조해 거절 목록을 만든다.
+     */
+    List<Product> findByProductIdInAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+            List<Long> productIds, Long sellerProfileId);
+
     int DEFAULT_PAGE_SIZE = 20;
 
     /**
@@ -64,6 +72,15 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             case ENDED -> List.of(AuctionItemStatus.SOLD, AuctionItemStatus.FAILED);
         };
     }
+
+    /**
+     * 상세 조회·수정 응답에 쓸 파생 상태. 목록과 같은 CASE 문을 재사용해 두 응답이 어긋나지 않게 한다.
+     */
+    @Query("select " + DERIVED_STATUS_CASE + " "
+            + "from Product p "
+            + LATEST_AUCTION_ITEM_JOIN + " "
+            + "where p.productId = :productId")
+    Optional<ProductListingStatus> findListingStatus(@Param("productId") Long productId);
 
     @Query("select new com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto("
             + "  p.productId, p.name, p.imageUrl, " + DERIVED_STATUS_CASE + ", p.createdAt) "

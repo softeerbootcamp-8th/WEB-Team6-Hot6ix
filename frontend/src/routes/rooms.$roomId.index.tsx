@@ -22,7 +22,6 @@ import { toBidErrorMessage } from '@/features/live/bid-error'
 
 import { BidConfirmPanel } from '@/features/live/components/bid-confirm-panel'
 import { ClosedRoomView } from '@/features/live/components/closed-room-view'
-import { ConnectionBanner } from '@/features/live/components/connection-banner'
 import { EventFeed } from '@/features/live/components/event-feed'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
@@ -255,13 +254,52 @@ function LiveRoomPage() {
             ),
           )
           break
+
+        case 'ItemEnded':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'CLOSE',
+              message: payload.winnerNickname
+                ? `${payload.itemName} 낙찰 확정`
+                : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
+              ...(payload.winnerNickname && {
+                subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
+                emphasized: true,
+              }),
+            },
+          ])
+          setItems(
+            roomItems.map((item) =>
+              item.id === payload.itemId
+                ? { ...item, status: 'CLOSED' as const }
+                : item,
+            ),
+          )
+          break
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [roomItems],
   )
 
-  const { status, retry } = useRealtimeStatus(roomId, handleSseEvent)
+  const { status } = useRealtimeStatus(roomId, handleSseEvent)
+
+  const disconnectNotifiedRef = useRef(false)
+  useEffect(() => {
+    if (status === 'reconnecting' || status === 'failed') {
+      if (!disconnectNotifiedRef.current) {
+        disconnectNotifiedRef.current = true
+        toast.error(
+          '실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.',
+        )
+      }
+    } else if (status === 'connected') {
+      disconnectNotifiedRef.current = false
+    }
+  }, [status])
 
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
@@ -714,14 +752,12 @@ function LiveRoomPage() {
       <>
         <MobileLiveView
           room={room}
-          status={status}
           isGuest={isGuest}
           events={roomEvents}
           items={roomItems}
           itemsPlaceholder={itemsPlaceholder}
           liveItems={liveItems}
           rankedItems={rankedItems}
-          onRetry={retry}
           onShare={() => setPanel('share')}
           onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
           onBack={() => void navigate({ to: '/rooms' })}
@@ -1065,7 +1101,6 @@ function LiveRoomPage() {
         }
         center={
           <>
-            <ConnectionBanner status={status} onRetry={retry} />
             {isGuest && <GuestNotice redirectTo={`/rooms/${roomId}`} />}
 
             <EventFeed events={roomEvents} />
@@ -1228,11 +1263,15 @@ function ItemManagement({
       <ItemPickerModal
         open={picking}
         onClose={() => onPickingChange(false)}
-        products={products}
-        onConfirm={(productIds) => {
-          // TODO: POST /api/v1/auction-rooms/{id}/items 연동 (현재 목업)
-          const names = productIds
-            .map((id) => products.find((product) => product.id === id)?.name)
+        onConfirm={(picked) => {
+          // TODO: POST /api/v1/auction-rooms/{id}/auction-items/bulk 연동 (현재 목업)
+          // 모달은 이미 실제 상품 목록을 조회하지만, 이 화면의 물품 목록은 아직 목업이라
+          // 고른 상품의 이름을 목업에서 찾아 붙인다. 목록까지 실 API로 바꿀 때 함께 없앤다.
+          const names = picked
+            .map(
+              (item) =>
+                products.find((product) => product.id === item.productId)?.name,
+            )
             .filter((name): name is string => name !== undefined)
           onAdd(names)
           toast.success(`물품 ${names.length}개를 추가했어요`)

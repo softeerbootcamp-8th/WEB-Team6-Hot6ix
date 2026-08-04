@@ -52,8 +52,26 @@ export function Modal({
       ref={ref}
       aria-labelledby={labelledBy}
       onClick={(event) => {
-        // 배경(dialog 자체)을 눌렀을 때만 닫는다.
-        if (dismissible && event.target === ref.current) onClose()
+        if (!dismissible) return
+
+        /*
+         * 커서가 모달 상자 **바깥**일 때만 닫는다.
+         *
+         * `event.target === dialog` 로 판정하면 안 된다. 제목과 본문 사이 여백,
+         * dialog 자신의 padding 처럼 **자식 요소가 없는 안쪽 빈 공간**도 target 이
+         * dialog 라서, 모달 내부를 눌렀는데 닫히는 것으로 취급된다.
+         * 물품 추가처럼 여러 개를 고르는 모달에서는 고르던 게 통째로 날아간다.
+         */
+        const rect = ref.current?.getBoundingClientRect()
+        if (!rect) return
+
+        const outside =
+          event.clientX < rect.left ||
+          event.clientX > rect.right ||
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom
+
+        if (outside) onClose()
       }}
       className={cn(
         /*

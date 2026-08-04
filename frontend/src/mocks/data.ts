@@ -1053,6 +1053,10 @@ export const MOCK_PRODUCTS: Product[] = [
  * 물품에서 그대로 파생된다. `auctionItemId` 는 실제 물품 id 이고
  * 이름·금액은 그 물품의 낙찰 결과와 같다. 내가 판 방은 물품마다,
  * 남이 판 방은 내가 낙찰받은 물품에만 거래가 생긴다.
+ *
+ * **`productId` 만 90000x 대다.** 상품 화면이 실제 API 로 넘어가면서 서버가 주는
+ * 상품 id 도 1, 2, 3… 이 되었다. 예전처럼 한 자리 수로 두면 판매자가 방금 등록한
+ * 상품 상세에 남의 목업 낙찰가가 붙어 보인다. 거래까지 연동되면 이 배열은 사라진다.
  */
 export const MOCK_TRADES: TradeSummary[] = [
   {
@@ -1072,7 +1076,7 @@ export const MOCK_TRADES: TradeSummary[] = [
   {
     id: 2,
     auctionItemId: 302,
-    productId: 5,
+    productId: 900005,
     productName: '빈티지 필름 렌즈',
     category: '카메라',
     roomId: 3,
@@ -1087,7 +1091,7 @@ export const MOCK_TRADES: TradeSummary[] = [
   {
     id: 3,
     auctionItemId: 301,
-    productId: 4,
+    productId: 900004,
     productName: '레트로 필름 카메라',
     category: '카메라',
     roomId: 3,
@@ -1130,7 +1134,7 @@ export const MOCK_TRADES: TradeSummary[] = [
   {
     id: 6,
     auctionItemId: 601,
-    productId: 6,
+    productId: 900006,
     productName: '트렌치 코트',
     category: '아우터',
     roomId: 6,
@@ -1145,7 +1149,7 @@ export const MOCK_TRADES: TradeSummary[] = [
   {
     id: 7,
     auctionItemId: 602,
-    productId: 7,
+    productId: 900007,
     productName: '니트 가디건',
     category: '상의',
     roomId: 6,
@@ -1160,7 +1164,7 @@ export const MOCK_TRADES: TradeSummary[] = [
   {
     id: 8,
     auctionItemId: 603,
-    productId: 8,
+    productId: 900008,
     productName: '가죽 크로스백',
     category: '잡화',
     roomId: 6,
@@ -1175,7 +1179,7 @@ export const MOCK_TRADES: TradeSummary[] = [
   {
     id: 9,
     auctionItemId: 604,
-    productId: 9,
+    productId: 900009,
     productName: '캔버스 스니커즈',
     category: '스니커즈',
     roomId: 6,

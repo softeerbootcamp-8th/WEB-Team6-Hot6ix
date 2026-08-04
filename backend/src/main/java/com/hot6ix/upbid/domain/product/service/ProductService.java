@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -29,6 +30,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final AuctionItemRepository auctionItemRepository;
+    private final ImageUrlValidator imageUrlValidator;
 
     /**
      * 로그인한 판매자의 상품을 등록한다.
@@ -41,11 +43,14 @@ public class ProductService {
     @Transactional
     public ProductResponseDto create(Long userId, ProductCreateRequestDto request) {
 
+        imageUrlValidator.validate(request.imageUrl());
+
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
 
         Product product = Product.from(sellerProfile, request);
 
-        return ProductResponseDto.from(productRepository.save(product));
+        // 방금 만든 상품은 아직 어떤 경매방에도 담기지 않았으므로 파생 상태를 조회할 필요가 없다.
+        return ProductResponseDto.from(productRepository.save(product), ProductListingStatus.UNREGISTERED);
     }
 
     /**
@@ -62,7 +67,7 @@ public class ProductService {
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         Product product = findOwnedProduct(sellerProfile, productId);
 
-        return ProductResponseDto.from(product);
+        return ProductResponseDto.from(product, findListingStatus(productId));
     }
 
     /**
@@ -80,13 +85,16 @@ public class ProductService {
     @Transactional
     public ProductResponseDto update(Long userId, Long productId, ProductUpdateRequestDto request) {
 
+        // 수정은 PUT 전체 교체라 등록과 똑같이 URL이 통째로 들어온다. 등록만 막으면 검증이 없는 것과 같다.
+        imageUrlValidator.validate(request.imageUrl());
+
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         Product product = findOwnedProduct(sellerProfile, productId);
         assertAuctionNotStarted(productId);
 
         product.update(request);
 
-        return ProductResponseDto.from(product);
+        return ProductResponseDto.from(product, findListingStatus(productId));
     }
 
     /**
@@ -148,6 +156,11 @@ public class ProductService {
     private Product findOwnedProduct(SellerProfile sellerProfile, Long productId) {
         return productRepository
                 .findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(productId, sellerProfile.getSellerProfileId())
+                .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
+    }
+
+    private ProductListingStatus findListingStatus(Long productId) {
+        return productRepository.findListingStatus(productId)
                 .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
     }
 

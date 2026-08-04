@@ -1,14 +1,12 @@
 import { ChevronLeft, Share2, Square } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
-import { ConnectionBanner } from '@/features/live/components/connection-banner'
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
 import { GuestNotice } from '@/features/live/components/live-shell'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { LiveItemList } from '@/features/live/components/live-item-list'
 import { cn } from '@/lib/utils'
-import type { RealtimeStatus } from '@/features/live/use-realtime-status'
 import type {
   AuctionItemDetail,
   AuctionRoomDetail,
@@ -26,7 +24,6 @@ import type {
  */
 export function MobileLiveView({
   room,
-  status,
   isGuest,
   isOwner = false,
   events,
@@ -36,7 +33,6 @@ export function MobileLiveView({
   rankedItems,
   justClosedId = null,
   devTools,
-  onRetry,
   onShare,
   onCloseRoom,
   onBack,
@@ -44,7 +40,6 @@ export function MobileLiveView({
   onBid,
 }: {
   room: AuctionRoomDetail
-  status: RealtimeStatus
   isGuest: boolean
   /** 방을 만든 사람은 자기 방에 입찰할 수 없다. */
   isOwner?: boolean
@@ -65,7 +60,6 @@ export function MobileLiveView({
     onSellerViewChange: (next: boolean) => void
     onDemoBid: (shuffle: boolean) => void
   }
-  onRetry: () => void
   onShare: () => void
   /** 판매자만 받는다. 방 전체를 끝낸다. */
   onCloseRoom?: () => void
@@ -183,7 +177,6 @@ export function MobileLiveView({
         )}
 
         <main className="flex min-h-0 flex-1 flex-col px-4 pt-4">
-          <ConnectionBanner status={status} onRetry={onRetry} />
           {isGuest && <GuestNotice redirectTo={`/rooms/${room.id}`} />}
 
           {/*
