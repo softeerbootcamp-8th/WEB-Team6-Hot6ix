@@ -27,6 +27,12 @@ export type SseEventPayload =
       finalPrice: number | null
       winnerNickname: string | null
     }
+  /**
+   * 판매자가 방송을 끝냈다. 물품별 마감 이벤트가 먼저 오고 이게 마지막에 온다.
+   *
+   * 물품 단위가 아니라 방 단위라 `itemId` 가 없다.
+   */
+  | { kind: 'RoomClosed'; roomTitle: string; closedTime: string }
 
 /**
  * 실시간 SSE 연결과 상태.
@@ -81,6 +87,7 @@ export function useRealtimeStatus(
     es.addEventListener('BID_PLACED', makeHandler('BidPlaced'))
     es.addEventListener('SOFT_CLOSE_EXTENDED', makeHandler('SoftCloseExtended'))
     es.addEventListener('ITEM_ENDED', makeHandler('ItemEnded'))
+    es.addEventListener('ROOM_CLOSED', makeHandler('RoomClosed'))
 
     return () => es.close()
   }, [roomId, retryKey])

@@ -113,8 +113,12 @@ function AuctionItemPage() {
 
   const handleSseEvent = useCallback(
     (payload: SseEventPayload) => {
-      // 현재 보고 있는 물품과 관계없는 이벤트는 무시한다.
-      if (payload.itemId !== item.id) return
+      /*
+       * 현재 보고 있는 물품과 관계없는 이벤트는 무시한다.
+       * 방 단위 이벤트(RoomClosed)에는 itemId 가 없어서 이 검사를 건너뛴다 —
+       * 이 화면은 물품 하나만 다루므로 그런 이벤트는 아래 switch 에서도 걸리지 않는다.
+       */
+      if ('itemId' in payload && payload.itemId !== item.id) return
 
       const eventId = Date.now()
 

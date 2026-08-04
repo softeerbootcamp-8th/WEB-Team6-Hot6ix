@@ -81,6 +81,16 @@ export const Route = createFileRoute('/rooms/$roomId/')({
 /** 오른쪽 열에 무엇을 띄울지 */
 type RightPanel = 'leaderboard' | 'quickBid' | 'confirm' | 'share'
 
+/**
+ * 이벤트 피드 항목의 id 를 만든다. `Date.now()` 만 쓰면 같은 밀리초에 도착한 이벤트끼리
+ * id 가 겹쳐 React key 가 충돌한다 — 경매방을 종료하면 물품 마감 이벤트가 한꺼번에 온다.
+ */
+let eventSeq = 0
+function nextEventId(): number {
+  eventSeq += 1
+  return Date.now() * 1000 + (eventSeq % 1000)
+}
+
 const PANEL_LABEL: Record<RightPanel, string> = {
   leaderboard: '리더보드 · 물품별',
   quickBid: '빠른 입찰',
@@ -126,6 +136,7 @@ function LiveRoomPage() {
   const roomQuery = useGetRoom(auctionRoomId, {
     query: { enabled: validRoomId },
   })
+  const queryClient = useQueryClient()
   const summaries = useGetSummaries(auctionRoomId, {
     query: { enabled: validRoomId },
   })
@@ -161,10 +172,16 @@ function LiveRoomPage() {
    * SSE 이벤트 수신 핸들러.
    *
    * 이벤트 피드(extraEvents)와 물품 상태(items)를 동시에 갱신한다.
+   *
+   * **물품 갱신은 반드시 함수형(`setItems((prev) => …)`)이어야 한다.** 경매방 종료처럼
+   * 이벤트가 한꺼번에 오면 렌더가 끼어들 틈이 없어서, 두 번째 핸들러가 첫 번째의 결과를
+   * 못 보고 낡은 목록 위에 덮어쓴다. 실제로 물품 2개가 동시에 마감됐을 때 나중 것만
+   * 닫히고 앞의 낙찰 물품이 진행 중으로 남는 버그가 있었다.
    */
   const handleSseEvent = useCallback(
     (payload: SseEventPayload) => {
-      const eventId = Date.now()
+      // 같은 밀리초에 두 이벤트가 오면 id 가 겹쳐 피드의 React key 가 충돌한다.
+      const eventId = nextEventId()
 
       switch (payload.kind) {
         case 'ItemStarted':
@@ -177,8 +194,8 @@ function LiveRoomPage() {
               message: `${payload.itemName} 경매가 시작됐어요`,
             },
           ])
-          setItems(
-            roomItems.map((item) =>
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
                 ? {
                     ...item,
@@ -215,8 +232,8 @@ function LiveRoomPage() {
               emphasized: true,
             },
           ])
-          setItems(
-            roomItems.map((item) =>
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
                 ? {
                     ...item,
@@ -254,8 +271,8 @@ function LiveRoomPage() {
               emphasized: true,
             },
           ])
-          setItems(
-            roomItems.map((item) =>
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
                 ? {
                     ...item,
@@ -287,8 +304,8 @@ function LiveRoomPage() {
                 }),
             },
           ])
-          setItems(
-            roomItems.map((item) =>
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
                 ? {
                     ...item,
@@ -302,9 +319,33 @@ function LiveRoomPage() {
           // "경매 종료" 도장. 서버가 마감을 확정했을 때만 띄운다.
           setJustClosedId(payload.itemId)
           break
+
+        case 'RoomClosed':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'CLOSE',
+              message: '판매자가 경매방을 종료했어요',
+              emphasized: true,
+            },
+          ])
+          /*
+           * 방 상태를 화면에서 직접 CLOSED 로 바꾸지 않고 다시 읽어온다.
+           * 종료 화면은 closedAt·낙찰 결과까지 그리는데 이 이벤트에는 그 값이 없다.
+           */
+          setItems(null)
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomQueryKey(auctionRoomId),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(auctionRoomId),
+          })
+          break
       }
     },
-    [roomItems],
+    [roomItems, auctionRoomId, queryClient],
   )
 
   const { status } = useRealtimeStatus(roomId, handleSseEvent)
@@ -439,7 +480,6 @@ function LiveRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailItemId])
 
-  const queryClient = useQueryClient()
   const placeBid = usePlace()
   const startItem = useStart()
   const addItems = useAddAll()
