@@ -207,9 +207,21 @@ function StartControl({
     setDraft(String(next))
   }
 
+  /*
+   * blur 하는 순간 clamp() 가 값을 조용히 되돌린다. 왜 바뀌었는지 알 수 없어서
+   * 되돌리기 전에, 즉 입력하는 동안 범위를 알린다.
+   */
+  const outOfRange =
+    draft !== '' && (Number(draft) < MIN_MINUTES || Number(draft) > MAX_MINUTES)
+
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex h-[34px] flex-1 items-center rounded-[10px] border border-border-strong bg-card">
+    <div className="relative flex items-center gap-2">
+      <div
+        className={cn(
+          'flex h-[34px] flex-1 items-center rounded-[10px] border bg-card',
+          outOfRange ? 'border-live' : 'border-border-strong',
+        )}
+      >
         <button
           type="button"
           onClick={() => shift(-MINUTE_STEP)}
@@ -225,6 +237,7 @@ function StartControl({
           <input
             inputMode="numeric"
             aria-label={`${itemName} 진행 시간(분)`}
+            aria-invalid={outOfRange}
             disabled={pending}
             value={draft}
             onChange={(event) => {
@@ -275,6 +288,20 @@ function StartControl({
           </>
         )}
       </button>
+
+      {/*
+        카드 높이가 늘면 목록 전체가 밀려서, 자리를 차지하지 않게 겹쳐 그린다.
+        아래가 아니라 위로 띄우는 이유: 카드가 `overflow-hidden` 이라
+        (둥근 모서리와 마감 도장이 이걸 쓴다) 아래로 나가면 잘려서 안 보인다.
+      */}
+      {outOfRange && (
+        <p
+          role="alert"
+          className="pointer-events-none absolute bottom-full left-0 z-10 mb-1 rounded-md bg-card px-1.5 py-0.5 text-[11px] font-medium text-live shadow-sm"
+        >
+          {MIN_MINUTES}~{MAX_MINUTES}분 사이로 입력해요
+        </p>
+      )}
     </div>
   )
 }
