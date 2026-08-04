@@ -119,6 +119,20 @@ public class AuctionRoom extends BaseEntity {
     }
 
     /**
+     * 경매방을 종료로 바꾼다. 진행 중이던 물품을 닫는 것은 Service가 <b>먼저</b> 마치고
+     * 호출한다 — 이 메서드는 방 행만 건드린다.
+     *
+     * <p>{@code closedAt}을 인자로 받는 것은 물품 마감과 같은 시각을 쓰기 위해서다.
+     * 여기서 {@code now()}를 부르면 방과 물품의 종료 시각이 미세하게 어긋난다.
+     *
+     * @param closedAt 종료 시각. 서버 시간 기준
+     */
+    public void close(LocalDateTime closedAt) {
+        this.status = AuctionRoomStatus.CLOSED;
+        this.closedAt = closedAt;
+    }
+
+    /**
      * 요청에서 값이 온 필드만 부분 병합한다. 생략된(null) 필드는 기존 값을 그대로 유지한다.
      */
     public void update(AuctionRoomUpdateRequestDto request) {

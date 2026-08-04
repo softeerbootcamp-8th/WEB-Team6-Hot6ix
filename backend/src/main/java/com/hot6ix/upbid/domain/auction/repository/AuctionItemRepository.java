@@ -173,6 +173,23 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
 
+    /**
+     * 경매방에서 지정 상태인 물품의 ID를 <b>오름차순으로</b> 조회한다. 방 종료가 진행 중인 물품을
+     * 한꺼번에 마감할 때 쓴다.
+     *
+     * <p>정렬이 이 쿼리의 핵심이다. 방 종료는 물품마다 행 락을 잡는데, 잡는 순서가 요청마다
+     * 다르면 같은 방을 동시에 닫는 두 요청이 서로의 물품을 기다리다 데드락에 빠진다. ID
+     * 오름차순으로 고정하면 그 순환이 만들어지지 않는다.
+     *
+     * <p>엔티티가 아니라 ID만 뽑는 이유는 실제 마감이 {@code AuctionItemCloseService}에서
+     * 행 락을 걸고 다시 읽기 때문이다. 여기서 엔티티를 읽어봐야 그 사이에 값이 바뀔 수 있다.
+     */
+    @Query("select ai.auctionItemId from AuctionItem ai "
+            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId and ai.status = :status "
+            + "order by ai.auctionItemId asc")
+    List<Long> findIdsByRoomAndStatus(
+            @Param("auctionRoomId") Long auctionRoomId, @Param("status") AuctionItemStatus status);
+
     /** 물품 전체를 읽지 않고 상태만 본다. 마감됐는지 판정하는 데 쓴다. */
     @Query("select ai.status from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItemStatus> findStatus(@Param("auctionItemId") Long auctionItemId);

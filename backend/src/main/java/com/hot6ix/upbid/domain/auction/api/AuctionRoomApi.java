@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 
-@Tag(name = "경매방", description = "경매방 생성·조회·수정 API")
+@Tag(name = "경매방", description = "경매방 생성·조회·수정·종료 API")
 public interface AuctionRoomApi {
 
     @Operation(
@@ -160,4 +160,28 @@ public interface AuctionRoomApi {
             @Parameter(description = "수정할 경매방 ID", required = true)
             @PathVariable Long roomId,
             @Valid @RequestBody AuctionRoomUpdateRequestDto request);
+
+    @Operation(
+            summary = "경매방 종료",
+            description = "소유자가 방송을 끝내고 경매방을 종료한다. 요청 본문은 없다. "
+                    + "진행 중이던 물품은 모두 그 자리에서 마감되어 입찰이 있으면 낙찰(SOLD), "
+                    + "없으면 유찰(FAILED)로 확정된다. **아직 시작하지 않은 READY 물품은 그대로 남는다** "
+                    + "— 시작한 적 없는 물품을 유찰로 적으면 결과 집계에서 실제 유찰과 섞이기 때문이다. "
+                    + "물품을 하나도 시작하지 않은 방(BEFORE)도 종료할 수 있다. "
+                    + "종료된 방에서는 물품 추가·시작이 모두 막히며, **되돌리는 API는 없다.** "
+                    + "응답의 closedAt이 종료 시각이고, 종료를 참여자에게 알리는 ROOM_CLOSED 이벤트가 "
+                    + "SSE로 함께 나간다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "종료 성공"),
+            @ApiResponse(responseCode = "400", description = "경로 변수가 숫자가 아니라면 code 2002"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
+            @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
+                    + "경매방이 없거나 본인 소유가 아님 (code 4002)"),
+            @ApiResponse(responseCode = "409", description = "이미 종료된 경매방 (code 4004)")
+    })
+    ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> close(
+            @Parameter(hidden = true) @LoginUserId Long userId,
+            @Parameter(description = "종료할 경매방 ID", required = true)
+            @PathVariable Long roomId);
 }

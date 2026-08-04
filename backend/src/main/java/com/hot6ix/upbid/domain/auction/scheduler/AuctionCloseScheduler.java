@@ -1,6 +1,8 @@
 package com.hot6ix.upbid.domain.auction.scheduler;
 
 import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
+import com.hot6ix.upbid.global.event.payload.ItemEnded;
+import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -30,8 +32,8 @@ public class AuctionCloseScheduler {
     private final AuctionItemCloseService auctionItemCloseService;
 
     /**
-     * 아직 실행되지 않은 예약의 핸들. 지금은 아무도 읽지 않는다. 2주차 Soft Close 연장이
-     * "기존 예약을 취소하고 새 마감 시각으로 다시 건다"라서 그때 취소할 대상을 여기서 찾는다.
+     * 아직 실행되지 않은 예약의 핸들. 마감된 물품의 예약을 취소하는 데 쓰고, 2주차 Soft Close
+     * 연장("기존 예약을 취소하고 새 마감 시각으로 다시 건다")도 여기서 취소할 대상을 찾는다.
      */
     private final Map<Long, ScheduledFuture<?>> schedules = new ConcurrentHashMap<>();
 
@@ -52,6 +54,45 @@ public class AuctionCloseScheduler {
             schedule(event.itemId(), event.endAt());
         } catch (Exception e) {
             log.error("물품 마감 예약 실패: itemId={}, endAt={}", event.itemId(), event.endAt(), e);
+        }
+    }
+
+    /**
+     * 낙찰로 마감된 물품의 남은 예약을 정리한다. 예약 시각이 오기 전에 닫히는 경우가 있다 —
+     * 지금은 판매자의 <b>경매방 종료</b>가 그렇다.
+     *
+     * <p>취소를 이벤트로 받는 이유는 두 가지다. 마감시키는 쪽이 스케줄러를 직접 부르면
+     * 그쪽이 스케줄러를 의존하게 되고, 무엇보다 <b>커밋 전에 취소</b>해버려서 마감이 롤백되면
+     * 예약만 사라진 물품이 영영 닫히지 않는다. {@code AFTER_COMMIT}이면 실제로 닫힌 물품만
+     * 취소된다.
+     *
+     * <p>예약이 스스로 실행돼 마감한 경우에도 이 리스너가 돌지만, 그때는 {@link #close}가
+     * 이미 핸들을 버린 뒤라 취소할 대상이 없어 아무 일도 하지 않는다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(ItemEnded event) {
+        cancel(event.itemId());
+    }
+
+    /** 유찰로 마감된 물품의 예약을 정리한다. 낙찰({@link #on(ItemEnded)})과 하는 일이 같다. */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(ItemPassed event) {
+        cancel(event.itemId());
+    }
+
+    /**
+     * 물품의 마감 예약을 취소한다. 예약이 없거나 이미 실행이 시작됐으면 아무 일도 하지 않는다.
+     *
+     * <p>{@code false}는 실행 중인 작업을 중단시키지 말라는 뜻이다. 마감 트랜잭션 도중에
+     * 스레드를 인터럽트하면 그 물품이 어중간하게 닫힐 수 있다.
+     *
+     * @param auctionItemId 예약을 취소할 물품의 ID
+     */
+    public void cancel(Long auctionItemId) {
+        ScheduledFuture<?> schedule = schedules.remove(auctionItemId);
+
+        if (schedule != null) {
+            schedule.cancel(false);
         }
     }
 

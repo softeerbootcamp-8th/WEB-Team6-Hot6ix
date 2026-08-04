@@ -29,7 +29,12 @@ import type {
  * 사진을 서버 값으로 바꾸는 건 `API-INTEGRATION.md` 대응표에 남은 별도 작업이다.
  */
 
-/** 서버 상태 4가지를 화면 상태 3가지로 좁힌다. 낙찰·유찰은 화면에선 둘 다 종료다. */
+/**
+ * 서버 상태 4가지를 화면 상태 3가지로 좁힌다. 낙찰·유찰은 화면에선 둘 다 종료다.
+ *
+ * **낙찰인지 유찰인지가 여기서 사라지므로 {@code sold} 로 따로 남긴다.** 그 구분을
+ * 버리면 화면이 "닫혔으면 곧 낙찰"로 단정하게 되어, 입찰이 없던 물품에도 낙찰가가 붙는다.
+ */
 function toItemStatus(status: string | undefined): ItemStatus {
   switch (status) {
     case 'IN_PROGRESS':
@@ -122,6 +127,11 @@ export function toAuctionItemDetail(
      * 배포 서버가 UTC 로 돌면 여기서 티가 난다.
      */
     endsAt: dto.endAt ?? fallback.endsAt,
+    /*
+     * 낙찰·유찰은 status 에서 사라지므로 따로 남긴다. 이게 없으면 화면이 "닫혔으면
+     * 낙찰"로 단정해, 입찰이 한 번도 없던 물품에 낙찰가가 붙는다.
+     */
+    sold: dto.status === 'SOLD',
   }
 }
 

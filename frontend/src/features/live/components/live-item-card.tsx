@@ -123,7 +123,13 @@ export function LiveItemCard({
           {/* 시작 전에는 시작가를 보여준다. 구매자도 얼마부터인지 알아야 한다. */}
           <span className="mt-2 flex items-baseline justify-between">
             <span className="text-[11px] font-medium text-neutral-tertiary">
-              {closed ? '낙찰가' : ready ? '시작가' : '현재가'}
+              {closed
+                ? item.sold
+                  ? '낙찰가'
+                  : '유찰'
+                : ready
+                  ? '시작가'
+                  : '현재가'}
             </span>
             <span
               className={cn(
