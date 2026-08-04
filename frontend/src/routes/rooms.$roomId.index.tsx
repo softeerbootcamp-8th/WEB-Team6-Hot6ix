@@ -117,6 +117,13 @@ function LiveRoomPage() {
   const [items, setItems] = useState<AuctionItemDetail[] | null>(null)
   /** 실시간 연동 전까지 새 이벤트 애니메이션을 눈으로 보려고 쌓아 둔다. */
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
+  /**
+   * 서버가 세는 실시간 참여자 수. 아직 못 받았으면 `null`.
+   *
+   * 방 상세 응답의 `participantCount` 는 아직 채워지지 않아서 SSE 가 유일한
+   * 출처다. 연결이 끊기면 마지막 값이 남고, 다시 구독하면 서버가 곧 새로 보낸다.
+   */
+  const [participantCount, setParticipantCount] = useState<number | null>(null)
 
   const auctionRoomId = Number(roomId)
   const summaries = useGetSummaries(auctionRoomId, {
@@ -278,6 +285,16 @@ function LiveRoomPage() {
                 : item,
             ),
           )
+          break
+
+        /*
+         * 참여자 수는 헤더 숫자만 조용히 바꾼다.
+         *
+         * 이벤트 피드에 쌓으면 사람이 들락날락할 때마다 "N명 참여" 가
+         * 도배되어 입찰·마감 같은 실제 사건이 묻힌다.
+         */
+        case 'ParticipantCount':
+          setParticipantCount(payload.participantCount)
           break
       }
     },
@@ -753,6 +770,7 @@ function LiveRoomPage() {
         <MobileLiveView
           room={room}
           isGuest={isGuest}
+          participantCount={participantCount}
           events={roomEvents}
           items={roomItems}
           itemsPlaceholder={itemsPlaceholder}
@@ -875,6 +893,7 @@ function LiveRoomPage() {
       <LiveShell
         room={room}
         isGuest={isGuest}
+        participantCount={participantCount}
         onShare={() => setPanel(panel === 'share' ? 'leaderboard' : 'share')}
         onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
         overlay={

@@ -26,6 +26,13 @@ export type SseEventPayload =
       finalPrice: number
       winnerNickname: string | null
     }
+  /**
+   * 방의 실시간 참여자 수.
+   *
+   * 서버가 SSE 연결 수를 센다. 누가 들어오거나 나갈 때, 그리고 heartbeat 로
+   * 끊긴 연결을 걷어낸 뒤에 다시 보낸다.
+   */
+  | { kind: 'ParticipantCount'; participantCount: number }
 
 /**
  * 실시간 SSE 연결과 상태.
@@ -80,6 +87,10 @@ export function useRealtimeStatus(
     es.addEventListener('BID_PLACED', makeHandler('BidPlaced'))
     es.addEventListener('SOFT_CLOSE_EXTENDED', makeHandler('SoftCloseExtended'))
     es.addEventListener('ITEM_ENDED', makeHandler('ItemEnded'))
+    es.addEventListener(
+      'PARTICIPANT_COUNT_UPDATED',
+      makeHandler('ParticipantCount'),
+    )
 
     return () => es.close()
   }, [roomId, retryKey])

@@ -18,6 +18,7 @@ import type { AuctionRoomDetail } from '@/mocks/types'
 export function LiveShell({
   room,
   isGuest,
+  participantCount,
   onShare,
   onCloseRoom,
   left,
@@ -31,6 +32,10 @@ export function LiveShell({
 }: {
   room: AuctionRoomDetail
   isGuest: boolean
+  /**
+   * SSE 로 받은 실시간 참여자 수. 아직 못 받았으면 방 정보의 값을 쓴다.
+   */
+  participantCount?: number | null
   /** 방 헤더의 공유 버튼. 오른쪽 열에 공유 패널을 띄운다. */
   onShare?: () => void
   /** 공유 버튼 왼쪽에 들어가는 보조 조작(개발용 시점 전환 등) */
@@ -87,7 +92,7 @@ export function LiveShell({
 
           <p className="flex items-center gap-1.5 text-[13px] font-medium text-neutral-tertiary">
             <Users aria-hidden className="size-[15px]" />
-            {room.participantCount}명 참여 중
+            {participantCount ?? room.participantCount}명 참여 중
           </p>
 
           <div className="ml-auto flex items-center gap-2">

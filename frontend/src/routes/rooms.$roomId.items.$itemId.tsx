@@ -118,6 +118,12 @@ function AuctionItemPage() {
 
   const handleSseEvent = useCallback(
     (payload: SseEventPayload) => {
+      /*
+       * 참여자 수는 물품에 딸린 이벤트가 아니다. 이 화면에는 방 헤더가
+       * 없어서 보여줄 자리도 없으니 물품 필터보다 먼저 걸러낸다.
+       */
+      if (payload.kind === 'ParticipantCount') return
+
       // 현재 보고 있는 물품과 관계없는 이벤트는 무시한다.
       if (payload.itemId !== item.id) return
 
