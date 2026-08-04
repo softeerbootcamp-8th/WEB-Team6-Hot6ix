@@ -19,6 +19,7 @@ import {
   useRemove,
   useStart,
 } from '@/api/generated/경매-물품/경매-물품'
+import { getGetListQueryKey } from '@/api/generated/상품/상품'
 import type { AuctionItemAddRequestDto } from '@/api/generated/model'
 import { useGetRoom } from '@/api/generated/경매방/경매방'
 import { usePlace } from '@/api/generated/입찰/입찰'
@@ -458,6 +459,17 @@ function LiveRoomPage() {
   }
 
   /**
+   * 추가 모달이 쓰는 등록 가능(UNREGISTERED) 상품 목록을 다시 읽어온다.
+   *
+   * 물품을 넣고 빼면 이 목록이 달라지는데, `staleTime` 이 1분이라 무효화하지
+   * 않으면 그동안 모달을 다시 열었을 때 방금 넣은 상품이 그대로 남아 보인다.
+   * 인자 없는 쿼리 키는 검색어·상태가 다른 캐시까지 함께 잡는 접두사다.
+   */
+  const refreshPickableProducts = () => {
+    void queryClient.invalidateQueries({ queryKey: getGetListQueryKey() })
+  }
+
+  /**
    * 판매자가 물품 경매를 시작한다.
    *
    * 서버가 마감 시각을 확정해 돌려주므로, 응답을 받은 뒤 목록을 다시 읽어
@@ -523,6 +535,7 @@ function LiveRoomPage() {
 
       // 서버가 접수한 뒤에만 목록을 다시 읽는다 (루트 CLAUDE.md).
       refreshItems()
+      refreshPickableProducts()
 
       if (failed.length === 0) {
         toast.success(`물품 ${added}개를 추가했어요`)
@@ -570,6 +583,7 @@ function LiveRoomPage() {
     )
 
     refreshItems()
+    refreshPickableProducts()
 
     const rejected = results.flatMap((result, index) =>
       result.status === 'rejected'
