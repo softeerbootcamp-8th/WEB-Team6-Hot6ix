@@ -2,10 +2,12 @@ package com.hot6ix.upbid.domain.auction.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
@@ -48,6 +50,9 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
     private AuctionItemRepository auctionItemRepository;
 
     @Autowired
+    private AuctionParticipantRepository auctionParticipantRepository;
+
+    @Autowired
     private EntityManager entityManager;
 
     private SellerProfile newSellerProfile(String email) {
@@ -88,6 +93,11 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
                 .build());
     }
 
+    private void addParticipant(AuctionRoom auctionRoom, SellerProfile participant) {
+        auctionParticipantRepository.insertIfAbsent(
+                auctionRoom.getAuctionRoomId(), participant.getUser().getUserId());
+    }
+
     private void addItem(AuctionRoom auctionRoom, SellerProfile sellerProfile, String productName) {
         Product product = productRepository.saveAndFlush(Product.builder()
                 .sellerProfile(sellerProfile)
@@ -119,15 +129,108 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
         addItem(first, mine, "포토카드");
 
         List<AuctionRoomListItemResponseDto> found =
-                auctionRoomRepository.search(mine.getSellerProfileId(), null, null, null, 20);
+                auctionRoomRepository.search(mine.getUser().getUserId(), null, null, null, null, 20);
 
         assertThat(found).hasSize(2);
         // auctionRoomId 내림차순이라 나중에 만든 방이 앞에 온다.
         assertThat(found.get(0).auctionRoomId()).isEqualTo(second.getAuctionRoomId());
         assertThat(found.get(0).itemCount()).isZero();
+        assertThat(found.get(0).role()).isEqualTo(AuctionRoomRole.SELLER);
+        assertThat(found.get(0).storeName()).isEqualTo("승민상점");
         assertThat(found.get(1).auctionRoomId()).isEqualTo(first.getAuctionRoomId());
         assertThat(found.get(1).itemCount()).isEqualTo(2L);
         assertThat(found.get(1).participantCount()).isNull();
+    }
+
+    @Test
+    @DisplayName("참여한 남의 방이 목록에 BUYER로 나온다")
+    void search_includesParticipatedRoom() {
+
+        SellerProfile me = newSellerProfile("me@hot6ix.com");
+        SellerProfile other = newSellerProfile("other@hot6ix.com");
+
+        AuctionRoom otherRoom = newAuctionRoom(other, "PART000000000001", "남의 방", AuctionRoomStatus.OPEN);
+        addParticipant(otherRoom, me);
+
+        List<AuctionRoomListItemResponseDto> found =
+                auctionRoomRepository.search(me.getUser().getUserId(), null, null, null, null, 20);
+
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).auctionRoomId()).isEqualTo(otherRoom.getAuctionRoomId());
+        assertThat(found.get(0).role()).isEqualTo(AuctionRoomRole.BUYER);
+        assertThat(found.get(0).storeName()).isEqualTo("승민상점");
+    }
+
+    @Test
+    @DisplayName("참여 기록이 없는 남의 방은 안 나온다")
+    void search_excludesUnrelatedRoom() {
+
+        SellerProfile me = newSellerProfile("me2@hot6ix.com");
+        SellerProfile other = newSellerProfile("other2@hot6ix.com");
+
+        newAuctionRoom(other, "PART000000000002", "남의 방", AuctionRoomStatus.OPEN);
+
+        List<AuctionRoomListItemResponseDto> found =
+                auctionRoomRepository.search(me.getUser().getUserId(), null, null, null, null, 20);
+
+        assertThat(found).isEmpty();
+    }
+
+    @Test
+    @DisplayName("참여 기록이 없어도 내가 만든 준비 중 방은 나온다")
+    void search_includesOwnRoomWithoutParticipation() {
+
+        SellerProfile me = newSellerProfile("me3@hot6ix.com");
+
+        AuctionRoom myRoom = newAuctionRoom(me, "PART000000000003", "준비 중 방", AuctionRoomStatus.BEFORE);
+
+        List<AuctionRoomListItemResponseDto> found =
+                auctionRoomRepository.search(me.getUser().getUserId(), null, null, null, null, 20);
+
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).auctionRoomId()).isEqualTo(myRoom.getAuctionRoomId());
+        assertThat(found.get(0).role()).isEqualTo(AuctionRoomRole.SELLER);
+    }
+
+    @Test
+    @DisplayName("내가 만든 방에 내가 참여해도 한 줄만 나온다")
+    void search_doesNotDuplicateOwnRoom() {
+
+        SellerProfile me = newSellerProfile("me4@hot6ix.com");
+
+        AuctionRoom myRoom = newAuctionRoom(me, "PART000000000004", "내 방", AuctionRoomStatus.OPEN);
+        addParticipant(myRoom, me);
+
+        List<AuctionRoomListItemResponseDto> found =
+                auctionRoomRepository.search(me.getUser().getUserId(), null, null, null, null, 20);
+
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).role()).isEqualTo(AuctionRoomRole.SELLER);
+    }
+
+    @Test
+    @DisplayName("role로 내가 만든 방과 참여한 방을 갈라 조회한다")
+    void search_filtersByRole() {
+
+        SellerProfile me = newSellerProfile("me5@hot6ix.com");
+        SellerProfile other = newSellerProfile("other5@hot6ix.com");
+
+        AuctionRoom myRoom = newAuctionRoom(me, "PART000000000005", "내 방", AuctionRoomStatus.OPEN);
+        AuctionRoom otherRoom = newAuctionRoom(other, "PART000000000006", "남의 방", AuctionRoomStatus.OPEN);
+        addParticipant(otherRoom, me);
+        addParticipant(myRoom, me);
+
+        List<AuctionRoomListItemResponseDto> asSeller = auctionRoomRepository.search(
+                me.getUser().getUserId(), null, null, AuctionRoomRole.SELLER, null, 20);
+        List<AuctionRoomListItemResponseDto> asBuyer = auctionRoomRepository.search(
+                me.getUser().getUserId(), null, null, AuctionRoomRole.BUYER, null, 20);
+
+        assertThat(asSeller).singleElement()
+                .extracting(AuctionRoomListItemResponseDto::auctionRoomId)
+                .isEqualTo(myRoom.getAuctionRoomId());
+        assertThat(asBuyer).singleElement()
+                .extracting(AuctionRoomListItemResponseDto::auctionRoomId)
+                .isEqualTo(otherRoom.getAuctionRoomId());
     }
 
     @Test
@@ -140,7 +243,7 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
         auctionRoomRepository.flush();
 
         List<AuctionRoomListItemResponseDto> found =
-                auctionRoomRepository.search(sellerProfile.getSellerProfileId(), null, null, null, 20);
+                auctionRoomRepository.search(sellerProfile.getUser().getUserId(), null, null, null, null, 20);
 
         assertThat(found).isEmpty();
     }
@@ -154,9 +257,9 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
         newAuctionRoom(sellerProfile, "SEARCH0000000006", "8월 준비 중 경매", AuctionRoomStatus.BEFORE);
 
         List<AuctionRoomListItemResponseDto> byStatus = auctionRoomRepository.search(
-                sellerProfile.getSellerProfileId(), null, AuctionRoomStatus.OPEN, null, 20);
+                sellerProfile.getUser().getUserId(), null, AuctionRoomStatus.OPEN, null, null, 20);
         List<AuctionRoomListItemResponseDto> byKeyword = auctionRoomRepository.search(
-                sellerProfile.getSellerProfileId(), "8월", null, null, 20);
+                sellerProfile.getUser().getUserId(), "8월", null, null, null, 20);
 
         assertThat(byStatus).singleElement()
                 .extracting(AuctionRoomListItemResponseDto::name).isEqualTo("7월 라이브 경매");
@@ -175,15 +278,73 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
 
         // size 2를 요청하면 hasNext 판정용으로 3건을 읽어온다.
         List<AuctionRoomListItemResponseDto> firstPage =
-                auctionRoomRepository.search(sellerProfile.getSellerProfileId(), null, null, null, 2);
+                auctionRoomRepository.search(sellerProfile.getUser().getUserId(), null, null, null, null, 2);
         List<AuctionRoomListItemResponseDto> nextPage = auctionRoomRepository.search(
-                sellerProfile.getSellerProfileId(), null, null, second.getAuctionRoomId(), 2);
+                sellerProfile.getUser().getUserId(), null, null, null, second.getAuctionRoomId(), 2);
 
         assertThat(firstPage).hasSize(3);
         assertThat(firstPage.get(0).auctionRoomId()).isEqualTo(third.getAuctionRoomId());
         assertThat(nextPage).singleElement()
                 .extracting(AuctionRoomListItemResponseDto::auctionRoomId)
                 .isEqualTo(first.getAuctionRoomId());
+    }
+
+    @Test
+    @DisplayName("상태별 개수는 내 방과 참여한 방을 함께 센다")
+    void countByStatus_countsOwnAndParticipated() {
+
+        SellerProfile me = newSellerProfile("count1@hot6ix.com");
+        SellerProfile other = newSellerProfile("count2@hot6ix.com");
+
+        newAuctionRoom(me, "COUNT00000000001", "준비 중 방", AuctionRoomStatus.BEFORE);
+        newAuctionRoom(me, "COUNT00000000002", "내 라이브", AuctionRoomStatus.OPEN);
+
+        AuctionRoom joinedLive = newAuctionRoom(other, "COUNT00000000003", "남의 라이브", AuctionRoomStatus.OPEN);
+        AuctionRoom joinedClosed = newAuctionRoom(other, "COUNT00000000004", "남의 종료방", AuctionRoomStatus.CLOSED);
+        newAuctionRoom(other, "COUNT00000000005", "모르는 방", AuctionRoomStatus.OPEN);
+        addParticipant(joinedLive, me);
+        addParticipant(joinedClosed, me);
+
+        AuctionRoomCountsResponseDto counts =
+                auctionRoomRepository.countByStatus(me.getUser().getUserId(), null, null);
+
+        assertThat(counts.before()).isEqualTo(1L);
+        assertThat(counts.open()).isEqualTo(2L);
+        assertThat(counts.closed()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("한 건도 없으면 0으로 나온다")
+    void countByStatus_zeroWhenEmpty() {
+
+        SellerProfile me = newSellerProfile("count3@hot6ix.com");
+
+        AuctionRoomCountsResponseDto counts =
+                auctionRoomRepository.countByStatus(me.getUser().getUserId(), null, null);
+
+        assertThat(counts.before()).isZero();
+        assertThat(counts.open()).isZero();
+        assertThat(counts.closed()).isZero();
+    }
+
+    @Test
+    @DisplayName("role과 keyword는 개수에도 걸린다")
+    void countByStatus_appliesRoleAndKeyword() {
+
+        SellerProfile me = newSellerProfile("count4@hot6ix.com");
+        SellerProfile other = newSellerProfile("count5@hot6ix.com");
+
+        newAuctionRoom(me, "COUNT00000000006", "7월 라이브 경매", AuctionRoomStatus.OPEN);
+        AuctionRoom joined = newAuctionRoom(other, "COUNT00000000007", "7월 라이브 경매", AuctionRoomStatus.OPEN);
+        addParticipant(joined, me);
+
+        AuctionRoomCountsResponseDto asSeller =
+                auctionRoomRepository.countByStatus(me.getUser().getUserId(), null, "SELLER");
+        AuctionRoomCountsResponseDto byKeyword =
+                auctionRoomRepository.countByStatus(me.getUser().getUserId(), "8월", null);
+
+        assertThat(asSeller.open()).isEqualTo(1L);
+        assertThat(byKeyword.open()).isZero();
     }
 
     @Test

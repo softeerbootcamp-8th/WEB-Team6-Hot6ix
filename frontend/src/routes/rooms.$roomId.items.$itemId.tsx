@@ -192,7 +192,9 @@ function AuctionItemPage() {
                   (entry) => entry.nickname !== payload.bidderNickname,
                 ),
               ]
-                .slice(0, 5)
+                // 서버 리더보드도 상위 3명이다. 더 들고 있으면 서버 값이 다시
+                // 올 때 줄 수가 줄어들어 화면이 들썩인다.
+                .slice(0, 3)
                 .map((entry, index) => ({ ...entry, rank: index + 1 })),
             }
           })

@@ -5,7 +5,7 @@ import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
 import { cn } from '@/lib/utils'
-import { formatRemaining, formatWon } from '@/lib/format'
+import { formatRemaining, formatWon, toHref } from '@/lib/format'
 import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
 
 /**
@@ -140,7 +140,7 @@ export function MobileItemDetailView({
           <div className="mt-5 border-t pt-5">
             {item.productUrl ? (
               <a
-                href={`https://${item.productUrl}`}
+                href={toHref(item.productUrl)}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[12px] font-semibold text-brand-500 hover:underline"

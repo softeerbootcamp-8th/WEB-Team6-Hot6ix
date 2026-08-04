@@ -28,7 +28,7 @@ import {
   useGetRoom,
 } from '@/api/generated/경매방/경매방'
 import { usePlace } from '@/api/generated/입찰/입찰'
-import { toAuctionItemDetail, toAuctionItems } from '@/features/live/adapt-item'
+import { mergeItemDetail, toAuctionItems } from '@/features/live/adapt-item'
 import { toRoomResult } from '@/features/live/adapt-result'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import { retryOnNetworkError } from '@/features/live/api-error'
@@ -206,6 +206,7 @@ function LiveRoomPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'START',
+              itemId: payload.itemId,
               message: `${payload.itemName} 경매가 시작됐어요`,
             },
           ])
@@ -236,6 +237,7 @@ function LiveRoomPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'CLOSE',
+              itemId: payload.itemId,
               message: `${payload.itemName} 마감 1분 전`,
               emphasized: true,
             },
@@ -249,6 +251,7 @@ function LiveRoomPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'BID',
+              itemId: payload.itemId,
               message: `${payload.bidderNickname}님이 ${formatWon(payload.bidPrice)} 입찰`,
               subtitle: payload.itemName,
               emphasized: true,
@@ -273,7 +276,9 @@ function LiveRoomPage() {
                         (entry) => entry.nickname !== payload.bidderNickname,
                       ),
                     ]
-                      .slice(0, 5)
+                      // 서버 리더보드도 상위 3명이다. 더 들고 있으면 서버 값이
+                      // 다시 올 때 줄 수가 줄어들어 화면이 들썩인다.
+                      .slice(0, 3)
                       .map((entry, index) => ({ ...entry, rank: index + 1 })),
                   }
                 : item,
@@ -288,6 +293,7 @@ function LiveRoomPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'EXTEND',
+              itemId: payload.itemId,
               message: `마감 1분 전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
               subtitle: payload.itemName,
               emphasized: true,
@@ -315,6 +321,7 @@ function LiveRoomPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'CLOSE',
+              itemId: payload.itemId,
               message: payload.winnerNickname
                 ? `${payload.itemName} 낙찰 확정`
                 : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
@@ -531,8 +538,12 @@ function LiveRoomPage() {
     const dto = detailQuery.data?.data
     // 물품을 갈아탄 직후에는 이전 물품의 상세가 남아 있다. 그때는 목록 값을 쓴다.
     if (!dto || dto.auctionItemId !== listItem.id) return listItem
-    return toAuctionItemDetail(dto, listItem, myNickname)
-  }, [listItem, detailQuery.data, myNickname])
+    /*
+     * 상세에만 있는 필드만 얹는다. 현재가·리더보드는 `listItem` 이 원본이다 —
+     * SSE 가 갱신하는 쪽이고, 상세 응답은 남의 입찰로 다시 불리지 않는다.
+     */
+    return mergeItemDetail(dto, listItem)
+  }, [listItem, detailQuery.data])
 
   const detailMinimum = detailItem
     ? detailItem.currentPrice + detailItem.bidUnit
@@ -550,6 +561,17 @@ function LiveRoomPage() {
     // 물품이 바뀔 때만 초기화한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailItemId])
+
+  /*
+   * 남이 입찰해서 최소가가 올라가면 입력 금액도 끌어올린다.
+   *
+   * 이게 없으면 버튼에 낡은 금액이 남고 `amount < minimum` 이라 입찰이 잠긴다.
+   * 최소가 이상을 직접 적어둔 경우는 건드리지 않는다 — 올려 적은 금액을
+   * 남의 입찰 때문에 되돌리면 안 된다.
+   */
+  useEffect(() => {
+    setDetailAmount((prev) => (prev < detailMinimum ? detailMinimum : prev))
+  }, [detailMinimum])
 
   const placeBid = usePlace()
   const startItem = useStart()
@@ -810,7 +832,7 @@ function LiveRoomPage() {
     const target = liveItems[0] ?? rankedItems[0]
     setExtraEvents((prev) => [
       ...prev,
-      makeDemoEvent(prev.length, target?.name),
+      makeDemoEvent(prev.length, target?.name, target?.id),
     ])
     if (shuffle && target) {
       setItems(
@@ -1069,9 +1091,7 @@ function LiveRoomPage() {
               item={detailItem}
               sellerName={room.sellerName}
               events={roomEvents.filter(
-                (event) =>
-                  event.subtitle === detailItem.name ||
-                  event.message.includes(detailItem.name),
+                (event) => event.itemId === detailItem.id,
               )}
               remaining={detailRemaining}
               closed={detailItem.status === 'CLOSED'}
@@ -1209,9 +1229,7 @@ function LiveRoomPage() {
                   roomId={roomId}
                   itemId={String(detailItem.id)}
                   events={roomEvents.filter(
-                    (event) =>
-                      event.subtitle === detailItem.name ||
-                      event.message.includes(detailItem.name),
+                    (event) => event.itemId === detailItem.id,
                   )}
                   isGuest={isGuest}
                   closed={detailItem.status === 'CLOSED'}
@@ -1616,12 +1634,18 @@ function bumpTopBid(item: AuctionItemDetail): AuctionItemDetail {
  * 실시간(SSE/WebSocket)이 붙기 전까지 **새 이벤트가 들어올 때의 움직임**을
  * 눈으로 확인하려고 둔다. `import.meta.env.DEV` 안에서만 쓰인다.
  */
-function makeDemoEvent(index: number, itemName?: string): RoomEvent {
+function makeDemoEvent(
+  index: number,
+  itemName?: string,
+  itemId?: number,
+): RoomEvent {
   const amount = 86000 + index * 1000
   return {
     id: 10_000 + index,
     at: new Date().toISOString(),
     kind: 'BID',
+    // 물품 상세의 로그도 id 로 골라내므로, 데모 이벤트에도 붙여야 거기 보인다.
+    itemId,
     message: `데모입찰러님이 ${amount.toLocaleString('ko-KR')}원 입찰`,
     subtitle: itemName,
     emphasized: true,

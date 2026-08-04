@@ -3,11 +3,13 @@ package com.hot6ix.upbid.domain.auction.service;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemResultResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
@@ -15,6 +17,7 @@ import com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
+import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -44,6 +47,7 @@ public class AuctionRoomService {
     private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final AuctionRoomShareService auctionRoomShareService;
+    private final RoomSseManager roomSseManager;
     /**
      * 결과 화면의 "내 최종 순위"만을 위해 거래 도메인을 읽는다. 낙찰자는 경매 물품에, 순위는
      * 낙찰 후보에 있어 한쪽은 반드시 경계를 넘어야 한다. 읽기만 하고 상태를 바꾸지 않는다.
@@ -120,34 +124,61 @@ public class AuctionRoomService {
     }
 
     /**
-     * 판매자 본인이 만든 경매방을 최신순으로 조회한다. 참여 경매방 목록과는 응답도 화면 역할도
-     * 달라 경로를 섞지 않는다.
+     * 로그인한 사용자의 경매방을 최신순으로 조회한다. 내가 만든 방과 내가 참여한 방이 함께 나온다.
      *
-     * <p>상태·검색어를 서버가 받는 이유는 커서 페이지네이션이기 때문이다. 화면에서 거르면
+     * <p>판매자 프로필을 찾지 않는다. 판매자로 등록한 적 없는 사용자도 참여한 방은 봐야 한다.
+     *
+     * <p>상태·검색어·역할을 서버가 받는 이유는 커서 페이지네이션이기 때문이다. 화면에서 거르면
      * 받아온 첫 쪽 안에서만 걸려 "있는데 검색에 안 나오는" 목록이 된다.
      *
      * @param userId  조회를 요청한 회원의 ID
      * @param keyword 경매방 이름 부분 일치. null이면 전체
      * @param status  경매방 상태. null이면 전체
+     * @param role    SELLER면 내가 만든 방, BUYER면 참여한 남의 방. null이면 전체
      * @param cursor  이전 쪽의 마지막 경매방 ID. null이면 첫 쪽
      * @param size    한 쪽 크기. null이면 기본값
      * @return 경매방 목록 한 쪽
-     * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND)
      */
     public CursorPageResponse<AuctionRoomListItemResponseDto> getMyRooms(
-            Long userId, String keyword, AuctionRoomStatus status, Long cursor, Integer size) {
+            Long userId, String keyword, AuctionRoomStatus status, AuctionRoomRole role,
+            Long cursor, Integer size) {
 
-        SellerProfile sellerProfile = findActiveSellerProfile(userId);
         int pageSize = (size != null) ? size : AuctionRoomRepository.DEFAULT_PAGE_SIZE;
 
-        List<AuctionRoomListItemResponseDto> fetched = auctionRoomRepository.search(
-                sellerProfile.getSellerProfileId(), keyword, status, cursor, pageSize);
+        List<AuctionRoomListItemResponseDto> fetched =
+                auctionRoomRepository.search(userId, keyword, status, role, cursor, pageSize);
 
         boolean hasNext = fetched.size() > pageSize;
-        List<AuctionRoomListItemResponseDto> content = hasNext ? fetched.subList(0, pageSize) : fetched;
+        List<AuctionRoomListItemResponseDto> page = hasNext ? fetched.subList(0, pageSize) : fetched;
+        List<AuctionRoomListItemResponseDto> content = page.stream()
+                .map(this::withLiveParticipantCount)
+                .toList();
+
         Long nextCursor = hasNext ? content.get(content.size() - 1).auctionRoomId() : null;
 
         return CursorPageResponse.of(content, nextCursor);
+    }
+
+    /**
+     * 방송 중인 방에만 지금 접속 중인 수를 채운다. {@code RoomSseManager}가 들고 있는 SSE
+     * 커넥션 수라 방 안 화면의 "N명 참여 중"과 같은 값이다.
+     *
+     * <p>{@code auction_participants} 행 수를 세지 않는다. 그건 로그인하고 붙은 사람의 누적이라
+     * 같은 방을 목록과 방 안에서 볼 때 숫자가 달라진다.
+     *
+     * <p>시작 전·종료된 방은 커넥션이 0이라 값이 없다. {@code null}로 두면 카드가 그 줄을 안 그린다.
+     */
+    private AuctionRoomListItemResponseDto withLiveParticipantCount(AuctionRoomListItemResponseDto item) {
+        if (item.status() != AuctionRoomStatus.OPEN) {
+            return item;
+        }
+
+        return item.withParticipantCount((long) roomSseManager.getParticipantCount(item.auctionRoomId()));
+    }
+
+    /** 목록 화면 필터 바의 탭 숫자. 목록과 달리 {@code status}를 안 받는다 — 그게 세는 대상이다. */
+    public AuctionRoomCountsResponseDto getMyRoomCounts(Long userId, String keyword, AuctionRoomRole role) {
+        return auctionRoomRepository.countByStatus(userId, keyword, (role != null) ? role.name() : null);
     }
 
     /**

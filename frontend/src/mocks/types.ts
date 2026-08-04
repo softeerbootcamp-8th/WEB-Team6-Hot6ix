@@ -88,6 +88,14 @@ export interface RoomEvent {
   at: string
   kind: 'BID' | 'START' | 'CLOSE' | 'EXTEND' | 'REJECT'
   message: string
+  /**
+   * 어느 물품의 이벤트인지. 물품 상세가 자기 로그만 골라낼 때 쓴다.
+   *
+   * 방 종료처럼 물품 단위가 아닌 이벤트는 없다. 예전에는 물품명 문자열로
+   * 대조했는데, 이름은 한 방에서 중복될 수 있고 부분일치까지 걸려서 로그가
+   * 서로 섞이거나 아예 안 보였다.
+   */
+  itemId?: number
   /** 물품명이나 금액·닉네임 같은 보조 설명 */
   subtitle?: string
   /** 마감 임박·연장처럼 눈에 띄어야 하는 이벤트 */

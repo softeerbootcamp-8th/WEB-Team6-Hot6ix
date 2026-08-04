@@ -12,6 +12,7 @@ import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
@@ -56,8 +57,12 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
     @MockitoBean
     private AuctionRoomShareService auctionRoomShareService;
 
-    // @DataJpaTest 슬라이스에는 이벤트 발행 빈이 없다. 이 테스트가 보는 건 share_code
-    // 재시도라 발행 내용은 검증하지 않고, 컨텍스트만 뜨게 목으로 채운다.
+    // @DataJpaTest 슬라이스에는 sse 도메인 빈이 안 올라온다. 목록 조회만 쓰는 의존이라 목으로 채운다.
+    @MockitoBean
+    private RoomSseManager roomSseManager;
+
+    // 이벤트 발행 빈도 슬라이스에 없다. 이 테스트가 보는 건 share_code 재시도라
+    // 발행 내용은 검증하지 않고, 컨텍스트만 뜨게 목으로 채운다.
     @MockitoBean
     private DomainEventPublisher domainEventPublisher;
 

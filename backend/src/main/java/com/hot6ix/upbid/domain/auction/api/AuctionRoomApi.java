@@ -2,10 +2,12 @@ package com.hot6ix.upbid.domain.auction.api;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
@@ -64,18 +66,20 @@ public interface AuctionRoomApi {
 
     @Operation(
             summary = "내 경매방 목록 조회",
-            description = "로그인한 판매자 본인이 만든 경매방을 auctionRoomId 최신순으로 조회한다. "
+            description = "로그인한 사용자의 경매방을 auctionRoomId 최신순으로 조회한다. "
+                    + "**내가 만든 방과 내가 참여한 방이 함께 나온다.** 방마다 role로 갈리며, "
+                    + "role 파라미터로 한쪽만 볼 수 있다. 판매자로 등록하지 않은 사용자도 조회할 수 있다. "
                     + "정렬 키를 항상 불변인 auctionRoomId로 고정해 커서 페이지네이션이 안정적으로 동작하며, "
                     + "상태는 정렬이 아니라 필터로만 사용한다. "
-                    + "**참여 경매방 목록이 아니다** — 내가 개설한 방만 나온다. "
-                    + "itemCount는 그 방에 등록된 물품 수이며, participantCount는 참여자를 기록하는 코드가 "
-                    + "아직 없어 항상 null이다."
+                    + "itemCount는 그 방에 등록된 물품 수이며, participantCount는 방송 중(OPEN)인 방의 "
+                    + "지금 접속 중인 수다 — 시작 전·종료된 방은 null이다. "
+                    + "전체 개수는 커서 페이지네이션이라 이 응답으로 알 수 없다. 상태별 개수는 "
+                    + "GET /auction-rooms/me/counts로 따로 조회한다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "조회 성공. 만든 방이 없으면 빈 배열"),
+            @ApiResponse(responseCode = "200", description = "조회 성공. 해당하는 방이 없으면 빈 배열"),
             @ApiResponse(responseCode = "400", description = "cursor가 양수가 아니거나 size가 1 미만 (code 2002)"),
-            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
-            @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002)")
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)")
     })
     ResponseEntity<CommonResponse<CursorPageResponse<AuctionRoomListItemResponseDto>>> getMyRooms(
             @Parameter(hidden = true) @LoginUserId Long userId,
@@ -83,10 +87,29 @@ public interface AuctionRoomApi {
             @RequestParam(required = false) String keyword,
             @Parameter(description = "경매방 상태 필터 — BEFORE(시작 전) / OPEN(방송 중) / CLOSED(종료)")
             @RequestParam(required = false) AuctionRoomStatus status,
+            @Parameter(description = "역할 필터 — SELLER(내가 만든 방) / BUYER(참여한 남의 방)")
+            @RequestParam(required = false) AuctionRoomRole role,
             @Parameter(description = "이전 페이지 마지막 경매방의 auctionRoomId, 없으면 첫 페이지")
             @RequestParam(required = false) @Positive(message = "cursor는 양수여야 합니다.") Long cursor,
             @Parameter(description = "페이지 크기, 기본값 20")
             @RequestParam(required = false) @Min(value = 1, message = "size는 1 이상이어야 합니다.") Integer size);
+
+    @Operation(
+            summary = "내 경매방 상태별 개수 조회",
+            description = "목록 화면 필터 바의 탭 숫자용이다. 목록과 같은 조건에서 상태만 빼고 세므로 "
+                    + "상태 탭을 바꿔도 이 값은 변하지 않는다. 역할 필터나 검색어를 바꿀 때만 다시 부른다. "
+                    + "화면의 '전체'는 세 값을 더한 수다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공. 해당하는 방이 없으면 전부 0"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)")
+    })
+    ResponseEntity<CommonResponse<AuctionRoomCountsResponseDto>> getMyRoomCounts(
+            @Parameter(hidden = true) @LoginUserId Long userId,
+            @Parameter(description = "경매방 이름 검색어")
+            @RequestParam(required = false) String keyword,
+            @Parameter(description = "역할 필터 — SELLER(내가 만든 방) / BUYER(참여한 남의 방)")
+            @RequestParam(required = false) AuctionRoomRole role);
 
     @Operation(
             summary = "경매방 낙찰 결과 조회",

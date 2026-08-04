@@ -9,29 +9,15 @@
 **그 외 환경**: 카카오 로그인 후 발급된 SESSION 쿠키가 자동으로 포함됩니다.
  * OpenAPI spec version: v1
  */
-import type { GetMyRoomsStatus } from './getMyRoomsStatus';
-import type { GetMyRoomsRole } from './getMyRoomsRole';
+import type { GetMyRoomCountsRole } from './getMyRoomCountsRole';
 
-export type GetMyRoomsParams = {
+export type GetMyRoomCountsParams = {
 /**
  * 경매방 이름 검색어
  */
 keyword?: string;
 /**
- * 경매방 상태 필터 — BEFORE(시작 전) / OPEN(방송 중) / CLOSED(종료)
- */
-status?: GetMyRoomsStatus;
-/**
  * 역할 필터 — SELLER(내가 만든 방) / BUYER(참여한 남의 방)
  */
-role?: GetMyRoomsRole;
-/**
- * 이전 페이지 마지막 경매방의 auctionRoomId, 없으면 첫 페이지
- */
-cursor?: number;
-/**
- * 페이지 크기, 기본값 20
- * @minimum 1
- */
-size?: number;
+role?: GetMyRoomCountsRole;
 };
