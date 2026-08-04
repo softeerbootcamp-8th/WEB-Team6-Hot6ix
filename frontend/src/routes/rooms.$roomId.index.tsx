@@ -47,7 +47,6 @@ import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { ItemDetailPanel } from '@/features/live/components/item-detail-panel'
 import { LiveItemList } from '@/features/live/components/live-item-list'
 import { useListFlip } from '@/features/live/use-list-flip'
-import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
@@ -109,6 +108,8 @@ function LiveRoomPage() {
   const isDesktop = useIsDesktop()
 
   const isGuest = user === null
+  /** 리더보드에서 내 줄을 찾는 기준. 서버가 `isMe` 를 안 줘서 닉네임으로 맞춘다. */
+  const myNickname = user?.nickname ?? null
 
   const [keyword, setKeyword] = useState('')
   const [panel, setPanel] = useState<RightPanel>('leaderboard')
@@ -132,6 +133,13 @@ function LiveRoomPage() {
   const [items, setItems] = useState<AuctionItemDetail[] | null>(null)
   /** 실시간 연동 전까지 새 이벤트 애니메이션을 눈으로 보려고 쌓아 둔다. */
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
+  /**
+   * 서버가 세는 실시간 참여자 수. 아직 못 받았으면 `null`.
+   *
+   * 방 상세 응답의 `participantCount` 는 아직 채워지지 않아서 SSE 가 유일한
+   * 출처다. 연결이 끊기면 마지막 값이 남고, 다시 구독하면 서버가 곧 새로 보낸다.
+   */
+  const [participantCount, setParticipantCount] = useState<number | null>(null)
 
   const auctionRoomId = Number(roomId)
   // `/rooms/abc` 처럼 숫자가 아닌 주소로 들어오면 서버를 부르지 않는다.
@@ -145,22 +153,19 @@ function LiveRoomPage() {
     query: { enabled: validRoomId },
   })
   const serverItems = useMemo(
-    () => toAuctionItems(summaries.data?.data ?? [], user?.nickname ?? null),
-    [summaries.data, user?.nickname],
+    () => toAuctionItems(summaries.data?.data ?? [], myNickname),
+    [summaries.data, myNickname],
   )
 
   /*
-   * 서버가 물품을 주면 그 값을 쓰고, 비었거나 못 받았으면 목업으로 채운다.
+   * 물품은 서버 값만 쓴다.
    *
-   * 백엔드에 이 방 데이터가 없으면 화면이 통째로 비어서 방을 볼 수가 없다.
-   * 서버가 하나라도 주는 순간 그쪽이 이기므로 실제 연동은 그대로 살아 있다.
-   * **시연용 임시 조치다.** 이 방 물품이 실제 API 로 넘어가면 목업 쪽을 지운다.
+   * 예전에는 서버가 빈 목록을 주면 목업 물품으로 갈아탔다. 화면은 채워지지만
+   * 리더보드·현재가가 실제 입찰과 무관한 가짜였고, 화면상 구분이 되지 않아
+   * 백엔드가 값을 안 주고 있다는 사실 자체가 가려졌다. 비어 보이는 게 낫다.
    */
-  const usingMockItems = serverItems.length === 0
-  // 방마다 자기 물품을 가진 목업 상세가 있다. 없는 방 번호면 라이브 방을 쓴다.
-  const mockItems = (findMockRoom(auctionRoomId) ?? MOCK_ROOM_DETAIL).items
   // 편성을 바꾸기 전까지는 서버가 준 목록을 그대로 쓴다.
-  const roomItems = items ?? (usingMockItems ? mockItems : serverItems)
+  const roomItems = items ?? serverItems
 
   /*
    * 방 정보는 서버가 준다. 목록·상세와 달리 목업으로 되돌아가지 않는다 —
@@ -254,7 +259,7 @@ function LiveRoomPage() {
                         rank: 1,
                         nickname: payload.bidderNickname,
                         amount: payload.bidPrice,
-                        isMe: false,
+                        isMe: payload.bidderNickname === myNickname,
                       },
                       ...item.leaderboard.filter(
                         (entry) => entry.nickname !== payload.bidderNickname,
@@ -352,9 +357,19 @@ function LiveRoomPage() {
             queryKey: getGetSummariesQueryKey(auctionRoomId),
           })
           break
+
+        /*
+         * 참여자 수는 헤더 숫자만 조용히 바꾼다.
+         *
+         * 이벤트 피드에 쌓으면 사람이 들락날락할 때마다 "N명 참여" 가
+         * 도배되어 입찰·마감 같은 실제 사건이 묻힌다.
+         */
+        case 'ParticipantCount':
+          setParticipantCount(payload.participantCount)
+          break
       }
     },
-    [roomItems, auctionRoomId, queryClient],
+    [roomItems, myNickname, auctionRoomId, queryClient],
   )
 
   const { status } = useRealtimeStatus(roomId, handleSseEvent)
@@ -395,7 +410,7 @@ function LiveRoomPage() {
         <div key={row} className="h-[76px] animate-skeleton rounded-2xl" />
       ))}
     </div>
-  ) : // 목업으로 대신 채웠으면 에러를 띄우지 않는다. 보여줄 물품이 이미 있다.
+  ) : // 편성을 바꿔서 보여줄 물품이 있으면 에러를 띄우지 않는다.
   summaries.isError && roomItems.length === 0 ? (
     <div className="mt-2.5 rounded-2xl border bg-card px-4 py-8 text-center">
       <p className="text-[13px] font-medium text-neutral-muted">
@@ -409,6 +424,16 @@ function LiveRoomPage() {
       >
         다시 시도
       </Button>
+    </div>
+  ) : roomItems.length === 0 ? (
+    /*
+     * 서버가 빈 목록을 준 경우. 목업으로 채우지 않으므로 이 자리가 실제로
+     * 보인다. 열이 통째로 비면 로딩이 멈춘 것처럼 보여서 한 줄이라도 남긴다.
+     */
+    <div className="mt-2.5 rounded-2xl border bg-card px-4 py-8 text-center">
+      <p className="text-[13px] font-medium text-neutral-muted">
+        아직 등록된 물품이 없어요.
+      </p>
     </div>
   ) : null
 
@@ -461,16 +486,15 @@ function LiveRoomPage() {
    */
   const listItem = roomItems.find((item) => item.id === detailItemId) ?? null
   const detailQuery = useGetDetail1(detailItemId ?? 0, {
-    // 목업 물품은 서버에 없다. 부르면 매번 404 만 쌓인다.
-    query: { enabled: detailItemId !== null && !usingMockItems },
+    query: { enabled: detailItemId !== null },
   })
   const detailItem = useMemo(() => {
     if (!listItem) return null
     const dto = detailQuery.data?.data
     // 물품을 갈아탄 직후에는 이전 물품의 상세가 남아 있다. 그때는 목록 값을 쓴다.
     if (!dto || dto.auctionItemId !== listItem.id) return listItem
-    return toAuctionItemDetail(dto, listItem, user?.nickname ?? null)
-  }, [listItem, detailQuery.data, user?.nickname])
+    return toAuctionItemDetail(dto, listItem, myNickname)
+  }, [listItem, detailQuery.data, myNickname])
 
   const detailMinimum = detailItem
     ? detailItem.currentPrice + detailItem.bidUnit
@@ -693,69 +717,8 @@ function LiveRoomPage() {
     )
   }
 
-  /**
-   * 목업 물품 입찰을 화면에서 처리한다.
-   *
-   * 서버에 없는 물품이라 API 를 부르면 반드시 실패한다. 시연에서 입찰 흐름을
-   * 보여줄 수 있도록 현재가·리더보드·이벤트 피드만 직접 갱신한다.
-   *
-   * "서버 확정 전에 성공으로 표시하지 않는다"(루트 CLAUDE.md)를 **목업
-   * 물품에 한해** 비켜 간다. 서버가 준 물품은 아래 실제 경로로 가므로
-   * 실 서비스 규칙은 그대로다. 물품이 API 로 넘어가면 이 함수를 지운다.
-   */
-  const applyMockBid = (item: AuctionItemDetail, amount: number) => {
-    const nickname = user?.nickname ?? '나'
-    const at = new Date().toISOString()
-
-    setItems(
-      roomItems.map((candidate) =>
-        candidate.id === item.id
-          ? {
-              ...candidate,
-              currentPrice: amount,
-              topBidderNickname: nickname,
-              bidCount: candidate.bidCount + 1,
-              leaderboard: [
-                { rank: 1, nickname, amount, isMe: true },
-                ...candidate.leaderboard.filter((entry) => !entry.isMe),
-              ]
-                .slice(0, 5)
-                .map((entry, index) => ({ ...entry, rank: index + 1 })),
-              history: [
-                { id: Date.now(), nickname, amount, bidAt: at },
-                ...candidate.history,
-              ],
-            }
-          : candidate,
-      ),
-    )
-    setExtraEvents((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        at,
-        kind: 'BID',
-        message: `${nickname}님이 ${formatWon(amount)} 입찰`,
-        subtitle: item.name,
-        emphasized: true,
-      },
-    ])
-  }
-
   const submitDetailBid = async () => {
     if (!detailItem) return
-
-    if (usingMockItems) {
-      applyMockBid(detailItem, detailAmount)
-      setDetailFeedback({
-        tone: 'success',
-        message: `${formatWon(detailAmount)} 입찰이 등록됐어요.`,
-      })
-      toast.success('입찰이 등록됐어요', {
-        description: `${detailItem.name} · ${formatWon(detailAmount)}`,
-      })
-      return
-    }
 
     setDetailPending(true)
     setDetailFeedback(null)
@@ -871,13 +834,9 @@ function LiveRoomPage() {
         removeMode,
         selectedCount: selectedForRemoval.length,
         addDisabled: addItems.isPending,
-        removeDisabled:
-          usingMockItems || (!removeMode && removable.length === 0),
-        removeTitle: usingMockItems
-          ? '시연용 목업 물품이라 뺄 수 없어요'
-          : removable.length === 0
-            ? '시작 전 물품만 뺄 수 있어요'
-            : undefined,
+        removeDisabled: !removeMode && removable.length === 0,
+        removeTitle:
+          removable.length === 0 ? '시작 전 물품만 뺄 수 있어요' : undefined,
         onPick: () => setPicking(true),
         onToggleRemoveMode: () => {
           setRemoveMode((prev) => !prev)
@@ -893,16 +852,6 @@ function LiveRoomPage() {
 
   const confirmBid = async () => {
     if (!pendingBid) return
-
-    if (usingMockItems) {
-      applyMockBid(pendingBid.item, pendingBid.amount)
-      toast.success('입찰이 등록됐어요', {
-        description: `${pendingBid.item.name} · ${formatWon(pendingBid.amount)}`,
-      })
-      setPendingBid(null)
-      setPanel('leaderboard')
-      return
-    }
 
     setSubmitting(true)
 
@@ -1013,6 +962,7 @@ function LiveRoomPage() {
         <MobileLiveView
           room={room}
           isGuest={isGuest}
+          participantCount={participantCount}
           events={roomEvents}
           items={roomItems}
           itemsPlaceholder={itemsPlaceholder}
@@ -1028,7 +978,7 @@ function LiveRoomPage() {
           }
           isDimmed={(item) => removeMode && item.status !== 'READY'}
           seller={sellerControls}
-          onStart={isOwner && !usingMockItems ? handleStart : undefined}
+          onStart={isOwner ? handleStart : undefined}
           isOwner={isOwner}
           justClosedId={justClosedId}
           startingItemId={startingItemId}
@@ -1166,6 +1116,7 @@ function LiveRoomPage() {
       <LiveShell
         room={room}
         isGuest={isGuest}
+        participantCount={participantCount}
         onShare={() => setPanel(panel === 'share' ? 'leaderboard' : 'share')}
         onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
         overlay={
@@ -1286,16 +1237,12 @@ function LiveRoomPage() {
                     setRemoveMode((prev) => !prev)
                     setSelectedForRemoval([])
                   }}
-                  disabled={
-                    usingMockItems || (!removeMode && removable.length === 0)
-                  }
+                  disabled={!removeMode && removable.length === 0}
                   aria-pressed={removeMode}
                   title={
-                    usingMockItems
-                      ? '시연용 목업 물품이라 뺄 수 없어요'
-                      : removable.length === 0
-                        ? '시작 전 물품만 뺄 수 있어요'
-                        : undefined
+                    removable.length === 0
+                      ? '시작 전 물품만 뺄 수 있어요'
+                      : undefined
                   }
                   className={cn(
                     'ease-soft flex h-7 items-center gap-1 rounded-lg border px-2.5 text-[12px] font-bold transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:text-neutral-muted',
@@ -1344,7 +1291,7 @@ function LiveRoomPage() {
                   isDimmed={(item) => removeMode && item.status !== 'READY'}
                   justClosedId={justClosedId}
                   startingItemId={startingItemId}
-                  onStart={isOwner && !usingMockItems ? handleStart : undefined}
+                  onStart={isOwner ? handleStart : undefined}
                   onSelect={handleSelectItem}
                 />
               ))}

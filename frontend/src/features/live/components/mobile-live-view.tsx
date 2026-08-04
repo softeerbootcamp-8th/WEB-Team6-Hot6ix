@@ -25,6 +25,7 @@ import type {
 export function MobileLiveView({
   room,
   isGuest,
+  participantCount,
   isOwner = false,
   events,
   items,
@@ -47,6 +48,10 @@ export function MobileLiveView({
 }: {
   room: AuctionRoomDetail
   isGuest: boolean
+  /**
+   * SSE 로 받은 실시간 참여자 수. 아직 못 받았으면 방 정보의 값을 쓴다.
+   */
+  participantCount?: number | null
   /** 방을 만든 사람은 자기 방에 입찰할 수 없다. */
   isOwner?: boolean
   events: RoomEvent[]
@@ -129,7 +134,7 @@ export function MobileLiveView({
               {room.title}
             </p>
             <p className="mt-0.5 truncate text-[12px] font-medium text-neutral-tertiary">
-              {room.participantCount}명 참여 중
+              {participantCount ?? room.participantCount}명 참여 중
             </p>
           </div>
 
