@@ -2,19 +2,26 @@ package com.hot6ix.upbid.domain.auction.api;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
+import com.hot6ix.upbid.global.response.CursorPageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 
 
 @Tag(name = "경매방", description = "경매방 생성·조회·수정 API")
@@ -40,7 +47,10 @@ public interface AuctionRoomApi {
     @Operation(
             summary = "경매방 정보 조회",
             description = "경매방의 공개 정보를 조회한다. 인증이 필요 없으며, 경매 시작 전(BEFORE)을 포함한 "
-                    + "모든 상태에서 동일하게 노출한다."
+                    + "모든 상태에서 동일하게 노출한다. "
+                    + "isOwner만 보는 사람에 따라 달라진다 — 방 주인이 로그인한 상태로 조회했을 때만 true이며, "
+                    + "화면이 판매자 조작(물품 추가·빼기·시작) UI를 띄울지 정하는 값이다. "
+                    + "실제 권한은 각 조작 API가 다시 검증하므로 이 값을 권한의 근거로 쓰지 않는다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
@@ -48,8 +58,56 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "404", description = "존재하지 않거나 삭제된 경매방 (code 4002)")
     })
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "조회할 경매방 ID", required = true)
             @PathVariable Long roomId);
+
+    @Operation(
+            summary = "내 경매방 목록 조회",
+            description = "로그인한 판매자 본인이 만든 경매방을 auctionRoomId 최신순으로 조회한다. "
+                    + "정렬 키를 항상 불변인 auctionRoomId로 고정해 커서 페이지네이션이 안정적으로 동작하며, "
+                    + "상태는 정렬이 아니라 필터로만 사용한다. "
+                    + "**참여 경매방 목록이 아니다** — 내가 개설한 방만 나온다. "
+                    + "itemCount는 그 방에 등록된 물품 수이며, participantCount는 참여자를 기록하는 코드가 "
+                    + "아직 없어 항상 null이다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공. 만든 방이 없으면 빈 배열"),
+            @ApiResponse(responseCode = "400", description = "cursor가 양수가 아니거나 size가 1 미만 (code 2002)"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
+            @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002)")
+    })
+    ResponseEntity<CommonResponse<CursorPageResponse<AuctionRoomListItemResponseDto>>> getMyRooms(
+            @Parameter(hidden = true) @LoginUserId Long userId,
+            @Parameter(description = "경매방 이름 검색어")
+            @RequestParam(required = false) String keyword,
+            @Parameter(description = "경매방 상태 필터 — BEFORE(시작 전) / OPEN(방송 중) / CLOSED(종료)")
+            @RequestParam(required = false) AuctionRoomStatus status,
+            @Parameter(description = "이전 페이지 마지막 경매방의 auctionRoomId, 없으면 첫 페이지")
+            @RequestParam(required = false) @Positive(message = "cursor는 양수여야 합니다.") Long cursor,
+            @Parameter(description = "페이지 크기, 기본값 20")
+            @RequestParam(required = false) @Min(value = 1, message = "size는 1 이상이어야 합니다.") Integer size);
+
+    @Operation(
+            summary = "경매방 낙찰 결과 조회",
+            description = "경매방의 물품별 낙찰·유찰 결과를 한 번에 조회한다. 인증이 필요 없고, 로그인한 "
+                    + "요청에만 물품마다 요청자의 최종 순위(myRank)와 부른 최고가(myAmount)가 함께 담긴다. "
+                    + "낙찰가와 낙찰자는 낙찰(SOLD)인 물품에만 있다 — 유찰 물품의 현재가는 아무도 부르지 "
+                    + "않은 시작가라 가격으로 내리지 않는다. "
+                    + "방 상태로 거르지 않으므로 아직 열려 있는 방도 조회되며, 진행 중인 물품은 status로 드러난다. "
+                    + "낙찰 건수·유찰 건수·총 낙찰액은 화면이 items에서 직접 세므로 응답에 없다. "
+                    + "참여자 수도 없다 — 종료된 방의 참여자 수는 입찰한 사람 수인지 방송을 보던 사람 수인지 "
+                    + "구분되지 않아 내리지 않는다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "400", description = "경로 변수가 숫자가 아니라면 code 2002"),
+            @ApiResponse(responseCode = "404", description = "존재하지 않거나 삭제된 경매방 (code 4002)")
+    })
+    ResponseEntity<CommonResponse<AuctionRoomResultResponseDto>> getResults(
+            @Parameter(description = "결과를 조회할 경매방 ID", required = true)
+            @PathVariable Long roomId,
+            @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
             summary = "경매방 공유 링크 조회",
@@ -79,6 +137,7 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
     })
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoomByShareCode(
+            @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "경매방 공유 코드", required = true)
             @PathVariable String shareCode);
 

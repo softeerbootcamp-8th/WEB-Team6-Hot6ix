@@ -246,20 +246,6 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /*
-   * iOS 사파리는 글자가 16px 보다 작은 입력칸에 포커스하면 화면을 확대한다.
-   * 확대는 되돌아오지 않아서, 폼을 한 번 쓰고 나면 화면 전체가 커진 채로 남는다.
-   * 사용자의 확대/축소를 막는 대신(viewport 고정은 접근성을 해친다)
-   * 모바일에서만 입력칸 글자를 16px 로 올려 자동 확대를 피한다.
-   */
-  @media (max-width: 767px) {
-    input,
-    textarea,
-    select {
-      font-size: 16px;
-    }
-  }
-
   /* 움직임을 줄이도록 설정한 사용자에게는 전환을 걷어낸다. */
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -644,4 +630,22 @@
 
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/*
+ * iOS 사파리는 글자가 16px 보다 작은 입력칸에 포커스하면 화면을 확대한다.
+ * 확대는 되돌아오지 않아서, 폼을 한 번 쓰고 나면 화면 전체가 커진 채로 남는다.
+ * 사용자의 확대/축소를 막는 대신(viewport 고정은 접근성을 해친다)
+ * 모바일에서만 입력칸 글자를 16px 로 올린다.
+ *
+ * **레이어 밖에 둔다.** `@layer base` 안에 두면 `field.tsx` 의 `text-[14px]` 같은
+ * 유틸리티 클래스에 밀려(utilities 가 base 보다 세다) 규칙이 사실상 없는 것과
+ * 같아진다. 레이어에 속하지 않은 CSS 는 모든 레이어를 이긴다.
+ */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }

@@ -9,12 +9,16 @@ import org.springframework.http.HttpStatus;
  * <p>도메인마다 천 번대 블록을 하나 잡는다. 현재 배정:
  *
  * <pre>
+ *   1xxx  인증·로그인    AuthErrorType
  *   2xxx  공통          CommonErrorType
  *   3xxx  판매자 프로필  SellerProfileErrorType
  *   4xxx  경매 물품·경매방  AuctionErrorType
+ *   5xxx  상품          ProductErrorType
  *   6xxx  거래·낙찰      DealErrorType
  *   7xxx  입찰          BidErrorType
  *   8xxx  SMS 인증      SmsVerificationErrorType
+ *   9xxx  회원          UserErrorType
+ *   10xxx 이미지 업로드  UploadErrorType
  * </pre>
  *
  * <p>새 도메인은 위에 없는 천 번대를 잡고 이 목록에 추가한다. 같은 뜻의 에러를 도메인마다

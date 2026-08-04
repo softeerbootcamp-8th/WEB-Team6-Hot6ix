@@ -1,6 +1,7 @@
 import type {
   AuctionItemDetailResponseDto,
   AuctionItemSummaryResponseDto,
+  LeaderboardEntryResponseDto,
 } from '@/api/generated/model'
 import { MOCK_ROOM_DETAIL } from '@/mocks/data'
 import type {
@@ -28,18 +29,6 @@ import type {
  * 사진을 서버 값으로 바꾸는 건 `API-INTEGRATION.md` 대응표에 남은 별도 작업이다.
  */
 
-/**
- * 서버는 #115 부터 리더보드를 내려주는데, 그 뒤로 `pnpm api:gen` 을 돌리지 않아
- * 생성된 DTO 타입에 필드가 없다. 생성물(`api/generated/**`)은 손대지 않으므로
- * 여기서만 좁게 선언한다.
- *
- * 모양은 백엔드 `LeaderboardEntryResponseDto`(rank·nickname·amount) 기준이다.
- * 재생성하면 이 타입과 아래 캐스팅을 지우고 `dto.leaderboard` 를 바로 읽는다.
- */
-type LeaderboardCarrier = {
-  leaderboard?: { rank: number; nickname: string; amount: number }[]
-}
-
 /** 서버 상태 4가지를 화면 상태 3가지로 좁힌다. 낙찰·유찰은 화면에선 둘 다 종료다. */
 function toItemStatus(status: string | undefined): ItemStatus {
   switch (status) {
@@ -65,15 +54,25 @@ function toItemStatus(status: string | undefined): ItemStatus {
  * 강조된다.** 정확히 하려면 응답에 `isMe` 가 필요하다.
  */
 function toLeaderboard(
-  entries: LeaderboardCarrier['leaderboard'],
+  entries: LeaderboardEntryResponseDto[] | undefined,
   myNickname: string | null,
 ): LeaderboardEntry[] {
-  return (entries ?? []).map((entry) => ({
-    rank: entry.rank,
-    nickname: entry.nickname,
-    amount: entry.amount,
-    isMe: myNickname !== null && entry.nickname === myNickname,
-  }))
+  return (entries ?? [])
+    /*
+     * 닉네임 없는 줄은 그릴 수 없으니 버린다. springdoc 이 모든 필드를
+     * optional 로 내보내서 타입에만 나타나는 경우이고, 실제 응답에는 늘 있다.
+     */
+    .filter(
+      (entry): entry is LeaderboardEntryResponseDto & { nickname: string } =>
+        entry.nickname !== undefined,
+    )
+    .map((entry, index) => ({
+      // 버린 줄이 있으면 서버 순위에 구멍이 생기므로 남은 순서로 다시 매긴다.
+      rank: entry.rank ?? index + 1,
+      nickname: entry.nickname,
+      amount: entry.amount ?? 0,
+      isMe: myNickname !== null && entry.nickname === myNickname,
+    }))
 }
 
 /**
@@ -93,10 +92,7 @@ export function toAuctionItemDetail(
   // 상세 DTO 에만 있는 필드. 목록 응답이면 undefined 라 목업으로 떨어진다.
   const detail = dto as AuctionItemDetailResponseDto
   const status = toItemStatus(dto.status)
-  const leaderboard = toLeaderboard(
-    (dto as LeaderboardCarrier).leaderboard,
-    myNickname,
-  )
+  const leaderboard = toLeaderboard(dto.leaderboard, myNickname)
 
   return {
     ...fallback,
@@ -107,14 +103,11 @@ export function toAuctionItemDetail(
     productUrl: detail.referenceUrl ?? fallback.productUrl,
     status,
     /*
-     * 시작가는 상세 응답에만 있다. 목록 응답이면 아직 입찰이 없는 READY 상태에
-     * 한해 현재가가 곧 시작가다. 진행·종료 물품은 현재가가 이미 올라가 있어
-     * 시작가를 알 수 없으므로 목업을 쓴다.
+     * 목록 응답에는 시작가가 없다. 아직 입찰이 없으면 현재가가 곧 시작가이므로
+     * 그 값을 쓴다. 목업으로 두면 **판매자가 방금 입력한 시작가와 다른 숫자**가
+     * 카드에 뜬다(시작 전 카드는 이 값을 "시작가"로 그린다).
      */
-    startPrice:
-      detail.startingPrice ??
-      (status === 'READY' ? dto.currentPrice : undefined) ??
-      fallback.startPrice,
+    startPrice: detail.startingPrice ?? dto.currentPrice ?? fallback.startPrice,
     currentPrice: dto.currentPrice ?? fallback.currentPrice,
     bidUnit: detail.bidIncrement ?? fallback.bidUnit,
     leaderboard,

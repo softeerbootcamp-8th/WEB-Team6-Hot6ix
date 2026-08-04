@@ -1,4 +1,4 @@
-import { ChevronLeft, Share2, Square } from 'lucide-react'
+import { ChevronLeft, Minus, Plus, Share2, Square } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
@@ -33,11 +33,17 @@ export function MobileLiveView({
   liveItems,
   rankedItems,
   justClosedId = null,
+  startingItemId = null,
   devTools,
   onShare,
   onCloseRoom,
   onBack,
   onOpenItem,
+  onSelectItem,
+  isSelected,
+  isDimmed,
+  seller,
+  onStart,
   onBid,
 }: {
   room: AuctionRoomDetail
@@ -59,6 +65,8 @@ export function MobileLiveView({
   rankedItems: AuctionItemDetail[]
   /** 방금 마감된 물품 id. 카드에 "경매 종료" 도장을 찍는다. */
   justClosedId?: number | null
+  /** 시작 요청이 서버에서 처리 중인 물품 id */
+  startingItemId?: number | null
   /** 개발용 조작. 프로덕션에서는 넘기지 않는다. */
   devTools?: {
     sellerView: boolean
@@ -70,6 +78,27 @@ export function MobileLiveView({
   onCloseRoom?: () => void
   onBack: () => void
   onOpenItem: (itemId: number) => void
+  /**
+   * 목록에서 물품을 눌렀을 때. 빼기 모드 판정이 들어 있어 데스크톱과 규칙이 같다.
+   * 안 넘기면 예전처럼 바로 상세를 연다.
+   */
+  onSelectItem?: (item: AuctionItemDetail) => void
+  isSelected?: (item: AuctionItemDetail) => boolean
+  isDimmed?: (item: AuctionItemDetail) => boolean
+  /** 판매자 편성 조작. 방 주인이 아니면 넘기지 않는다. */
+  seller?: {
+    removeMode: boolean
+    selectedCount: number
+    addDisabled: boolean
+    removeDisabled: boolean
+    removeTitle?: string
+    onPick: () => void
+    onToggleRemoveMode: () => void
+    onCancelRemove: () => void
+    onConfirmRemove: () => void
+  }
+  /** 진행 시간(분)을 정해 경매를 시작한다. 판매자가 아니면 넘기지 않는다. */
+  onStart?: (item: AuctionItemDetail, minutes: number) => void
   onBid: () => void
 }) {
   const [tab, setTab] = useState<'events' | 'leaderboard'>('events')
@@ -189,13 +218,48 @@ export function MobileLiveView({
            * 볼 방법이 없고, 남은 시간도 카드가 직접 그려준다.
            */}
           <section className="flex min-h-0 flex-[4] flex-col">
-            <div className="flex shrink-0 items-baseline justify-between gap-3">
+            <div className="flex shrink-0 items-center justify-between gap-3">
               <h2 className="text-[13px] font-bold text-neutral-tertiary">
                 물품 목록 ({items.length})
               </h2>
-              <p className="text-[12px] font-semibold text-live">
-                {liveItems.length}개 LIVE
-              </p>
+
+              {/*
+               * 방 주인만 편성을 바꿀 수 있다. 데스크톱 왼쪽 열의 조작과 같은
+               * 규칙이고, 좁은 화면이라 LIVE 개수 자리를 조작 줄이 대신 쓴다.
+               */}
+              {seller ? (
+                <span className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={seller.onPick}
+                    disabled={seller.addDisabled}
+                    className="ease-soft flex h-7 items-center gap-1 rounded-lg border bg-card px-2.5 text-[12px] font-bold text-brand-500 transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:text-neutral-muted"
+                  >
+                    <Plus aria-hidden className="size-3.5" />
+                    추가
+                  </button>
+                  <button
+                    type="button"
+                    onClick={seller.onToggleRemoveMode}
+                    disabled={seller.removeDisabled}
+                    aria-pressed={seller.removeMode}
+                    title={seller.removeTitle}
+                    className={cn(
+                      'ease-soft flex h-7 items-center gap-1 rounded-lg border px-2.5 text-[12px] font-bold transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:text-neutral-muted',
+                      seller.removeMode
+                        ? 'border-live/40 bg-live-surface text-live'
+                        : 'bg-card text-live',
+                    )}
+                  >
+                    <Minus aria-hidden className="size-3.5" />
+                    {seller.removeMode ? '선택 취소' : '빼기'}
+                  </button>
+                </span>
+              ) : (
+                <p className="text-[12px] font-semibold text-live">
+                  {liveItems.length}개 LIVE
+                </p>
+              )}
             </div>
 
             {itemsPlaceholder ??
@@ -208,11 +272,42 @@ export function MobileLiveView({
                   items={items}
                   className="mt-2 min-h-0 flex-1"
                   // 판매자는 모바일에서도 시간 조절과 시작 버튼을 쓸 수 있어야 한다.
-                  canStart={isOwner}
+                  // 선택 모드에서는 시작 줄을 숨겨 조작이 섞이지 않게 한다.
+                  canStart={isOwner && !seller?.removeMode}
+                  isSelected={isSelected}
+                  isDimmed={isDimmed}
                   justClosedId={justClosedId}
-                  onSelect={(item) => onOpenItem(item.id)}
+                  startingItemId={startingItemId}
+                  onSelect={onSelectItem ?? ((item) => onOpenItem(item.id))}
+                  onStart={onStart}
                 />
               ))}
+
+            {/* 고른 뒤에 한 번 더 확인한다. 되돌릴 수 없는 조작이다. */}
+            {seller?.removeMode && (
+              <div className="animate-rise mt-2.5 flex shrink-0 items-center gap-2 rounded-2xl border border-live/30 bg-live-surface px-3 py-2.5">
+                <p className="min-w-0 flex-1 text-[12px] font-semibold text-live">
+                  {seller.selectedCount === 0
+                    ? '뺄 물품을 골라주세요'
+                    : `${seller.selectedCount}개 선택됨`}
+                </p>
+                <button
+                  type="button"
+                  onClick={seller.onCancelRemove}
+                  className="ease-soft flex h-8 items-center rounded-lg border bg-card px-3 text-[12px] font-bold text-neutral-secondary transition-all duration-150 active:scale-95"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={seller.onConfirmRemove}
+                  disabled={seller.selectedCount === 0}
+                  className="ease-soft flex h-8 items-center rounded-lg bg-live px-3 text-[12px] font-bold text-white transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  빼기
+                </button>
+              </div>
+            )}
           </section>
 
           {/* 목록과 현황 사이는 확실히 띄운다. 붙어 있으면 한 덩어리로 읽힌다. */}

@@ -12,6 +12,8 @@
 | `/join/$shareCode` 방 정보 (물품 목록은 목업) | `GET /api/v1/auction-rooms/share/{shareCode}`                                       |
 | `/trades` 거래 내역                           | `GET /api/v1/deals`                                                                 |
 | `/trades/$itemId` 낙찰 후보·최종 순위         | `GET /api/v1/auction-items/{id}/deal-candidates` + `GET /api/v1/auction-items/{id}` |
+| `/rooms/$roomId/result`, 종료된 경매방(`ClosedRoomView`) | `GET /api/v1/auction-rooms/{roomId}/results`                              |
+| 종료된 경매방의 판매자 전용 거래 현황(`RoomDealStatus`)   | `GET /api/v1/auction-rooms/{roomId}/deals`                                |
 
 QR 은 서버가 이미지를 만들지 않습니다. 서버는 `shareUrl` 문자열만 주고,
 `components/qr-code.tsx`(화면) 와 `lib/qr.ts`(PNG 저장)가 그립니다.
@@ -69,7 +71,7 @@ const rooms = data ?? []
 | `MOCK_EMPTY_ROOM`   | `/rooms/7`                                                   | 물품 0개인 방(빈 상태 확인) |
 | `MOCK_ROOM_EVENTS`  | 라이브 이벤트 피드                                           | 실시간으로 대체될 값        |
 | `MOCK_PRODUCTS`     | `/seller`, `/seller/products`, 물품 추가 모달                | 판매자 상품                 |
-| `MOCK_TRADES`       | 상품 상세, 종료된 경매방 (`/trades` 는 연동 완료)            | 거래                        |
+| `MOCK_TRADES`       | 판매자 상품 상세, `/seller` 요약 (`/trades`, 종료된 경매방은 연동 완료) | 거래           |
 | `themedRoomItems()` | 방 제목에 맞춰 물품 이름을 바꾸는 목업 전용 함수             | **연동 시 삭제**            |
 | `mocks/images.ts`   | 상품·프로필 사진                                             | 서버 `imageUrl` 로 교체     |
 
@@ -108,6 +110,12 @@ if (rooms.length === 0) return <EmptyState ... />
   빼기, 거래 성사/실패)은 서버에서도 막혀 있어야 한다.
 - **직접 `axios`/`fetch` 를 부르지 않는다.** 모든 요청은 Orval 훅 →
   `custom-instance` 를 통과해야 인증·에러·개발 도구가 한 곳에서 걸린다.
+  - **예외는 S3 이미지 업로드 하나다** (`features/seller/use-image-upload.ts`).
+    발급받은 presigned URL 로 보내는 `PUT` 은 우리 서버가 아니라 S3 로 간다.
+    `custom-instance` 는 `withCredentials: true` 라 세션 쿠키를 싣는데, S3 는 서명
+    말고 다른 인증 정보가 붙으면 403 으로 거절한다. 그래서 순수 `fetch` 에
+    `credentials: 'omit'` 으로 보낸다. **presigned URL 을 받는 요청 자체는**
+    Orval 훅(`useCreatePresignedUrl`)을 그대로 쓴다.
 - 쿼리 키는 Orval 이 만든 것을 쓰고, 뮤테이션 뒤에는 관련 쿼리를
   `invalidateQueries` 로 무효화한다.
 

@@ -8,6 +8,10 @@ import { EmptyState, PageHeader } from '@/components/page-header'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
 import { toDeals, type DealItemStatus } from '@/features/trades/adapt-deal'
+import {
+  DEAL_STATUS_LABEL,
+  DEAL_STATUS_TONE,
+} from '@/features/trades/deal-status'
 import { cn } from '@/lib/utils'
 import { formatWon, josa } from '@/lib/format'
 import { requireMember } from '@/lib/route-guards'
@@ -35,39 +39,47 @@ const STATUS_STYLE: Record<
     /**
      * 모바일 카드 둘째 줄. Figma MOB-01 문구를 상태별로 쓴다.
      *
-     * 상대가 없을 수 있다. 유찰이거나, 후보가 전원 실패해 서버가 아직
-     * `IN_PROGRESS` 로 내려주는 물품이다.
+     * 상대가 없을 수 있다. 유찰이거나 후보가 전원 실패한 거래이고, 드물게는
+     * 남은 대기 후보가 탈퇴한 경우다.
      */
     hint: (partnerNickname: string | null) => string
   }
 > = {
   IN_PROGRESS: {
-    label: '거래 중',
-    chip: 'bg-result-progress-surface',
-    text: 'text-result-progress',
+    label: DEAL_STATUS_LABEL.IN_PROGRESS,
+    chip: DEAL_STATUS_TONE.IN_PROGRESS.chip,
+    text: DEAL_STATUS_TONE.IN_PROGRESS.text,
     mini: 'bg-[#fff8e9]',
-    value: 'text-result-progress',
+    value: DEAL_STATUS_TONE.IN_PROGRESS.text,
     hint: (partner) =>
       partner
         ? `거래: ${partner}${josa(partner, '과', '와')} 진행 중`
-        : '거래: 후보가 모두 실패해 상대가 없어요.',
+        : '거래: 연락할 상대를 확인할 수 없어요.',
   },
   COMPLETED: {
-    label: '거래 완료',
-    chip: 'bg-result-won-surface',
-    text: 'text-result-won',
-    mini: 'bg-result-won-surface',
-    value: 'text-result-won',
+    label: DEAL_STATUS_LABEL.COMPLETED,
+    chip: DEAL_STATUS_TONE.COMPLETED.chip,
+    text: DEAL_STATUS_TONE.COMPLETED.text,
+    mini: DEAL_STATUS_TONE.COMPLETED.chip,
+    value: DEAL_STATUS_TONE.COMPLETED.text,
     hint: (partner) =>
       partner ? `거래: ${partner} · 거래 완료` : '거래: 거래 완료',
   },
   UNSOLD: {
-    label: '유찰',
-    chip: 'bg-result-failed-surface',
-    text: 'text-live',
-    mini: 'bg-result-failed-surface',
-    value: 'text-live',
+    label: DEAL_STATUS_LABEL.UNSOLD,
+    chip: DEAL_STATUS_TONE.UNSOLD.chip,
+    text: DEAL_STATUS_TONE.UNSOLD.text,
+    mini: DEAL_STATUS_TONE.UNSOLD.chip,
+    value: DEAL_STATUS_TONE.UNSOLD.text,
     hint: () => '거래할 후보가 없어 종료되었어요.',
+  },
+  ALL_FAILED: {
+    label: DEAL_STATUS_LABEL.ALL_FAILED,
+    chip: DEAL_STATUS_TONE.ALL_FAILED.chip,
+    text: DEAL_STATUS_TONE.ALL_FAILED.text,
+    mini: DEAL_STATUS_TONE.ALL_FAILED.chip,
+    value: DEAL_STATUS_TONE.ALL_FAILED.text,
+    hint: () => '낙찰 후보가 모두 실패해 종료되었어요.',
   },
 }
 
@@ -118,6 +130,7 @@ function TradesPage() {
     { status: 'IN_PROGRESS' },
     { status: 'COMPLETED' },
     { status: 'UNSOLD' },
+    { status: 'ALL_FAILED' },
   ]
 
   // 아직 마무리되지 않은 거래 = 사용자가 지금 손대야 하는 거래
@@ -238,11 +251,15 @@ function TradesPage() {
                 const isSeller = trade.role === 'SELLER'
 
                 /*
-                 * 유찰은 금액을 비운다. 서버가 주는 `amount` 는 판매 건일 때
-                 * 물품의 현재가인데, 입찰이 없으면 시작가가 그대로 남는다.
-                 * 그 값을 그리면 거래된 금액처럼 읽힌다.
+                 * 거래 없이 끝난 건은 금액을 비운다. 유찰은 입찰이 없어 판매 건
+                 * `amount` 에 시작가가 그대로 남고, 후보 전원 실패는 값이 실제
+                 * 입찰가지만 아무와도 거래되지 않았다. 둘 다 그리면 거래된
+                 * 금액처럼 읽힌다.
                  */
-                const amount = trade.status === 'UNSOLD' ? null : trade.amount
+                const amount =
+                  trade.status === 'UNSOLD' || trade.status === 'ALL_FAILED'
+                    ? null
+                    : trade.amount
 
                 // 경매방 이름과 거래 상대를 한 줄에 둔다. 상대가 없는 거래
                 // (유찰·후보 전원 실패)에서는 방 이름만 남는다.

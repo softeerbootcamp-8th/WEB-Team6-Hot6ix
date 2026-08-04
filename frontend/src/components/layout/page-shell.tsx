@@ -1,3 +1,5 @@
+import { useRouter } from '@tanstack/react-router'
+import { ChevronLeft } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
@@ -8,7 +10,7 @@ interface ShellProps {
   children: ReactNode
   /** 모바일 앱바 가운데 제목. 웹 상단바에는 쓰이지 않는다. */
   title?: string
-  /** 모바일 앱바에 뒤로가기를 노출한다. */
+  /** 하위 화면 표시. 모바일 앱바와 데스크톱 본문 상단에 뒤로가기를 노출한다. */
   back?: boolean
   /** 본문 최대 폭을 없애고 화면 전체를 쓴다 (라이브 화면 등). */
   fullWidth?: boolean
@@ -28,19 +30,47 @@ function MobileScrollRoom() {
 
 function ShellBody({
   children,
+  back,
   fullWidth,
   className,
-}: Pick<ShellProps, 'children' | 'fullWidth' | 'className'>) {
+}: Pick<ShellProps, 'children' | 'back' | 'fullWidth' | 'className'>) {
   return (
     <main
       className={cn(
-        'mx-auto w-full px-5 py-6 md:px-7 md:py-10',
+        'relative mx-auto w-full px-5 py-6 md:px-7 md:py-10',
         !fullWidth && 'max-w-[1280px]',
         className,
       )}
     >
+      {/*
+        모바일은 앱바가 뒤로가기를 들고 있지만 데스크톱 헤더에는 없다.
+        `back` 을 선언한 하위 화면은 데스크톱에서도 돌아갈 길이 있어야 한다.
+      */}
+      {back && <DesktopBackLink />}
       {children}
     </main>
+  )
+}
+
+/**
+ * 데스크톱에서만 보이는 뒤로가기. 브라우저 히스토리를 그대로 한 칸 되돌린다.
+ *
+ * **본문 흐름에서 빼내 위쪽 여백 안에 띄운다.** 흐름 안에 두면 제목과 상단
+ * 버튼이 그만큼 아래로 밀려서, 뒤로가기가 없는 화면(판매자 정보 등)과 나란히
+ * 오갈 때 헤더 높이가 어긋난다.
+ */
+function DesktopBackLink() {
+  const router = useRouter()
+
+  return (
+    <button
+      type="button"
+      onClick={() => void router.history.back()}
+      className="ease-soft absolute top-1.5 left-7 hidden items-center gap-1 rounded-lg py-1 pr-2 text-[13px] font-semibold text-neutral-tertiary transition-colors duration-150 hover:text-foreground md:inline-flex"
+    >
+      <ChevronLeft aria-hidden className="size-4" />
+      뒤로
+    </button>
   )
 }
 
@@ -70,7 +100,7 @@ export function AppShell({
       <div className="hidden md:block">
         <AppHeader />
       </div>
-      <ShellBody fullWidth={fullWidth} className={className}>
+      <ShellBody back={back} fullWidth={fullWidth} className={className}>
         {children}
       </ShellBody>
       <MobileScrollRoom />
@@ -100,7 +130,7 @@ export function GuestShell({
       <div className="hidden md:block">
         <GuestHeader state={state} />
       </div>
-      <ShellBody fullWidth={fullWidth} className={className}>
+      <ShellBody back={back} fullWidth={fullWidth} className={className}>
         {children}
       </ShellBody>
       <MobileScrollRoom />

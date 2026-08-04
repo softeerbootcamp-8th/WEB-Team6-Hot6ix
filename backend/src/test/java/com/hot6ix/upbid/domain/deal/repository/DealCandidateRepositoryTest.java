@@ -529,4 +529,45 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(dealCandidateRepository.findCandidate(auctionItemId, others.getDealCandidateId()))
                 .isEmpty();
     }
+
+    /**
+     * 물품마다 조회하면 물품 수만큼 쿼리가 나가므로 한 번에 읽는다. 상대 선정과 후보 수의
+     * 모집단이 갈리지 않게 <b>탈퇴 회원도 그대로 담아</b> 온다 — 필터는 DealProgress 가 나눈다.
+     */
+    @Test
+    @DisplayName("여러 물품의 후보를 한 번에 읽고 탈퇴 회원도 함께 담는다")
+    void findByAuctionItemIdsReturnsAllCandidatesIncludingWithdrawn() {
+
+        AuctionItem first = newAuctionItem("물품1");
+        AuctionItem second = newAuctionItem("물품2");
+        newCandidate(first, "a@hot6ix.com", 1, 20_000L);
+        withdrawnCandidate(first, "b@hot6ix.com", 2, 15_000L);
+        newCandidate(second, "c@hot6ix.com", 1, 30_000L);
+        newAuctionItem("조회안할물품");
+        entityManager.flush();
+        entityManager.clear();
+
+        List<DealCandidate> candidates = dealCandidateRepository.findByAuctionItemIds(
+                List.of(first.getAuctionItemId(), second.getAuctionItemId()));
+
+        assertThat(candidates).hasSize(3);
+        assertThat(candidates)
+                .extracting(candidate -> candidate.getAuctionItem().getAuctionItemId())
+                .containsOnly(first.getAuctionItemId(), second.getAuctionItemId());
+        // fetch join 이 빠지면 세션이 닫힌 뒤 닉네임 접근에서 터진다.
+        assertThat(candidates)
+                .extracting(candidate -> candidate.getBidder().getNickname())
+                .doesNotContainNull();
+    }
+
+    @Test
+    @DisplayName("후보가 없는 물품만 넘기면 빈 목록이다")
+    void findByAuctionItemIdsReturnsEmptyWhenNoCandidate() {
+
+        AuctionItem item = newAuctionItem("후보없는물품");
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(dealCandidateRepository.findByAuctionItemIds(List.of(item.getAuctionItemId()))).isEmpty();
+    }
 }

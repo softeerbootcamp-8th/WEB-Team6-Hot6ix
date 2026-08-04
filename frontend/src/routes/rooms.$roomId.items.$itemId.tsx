@@ -279,8 +279,7 @@ function AuctionItemPage() {
   }, [room.items, keyword])
 
   /*
-   * 이벤트 피드는 SSE 로 들어온 것만 보여준다. 목업 초기값을 깔면 실시간
-   * 이벤트와 섞여서 어느 줄이 실제 입찰인지 구분할 수 없다.
+   * 실시간으로 받은 이벤트만 보여준다. 처음 들어오면 비어 있다.
    *
    * 이 화면의 `extraEvents` 는 이미 이 물품 것만 담긴다 — SSE 핸들러가
    * `payload.itemId !== item.id` 를 먼저 걸러낸다.

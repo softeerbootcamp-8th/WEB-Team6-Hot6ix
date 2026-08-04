@@ -4,11 +4,11 @@ import { useMemo, useState, type ReactNode } from 'react'
 
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
-import { findMockTrade } from '@/mocks/data'
 import { ProductThumbnail } from '@/components/product-thumbnail'
+import { RoomDealStatus } from '@/features/rooms/components/room-deal-status'
 import { cn } from '@/lib/utils'
-import { formatWon } from '@/lib/format'
-import type { AuctionRoomDetail } from '@/mocks/types'
+import { formatDate, formatWon } from '@/lib/format'
+import type { RoomResult } from '@/features/live/adapt-result'
 
 /**
  * 종료된 경매방 (Figma `WEB-20 · 구매자 · 종료된 경매방`).
@@ -17,30 +17,32 @@ import type { AuctionRoomDetail } from '@/mocks/types'
  * 왼쪽 종료된 물품 목록 / 가운데 종료 요약 + 전체 낙찰 결과.
  */
 /**
- * 결과 한 줄. 이어지는 거래가 있으면 그 거래 상세로 보낸다.
+ * 결과 한 줄. 이어지는 거래를 볼 권한이 있을 때만 그 거래 상세로 보낸다.
  *
- * 종료된 방에서 라이브 물품 상세로 보내면 진행 중 화면이 떠 버린다.
- * 내 거래가 아닌 물품(남이 낙찰받은 것)은 볼 권한이 없으므로 누를 수 없다.
+ * 거래 상대(판매자·낙찰자)만 `/trades/$itemId` 를 볼 수 있고, 그 외 사용자는
+ * 눌러도 403 이 난다. 서버가 실제로 판정하지만(루트 CLAUDE.md), 볼 수 없는
+ * 링크를 미리 감춰 헛걸음을 없앤다.
  *
  * 예전에는 이름으로 거래를 찾다 실패하면 `itemId % 거래수` 로 아무 거래나
  * 골라서, 물품을 눌렀는데 전혀 다른 물품의 거래가 떴다.
  */
 function ResultRow({
   itemId,
+  canLink,
   className,
   children,
 }: {
   itemId: number
+  canLink: boolean
   className?: string
   children: ReactNode
 }) {
-  const trade = findMockTrade(itemId)
-  if (!trade) return <div className={className}>{children}</div>
+  if (!canLink) return <div className={className}>{children}</div>
 
   return (
     <Link
       to="/trades/$itemId"
-      params={{ itemId: String(trade.auctionItemId) }}
+      params={{ itemId: String(itemId) }}
       className={cn(
         'ease-soft transition-all duration-150 hover:border-brand-300 active:scale-[0.99]',
         className,
@@ -52,31 +54,24 @@ function ResultRow({
 }
 
 export function ClosedRoomView({
-  room,
+  result,
   isGuest,
-  closedAt,
+  isOwner,
 }: {
-  room: AuctionRoomDetail
+  result: RoomResult
   isGuest: boolean
-  closedAt: string
+  isOwner: boolean
 }) {
   const [keyword, setKeyword] = useState('')
 
-  const items = room.items
+  const items = result.items
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
     if (!trimmed) return items
-    return items.filter((item) => item.name.includes(trimmed))
+    return items.filter((item) => item.productName.includes(trimmed))
   }, [items, keyword])
 
-  const sold = items.filter((item) => item.leaderboard.length > 0)
-  const totalAmount = sold.reduce(
-    (sum, item) => sum + (item.leaderboard[0]?.amount ?? 0),
-    0,
-  )
-  const myWins = items.filter((item) => item.leaderboard[0]?.isMe)
-
-  const unsoldCount = items.length - sold.length
+  const closedAtLabel = result.closedAt ? formatDate(result.closedAt) : null
 
   return (
     <>
@@ -106,14 +101,16 @@ export function ClosedRoomView({
               종료
             </span>
             <h2 className="mt-3 text-[18px] font-bold text-foreground">
-              {room.title}
+              {result.name}
             </h2>
             <p className="mt-2 text-[13px] font-medium text-neutral-tertiary">
               모든 물품의 경매가 종료되었습니다.
             </p>
-            <p className="mt-2 text-[11px] font-medium text-neutral-muted">
-              종료 {closedAt}
-            </p>
+            {closedAtLabel && (
+              <p className="mt-2 text-[11px] font-medium text-neutral-muted">
+                종료 {closedAtLabel}
+              </p>
+            )}
           </section>
 
           <dl className="mt-4 grid grid-cols-2 gap-2">
@@ -126,19 +123,19 @@ export function ClosedRoomView({
               },
               {
                 label: '낙찰',
-                value: `${sold.length}건`,
+                value: `${result.soldCount}건`,
                 accent: 'text-result-won',
                 bg: 'bg-result-won-surface',
               },
               {
                 label: '유찰',
-                value: `${unsoldCount}건`,
+                value: `${result.unsoldCount}건`,
                 accent: 'text-result-failed',
                 bg: 'bg-result-failed-surface',
               },
               {
                 label: '내 낙찰',
-                value: `${myWins.length}개`,
+                value: `${result.myWinCount}개`,
                 accent: 'text-brand-500',
                 bg: 'bg-brand-50',
               },
@@ -171,39 +168,40 @@ export function ClosedRoomView({
               전체 낙찰 결과
             </h3>
             <p className="mt-2 text-[12px] font-medium text-neutral-tertiary">
-              낙찰 {sold.length}건 · 유찰 {unsoldCount}건 · 총 낙찰액{' '}
-              {formatWon(totalAmount)}
+              낙찰 {result.soldCount}건 · 유찰 {result.unsoldCount}건 · 총
+              낙찰액 {formatWon(result.totalAmount)}
             </p>
 
             <ul className="mt-3 space-y-2">
               {items.map((item) => {
-                const winner = item.leaderboard[0] ?? null
-                const won = winner !== null
-                const mine = Boolean(winner?.isMe)
+                const won = item.outcome === 'SOLD'
 
                 return (
-                  <li key={item.id}>
+                  <li key={item.auctionItemId}>
                     <ResultRow
-                      itemId={item.id}
+                      itemId={item.auctionItemId}
+                      canLink={isOwner || item.isMyWin}
                       className={cn(
                         'flex items-center gap-2 rounded-xl border px-3 py-2.5',
                         // 내가 낙찰받은 물품은 한눈에 찾을 수 있어야 한다.
-                        mine ? 'border-brand-300 bg-brand-50' : 'bg-card',
+                        item.isMyWin
+                          ? 'border-brand-300 bg-brand-50'
+                          : 'bg-card',
                       )}
                     >
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5">
                           <span className="min-w-0 truncate text-[13px] font-bold text-foreground">
-                            {item.name}
+                            {item.productName}
                           </span>
-                          {mine && (
+                          {item.isMyWin && (
                             <span className="shrink-0 rounded-full bg-brand-500 px-1.5 py-0.5 text-[10px] font-extrabold text-white">
                               내 낙찰
                             </span>
                           )}
                         </span>
                         <span className="mt-0.5 block truncate text-[11px] font-medium text-neutral-tertiary">
-                          {winner?.nickname ?? '낙찰자 없음'}
+                          {item.winnerNickname ?? '낙찰자 없음'}
                         </span>
                       </span>
 
@@ -226,7 +224,7 @@ export function ClosedRoomView({
                             : 'font-medium text-neutral-muted',
                         )}
                       >
-                        {won ? formatWon(winner.amount) : '—'}
+                        {won ? formatWon(item.finalPrice ?? 0) : '—'}
                       </span>
                     </ResultRow>
                   </li>
@@ -234,6 +232,10 @@ export function ClosedRoomView({
               })}
             </ul>
           </section>
+
+          <div className="mt-4">
+            <RoomDealStatus roomId={result.auctionRoomId} isOwner={isOwner} />
+          </div>
         </main>
       </div>
 
@@ -247,11 +249,13 @@ export function ClosedRoomView({
               종료
             </span>
             <h1 className="text-[17px] font-bold text-foreground">
-              {room.title}
+              {result.name}
             </h1>
-            <p className="text-[12px] font-medium text-neutral-tertiary">
-              종료 {closedAt}
-            </p>
+            {closedAtLabel && (
+              <p className="text-[12px] font-medium text-neutral-tertiary">
+                종료 {closedAtLabel}
+              </p>
+            )}
 
             <button
               type="button"
@@ -288,8 +292,10 @@ export function ClosedRoomView({
 
                 <ul className="mt-3 max-h-[420px] space-y-3 overflow-y-auto pr-0.5 lg:max-h-none lg:min-h-0 lg:flex-1">
                   {visibleItems.map((item) => {
+                    const won = item.outcome === 'SOLD'
+
                     return (
-                      <li key={item.id}>
+                      <li key={item.auctionItemId}>
                         {/*
                          * 끝난 물품은 그 물품의 거래로 보낸다. 이어지는 거래가
                          * 없으면 아무 데도 보내지 않는다. 예전에는 라이브 물품
@@ -297,16 +303,18 @@ export function ClosedRoomView({
                          */}
                         {/* 누르면 그 물품의 거래 상세로 간다. */}
                         <ResultRow
-                          itemId={item.id}
+                          itemId={item.auctionItemId}
+                          canLink={isOwner || item.isMyWin}
                           className={cn(
                             'flex gap-3 rounded-2xl border p-3',
-                            item.leaderboard[0]?.isMe
+                            item.isMyWin
                               ? 'border-brand-300 bg-brand-50'
                               : 'bg-card',
                           )}
                         >
                           <ProductThumbnail
-                            name={item.name}
+                            name={item.productName}
+                            src={item.imageUrl}
                             size={200}
                             iconClassName="size-5"
                             className="flex h-[84px] w-[72px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl bg-fill text-neutral-muted"
@@ -315,30 +323,28 @@ export function ClosedRoomView({
                             <span
                               className={cn(
                                 'flex h-5 w-11 items-center justify-center rounded-full text-[10px] font-bold',
-                                item.leaderboard.length > 0
+                                won
                                   ? 'bg-result-won-surface text-result-won'
                                   : 'bg-result-failed-surface text-result-failed',
                               )}
                             >
-                              {item.leaderboard.length > 0 ? '낙찰' : '유찰'}
+                              {won ? '낙찰' : '유찰'}
                             </span>
                             <span className="mt-1.5 block truncate text-[14px] font-bold text-foreground">
-                              {item.name}
+                              {item.productName}
                             </span>
                             <span className="mt-1 block text-[11px] font-medium text-neutral-tertiary">
-                              {item.topBidderNickname ?? '입찰자 없음'}
+                              {item.winnerNickname ?? '입찰자 없음'}
                             </span>
                             <span
                               className={cn(
                                 'mt-auto text-right text-[15px] tabular-nums',
-                                item.leaderboard.length > 0
+                                won
                                   ? 'font-bold text-foreground'
                                   : 'font-medium text-neutral-muted',
                               )}
                             >
-                              {item.leaderboard.length > 0
-                                ? formatWon(item.currentPrice)
-                                : '—'}
+                              {won ? formatWon(item.finalPrice ?? 0) : '—'}
                             </span>
                           </span>
                         </ResultRow>
@@ -375,19 +381,19 @@ export function ClosedRoomView({
                       },
                       {
                         label: '낙찰',
-                        value: `${sold.length}건`,
+                        value: `${result.soldCount}건`,
                         bg: 'bg-result-won-surface',
                         color: 'text-result-won',
                       },
                       {
                         label: '유찰',
-                        value: `${items.length - sold.length}건`,
+                        value: `${result.unsoldCount}건`,
                         bg: 'bg-result-failed-surface',
                         color: 'text-result-failed',
                       },
                       {
                         label: '총 낙찰액',
-                        value: formatWon(totalAmount),
+                        value: formatWon(result.totalAmount),
                         bg: 'bg-brand-50',
                         color: 'text-brand-500',
                       },
@@ -420,7 +426,7 @@ export function ClosedRoomView({
                     전체 물품 결과
                   </h3>
                   <p className="mt-1 shrink-0 text-[12px] font-medium text-neutral-tertiary">
-                    낙찰 {sold.length}건 · 유찰 {items.length - sold.length}건
+                    낙찰 {result.soldCount}건 · 유찰 {result.unsoldCount}건
                   </p>
 
                   <div className="mt-3 flex h-10 shrink-0 items-center rounded-lg bg-surface-subtle px-4 text-[11px] font-semibold text-neutral-tertiary">
@@ -434,21 +440,21 @@ export function ClosedRoomView({
 
                   <ul className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
                     {items.map((item) => {
-                      const winner = item.leaderboard[0] ?? null
-                      const won = winner !== null
+                      const won = item.outcome === 'SOLD'
 
                       return (
-                        <li key={item.id}>
+                        <li key={item.auctionItemId}>
                           <ResultRow
-                            itemId={item.id}
+                            itemId={item.auctionItemId}
+                            canLink={isOwner || item.isMyWin}
                             className="flex h-14 items-center rounded-[10px] border bg-card px-4 text-[13px]"
                           >
                             <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                              {item.name}
+                              {item.productName}
                             </span>
 
                             <span className="hidden w-[120px] truncate font-medium text-neutral-tertiary sm:block">
-                              {winner?.nickname ?? '—'}
+                              {item.winnerNickname ?? '—'}
                             </span>
 
                             {/* 낙찰·유찰은 색이 아니라 배지로 구분한다. 훑어볼 때 이게 제일 빠르다. */}
@@ -473,13 +479,20 @@ export function ClosedRoomView({
                                   : 'font-medium text-neutral-muted',
                               )}
                             >
-                              {won ? formatWon(winner.amount) : '—'}
+                              {won ? formatWon(item.finalPrice ?? 0) : '—'}
                             </span>
                           </ResultRow>
                         </li>
                       )
                     })}
                   </ul>
+                </div>
+
+                <div className="shrink-0">
+                  <RoomDealStatus
+                    roomId={result.auctionRoomId}
+                    isOwner={isOwner}
+                  />
                 </div>
               </div>
             </section>

@@ -28,7 +28,9 @@ Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다.
 5. **물품 상세는 라우트 이동이 아니라 층(overlay)이다.** 옮기면 실시간
    연결·타이머·쌓인 이벤트가 끊긴다.
 6. **서버가 확정하기 전에 성공으로 표시하지 않는다.** 입찰·낙찰·마감 공통.
-7. 끝내기 전에 `pnpm build` + `pnpm lint`.
+7. **push 전에 CI 와 같은 명령을 돌린다** —
+   `pnpm format:check` + `pnpm lint` + `pnpm build`.
+   `format:check` 를 빠뜨려 CI 가 깨지는 일이 잦다 (아래 "명령어" 참고).
 
 자세한 이유와 이미 밟은 지뢰 목록은 [`docs/UI-RULES.md`](./docs/UI-RULES.md)
 4장에 있습니다.
@@ -51,7 +53,25 @@ Claude Code / 기여자가 작업 전 반드시 참고하는 룰셋입니다.
 | `pnpm preview`      | 빌드 결과 미리보기                               |
 | `pnpm lint`         | ESLint                                           |
 | `pnpm format`       | Prettier 자동 정렬                               |
+| `pnpm format:check` | Prettier 검사만 (**CI 가 이걸 돌린다**)          |
 | `pnpm api:gen`      | Orval 로 API 훅/타입 생성 (백엔드 기동 필요)     |
+
+### push 전 체크리스트
+
+`.github/workflows/CICD-FE.yml` 이 돌리는 것과 같다. 하나라도 빠뜨리면
+빨간 CI 를 보고 수정 커밋을 하나 더 붙이게 된다.
+
+```bash
+pnpm format:check     # 실패하면 pnpm format 으로 정렬하고 다시
+pnpm lint
+pnpm exec vite build
+pnpm exec tsc -b
+```
+
+`pnpm build` 는 위 마지막 두 개를 합친 것이라 그걸로 대신해도 된다.
+**`format:check` 만 별도다** — 빌드가 통과해도 포맷은 따로 깨진다.
+편집 도구가 아니라 스크립트 치환(python·sed 등)으로 파일을 고쳤다면
+거의 확실히 포맷이 어긋나므로 `pnpm format` 을 먼저 돌린다.
 
 ## 공용 부품 (직접 만들기 전에 확인)
 

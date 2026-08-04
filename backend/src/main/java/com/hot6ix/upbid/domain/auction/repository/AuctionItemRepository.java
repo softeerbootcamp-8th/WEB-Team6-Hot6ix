@@ -5,6 +5,7 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDt
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
@@ -25,6 +26,16 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
      * 정상 경로에서 읽기 쉬운 에러를 주기 위한 것이고, 최후 방어선은 그 제약이다.
      */
     boolean existsByProduct_ProductId(Long productId);
+
+    /**
+     * 넘긴 상품들 중 <b>이미 어느 경매방엔가 올라가 있는 상품의 ID만</b> 골라낸다.
+     * {@link #existsByProduct_ProductId}의 벌크판이며 판정 규칙도 같다(상태를 따지지 않는다).
+     *
+     * <p>벌크 추가에서 상품 수만큼 exists 쿼리를 돌리지 않으려고 한 번에 조회한다.
+     * 엔티티가 아니라 ID만 뽑는 이유는 이 값이 "거절 목록"을 만드는 데만 쓰이기 때문이다.
+     */
+    @Query("select ai.product.productId from AuctionItem ai where ai.product.productId in :productIds")
+    List<Long> findProductIdsIn(@Param("productIds") List<Long> productIds);
 
     /**
      * 이 상품이 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는지 확인한다
@@ -89,6 +100,55 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
             + "order by " + STATUS_RANK + " asc, ai.auctionItemId asc")
     List<AuctionItemSummaryResponseDto> findSummaries(
             @Param("auctionRoomId") Long auctionRoomId, Limit limit);
+
+    /**
+     * 경매방의 물품별 결과를 최대 {@link #MAX_SUMMARY_SIZE}건 조회한다. 정렬과 상한을
+     * {@link #findSummaries}와 같게 두는 이유는 두 목록이 같은 방을 보여주기 때문이다 —
+     * 순서가 다르면 물품 목록과 결과 목록에서 같은 물품이 다른 자리에 있게 된다.
+     *
+     * <p>최고 입찰자를 {@code left join}으로 가져온다. 입찰이 한 번도 없었으면
+     * {@code leaderUser}가 없고, 그런 물품이 결과에서 빠지면 유찰을 셀 수 없다.
+     *
+     * <p>탈퇴한 회원도 걸러내지 않는다. 낙찰은 지나간 사실이라 낙찰자가 나갔다고 결과에서
+     * 사라지면 안 된다 — {@code DealRepository.findDeals}가 거래 내역에서 같은 판단을 한다.
+     */
+    default List<AuctionItemResultProjection> findResults(Long auctionRoomId) {
+        return findResults(auctionRoomId, Limit.of(MAX_SUMMARY_SIZE));
+    }
+
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection("
+            + "  ai.auctionItemId, p.name, p.imageUrl, ai.status, ai.currentPrice, lu.nickname) "
+            + "from AuctionItem ai "
+            + "join ai.product p "
+            + "left join ai.leaderUser lu "
+            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId "
+            + "order by " + STATUS_RANK + " asc, ai.auctionItemId asc")
+    List<AuctionItemResultProjection> findResults(
+            @Param("auctionRoomId") Long auctionRoomId, Limit limit);
+
+    /**
+     * 경매방의 마감된 물품을 최근 마감 순으로 조회한다. 거래 현황이 쓰는 목록이며, 아직
+     * 시작하지 않았거나 진행 중인 물품은 거래가 시작된 적이 없어 빠진다.
+     *
+     * <p>정렬 키를 둘 두는 이유는 순서가 하나로 정해지게 하기 위해서다. 같은 시각에 마감된
+     * 물품이 흔하고, 그때 순서가 흔들리면 화면이 요청마다 다르게 보인다.
+     */
+    default List<ClosedAuctionItemProjection> findClosedItems(Long auctionRoomId) {
+        return findClosedItems(auctionRoomId,
+                List.of(AuctionItemStatus.SOLD, AuctionItemStatus.FAILED),
+                Limit.of(MAX_SUMMARY_SIZE));
+    }
+
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.ClosedAuctionItemProjection("
+            + "  ai.auctionItemId, p.name, ai.status) "
+            + "from AuctionItem ai "
+            + "join ai.product p "
+            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId "
+            + "and ai.status in :statuses "
+            + "order by ai.endAt desc, ai.auctionItemId desc")
+    List<ClosedAuctionItemProjection> findClosedItems(@Param("auctionRoomId") Long auctionRoomId,
+                                                      @Param("statuses") Collection<AuctionItemStatus> statuses,
+                                                      Limit limit);
 
     /**
      * 물품 상세를 조회한다. 상태로 거르지 않으므로 낙찰·유찰된 물품도 조회된다.
