@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.repository;
 
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
@@ -105,4 +106,32 @@ public interface AuctionRoomRepository extends JpaRepository<AuctionRoom, Long> 
             @Param("role") String role,
             @Param("cursor") Long cursor,
             Limit limit);
+
+    /**
+     * 상태별 방 개수를 한 행으로 센다. {@code where}는 목록과 같고 {@code status}만 빠진다 —
+     * 그게 세는 대상이다. 그래서 상태 탭을 바꿔도 이 숫자는 안 변한다.
+     *
+     * <p>{@code group by} 대신 조건부 합을 쓴다. 없는 상태는 행 자체가 안 나와서 Service가
+     * 0을 채워 넣어야 하는데, 한 행으로 받으면 그 분기가 없다. 한 건도 없으면 {@code sum}이
+     * {@code null}이라 {@code coalesce}로 0을 만든다.
+     */
+    @Query("select new com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto("
+            + "  coalesce(sum(case when ar.status = com.hot6ix.upbid.domain.auction.entity"
+            + ".AuctionRoomStatus.BEFORE then 1L else 0L end), 0L), "
+            + "  coalesce(sum(case when ar.status = com.hot6ix.upbid.domain.auction.entity"
+            + ".AuctionRoomStatus.OPEN then 1L else 0L end), 0L), "
+            + "  coalesce(sum(case when ar.status = com.hot6ix.upbid.domain.auction.entity"
+            + ".AuctionRoomStatus.CLOSED then 1L else 0L end), 0L)) "
+            + "from AuctionRoom ar "
+            + "left join AuctionParticipant ap on ap.auctionRoom = ar and ap.user.userId = :userId "
+            + "where (ar.sellerProfile.user.userId = :userId or ap.auctionParticipantId is not null) "
+            + "  and ar.deletedAt is null "
+            + "  and (:keyword is null or ar.name like concat('%', :keyword, '%')) "
+            + "  and (:role is null "
+            + "       or (:role = 'SELLER' and ar.sellerProfile.user.userId = :userId) "
+            + "       or (:role = 'BUYER' and ar.sellerProfile.user.userId <> :userId))")
+    AuctionRoomCountsResponseDto countByStatus(
+            @Param("userId") Long userId,
+            @Param("keyword") String keyword,
+            @Param("role") String role);
 }
