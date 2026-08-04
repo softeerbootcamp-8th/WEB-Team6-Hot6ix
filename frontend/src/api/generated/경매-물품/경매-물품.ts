@@ -30,7 +30,9 @@ import type {
 
 import type {
   AuctionItemAddRequestDto,
+  AuctionItemBulkAddRequestDto,
   AuctionItemStartRequestDto,
+  CommonResponseAuctionItemBulkAddResponseDto,
   CommonResponseAuctionItemDetailResponseDto,
   CommonResponseListAuctionItemSummaryResponseDto,
   CommonResponseVoid
@@ -45,7 +47,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * 경매방의 물품을 진행중 → 대기 → 낙찰 → 유찰 순으로 조회한다. 페이지네이션이 없으며 한 응답에 최대 100건까지 담긴다. 비로그인으로 조회할 수 있다.
+ * 경매방의 물품을 진행중 → 대기 → 낙찰 → 유찰 순으로 조회한다. 페이지네이션이 없으며 한 응답에 최대 100건까지 담긴다. 물품마다 `leaderboard`에 상위 입찰자 3명이 순위·닉네임·금액으로 담긴다. 한 사람이 여러 번 입찰해도 그 사람의 최고가로 한 줄만 나오고, 탈퇴한 회원은 순위에서 빠진다. 입찰이 없으면 빈 배열이다. 비로그인으로 조회할 수 있다.
  * @summary 경매방 물품 목록 조회
  */
 export const getSummaries = (
@@ -138,7 +140,7 @@ export function useGetSummaries<TData = Awaited<ReturnType<typeof getSummaries>>
 
 
 /**
- * 소유자가 자기 상품을 경매방에 대기(READY) 물품으로 올린다. 입찰 단위는 요청으로 받지 않고 경매방 값을 그대로 복사해, 한 방의 모든 물품이 같은 단위를 갖는다. 한 상품은 한 번에 한 경매방에만 올릴 수 있어 이미 어딘가에 올라가 있으면 상태와 무관하게 거절한다(시작 전이라면 그 방에서 빼고 다시 올릴 수 있다). 종료된 경매방에는 올릴 수 없고, 방송 중(OPEN)인 방에는 올릴 수 있다. 경매방이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다(상품도 동일).
+ * 소유자가 자기 상품을 경매방에 대기(READY) 물품으로 올린다. 입찰 단위는 요청으로 받지 않고 경매방 값을 그대로 복사해, 한 방의 모든 물품이 같은 단위를 갖는다. 한 상품은 한 번에 한 경매방에만 올릴 수 있어 이미 어딘가에 올라가 있으면 상태와 무관하게 거절한다(시작 전이라면 그 방에서 빼고 다시 올릴 수 있다). 종료된 경매방에는 올릴 수 없고, 방송 중(OPEN)인 방에는 올릴 수 있다. 경매방이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다(상품도 동일). 응답의 `leaderboard`는 항상 빈 배열이다 — 방금 추가한 물품에는 입찰이 없다.
  * @summary 경매방 물품 추가
  */
 export const add = (
@@ -204,7 +206,73 @@ export const useAdd = <TError = ErrorType<CommonResponseAuctionItemDetailRespons
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 소유자가 대기(READY) 중인 물품의 경매를 설정한 시간만큼 시작한다. 마감 시각은 시작 시점에 확정되며 이후 변하지 않는다(연장은 추후 별도 기능). **한 경매방에서 동시에 진행할 수 있는 물품은 최대 3개**이며, 4번째 시작은 거절한다. 종료된 경매방의 물품은 시작할 수 없고, 시작 전(BEFORE)인 경매방은 이 호출로 방송 중(OPEN)이 된다 — 경매방 상태는 입장을 막지 않고 구매자 화면의 표시만 가른다. 물품이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다. 응답은 물품 상세와 같은 형식이며 갱신된 status와 endAt이 담긴다.
+ * 소유자가 여러 상품을 한 번에 경매방에 대기(READY) 물품으로 올린다. 판정 규칙은 단건 추가와 같지만, **거절된 상품이 있어도 나머지는 추가한다.** 거절된 상품은 응답의 failed 배열에 상품 ID와 사유(code, message)로 담기며, 그 code는 단건 추가가 같은 상황에서 내보내는 값과 같다. 전부 거절돼 added가 비어도 201이다 — 성공 여부는 failed가 비었는지로 판단한다. 한 경매방에는 최대 100개까지 등록할 수 있고, 넘기면 앞에서부터 잘라 넣지 않고 요청 전체를 거절한다. 요청 배열에 같은 상품 ID가 두 번 들어오면 400이다. added 항목의 `leaderboard`는 항상 빈 배열이다 — 방금 추가한 물품에는 입찰이 없다.
+ * @summary 경매방 물품 벌크 추가
+ */
+export const addAll = (
+    auctionRoomId: number,
+    auctionItemBulkAddRequestDto: BodyType<AuctionItemBulkAddRequestDto>,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseAuctionItemBulkAddResponseDto>(
+      {url: `/api/v1/auction-rooms/${auctionRoomId}/auction-items/bulk`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: auctionItemBulkAddRequestDto, signal
+    },
+      options);
+    }
+  
+
+
+export const getAddAllMutationOptions = <TError = ErrorType<CommonResponseAuctionItemBulkAddResponseDto>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addAll>>, TError,{auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof addAll>>, TError,{auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>}, TContext> => {
+
+const mutationKey = ['addAll'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addAll>>, {auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>}> = (props) => {
+          const {auctionRoomId,data} = props ?? {};
+
+          return  addAll(auctionRoomId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddAllMutationResult = NonNullable<Awaited<ReturnType<typeof addAll>>>
+    export type AddAllMutationBody = BodyType<AuctionItemBulkAddRequestDto>
+    export type AddAllMutationError = ErrorType<CommonResponseAuctionItemBulkAddResponseDto>
+
+    /**
+ * @summary 경매방 물품 벌크 추가
+ */
+export const useAddAll = <TError = ErrorType<CommonResponseAuctionItemBulkAddResponseDto>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addAll>>, TError,{auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof addAll>>,
+        TError,
+        {auctionRoomId: number;data: BodyType<AuctionItemBulkAddRequestDto>},
+        TContext
+      > => {
+
+      const mutationOptions = getAddAllMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * 소유자가 대기(READY) 중인 물품의 경매를 설정한 시간만큼 시작한다. 마감 시각은 시작 시점에 확정되며 이후 변하지 않는다(연장은 추후 별도 기능). **한 경매방에서 동시에 진행할 수 있는 물품은 최대 3개**이며, 4번째 시작은 거절한다. 종료된 경매방의 물품은 시작할 수 없고, 시작 전(BEFORE)인 경매방은 이 호출로 방송 중(OPEN)이 된다 — 경매방 상태는 입장을 막지 않고 구매자 화면의 표시만 가른다. 물품이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다. 응답은 물품 상세와 같은 형식이며 갱신된 status와 endAt이 담긴다. `leaderboard`는 항상 빈 배열이다 — 시작 전 물품에는 입찰이 들어올 수 없다.
  * @summary 물품 경매 시작
  */
 export const start = (
@@ -270,7 +338,7 @@ export const useStart = <TError = ErrorType<CommonResponseAuctionItemDetailRespo
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 물품 상세를 조회한다. 낙찰·유찰된 물품도 조회된다. 비로그인으로 조회할 수 있다.
+ * 물품 상세를 조회한다. 낙찰·유찰된 물품도 조회된다. `leaderboard`에 상위 입찰자 3명이 담긴다. 규칙은 목록 조회와 같다. 비로그인으로 조회할 수 있다.
  * @summary 경매 물품 상세 조회
  */
 export const getDetail1 = (

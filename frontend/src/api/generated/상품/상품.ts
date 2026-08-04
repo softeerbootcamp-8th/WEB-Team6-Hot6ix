@@ -46,7 +46,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * 로그인한 판매자 본인 소유의 상품을 상세 조회한다. 본인 소유가 아니거나 존재하지 않는 상품은 동일하게 404로 응답해 다른 판매자의 상품 존재 여부를 노출하지 않는다.
+ * 로그인한 판매자 본인 소유의 상품을 상세 조회한다. 본인 소유가 아니거나 존재하지 않는 상품은 동일하게 404로 응답해 다른 판매자의 상품 존재 여부를 노출하지 않는다. 응답의 status는 목록과 같은 규칙으로 계산한 파생 상태다 — 연결된 AuctionItem이 없으면 UNREGISTERED, 있으면 그 상태에 따라 READY/IN_PROGRESS/ENDED(낙찰·유찰 병합).
  * @summary 상품 상세 조회
  */
 export const getDetail = (

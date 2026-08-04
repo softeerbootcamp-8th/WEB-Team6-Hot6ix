@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.sse.test;
 
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
+import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import io.swagger.v3.oas.annotations.Hidden;
@@ -59,6 +60,19 @@ public class TestEventController {
     ) {
         eventPublisher.publishEvent(
                 BidPlaced.of(roomId, itemId, itemName, bidderNickname, bidPrice, LocalDateTime.now())
+        );
+    }
+
+    @PostMapping("/item-ended")
+    public void fireItemEnded(
+            @PathVariable Long roomId,
+            @RequestParam(defaultValue = "1") Long itemId,
+            @RequestParam(defaultValue = "한정판 조던 스니커즈") String itemName,
+            @RequestParam(defaultValue = "85000") Long finalPrice,
+            @RequestParam(defaultValue = "테스터") String winnerNickname
+    ) {
+        eventPublisher.publishEvent(
+                ItemEnded.of(roomId, itemId, itemName, finalPrice, winnerNickname, LocalDateTime.now())
         );
     }
 

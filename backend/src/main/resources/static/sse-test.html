@@ -258,11 +258,13 @@
         .log-entry.ITEM_STARTED        { border-color: #10b981; }
         .log-entry.ITEM_CLOSING_SOON   { border-color: #ef4444; }
         .log-entry.SOFT_CLOSE_EXTENDED { border-color: #8b5cf6; }
+        .log-entry.ITEM_ENDED          { border-color: #0ea5e9; }
 
         .tag-BID_PLACED          { background: #fef3c7; color: #92400e; }
         .tag-ITEM_STARTED        { background: #d1fae5; color: #065f46; }
         .tag-ITEM_CLOSING_SOON   { background: #fee2e2; color: #991b1b; }
         .tag-SOFT_CLOSE_EXTENDED { background: #ede9fe; color: #5b21b6; }
+        .tag-ITEM_ENDED          { background: #e0f2fe; color: #0c4a6e; }
         .tag-system              { background: #f1f3f5; color: #555; }
 
         .empty-state {
@@ -390,6 +392,40 @@
                 </div>
             </div>
 
+            <!-- ITEM_ENDED -->
+            <div class="event-card" id="card-item-ended">
+                <div class="event-card-header" onclick="toggleCard('item-ended')">
+                    <span class="dot" style="background:#0ea5e9"></span>
+                    <span>
+                        <div class="label">ITEM_ENDED</div>
+                        <div class="sub">낙찰 확정</div>
+                    </span>
+                    <span class="chevron">▼</span>
+                </div>
+                <div class="event-card-body">
+                    <div class="field">
+                        <label>Item ID</label>
+                        <input type="number" id="ie-itemId" value="1" min="1" />
+                    </div>
+                    <div class="field">
+                        <label>상품명</label>
+                        <input type="text" id="ie-itemName" value="한정판 조던 스니커즈" />
+                    </div>
+                    <div class="field">
+                        <label>낙찰가</label>
+                        <input type="number" id="ie-finalPrice" value="85000" />
+                    </div>
+                    <div class="field">
+                        <label>낙찰자 닉네임</label>
+                        <input type="text" id="ie-winnerNickname" value="테스터" />
+                    </div>
+                    <button class="fire-btn" style="background:#0ea5e9"
+                            onclick="fire('item-ended', {itemId:'ie-itemId', itemName:'ie-itemName', finalPrice:'ie-finalPrice', winnerNickname:'ie-winnerNickname'})">
+                        낙찰 확정 발행
+                    </button>
+                </div>
+            </div>
+
             <!-- SOFT_CLOSE_EXTENDED -->
             <div class="event-card" id="card-soft-close-extended">
                 <div class="event-card-header" onclick="toggleCard('soft-close-extended')">
@@ -465,6 +501,7 @@
         es.addEventListener('ITEM_STARTED',        (e) => handleEvent('ITEM_STARTED', e.data));
         es.addEventListener('ITEM_CLOSING_SOON',   (e) => handleEvent('ITEM_CLOSING_SOON', e.data));
         es.addEventListener('SOFT_CLOSE_EXTENDED', (e) => handleEvent('SOFT_CLOSE_EXTENDED', e.data));
+        es.addEventListener('ITEM_ENDED',          (e) => handleEvent('ITEM_ENDED', e.data));
 
         es.onerror = () => {
             setStatus('disconnected', '연결 끊김');

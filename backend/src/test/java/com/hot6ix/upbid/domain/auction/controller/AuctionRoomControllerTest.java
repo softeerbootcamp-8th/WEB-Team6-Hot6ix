@@ -12,19 +12,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemResultResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
-import com.hot6ix.upbid.domain.auction.dto.response.MyAuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
-import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
+import com.hot6ix.upbid.global.response.CursorPageResponse;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -303,53 +303,6 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     }
 
     @Test
-    @DisplayName("내 경매방 목록을 조회하면 200과 역할이 담긴 배열을 반환한다")
-    void getMyRooms() throws Exception {
-
-        when(auctionRoomService.getMyRooms(1L)).thenReturn(List.of(
-                new MyAuctionRoomResponseDto(
-                        1L, "승민의 경매방", null, "승민상점",
-                        AuctionRoomStatus.OPEN, DealRole.SELLER, 3L, null,
-                        LocalDateTime.of(2026, 7, 29, 21, 0))));
-
-        mockMvc.perform(get("/api/v1/auction-rooms/me"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.message").value("내 경매방 목록 조회에 성공했습니다."))
-                .andExpect(jsonPath("$.data[0].name").value("승민의 경매방"))
-                .andExpect(jsonPath("$.data[0].role").value("SELLER"))
-                .andExpect(jsonPath("$.data[0].status").value("OPEN"))
-                .andExpect(jsonPath("$.data[0].itemCount").value(3));
-    }
-
-    /**
-     * {@code /me} 가 {@code /{roomId}} 로 빨려 들어가면 "me" 를 Long 으로 변환하다 400 이 난다.
-     * 지금은 리터럴 세그먼트가 우선해서 괜찮지만, 매핑을 옮기다 깨지는 것을 여기서 잡는다.
-     */
-    @Test
-    @DisplayName("/me 는 경매방 단건 조회 경로로 빨려 들어가지 않는다")
-    void getMyRooms_doesNotFallIntoRoomIdMapping() throws Exception {
-
-        when(auctionRoomService.getMyRooms(1L)).thenReturn(List.of());
-
-        mockMvc.perform(get("/api/v1/auction-rooms/me"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data").isArray());
-    }
-
-    /** 내 방 목록이라 로그인이 필요하다. 세션이 없으면 인터셉터가 막는다. */
-    @Test
-    @DisplayName("비로그인 요청은 내 경매방 목록 조회 시 401을 반환한다")
-    void getMyRooms_requiresLogin() throws Exception {
-
-        비로그인_상태로_바꾼다();
-
-        mockMvc.perform(get("/api/v1/auction-rooms/me"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value(1005));
-    }
-
-    @Test
     @DisplayName("경매방 낙찰 결과를 조회하면 200과 물품별 결과를 반환한다")
     void getResults() throws Exception {
 
@@ -525,5 +478,69 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(4003));
+    }
+
+    @Test
+    @DisplayName("내 경매방 목록을 조회하면 200과 커서 페이지를 반환한다")
+    void getMyRooms() throws Exception {
+
+        AuctionRoomListItemResponseDto item = AuctionRoomListItemResponseDto.builder()
+                .auctionRoomId(10L)
+                .name("승민의 경매방")
+                .status(AuctionRoomStatus.OPEN)
+                .createdAt(LocalDateTime.of(2026, 8, 3, 12, 0))
+                .itemCount(2L)
+                .build();
+
+        when(auctionRoomService.getMyRooms(1L, "승민", AuctionRoomStatus.OPEN, 20L, 2))
+                .thenReturn(CursorPageResponse.of(List.of(item), 10L));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/me")
+                        .param("keyword", "승민")
+                        .param("status", "OPEN")
+                        .param("cursor", "20")
+                        .param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("내 경매방 목록 조회에 성공했습니다."))
+                .andExpect(jsonPath("$.data.content[0].auctionRoomId").value(10))
+                .andExpect(jsonPath("$.data.content[0].itemCount").value(2))
+                .andExpect(jsonPath("$.data.content[0].participantCount").doesNotExist())
+                .andExpect(jsonPath("$.data.hasNext").value(true))
+                .andExpect(jsonPath("$.data.nextCursor").value(10));
+    }
+
+    @Test
+    @DisplayName("만든 경매방이 없으면 200과 빈 배열을 반환한다")
+    void getMyRooms_empty() throws Exception {
+
+        when(auctionRoomService.getMyRooms(1L, null, null, null, null))
+                .thenReturn(CursorPageResponse.of(List.of(), null));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").isEmpty())
+                .andExpect(jsonPath("$.data.hasNext").value(false));
+    }
+
+    @Test
+    @DisplayName("cursor가 양수가 아니면 목록 조회 시 400을 반환한다")
+    void getMyRooms_invalidCursor() throws Exception {
+
+        mockMvc.perform(get("/api/v1/auction-rooms/me").param("cursor", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2002));
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 목록 조회 시 404와 3002를 반환한다")
+    void getMyRooms_sellerProfileNotFound() throws Exception {
+
+        when(auctionRoomService.getMyRooms(1L, null, null, null, null))
+                .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/me"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(3002));
     }
 }

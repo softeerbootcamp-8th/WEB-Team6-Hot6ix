@@ -10,12 +10,8 @@
  * OpenAPI spec version: v1
  */
 
-export type MyAuctionRoomResponseDtoStatus = typeof MyAuctionRoomResponseDtoStatus[keyof typeof MyAuctionRoomResponseDtoStatus];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const MyAuctionRoomResponseDtoStatus = {
-  BEFORE: 'BEFORE',
-  OPEN: 'OPEN',
-  CLOSED: 'CLOSED',
-} as const;
+export interface Failure {
+  productId?: number;
+  code?: number;
+  message?: string;
+}

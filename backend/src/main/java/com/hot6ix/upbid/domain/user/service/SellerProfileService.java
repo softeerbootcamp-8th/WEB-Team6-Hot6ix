@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.user.dto.response.SellerProfileResponseDto;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -23,6 +24,7 @@ public class SellerProfileService {
 
     private final SellerProfileRepository sellerProfileRepository;
     private final UserRepository userRepository;
+    private final ImageUrlValidator imageUrlValidator;
 
     /**
      * 판매자 프로필을 등록한다. 회원당 하나만 허용하며, 이미 등록된 프로필이 있으면 거절한다.
@@ -35,6 +37,8 @@ public class SellerProfileService {
      */
     @Transactional
     public SellerProfileResponseDto create(Long userId, SellerProfileCreateRequestDto request) {
+
+        imageUrlValidator.validate(request.storeImageUrl());
 
         if (sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(userId)) {
             throw new ApplicationException(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
@@ -87,6 +91,9 @@ public class SellerProfileService {
      */
     @Transactional
     public SellerProfileResponseDto update(Long userId, SellerProfileUpdateRequestDto request) {
+
+        // 수정은 PUT 전체 교체라 등록과 똑같이 URL이 통째로 들어온다. 등록만 막으면 검증이 없는 것과 같다.
+        imageUrlValidator.validate(request.storeImageUrl());
 
         SellerProfile sellerProfile = findActiveByUserId(userId);
         sellerProfile.update(request);

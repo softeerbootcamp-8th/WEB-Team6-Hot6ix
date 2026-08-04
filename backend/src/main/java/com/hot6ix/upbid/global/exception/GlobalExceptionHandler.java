@@ -1,7 +1,9 @@
 package com.hot6ix.upbid.global.exception;
 
+import com.hot6ix.upbid.global.alert.SlackAlertService;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -25,8 +27,11 @@ import java.util.Objects;
 import java.util.stream.Stream;
 
 @Slf4j
+@RequiredArgsConstructor
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private final SlackAlertService slackAlertService;
 
     @ExceptionHandler(ApplicationException.class)
     public ResponseEntity<CommonResponse<Void>> handleApplicationException(
@@ -133,6 +138,7 @@ public class GlobalExceptionHandler {
             Exception e, HttpServletRequest request) {
 
         log.error("예상치 못한 예외 발생 - [{}] {} ({})", request.getMethod(), request.getRequestURI(), e.getMessage(), e);
+        slackAlertService.send(request, e);
 
         // SSE 요청은 Content-Type이 text/event-stream으로 고정되어 있어
         // CommonResponse를 직렬화할 converter가 없으므로 null을 반환해 Spring이 응답 쓰기를 시도하지 않게 한다.

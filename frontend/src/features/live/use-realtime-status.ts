@@ -19,6 +19,13 @@ export type SseEventPayload =
       itemName: string
       extendSeconds: number
     }
+  | {
+      kind: 'ItemEnded'
+      itemId: number
+      itemName: string
+      finalPrice: number
+      winnerNickname: string | null
+    }
 
 /**
  * 실시간 SSE 연결과 상태.
@@ -72,6 +79,7 @@ export function useRealtimeStatus(
     es.addEventListener('ITEM_CLOSING_SOON', makeHandler('ItemClosingSoon'))
     es.addEventListener('BID_PLACED', makeHandler('BidPlaced'))
     es.addEventListener('SOFT_CLOSE_EXTENDED', makeHandler('SoftCloseExtended'))
+    es.addEventListener('ITEM_ENDED', makeHandler('ItemEnded'))
 
     return () => es.close()
   }, [roomId, retryKey])

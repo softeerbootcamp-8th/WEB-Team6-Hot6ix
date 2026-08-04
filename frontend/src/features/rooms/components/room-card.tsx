@@ -3,7 +3,27 @@ import { Link } from '@tanstack/react-router'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
-import type { AuctionRoomSummary } from '@/mocks/types'
+import type { RoomRole, RoomStatus } from '@/mocks/types'
+
+/**
+ * 카드가 그리는 데 필요한 값만 추린 모양.
+ *
+ * 목업(`AuctionRoomSummary`)과 서버 목록 응답이 필드가 달라 둘 다 이 모양으로
+ * 맞춰 넘긴다. `participantCount` 는 참여자를 기록하는 코드가 아직 없어(이슈 #117)
+ * 서버 응답에서 늘 비고, `closedAt` 은 목록 응답에 아예 없다 — 둘 다 없으면
+ * 해당 줄을 그리지 않는다.
+ */
+export interface RoomCardData {
+  id: number
+  title: string
+  sellerName: string
+  status: RoomStatus
+  role: RoomRole
+  itemCount: number
+  participantCount?: number | null
+  closedAt?: string | null
+  imageUrl?: string
+}
 
 /**
  * 참여 경매방 목록 카드 (Figma `WEB-03 · 구매자 · 참여 경매방 목록`).
@@ -11,7 +31,7 @@ import type { AuctionRoomSummary } from '@/mocks/types'
  * 글자 크기는 Figma 값을 그대로 쓴다.
  * 제목 17/700 · 판매자 13/500 · 배지 11/800 · 역할 태그 12/700 · CTA 13/700
  */
-export function RoomCard({ room }: { room: AuctionRoomSummary }) {
+export function RoomCard({ room }: { room: RoomCardData }) {
   const isLive = room.status === 'LIVE'
   // 아직 시작 전인 방을 종료로 묶으면 판매자가 방을 못 찾는다.
   const isClosed = room.status === 'CLOSED'
@@ -21,6 +41,7 @@ export function RoomCard({ room }: { room: AuctionRoomSummary }) {
       <div className="flex gap-4">
         <ProductThumbnail
           name={room.title}
+          src={room.imageUrl}
           size={320}
           className="flex size-[124px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-fill text-neutral-muted sm:size-[136px]"
         />
@@ -69,11 +90,14 @@ export function RoomCard({ room }: { room: AuctionRoomSummary }) {
             <p className="text-[12px] font-semibold text-neutral-secondary">
               물품 {room.itemCount}
             </p>
-            <p className="text-[12px] font-medium text-neutral-tertiary">
-              {isLive
-                ? `${room.participantCount}명 참여 중`
-                : `참여 ${room.participantCount}명`}
-            </p>
+            {/* 참여자 수를 모르면 "0명"이라고 단정하지 않고 줄을 뺀다. */}
+            {room.participantCount != null && (
+              <p className="text-[12px] font-medium text-neutral-tertiary">
+                {isLive
+                  ? `${room.participantCount}명 참여 중`
+                  : `참여 ${room.participantCount}명`}
+              </p>
+            )}
 
             {isLive ? (
               <Link
