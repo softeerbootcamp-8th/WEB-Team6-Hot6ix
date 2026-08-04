@@ -1,5 +1,7 @@
 package com.hot6ix.upbid.domain.user.service;
 
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
+import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.user.dto.request.SellerProfileCreateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.request.SellerProfileUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.response.SellerProfileResponseDto;
@@ -25,6 +27,12 @@ public class SellerProfileService {
     private final SellerProfileRepository sellerProfileRepository;
     private final UserRepository userRepository;
     private final ImageUrlValidator imageUrlValidator;
+    /**
+     * 삭제를 막을지 판정하기 위해서만 경매 도메인을 읽는다. 판매자가 방송 중인지는 경매방
+     * 상태에만 있어 한쪽은 반드시 경계를 넘어야 한다. 읽기만 하고 상태를 바꾸지 않는다
+     * (반대 방향인 {@code AuctionRoomService}의 {@code SellerProfileRepository}와 같은 모양).
+     */
+    private final AuctionRoomRepository auctionRoomRepository;
 
     /**
      * 판매자 프로필을 등록한다. 회원당 하나만 허용하며, 살아 있는 프로필이 있으면 거절한다.
@@ -127,12 +135,26 @@ public class SellerProfileService {
     /**
      * 로그인한 회원의 판매자 프로필을 soft delete 한다. 경매 이력 보존을 위해 실제 row는 남긴다.
      *
+     * <p><b>진행 중인(OPEN) 경매방이 하나라도 있으면 거절한다.</b> 판매자 API는 모두 살아 있는
+     * 프로필을 전제로 하므로, 방송 중에 프로필이 사라지면 물품을 시작할 사람도 방을 종료할
+     * 사람도 없어져 구매자가 결과를 받지 못한 채로 남는다. 시작 전·종료된 방은 기다리는 사람이
+     * 없고, 재등록하면 같은 프로필을 되살리므로({@link #create}) 그대로 돌아온다.
+     *
      * @param userId 삭제할 회원의 ID
-     * @throws ApplicationException 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND)
+     * @throws ApplicationException 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
+     *                               진행 중인 경매방이 있을 때(SELLER_PROFILE_IN_USE)
      */
     @Transactional
     public void delete(Long userId) {
-        findActiveByUserId(userId).softDelete(LocalDateTime.now());
+
+        SellerProfile sellerProfile = findActiveByUserId(userId);
+
+        if (auctionRoomRepository.existsBySellerProfile_SellerProfileIdAndStatusAndDeletedAtIsNull(
+                sellerProfile.getSellerProfileId(), AuctionRoomStatus.OPEN)) {
+            throw new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_IN_USE);
+        }
+
+        sellerProfile.softDelete(LocalDateTime.now());
     }
 
     private SellerProfile findActiveByUserId(Long userId) {

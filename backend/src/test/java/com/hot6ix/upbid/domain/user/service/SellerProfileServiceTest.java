@@ -3,11 +3,14 @@ package com.hot6ix.upbid.domain.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
+import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.dto.request.SellerProfileCreateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.request.SellerProfileUpdateRequestDto;
@@ -41,6 +44,9 @@ class SellerProfileServiceTest {
     // 이미지 주소 검증은 ImageUrlValidatorTest에서 본다. 여기서는 통과시킨다.
     @Mock
     private ImageUrlValidator imageUrlValidator;
+
+    @Mock
+    private AuctionRoomRepository auctionRoomRepository;
 
     @InjectMocks
     private SellerProfileService sellerProfileService;
@@ -302,17 +308,42 @@ class SellerProfileServiceTest {
     }
 
     @Test
-    @DisplayName("판매자 프로필을 삭제하면 soft delete 된다")
+    @DisplayName("진행 중인 경매방이 없으면 삭제 시 soft delete 된다")
     void delete() {
 
         SellerProfile sellerProfile = newSellerProfile(newUser());
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.existsBySellerProfile_SellerProfileIdAndStatusAndDeletedAtIsNull(
+                any(), eq(AuctionRoomStatus.OPEN))).thenReturn(false);
 
         sellerProfileService.delete(1L);
 
         assertThat(sellerProfile.isDeleted()).isTrue();
+    }
+
+    /**
+     * 방송 중에 프로필이 사라지면 물품을 시작할 사람도 방을 종료할 사람도 없어져, 구매자가
+     * 결과를 못 받은 채 남는다. 시작 전·종료된 방은 기다리는 사람이 없어 막지 않는다.
+     */
+    @Test
+    @DisplayName("진행 중인 경매방이 있으면 삭제 시 예외가 발생한다")
+    void delete_openRoomExists() {
+
+        SellerProfile sellerProfile = newSellerProfile(newUser());
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.existsBySellerProfile_SellerProfileIdAndStatusAndDeletedAtIsNull(
+                any(), eq(AuctionRoomStatus.OPEN))).thenReturn(true);
+
+        assertThatThrownBy(() -> sellerProfileService.delete(1L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_IN_USE);
+
+        assertThat(sellerProfile.isDeleted()).isFalse();
     }
 
     @Test
