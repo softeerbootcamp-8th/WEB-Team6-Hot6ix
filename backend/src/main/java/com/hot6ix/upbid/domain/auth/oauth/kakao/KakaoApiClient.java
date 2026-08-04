@@ -31,12 +31,12 @@ public class KakaoApiClient {
             body.add("client_secret", kakaoProperties.clientSecret());
         }
 
-        return executeWithRetry(() -> kakaoRestClient.post()
+        return kakaoRestClient.post()
                 .uri(kakaoProperties.tokenUri())
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(body)
                 .retrieve()
-                .body(KakaoTokenResponse.class));
+                .body(KakaoTokenResponse.class);
     }
 
     public KakaoUserInfoResponse getUserInfo(String accessToken) {
