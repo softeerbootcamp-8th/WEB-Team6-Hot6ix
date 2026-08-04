@@ -19,6 +19,7 @@ import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -77,8 +78,8 @@ class SellerProfileServiceTest {
                 .storeDescription("안녕하세요")
                 .build();
 
-        when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
         when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(sellerProfileRepository.findByUser_UserId(1L)).thenReturn(Optional.empty());
         when(sellerProfileRepository.saveAndFlush(any(SellerProfile.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -87,6 +88,37 @@ class SellerProfileServiceTest {
         assertThat(response.storeName()).isEqualTo("승민상점");
         assertThat(response.snsUrl()).isEqualTo("https://instagram.com/hot6ix");
         verify(sellerProfileRepository, times(1)).saveAndFlush(any(SellerProfile.class));
+    }
+
+    /**
+     * #103 — user_id UNIQUE가 deleted_at을 모르므로 새 행을 넣으면 409가 났다. 되살리기로 바꾼
+     * 이유는 제약 우회가 아니라 seller_profile_id를 유지해 기존 경매방·상품이 다시 붙게 하는 것이다.
+     */
+    @Test
+    @DisplayName("삭제했던 프로필이 있으면 새로 넣지 않고 그 행을 되살린다")
+    void create_restoresDeletedProfile() {
+
+        User user = newUser();
+        SellerProfile deleted = newSellerProfile(user);
+        deleted.softDelete(LocalDateTime.now());
+
+        SellerProfileCreateRequestDto request = SellerProfileCreateRequestDto.builder()
+                .storeName("다시연상점")
+                .storeImageUrl("https://cdn.hot6ix.com/again.png")
+                .snsUrl("https://instagram.com/again")
+                .storePhoneNumber("02-1111-2222")
+                .storeDescription("다시 왔어요")
+                .build();
+
+        when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(sellerProfileRepository.findByUser_UserId(1L)).thenReturn(Optional.of(deleted));
+
+        SellerProfileResponseDto response = sellerProfileService.create(1L, request);
+
+        assertThat(deleted.isDeleted()).isFalse();
+        assertThat(response.storeName()).isEqualTo("다시연상점");
+        assertThat(response.storeDescription()).isEqualTo("다시 왔어요");
+        verify(sellerProfileRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -100,8 +132,8 @@ class SellerProfileServiceTest {
                 .snsUrl("https://instagram.com/hot6ix")
                 .build();
 
-        when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
         when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        when(sellerProfileRepository.findByUser_UserId(1L)).thenReturn(Optional.empty());
         when(sellerProfileRepository.saveAndFlush(any(SellerProfile.class)))
                 .thenThrow(new DataIntegrityViolationException("unique constraint violated"));
 
@@ -121,14 +153,15 @@ class SellerProfileServiceTest {
                 .snsUrl("https://instagram.com/hot6ix")
                 .build();
 
-        when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(true);
+        when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(newUser()));
+        when(sellerProfileRepository.findByUser_UserId(1L))
+                .thenReturn(Optional.of(newSellerProfile(newUser())));
 
         assertThatThrownBy(() -> sellerProfileService.create(1L, request))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
 
-        verify(userRepository, never()).findByUserIdAndDeletedAtIsNull(any());
         verify(sellerProfileRepository, never()).saveAndFlush(any());
     }
 
@@ -142,7 +175,6 @@ class SellerProfileServiceTest {
                 .snsUrl("https://instagram.com/hot6ix")
                 .build();
 
-        when(sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(false);
         when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> sellerProfileService.create(1L, request))

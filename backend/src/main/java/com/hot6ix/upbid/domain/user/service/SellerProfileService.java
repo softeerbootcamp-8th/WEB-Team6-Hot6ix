@@ -27,12 +27,17 @@ public class SellerProfileService {
     private final ImageUrlValidator imageUrlValidator;
 
     /**
-     * 판매자 프로필을 등록한다. 회원당 하나만 허용하며, 이미 등록된 프로필이 있으면 거절한다.
+     * 판매자 프로필을 등록한다. 회원당 하나만 허용하며, 살아 있는 프로필이 있으면 거절한다.
+     *
+     * <p><b>삭제했던 회원이 다시 등록하면 그 행을 되살린다.</b> {@code user_id}에 걸린 DB
+     * UNIQUE는 {@code deleted_at}을 모르므로 새 행을 넣으면 제약에 걸린다(MySQL에는 부분 유니크
+     * 인덱스가 없다). 되살리기를 고른 이유는 제약을 우회하려는 게 아니라 {@code seller_profile_id}가
+     * 유지되어야 해서다 — 그 값을 가리키는 경매방·상품·거래가 재등록 뒤에도 그대로 붙는다.
      *
      * @param userId  등록할 회원의 ID
      * @param request 등록할 판매자 프로필 정보
-     * @return 등록된 판매자 프로필
-     * @throws ApplicationException 이미 프로필이 존재하거나(DUPLICATE_SELLER_PROFILE),
+     * @return 등록되거나 되살아난 판매자 프로필
+     * @throws ApplicationException 살아 있는 프로필이 이미 있을 때(DUPLICATE_SELLER_PROFILE),
      *                               회원이 존재하지 않거나 탈퇴한 회원일 때(RESOURCE_NOT_FOUND)
      */
     @Transactional
@@ -40,18 +45,36 @@ public class SellerProfileService {
 
         imageUrlValidator.validate(request.storeImageUrl());
 
-        if (sellerProfileRepository.existsByUser_UserIdAndDeletedAtIsNull(userId)) {
-            throw new ApplicationException(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
-        }
-
+        // 되살리는 경로에서도 탈퇴 회원을 걸러야 하므로 분기보다 먼저 조회한다.
         User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
 
-        SellerProfile sellerProfile = SellerProfile.from(user, request);
+        return sellerProfileRepository.findByUser_UserId(userId)
+                .map(existing -> restoreOrReject(existing, request))
+                .orElseGet(() -> insert(user, request));
+    }
 
+    private SellerProfileResponseDto restoreOrReject(
+            SellerProfile sellerProfile, SellerProfileCreateRequestDto request) {
+
+        if (!sellerProfile.isDeleted()) {
+            throw new ApplicationException(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
+        }
+
+        sellerProfile.restore(request);
+
+        return SellerProfileResponseDto.from(sellerProfile);
+    }
+
+    /**
+     * 조회 시점에는 프로필이 없었어도, 같은 회원의 등록 요청 둘이 겹치면 여기서 UNIQUE에 걸린다.
+     * 그 경합을 DB가 막아 주므로 앱에서 따로 잠그지 않는다.
+     */
+    private SellerProfileResponseDto insert(User user, SellerProfileCreateRequestDto request) {
         try {
             // saveAndFlush로 즉시 flush해야 유니크 제약 위반을 여기서 잡아 변환할 수 있다.
-            return SellerProfileResponseDto.from(sellerProfileRepository.saveAndFlush(sellerProfile));
+            return SellerProfileResponseDto.from(
+                    sellerProfileRepository.saveAndFlush(SellerProfile.from(user, request)));
         } catch (DataIntegrityViolationException e) {
             throw new ApplicationException(SellerProfileErrorType.DUPLICATE_SELLER_PROFILE);
         }

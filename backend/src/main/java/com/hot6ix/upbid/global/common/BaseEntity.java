@@ -16,6 +16,14 @@ public abstract class BaseEntity extends BaseTimeEntity {
         this.deletedAt = deletedAt;
     }
 
+    /**
+     * soft delete를 되돌린다. 삭제된 행을 지우고 새로 넣는 대신 되살리는 흐름에서 쓴다
+     * — 그래야 이 행을 가리키던 다른 테이블의 FK가 그대로 유효하다.
+     */
+    public void restore() {
+        this.deletedAt = null;
+    }
+
     public boolean isDeleted() {
         return deletedAt != null;
     }
