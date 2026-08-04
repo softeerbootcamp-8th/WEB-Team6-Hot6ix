@@ -19,6 +19,7 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
+import com.hot6ix.upbid.domain.auction.service.AuctionRoomCloseService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -44,6 +45,9 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
 
     @MockitoBean
     private AuctionRoomShareService auctionRoomShareService;
+
+    @MockitoBean
+    private AuctionRoomCloseService auctionRoomCloseService;
 
     private AuctionRoomCreateRequestDto newCreateRequest() {
         return AuctionRoomCreateRequestDto.builder()
@@ -546,5 +550,66 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
         mockMvc.perform(get("/api/v1/auction-rooms/me"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    @Test
+    @DisplayName("경매방을 종료하면 200과 종료된 방 정보를 반환한다")
+    void closeRoom() throws Exception {
+
+        when(auctionRoomCloseService.close(1L, 1L)).thenReturn(closedResponse());
+
+        mockMvc.perform(post("/api/v1/auction-rooms/1/close"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.status").value("CLOSED"))
+                .andExpect(jsonPath("$.data.closedAt").exists());
+    }
+
+    @Test
+    @DisplayName("경매방이 없거나 본인 소유가 아니면 종료 시 404를 반환한다")
+    void closeRoom_roomNotFound() throws Exception {
+
+        when(auctionRoomCloseService.close(1L, 999L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(post("/api/v1/auction-rooms/999/close"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    @Test
+    @DisplayName("이미 종료된 경매방을 다시 종료하면 409를 반환한다")
+    void closeRoom_alreadyClosed() throws Exception {
+
+        when(auctionRoomCloseService.close(1L, 1L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED));
+
+        mockMvc.perform(post("/api/v1/auction-rooms/1/close"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4004));
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 종료 시 404와 3002를 반환한다")
+    void closeRoom_sellerProfileNotFound() throws Exception {
+
+        when(auctionRoomCloseService.close(1L, 1L))
+                .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
+
+        mockMvc.perform(post("/api/v1/auction-rooms/1/close"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(3002));
+    }
+
+    private AuctionRoomPublicResponseDto closedResponse() {
+        return AuctionRoomPublicResponseDto.builder()
+                .auctionRoomId(1L)
+                .name("승민의 경매방")
+                .status(AuctionRoomStatus.CLOSED)
+                .sellerStoreName("승민상점")
+                .closedAt(LocalDateTime.of(2026, 8, 4, 21, 30))
+                .build();
     }
 }

@@ -21,9 +21,15 @@ import {
 } from '@/api/generated/경매-물품/경매-물품'
 import { getGetListQueryKey } from '@/api/generated/상품/상품'
 import type { AuctionItemAddRequestDto } from '@/api/generated/model'
-import { useGetRoom } from '@/api/generated/경매방/경매방'
+import {
+  getGetRoomQueryKey,
+  useClose,
+  useGetResults,
+  useGetRoom,
+} from '@/api/generated/경매방/경매방'
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { toAuctionItemDetail, toAuctionItems } from '@/features/live/adapt-item'
+import { toRoomResult } from '@/features/live/adapt-result'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import { retryOnNetworkError } from '@/features/live/api-error'
 import { toBidErrorMessage } from '@/features/live/bid-error'
@@ -41,15 +47,16 @@ import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { ItemDetailPanel } from '@/features/live/components/item-detail-panel'
 import { LiveItemList } from '@/features/live/components/live-item-list'
 import { useListFlip } from '@/features/live/use-list-flip'
-import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
 import { Button } from '@/components/ui/button'
-import { RouteError, RoutePending } from '@/components/route-states'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { EmptyState } from '@/components/page-header'
+import { GuestShell } from '@/components/layout/page-shell'
 import { Modal } from '@/components/ui/modal'
 import { QuickBidOverlay } from '@/features/live/components/quick-bid-overlay'
+import { RouteError, RoutePending } from '@/components/route-states'
 import { SharePanel } from '@/features/live/components/share-panel'
 import { cn } from '@/lib/utils'
 import { useCountdown } from '@/hooks/use-countdown'
@@ -70,15 +77,22 @@ import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
  * 왼쪽 물품 목록, 가운데 실시간 이벤트 + 입찰 CTA, 오른쪽 열.
  * 오른쪽 열은 상황에 따라 리더보드 / 빠른 입찰 / 입찰 확인 / 공유로 바뀐다.
  */
-/** 자동 마감으로 생기는 이벤트 id 시작값. 목업 이벤트와 겹치지 않게 띄운다. */
-const CLOSE_EVENT_BASE = 90_000
-
 export const Route = createFileRoute('/rooms/$roomId/')({
   component: LiveRoomPage,
 })
 
 /** 오른쪽 열에 무엇을 띄울지 */
 type RightPanel = 'leaderboard' | 'quickBid' | 'confirm' | 'share'
+
+/**
+ * 이벤트 피드 항목의 id 를 만든다. `Date.now()` 만 쓰면 같은 밀리초에 도착한 이벤트끼리
+ * id 가 겹쳐 React key 가 충돌한다 — 경매방을 종료하면 물품 마감 이벤트가 한꺼번에 온다.
+ */
+let eventSeq = 0
+function nextEventId(): number {
+  eventSeq += 1
+  return Date.now() * 1000 + (eventSeq % 1000)
+}
 
 const PANEL_LABEL: Record<RightPanel, string> = {
   leaderboard: '리더보드 · 물품별',
@@ -94,6 +108,8 @@ function LiveRoomPage() {
   const isDesktop = useIsDesktop()
 
   const isGuest = user === null
+  /** 리더보드에서 내 줄을 찾는 기준. 서버가 `isMe` 를 안 줘서 닉네임으로 맞춘다. */
+  const myNickname = user?.nickname ?? null
 
   const [keyword, setKeyword] = useState('')
   const [panel, setPanel] = useState<RightPanel>('leaderboard')
@@ -117,6 +133,13 @@ function LiveRoomPage() {
   const [items, setItems] = useState<AuctionItemDetail[] | null>(null)
   /** 실시간 연동 전까지 새 이벤트 애니메이션을 눈으로 보려고 쌓아 둔다. */
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
+  /**
+   * 서버가 세는 실시간 참여자 수. 아직 못 받았으면 `null`.
+   *
+   * 방 상세 응답의 `participantCount` 는 아직 채워지지 않아서 SSE 가 유일한
+   * 출처다. 연결이 끊기면 마지막 값이 남고, 다시 구독하면 서버가 곧 새로 보낸다.
+   */
+  const [participantCount, setParticipantCount] = useState<number | null>(null)
 
   const auctionRoomId = Number(roomId)
   // `/rooms/abc` 처럼 숫자가 아닌 주소로 들어오면 서버를 부르지 않는다.
@@ -125,30 +148,24 @@ function LiveRoomPage() {
   const roomQuery = useGetRoom(auctionRoomId, {
     query: { enabled: validRoomId },
   })
+  const queryClient = useQueryClient()
   const summaries = useGetSummaries(auctionRoomId, {
     query: { enabled: validRoomId },
   })
   const serverItems = useMemo(
-    () => toAuctionItems(summaries.data?.data ?? []),
-    [summaries.data],
+    () => toAuctionItems(summaries.data?.data ?? [], myNickname),
+    [summaries.data, myNickname],
   )
 
   /*
-   * 서버가 물품을 주면 그 값을 쓰고, 비었거나 못 받았으면 목업으로 채운다.
+   * 물품은 서버 값만 쓴다.
    *
-   * 백엔드에 이 방 데이터가 없으면 화면이 통째로 비어서 방을 볼 수가 없다.
-   * 서버가 하나라도 주는 순간 그쪽이 이기므로 실제 연동은 그대로 살아 있다.
-   * **시연용 임시 조치다.** 이 방 물품이 실제 API 로 넘어가면 목업 쪽을 지운다.
+   * 예전에는 서버가 빈 목록을 주면 목업 물품으로 갈아탔다. 화면은 채워지지만
+   * 리더보드·현재가가 실제 입찰과 무관한 가짜였고, 화면상 구분이 되지 않아
+   * 백엔드가 값을 안 주고 있다는 사실 자체가 가려졌다. 비어 보이는 게 낫다.
    */
-  const usingMockItems = serverItems.length === 0
-  // 방마다 자기 물품을 가진 목업 상세가 있다. 없는 방 번호면 라이브 방을 쓴다.
-  const mockItems = (findMockRoom(auctionRoomId) ?? MOCK_ROOM_DETAIL).items
   // 편성을 바꾸기 전까지는 서버가 준 목록을 그대로 쓴다.
-  const roomItems = items ?? (usingMockItems ? mockItems : serverItems)
-  const roomItemsRef = useRef(roomItems)
-  useEffect(() => {
-    roomItemsRef.current = roomItems
-  })
+  const roomItems = items ?? serverItems
 
   /*
    * 방 정보는 서버가 준다. 목록·상세와 달리 목업으로 되돌아가지 않는다 —
@@ -160,14 +177,25 @@ function LiveRoomPage() {
   )
   const roomClosed = room.status === 'CLOSED'
 
+  // 진행 중인 방에서는 결과를 볼 일이 없다. 방이 닫혔을 때만 요청한다.
+  const resultsQuery = useGetResults(auctionRoomId, {
+    query: { enabled: roomClosed && Number.isInteger(auctionRoomId) },
+  })
+
   /**
    * SSE 이벤트 수신 핸들러.
    *
    * 이벤트 피드(extraEvents)와 물품 상태(items)를 동시에 갱신한다.
+   *
+   * **물품 갱신은 반드시 함수형(`setItems((prev) => …)`)이어야 한다.** 경매방 종료처럼
+   * 이벤트가 한꺼번에 오면 렌더가 끼어들 틈이 없어서, 두 번째 핸들러가 첫 번째의 결과를
+   * 못 보고 낡은 목록 위에 덮어쓴다. 실제로 물품 2개가 동시에 마감됐을 때 나중 것만
+   * 닫히고 앞의 낙찰 물품이 진행 중으로 남는 버그가 있었다.
    */
   const handleSseEvent = useCallback(
     (payload: SseEventPayload) => {
-      const eventId = Date.now()
+      // 같은 밀리초에 두 이벤트가 오면 id 가 겹쳐 피드의 React key 가 충돌한다.
+      const eventId = nextEventId()
 
       switch (payload.kind) {
         case 'ItemStarted':
@@ -180,8 +208,8 @@ function LiveRoomPage() {
               message: `${payload.itemName} 경매가 시작됐어요`,
             },
           ])
-          setItems(
-            roomItems.map((item) =>
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
                 ? {
                     ...item,
@@ -218,8 +246,8 @@ function LiveRoomPage() {
               emphasized: true,
             },
           ])
-          setItems(
-            roomItems.map((item) =>
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
                 ? {
                     ...item,
@@ -231,7 +259,7 @@ function LiveRoomPage() {
                         rank: 1,
                         nickname: payload.bidderNickname,
                         amount: payload.bidPrice,
-                        isMe: false,
+                        isMe: payload.bidderNickname === myNickname,
                       },
                       ...item.leaderboard.filter(
                         (entry) => entry.nickname !== payload.bidderNickname,
@@ -257,8 +285,8 @@ function LiveRoomPage() {
               emphasized: true,
             },
           ])
-          setItems(
-            roomItems.map((item) =>
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
                 ? {
                     ...item,
@@ -282,24 +310,66 @@ function LiveRoomPage() {
               message: payload.winnerNickname
                 ? `${payload.itemName} 낙찰 확정`
                 : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
-              ...(payload.winnerNickname && {
-                subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
-                emphasized: true,
-              }),
+              // 유찰이면 둘 다 null 이라 낙찰 줄을 붙이지 않는다.
+              ...(payload.winnerNickname &&
+                payload.finalPrice !== null && {
+                  subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
+                  emphasized: true,
+                }),
             },
           ])
-          setItems(
-            roomItems.map((item) =>
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
-                ? { ...item, status: 'CLOSED' as const }
+                ? {
+                    ...item,
+                    status: 'CLOSED' as const,
+                    // 낙찰자가 실렸으면 낙찰, 비었으면 유찰이다.
+                    sold: payload.winnerNickname !== null,
+                  }
                 : item,
             ),
           )
+          // "경매 종료" 도장. 서버가 마감을 확정했을 때만 띄운다.
+          setJustClosedId(payload.itemId)
+          break
+
+        case 'RoomClosed':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'CLOSE',
+              message: '판매자가 경매방을 종료했어요',
+              emphasized: true,
+            },
+          ])
+          /*
+           * 방 상태를 화면에서 직접 CLOSED 로 바꾸지 않고 다시 읽어온다.
+           * 종료 화면은 closedAt·낙찰 결과까지 그리는데 이 이벤트에는 그 값이 없다.
+           */
+          setItems(null)
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomQueryKey(auctionRoomId),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(auctionRoomId),
+          })
+          break
+
+        /*
+         * 참여자 수는 헤더 숫자만 조용히 바꾼다.
+         *
+         * 이벤트 피드에 쌓으면 사람이 들락날락할 때마다 "N명 참여" 가
+         * 도배되어 입찰·마감 같은 실제 사건이 묻힌다.
+         */
+        case 'ParticipantCount':
+          setParticipantCount(payload.participantCount)
           break
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [roomItems],
+    [roomItems, myNickname, auctionRoomId, queryClient],
   )
 
   const { status } = useRealtimeStatus(roomId, handleSseEvent)
@@ -340,7 +410,7 @@ function LiveRoomPage() {
         <div key={row} className="h-[76px] animate-skeleton rounded-2xl" />
       ))}
     </div>
-  ) : // 목업으로 대신 채웠으면 에러를 띄우지 않는다. 보여줄 물품이 이미 있다.
+  ) : // 편성을 바꿔서 보여줄 물품이 있으면 에러를 띄우지 않는다.
   summaries.isError && roomItems.length === 0 ? (
     <div className="mt-2.5 rounded-2xl border bg-card px-4 py-8 text-center">
       <p className="text-[13px] font-medium text-neutral-muted">
@@ -354,6 +424,16 @@ function LiveRoomPage() {
       >
         다시 시도
       </Button>
+    </div>
+  ) : roomItems.length === 0 ? (
+    /*
+     * 서버가 빈 목록을 준 경우. 목업으로 채우지 않으므로 이 자리가 실제로
+     * 보인다. 열이 통째로 비면 로딩이 멈춘 것처럼 보여서 한 줄이라도 남긴다.
+     */
+    <div className="mt-2.5 rounded-2xl border bg-card px-4 py-8 text-center">
+      <p className="text-[13px] font-medium text-neutral-muted">
+        아직 등록된 물품이 없어요.
+      </p>
     </div>
   ) : null
 
@@ -406,16 +486,15 @@ function LiveRoomPage() {
    */
   const listItem = roomItems.find((item) => item.id === detailItemId) ?? null
   const detailQuery = useGetDetail1(detailItemId ?? 0, {
-    // 목업 물품은 서버에 없다. 부르면 매번 404 만 쌓인다.
-    query: { enabled: detailItemId !== null && !usingMockItems },
+    query: { enabled: detailItemId !== null },
   })
   const detailItem = useMemo(() => {
     if (!listItem) return null
     const dto = detailQuery.data?.data
     // 물품을 갈아탄 직후에는 이전 물품의 상세가 남아 있다. 그때는 목록 값을 쓴다.
     if (!dto || dto.auctionItemId !== listItem.id) return listItem
-    return toAuctionItemDetail(dto, listItem)
-  }, [listItem, detailQuery.data])
+    return toAuctionItemDetail(dto, listItem, myNickname)
+  }, [listItem, detailQuery.data, myNickname])
 
   const detailMinimum = detailItem
     ? detailItem.currentPrice + detailItem.bidUnit
@@ -434,11 +513,11 @@ function LiveRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailItemId])
 
-  const queryClient = useQueryClient()
   const placeBid = usePlace()
   const startItem = useStart()
   const addItems = useAddAll()
   const removeItem = useRemove()
+  const closeRoom = useClose()
 
   /**
    * 서버가 조작을 접수한 뒤 물품 값을 다시 읽어온다.
@@ -493,6 +572,35 @@ function LiveRoomPage() {
       toast.error(title, { description })
     } finally {
       setStartingItemId(null)
+    }
+  }
+
+  /**
+   * 판매자가 방송을 끝내고 경매방을 종료한다. 되돌릴 수 없다.
+   *
+   * 서버가 진행 중이던 물품까지 함께 마감하므로 **방과 물품을 모두 다시 읽어온다.**
+   * 방 상태가 `CLOSED` 로 오면 화면이 종료 화면(`ClosedRoomView`)으로 바뀐다.
+   *
+   * 서버가 받아주기 전에는 화면을 종료로 그리지 않는다 — 실패하면 방송이 계속되는데
+   * 화면만 끝난 것으로 보인다.
+   */
+  const handleCloseRoom = async () => {
+    try {
+      await closeRoom.mutateAsync({ roomId: auctionRoomId })
+
+      setClosingRoom(false)
+      toast.success('경매방을 종료했어요')
+      refreshItems()
+      void queryClient.invalidateQueries({
+        queryKey: getGetRoomQueryKey(auctionRoomId),
+      })
+    } catch (error) {
+      const { title, description } = toSellerActionErrorMessage(
+        error,
+        'closeRoom',
+      )
+      toast.error(title, { description })
+      setClosingRoom(false)
     }
   }
 
@@ -609,69 +717,8 @@ function LiveRoomPage() {
     )
   }
 
-  /**
-   * 목업 물품 입찰을 화면에서 처리한다.
-   *
-   * 서버에 없는 물품이라 API 를 부르면 반드시 실패한다. 시연에서 입찰 흐름을
-   * 보여줄 수 있도록 현재가·리더보드·이벤트 피드만 직접 갱신한다.
-   *
-   * "서버 확정 전에 성공으로 표시하지 않는다"(루트 CLAUDE.md)를 **목업
-   * 물품에 한해** 비켜 간다. 서버가 준 물품은 아래 실제 경로로 가므로
-   * 실 서비스 규칙은 그대로다. 물품이 API 로 넘어가면 이 함수를 지운다.
-   */
-  const applyMockBid = (item: AuctionItemDetail, amount: number) => {
-    const nickname = user?.nickname ?? '나'
-    const at = new Date().toISOString()
-
-    setItems(
-      roomItems.map((candidate) =>
-        candidate.id === item.id
-          ? {
-              ...candidate,
-              currentPrice: amount,
-              topBidderNickname: nickname,
-              bidCount: candidate.bidCount + 1,
-              leaderboard: [
-                { rank: 1, nickname, amount, isMe: true },
-                ...candidate.leaderboard.filter((entry) => !entry.isMe),
-              ]
-                .slice(0, 5)
-                .map((entry, index) => ({ ...entry, rank: index + 1 })),
-              history: [
-                { id: Date.now(), nickname, amount, bidAt: at },
-                ...candidate.history,
-              ],
-            }
-          : candidate,
-      ),
-    )
-    setExtraEvents((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        at,
-        kind: 'BID',
-        message: `${nickname}님이 ${formatWon(amount)} 입찰`,
-        subtitle: item.name,
-        emphasized: true,
-      },
-    ])
-  }
-
   const submitDetailBid = async () => {
     if (!detailItem) return
-
-    if (usingMockItems) {
-      applyMockBid(detailItem, detailAmount)
-      setDetailFeedback({
-        tone: 'success',
-        message: `${formatWon(detailAmount)} 입찰이 등록됐어요.`,
-      })
-      toast.success('입찰이 등록됐어요', {
-        description: `${detailItem.name} · ${formatWon(detailAmount)}`,
-      })
-      return
-    }
 
     setDetailPending(true)
     setDetailFeedback(null)
@@ -699,49 +746,6 @@ function LiveRoomPage() {
       setDetailPending(false)
     }
   }
-
-  /**
-   * 마감 시각이 지난 물품을 종료로 넘긴다.
-   *
-   * 실시간 연동 전이라 클라이언트가 대신 본다. **서버가 확정한 상태가
-   * 오면 그 값이 우선**이고, 이건 화면이 멈춰 보이지 않게 하는 임시 처리다.
-   */
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const current = roomItemsRef.current
-      const now = Date.now()
-      const expired = current.filter(
-        (item) =>
-          item.status === 'ACTIVE' && new Date(item.endsAt).getTime() <= now,
-      )
-      if (expired.length === 0) return
-
-      const ids = new Set(expired.map((item) => item.id))
-      setItems(
-        current.map((item) =>
-          ids.has(item.id) ? { ...item, status: 'CLOSED' as const } : item,
-        ),
-      )
-      setJustClosedId(expired[0].id)
-      setExtraEvents((prev) => [
-        ...prev,
-        ...expired.map((item, index) => ({
-          id: CLOSE_EVENT_BASE + prev.length + index,
-          at: new Date().toISOString(),
-          kind: 'CLOSE' as const,
-          message: `${item.name} 경매가 종료됐어요`,
-          subtitle: item.topBidderNickname
-            ? `${item.topBidderNickname} 낙찰 · ${formatWon(item.currentPrice)}`
-            : undefined,
-          emphasized: true,
-        })),
-      ])
-    }, 1000)
-
-    return () => window.clearInterval(timer)
-    // roomItemsRef 를 통해 항상 최신값을 읽으므로 deps 없이 한 번만 등록한다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   // 도장은 한 번만 보여주고 지운다.
   useEffect(() => {
@@ -830,13 +834,9 @@ function LiveRoomPage() {
         removeMode,
         selectedCount: selectedForRemoval.length,
         addDisabled: addItems.isPending,
-        removeDisabled:
-          usingMockItems || (!removeMode && removable.length === 0),
-        removeTitle: usingMockItems
-          ? '시연용 목업 물품이라 뺄 수 없어요'
-          : removable.length === 0
-            ? '시작 전 물품만 뺄 수 있어요'
-            : undefined,
+        removeDisabled: !removeMode && removable.length === 0,
+        removeTitle:
+          removable.length === 0 ? '시작 전 물품만 뺄 수 있어요' : undefined,
         onPick: () => setPicking(true),
         onToggleRemoveMode: () => {
           setRemoveMode((prev) => !prev)
@@ -850,37 +850,8 @@ function LiveRoomPage() {
       }
     : undefined
 
-  /**
-   * 종료된 방의 물품은 전부 끝난 것으로 본다.
-   *
-   * 목업 물품은 마감 시각이 미래라, 방이 종료됐는데도 카운트다운이
-   * 계속 흘렀다. 상태와 마감 시각을 함께 과거로 맞춘다.
-   */
-  const closedRoom = {
-    ...room,
-    items: roomItems.map((item) =>
-      item.status === 'CLOSED'
-        ? item
-        : {
-            ...item,
-            status: 'CLOSED' as const,
-            endsAt: new Date(Date.now() - 60_000).toISOString(),
-          },
-    ),
-  }
-
   const confirmBid = async () => {
     if (!pendingBid) return
-
-    if (usingMockItems) {
-      applyMockBid(pendingBid.item, pendingBid.amount)
-      toast.success('입찰이 등록됐어요', {
-        description: `${pendingBid.item.name} · ${formatWon(pendingBid.amount)}`,
-      })
-      setPendingBid(null)
-      setPanel('leaderboard')
-      return
-    }
 
     setSubmitting(true)
 
@@ -934,8 +905,31 @@ function LiveRoomPage() {
   if (roomQuery.isPending) return <RoutePending />
 
   if (roomClosed) {
-    // 방 종료 시각은 서버 응답에 없다. 없으면 종료 화면이 그 줄을 그리지 않는다.
-    return <ClosedRoomView room={closedRoom} isGuest={isGuest} />
+    if (resultsQuery.isPending) return <RoutePending />
+    if (resultsQuery.isError) {
+      return (
+        <RouteError
+          error={resultsQuery.error}
+          reset={() => void resultsQuery.refetch()}
+        />
+      )
+    }
+
+    const result = toRoomResult(resultsQuery.data?.data)
+    if (!result) {
+      return (
+        <GuestShell title="종료된 경매방" back>
+          <EmptyState
+            title="결과를 찾을 수 없어요"
+            description="삭제되었거나 존재하지 않는 경매방입니다."
+          />
+        </GuestShell>
+      )
+    }
+
+    return (
+      <ClosedRoomView result={result} isGuest={isGuest} isOwner={isOwner} />
+    )
   }
 
   /*
@@ -957,22 +951,8 @@ function LiveRoomPage() {
       description="진행 중인 물품이 모두 마감되고 낙찰 결과가 확정됩니다. 되돌릴 수 없어요."
       confirmLabel="경매방 종료"
       onCancel={() => setClosingRoom(false)}
-      onConfirm={() => {
-        // TODO: POST /api/v1/auction-rooms/{id}/close 연동 (현재 목업)
-        setItems(
-          roomItems.map((item) =>
-            item.status === 'CLOSED'
-              ? item
-              : {
-                  ...item,
-                  status: 'CLOSED' as const,
-                  endsAt: new Date().toISOString(),
-                },
-          ),
-        )
-        setClosingRoom(false)
-        toast.success('경매방을 종료했어요')
-      }}
+      pending={closeRoom.isPending}
+      onConfirm={() => void handleCloseRoom()}
     />
   )
 
@@ -982,6 +962,7 @@ function LiveRoomPage() {
         <MobileLiveView
           room={room}
           isGuest={isGuest}
+          participantCount={participantCount}
           events={roomEvents}
           items={roomItems}
           itemsPlaceholder={itemsPlaceholder}
@@ -997,7 +978,7 @@ function LiveRoomPage() {
           }
           isDimmed={(item) => removeMode && item.status !== 'READY'}
           seller={sellerControls}
-          onStart={isOwner && !usingMockItems ? handleStart : undefined}
+          onStart={isOwner ? handleStart : undefined}
           isOwner={isOwner}
           justClosedId={justClosedId}
           startingItemId={startingItemId}
@@ -1135,6 +1116,7 @@ function LiveRoomPage() {
       <LiveShell
         room={room}
         isGuest={isGuest}
+        participantCount={participantCount}
         onShare={() => setPanel(panel === 'share' ? 'leaderboard' : 'share')}
         onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
         overlay={
@@ -1255,16 +1237,12 @@ function LiveRoomPage() {
                     setRemoveMode((prev) => !prev)
                     setSelectedForRemoval([])
                   }}
-                  disabled={
-                    usingMockItems || (!removeMode && removable.length === 0)
-                  }
+                  disabled={!removeMode && removable.length === 0}
                   aria-pressed={removeMode}
                   title={
-                    usingMockItems
-                      ? '시연용 목업 물품이라 뺄 수 없어요'
-                      : removable.length === 0
-                        ? '시작 전 물품만 뺄 수 있어요'
-                        : undefined
+                    removable.length === 0
+                      ? '시작 전 물품만 뺄 수 있어요'
+                      : undefined
                   }
                   className={cn(
                     'ease-soft flex h-7 items-center gap-1 rounded-lg border px-2.5 text-[12px] font-bold transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:text-neutral-muted',
@@ -1313,7 +1291,7 @@ function LiveRoomPage() {
                   isDimmed={(item) => removeMode && item.status !== 'READY'}
                   justClosedId={justClosedId}
                   startingItemId={startingItemId}
-                  onStart={isOwner && !usingMockItems ? handleStart : undefined}
+                  onStart={isOwner ? handleStart : undefined}
                   onSelect={handleSelectItem}
                 />
               ))}

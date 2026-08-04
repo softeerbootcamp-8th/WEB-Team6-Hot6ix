@@ -110,7 +110,13 @@ export function MobileItemDetailView({
           <div className="mt-5 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3.5">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-[12px] font-semibold text-brand-600">
-                {closed ? '낙찰가' : ready ? '시작가' : '현재 최고가'}
+                {closed
+                  ? item.sold
+                    ? '낙찰가'
+                    : '유찰 · 시작가'
+                  : ready
+                    ? '시작가'
+                    : '현재 최고가'}
               </span>
               <span className="text-[20px] font-extrabold tabular-nums text-brand-600">
                 {formatWon(ready ? item.startPrice : item.currentPrice)}

@@ -12,7 +12,7 @@ import { readApiErrorCode } from '@/features/live/api-error'
  */
 
 /** 어떤 조작이었는지. 표에 없는 코드일 때의 문구가 이 값으로 갈린다. */
-export type SellerAction = 'add' | 'remove' | 'start'
+export type SellerAction = 'add' | 'remove' | 'start' | 'closeRoom'
 
 export interface SellerActionErrorMessage {
   /** 토스트 제목 */
@@ -101,6 +101,10 @@ const UNKNOWN: Record<SellerAction, SellerActionErrorMessage> = {
   },
   start: {
     title: '경매를 시작하지 못했어요',
+    description: '잠시 뒤에 다시 시도해 주세요.',
+  },
+  closeRoom: {
+    title: '경매방을 종료하지 못했어요',
     description: '잠시 뒤에 다시 시도해 주세요.',
   },
 }

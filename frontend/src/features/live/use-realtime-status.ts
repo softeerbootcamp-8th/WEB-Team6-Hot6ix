@@ -19,13 +19,27 @@ export type SseEventPayload =
       itemName: string
       extendSeconds: number
     }
+  // 유찰도 이 이벤트로 온다. 입찰이 없었으면 낙찰가·낙찰자가 둘 다 null 이다.
   | {
       kind: 'ItemEnded'
       itemId: number
       itemName: string
-      finalPrice: number
+      finalPrice: number | null
       winnerNickname: string | null
     }
+  /**
+   * 판매자가 방송을 끝냈다. 물품별 마감 이벤트가 먼저 오고 이게 마지막에 온다.
+   *
+   * 물품 단위가 아니라 방 단위라 `itemId` 가 없다.
+   */
+  | { kind: 'RoomClosed'; roomTitle: string; closedTime: string }
+  /**
+   * 방의 실시간 참여자 수.
+   *
+   * 서버가 SSE 연결 수를 센다. 누가 들어오거나 나갈 때, 그리고 heartbeat 로
+   * 끊긴 연결을 걷어낸 뒤에 다시 보낸다.
+   */
+  | { kind: 'ParticipantCount'; participantCount: number }
 
 /**
  * 실시간 SSE 연결과 상태.
@@ -80,6 +94,11 @@ export function useRealtimeStatus(
     es.addEventListener('BID_PLACED', makeHandler('BidPlaced'))
     es.addEventListener('SOFT_CLOSE_EXTENDED', makeHandler('SoftCloseExtended'))
     es.addEventListener('ITEM_ENDED', makeHandler('ItemEnded'))
+    es.addEventListener('ROOM_CLOSED', makeHandler('RoomClosed'))
+    es.addEventListener(
+      'PARTICIPANT_COUNT_UPDATED',
+      makeHandler('ParticipantCount'),
+    )
 
     return () => es.close()
   }, [roomId, retryKey])
