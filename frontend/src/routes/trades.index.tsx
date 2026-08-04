@@ -35,8 +35,8 @@ const STATUS_STYLE: Record<
     /**
      * 모바일 카드 둘째 줄. Figma MOB-01 문구를 상태별로 쓴다.
      *
-     * 상대가 없을 수 있다. 유찰이거나, 후보가 전원 실패해 서버가 아직
-     * `IN_PROGRESS` 로 내려주는 물품이다.
+     * 상대가 없을 수 있다. 유찰이거나 후보가 전원 실패한 거래이고, 드물게는
+     * 남은 대기 후보가 탈퇴한 경우다.
      */
     hint: (partnerNickname: string | null) => string
   }
@@ -50,7 +50,7 @@ const STATUS_STYLE: Record<
     hint: (partner) =>
       partner
         ? `거래: ${partner}${josa(partner, '과', '와')} 진행 중`
-        : '거래: 후보가 모두 실패해 상대가 없어요.',
+        : '거래: 연락할 상대를 확인할 수 없어요.',
   },
   COMPLETED: {
     label: '거래 완료',
@@ -68,6 +68,19 @@ const STATUS_STYLE: Record<
     mini: 'bg-result-failed-surface',
     value: 'text-live',
     hint: () => '거래할 후보가 없어 종료되었어요.',
+  },
+  /*
+   * 유찰과 나눠 둔다. 둘 다 거래 없이 끝났지만 유찰은 입찰이 아예 없던 것이고
+   * 이쪽은 후보가 있었는데 전부 실패한 것이다. 판매자가 취할 조치가 다르다.
+   * 색은 유찰과 같게 두고 이름으로 구분한다 — 결과가 같은 갈래이기 때문이다.
+   */
+  ALL_FAILED: {
+    label: '거래 불성립',
+    chip: 'bg-result-failed-surface',
+    text: 'text-live',
+    mini: 'bg-result-failed-surface',
+    value: 'text-live',
+    hint: () => '낙찰 후보가 모두 실패해 종료되었어요.',
   },
 }
 
@@ -118,6 +131,7 @@ function TradesPage() {
     { status: 'IN_PROGRESS' },
     { status: 'COMPLETED' },
     { status: 'UNSOLD' },
+    { status: 'ALL_FAILED' },
   ]
 
   // 아직 마무리되지 않은 거래 = 사용자가 지금 손대야 하는 거래
@@ -238,11 +252,15 @@ function TradesPage() {
                 const isSeller = trade.role === 'SELLER'
 
                 /*
-                 * 유찰은 금액을 비운다. 서버가 주는 `amount` 는 판매 건일 때
-                 * 물품의 현재가인데, 입찰이 없으면 시작가가 그대로 남는다.
-                 * 그 값을 그리면 거래된 금액처럼 읽힌다.
+                 * 거래 없이 끝난 건은 금액을 비운다. 유찰은 입찰이 없어 판매 건
+                 * `amount` 에 시작가가 그대로 남고, 후보 전원 실패는 값이 실제
+                 * 입찰가지만 아무와도 거래되지 않았다. 둘 다 그리면 거래된
+                 * 금액처럼 읽힌다.
                  */
-                const amount = trade.status === 'UNSOLD' ? null : trade.amount
+                const amount =
+                  trade.status === 'UNSOLD' || trade.status === 'ALL_FAILED'
+                    ? null
+                    : trade.amount
 
                 // 경매방 이름과 거래 상대를 한 줄에 둔다. 상대가 없는 거래
                 // (유찰·후보 전원 실패)에서는 방 이름만 남는다.

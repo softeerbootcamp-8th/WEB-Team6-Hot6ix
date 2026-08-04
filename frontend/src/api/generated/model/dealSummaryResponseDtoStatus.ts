@@ -18,4 +18,5 @@ export const DealSummaryResponseDtoStatus = {
   IN_PROGRESS: 'IN_PROGRESS',
   COMPLETED: 'COMPLETED',
   UNSOLD: 'UNSOLD',
+  ALL_FAILED: 'ALL_FAILED',
 } as const;

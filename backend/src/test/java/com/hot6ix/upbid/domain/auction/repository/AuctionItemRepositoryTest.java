@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.auction.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
@@ -162,6 +163,63 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(detail.bidIncrement()).isEqualTo(1_000L);
         assertThat(detail.status()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
         assertThat(detail.endAt()).isEqualTo(LocalDateTime.of(2026, 7, 29, 21, 0));
+    }
+
+    @Test
+    @DisplayName("결과 조회는 낙찰자를 함께 담고, 입찰이 없던 물품도 빠뜨리지 않는다")
+    void findResultsMapsWinnerAndKeepsItemsWithoutBids() {
+
+        User bidder = entityManager.persist(User.builder()
+                .email("bidder@hot6ix.com")
+                .password("password")
+                .nickname("스니커홀릭")
+                .phoneNumber("010-9999-8888")
+                .build());
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+
+        AuctionItem sold = newAuctionItem(auctionRoom, "낙찰물품", AuctionItemStatus.SOLD);
+        sold.applyBid(bidder, 85_000L);
+        // 입찰이 한 번도 없어 leaderUser가 없다. left join이 아니면 이 행이 통째로 사라진다.
+        AuctionItem failed = newAuctionItem(auctionRoom, "유찰물품", AuctionItemStatus.FAILED);
+        entityManager.flush();
+
+        List<AuctionItemResultProjection> results =
+                auctionItemRepository.findResults(auctionRoom.getAuctionRoomId());
+
+        assertThat(results)
+                .extracting(AuctionItemResultProjection::auctionItemId)
+                .containsExactly(sold.getAuctionItemId(), failed.getAuctionItemId());
+
+        AuctionItemResultProjection soldRow = results.getFirst();
+        assertThat(soldRow.productName()).isEqualTo("낙찰물품");
+        assertThat(soldRow.imageUrl()).isEqualTo("https://cdn.hot6ix.com/낙찰물품.png");
+        assertThat(soldRow.status()).isEqualTo(AuctionItemStatus.SOLD);
+        assertThat(soldRow.currentPrice()).isEqualTo(85_000L);
+        assertThat(soldRow.leaderNickname()).isEqualTo("스니커홀릭");
+
+        AuctionItemResultProjection failedRow = results.getLast();
+        assertThat(failedRow.status()).isEqualTo(AuctionItemStatus.FAILED);
+        assertThat(failedRow.leaderNickname()).isNull();
+    }
+
+    @Test
+    @DisplayName("결과 조회에 다른 경매방의 물품은 섞이지 않는다")
+    void findResultsExcludesOtherRooms() {
+
+        AuctionRoom target = newAuctionRoom("조회할 경매방");
+        AuctionRoom other = newAuctionRoom("다른 경매방");
+
+        AuctionItem targetItem = newAuctionItem(target, "조회대상", AuctionItemStatus.SOLD);
+        newAuctionItem(other, "제외대상", AuctionItemStatus.SOLD);
+        entityManager.flush();
+
+        List<AuctionItemResultProjection> results =
+                auctionItemRepository.findResults(target.getAuctionRoomId());
+
+        assertThat(results)
+                .extracting(AuctionItemResultProjection::auctionItemId)
+                .containsExactly(targetItem.getAuctionItemId());
     }
 
     @Test
@@ -378,4 +436,39 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
                 auctionRoom.getAuctionRoomId(), AuctionItemStatus.IN_PROGRESS)).isZero();
     }
+
+    @Test
+    @DisplayName("거래 현황용 조회는 마감된 물품만 최근 마감 순으로 돌려준다")
+    void findClosedItemsReturnsOnlyClosedNewestFirst() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+
+        AuctionItem sold = entityManager.persist(AuctionItem.builder()
+                .auctionRoom(auctionRoom)
+                .product(newProduct("낙찰물품"))
+                .startingPrice(10_000L)
+                .bidIncrement(1_000L)
+                .status(AuctionItemStatus.SOLD)
+                .endAt(LocalDateTime.of(2026, 7, 30, 21, 0))
+                .build());
+        AuctionItem failed = entityManager.persist(AuctionItem.builder()
+                .auctionRoom(auctionRoom)
+                .product(newProduct("유찰물품"))
+                .startingPrice(10_000L)
+                .bidIncrement(1_000L)
+                .status(AuctionItemStatus.FAILED)
+                .endAt(LocalDateTime.of(2026, 7, 28, 21, 0))
+                .build());
+        newAuctionItem(auctionRoom, "진행물품", AuctionItemStatus.IN_PROGRESS);
+        newAuctionItem(auctionRoom, "대기물품", AuctionItemStatus.READY);
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.findClosedItems(auctionRoom.getAuctionRoomId()))
+                .extracting(ClosedAuctionItemProjection::auctionItemId,
+                        ClosedAuctionItemProjection::productName)
+                .containsExactly(
+                        tuple(sold.getAuctionItemId(), "낙찰물품"),
+                        tuple(failed.getAuctionItemId(), "유찰물품"));
+    }
+
 }

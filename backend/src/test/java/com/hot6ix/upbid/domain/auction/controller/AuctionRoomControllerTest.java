@@ -11,9 +11,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
@@ -62,6 +65,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .softCloseTriggerSeconds(30)
                 .softCloseExtendSeconds(60)
                 .sellerStoreName("승민상점")
+                .isOwner(true)
                 .build();
     }
 
@@ -257,13 +261,15 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     @DisplayName("경매방 정보를 조회하면 200과 공개 정보를 반환한다")
     void getRoom() throws Exception {
 
-        when(auctionRoomService.getRoom(1L)).thenReturn(sampleResponse());
+        when(auctionRoomService.getRoom(1L, 1L)).thenReturn(sampleResponse());
 
         mockMvc.perform(get("/api/v1/auction-rooms/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.name").value("승민의 경매방"))
-                .andExpect(jsonPath("$.data.status").value("BEFORE"));
+                .andExpect(jsonPath("$.data.status").value("BEFORE"))
+                // 화면이 판매자 조작 UI를 이 이름으로 읽는다. owner로 줄어들면 안 된다.
+                .andExpect(jsonPath("$.data.isOwner").value(true));
     }
 
     @Test
@@ -271,7 +277,8 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void getRoom_allowsGuest() throws Exception {
 
         비로그인_상태로_바꾼다();
-        when(auctionRoomService.getRoom(1L)).thenReturn(sampleResponse());
+        // 게스트는 회원 ID가 null로 넘어간다. 서비스가 그 값으로 isOwner를 false로 판정한다.
+        when(auctionRoomService.getRoom(1L, null)).thenReturn(sampleResponse());
 
         mockMvc.perform(get("/api/v1/auction-rooms/1"))
                 .andExpect(status().isOk())
@@ -282,10 +289,59 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     @DisplayName("존재하지 않는 경매방을 조회하면 404를 반환한다")
     void getRoom_notFound() throws Exception {
 
-        when(auctionRoomService.getRoom(999L))
+        when(auctionRoomService.getRoom(999L, 1L))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/auction-rooms/999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4002));
+    }
+
+    private AuctionRoomResultResponseDto sampleResultResponse() {
+        return new AuctionRoomResultResponseDto(
+                1L, "승민의 경매방", "승민상점", AuctionRoomStatus.CLOSED, null,
+                List.of(new AuctionItemResultResponseDto(
+                        101L, "한정판 피규어", null, AuctionItemStatus.SOLD,
+                        85_000L, "스니커홀릭", 7, 60_000L)));
+    }
+
+    @Test
+    @DisplayName("경매방 낙찰 결과를 조회하면 200과 물품별 결과를 반환한다")
+    void getResults() throws Exception {
+
+        when(auctionRoomService.getResults(1L, 1L)).thenReturn(sampleResultResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/1/results"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.name").value("승민의 경매방"))
+                .andExpect(jsonPath("$.data.items[0].finalPrice").value(85_000))
+                .andExpect(jsonPath("$.data.items[0].winnerNickname").value("스니커홀릭"))
+                .andExpect(jsonPath("$.data.items[0].myRank").value(7));
+    }
+
+    /** 비로그인이면 인터셉터가 userId를 담지 않으므로 서비스에 null이 넘어간다. */
+    @Test
+    @DisplayName("비로그인 사용자도 낙찰 결과를 조회할 수 있다")
+    void getResults_allowsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+        when(auctionRoomService.getResults(1L, null)).thenReturn(sampleResultResponse());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/1/results"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 경매방의 결과를 조회하면 404를 반환한다")
+    void getResults_notFound() throws Exception {
+
+        when(auctionRoomService.getResults(999L, 1L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/999/results"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(4002));
@@ -321,7 +377,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     @DisplayName("공유 코드로 경매방을 조회하면 200과 공개 정보를 반환한다")
     void getRoomByShareCode() throws Exception {
 
-        when(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234")).thenReturn(sampleResponse());
+        when(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", 1L)).thenReturn(sampleResponse());
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/aBcD1234aBcD1234"))
                 .andExpect(status().isOk())
@@ -334,7 +390,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     void getRoomByShareCode_allowsGuest() throws Exception {
 
         비로그인_상태로_바꾼다();
-        when(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234")).thenReturn(sampleResponse());
+        when(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", null)).thenReturn(sampleResponse());
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/aBcD1234aBcD1234"))
                 .andExpect(status().isOk())
@@ -345,7 +401,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     @DisplayName("존재하지 않는 공유 코드로 조회하면 404를 반환한다")
     void getRoomByShareCode_notFound() throws Exception {
 
-        when(auctionRoomService.getRoomByShareCode("unknownShareCode"))
+        when(auctionRoomService.getRoomByShareCode("unknownShareCode", 1L))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/unknownShareCode"))

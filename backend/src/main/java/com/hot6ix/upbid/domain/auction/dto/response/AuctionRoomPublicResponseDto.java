@@ -22,9 +22,12 @@ public record AuctionRoomPublicResponseDto(
         LocalDateTime createdAt,
         Long itemCount,
         // 입찰 도메인 담당자가 별도로 채울 필드라 여기서는 항상 null이다.
-        Long participantCount
+        Long participantCount,
+        // 보는 사람이 이 방의 주인인지. 화면이 판매자 조작(물품 추가·빼기·시작)을 띄울 근거이며,
+        // 실제 권한은 조작 API가 다시 검증한다. 로그인하지 않았으면 false.
+        boolean isOwner
 ) {
-    public static AuctionRoomPublicResponseDto from(AuctionRoom auctionRoom, Long itemCount) {
+    public static AuctionRoomPublicResponseDto from(AuctionRoom auctionRoom, Long itemCount, boolean isOwner) {
         return AuctionRoomPublicResponseDto.builder()
                 .auctionRoomId(auctionRoom.getAuctionRoomId())
                 .name(auctionRoom.getName())
@@ -39,6 +42,7 @@ public record AuctionRoomPublicResponseDto(
                 .sellerStoreImageUrl(auctionRoom.getSellerProfile().getStoreImageUrl())
                 .createdAt(auctionRoom.getCreatedAt())
                 .itemCount(itemCount)
+                .isOwner(isOwner)
                 .build();
     }
 }
