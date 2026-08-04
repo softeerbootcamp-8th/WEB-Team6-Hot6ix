@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.auction.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
@@ -434,5 +435,27 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
 
         assertThat(auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
                 auctionRoom.getAuctionRoomId(), AuctionItemStatus.IN_PROGRESS)).isZero();
+    }
+
+    /** 방마다 세면 방 수만큼 쿼리가 나가므로 한 번에 센다. */
+    @Test
+    @DisplayName("여러 방의 물품 수를 한 번에 세고, 물품이 없는 방은 행이 없다")
+    void countByAuctionRoomIdsGroupsPerRoom() {
+
+        AuctionRoom twoItems = newAuctionRoom("물품둘");
+        AuctionRoom oneItem = newAuctionRoom("물품하나");
+        AuctionRoom empty = newAuctionRoom("빈방");
+
+        newAuctionItem(twoItems, "물품A", AuctionItemStatus.READY);
+        newAuctionItem(twoItems, "물품B", AuctionItemStatus.SOLD);
+        newAuctionItem(oneItem, "물품C", AuctionItemStatus.READY);
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.countByAuctionRoomIds(List.of(
+                twoItems.getAuctionRoomId(), oneItem.getAuctionRoomId(), empty.getAuctionRoomId())))
+                .extracting(RoomItemCountProjection::auctionRoomId, RoomItemCountProjection::itemCount)
+                .containsExactlyInAnyOrder(
+                        tuple(twoItems.getAuctionRoomId(), 2L),
+                        tuple(oneItem.getAuctionRoomId(), 1L));
     }
 }

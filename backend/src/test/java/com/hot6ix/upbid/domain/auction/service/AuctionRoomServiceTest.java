@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.auction.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -12,6 +13,7 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.MyAuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
@@ -19,6 +21,8 @@ import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.auction.repository.RoomItemCountProjection;
+import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -27,6 +31,7 @@ import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -426,6 +431,90 @@ class AuctionRoomServiceTest {
                     assertThat(item.myAmount()).isNull();
                 });
         verify(dealCandidateRepository, never()).findMyRanksInRoom(any(), any());
+    }
+
+    /** 방 하나. 정렬 키가 생성 시각과 ID라 둘 다 넣어 준다 — 조회로 올라온 방에는 값이 있다. */
+    private AuctionRoom newRoom(long id, LocalDateTime createdAt, AuctionRoomStatus status) {
+        AuctionRoom room = AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .status(status)
+                .build();
+        ReflectionTestUtils.setField(room, "auctionRoomId", id);
+        ReflectionTestUtils.setField(room, "createdAt", createdAt);
+        return room;
+    }
+
+    @Test
+    @DisplayName("개설방은 SELLER, 참여방은 BUYER 역할로 한 목록에 합쳐진다")
+    void getMyRoomsMergesBothSidesWithRole() {
+
+        AuctionRoom owned = newRoom(10L, LocalDateTime.of(2026, 7, 30, 21, 0), AuctionRoomStatus.OPEN);
+        AuctionRoom joined = newRoom(11L, LocalDateTime.of(2026, 7, 29, 21, 0), AuctionRoomStatus.CLOSED);
+
+        when(auctionRoomRepository.findOwnedRooms(1L)).thenReturn(List.of(owned));
+        when(auctionRoomRepository.findParticipatedRooms(1L)).thenReturn(List.of(joined));
+        when(auctionItemRepository.countByAuctionRoomIds(List.of(10L, 11L)))
+                .thenReturn(List.of(new RoomItemCountProjection(10L, 3L)));
+
+        assertThat(auctionRoomService.getMyRooms(1L))
+                .extracting(MyAuctionRoomResponseDto::auctionRoomId,
+                        MyAuctionRoomResponseDto::role,
+                        MyAuctionRoomResponseDto::status,
+                        MyAuctionRoomResponseDto::itemCount)
+                .containsExactly(
+                        tuple(10L, DealRole.SELLER, AuctionRoomStatus.OPEN, 3L),
+                        // 물품이 없는 방은 집계에 행이 없어 0으로 채워진다.
+                        tuple(11L, DealRole.BUYER, AuctionRoomStatus.CLOSED, 0L));
+    }
+
+    /** 두 쿼리 결과를 합친 뒤 정렬하므로, 섞였을 때 순서가 유지되는지가 회귀 지점이다. */
+    @Test
+    @DisplayName("목록은 최근에 만든 방이 먼저 온다")
+    void getMyRoomsSortsRecentFirst() {
+
+        AuctionRoom old = newRoom(10L, LocalDateTime.of(2026, 7, 20, 21, 0), AuctionRoomStatus.CLOSED);
+        AuctionRoom recent = newRoom(11L, LocalDateTime.of(2026, 7, 30, 21, 0), AuctionRoomStatus.OPEN);
+
+        when(auctionRoomRepository.findOwnedRooms(1L)).thenReturn(List.of(old));
+        when(auctionRoomRepository.findParticipatedRooms(1L)).thenReturn(List.of(recent));
+        when(auctionItemRepository.countByAuctionRoomIds(List.of(11L, 10L))).thenReturn(List.of());
+
+        assertThat(auctionRoomService.getMyRooms(1L))
+                .extracting(MyAuctionRoomResponseDto::auctionRoomId)
+                .containsExactly(11L, 10L);
+    }
+
+    /** 생성 시각이 같으면 ID 큰 쪽이 먼저다. 키가 하나면 순서가 요청마다 흔들린다. */
+    @Test
+    @DisplayName("생성 시각이 같으면 ID가 큰 방이 먼저 온다")
+    void getMyRoomsBreaksTieById() {
+
+        LocalDateTime sameMoment = LocalDateTime.of(2026, 7, 30, 21, 0);
+
+        when(auctionRoomRepository.findOwnedRooms(1L)).thenReturn(List.of(
+                newRoom(10L, sameMoment, AuctionRoomStatus.OPEN),
+                newRoom(12L, sameMoment, AuctionRoomStatus.OPEN),
+                newRoom(11L, sameMoment, AuctionRoomStatus.OPEN)));
+        when(auctionRoomRepository.findParticipatedRooms(1L)).thenReturn(List.of());
+        when(auctionItemRepository.countByAuctionRoomIds(List.of(12L, 11L, 10L))).thenReturn(List.of());
+
+        assertThat(auctionRoomService.getMyRooms(1L))
+                .extracting(MyAuctionRoomResponseDto::auctionRoomId)
+                .containsExactly(12L, 11L, 10L);
+    }
+
+    @Test
+    @DisplayName("경매방이 없으면 빈 목록을 돌려주고 물품 수를 세지 않는다")
+    void getMyRoomsReturnsEmpty() {
+
+        when(auctionRoomRepository.findOwnedRooms(1L)).thenReturn(List.of());
+        when(auctionRoomRepository.findParticipatedRooms(1L)).thenReturn(List.of());
+
+        assertThat(auctionRoomService.getMyRooms(1L)).isEmpty();
+        // 빈 목록으로 in () 을 만들면 문법 오류다.
+        verify(auctionItemRepository, never()).countByAuctionRoomIds(any());
     }
 
     @Test

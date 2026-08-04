@@ -5,6 +5,7 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDt
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
@@ -114,6 +115,20 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
             + "order by " + STATUS_RANK + " asc, ai.auctionItemId asc")
     List<AuctionItemResultProjection> findResults(
             @Param("auctionRoomId") Long auctionRoomId, Limit limit);
+
+    /**
+     * 여러 경매방의 물품 수를 한 번에 센다. 방마다 세면 방 수만큼 쿼리가 나간다.
+     *
+     * <p>물품이 없는 방은 행이 없다 — {@code group by} 가 빈 그룹을 만들지 않는다. 호출하는
+     * 쪽이 방 id 로 찾아 쓰고, 없으면 0으로 채운다.
+     */
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.RoomItemCountProjection("
+            + "  ai.auctionRoom.auctionRoomId, count(ai)) "
+            + "from AuctionItem ai "
+            + "where ai.auctionRoom.auctionRoomId in :auctionRoomIds "
+            + "group by ai.auctionRoom.auctionRoomId")
+    List<RoomItemCountProjection> countByAuctionRoomIds(
+            @Param("auctionRoomIds") Collection<Long> auctionRoomIds);
 
     /**
      * 물품 상세를 조회한다. 상태로 거르지 않으므로 낙찰·유찰된 물품도 조회된다.

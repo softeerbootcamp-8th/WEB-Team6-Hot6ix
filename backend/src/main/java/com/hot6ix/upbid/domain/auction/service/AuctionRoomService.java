@@ -5,12 +5,15 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.MyAuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.auction.repository.RoomItemCountProjection;
+import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -18,9 +21,11 @@ import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -102,6 +107,87 @@ public class AuctionRoomService {
 
         return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoom.getAuctionRoomId()));
     }
+
+    /**
+     * 내가 만든 방과 내가 입찰한 방을 한 목록으로 최근 생성 순으로 준다. 화면이 전체를 받아
+     * 상태별로 나누고 이름으로 검색하므로 서버는 필터 파라미터를 두지 않는다.
+     *
+     * <p>입장만 하고 입찰하지 않은 방은 들어오지 않는다 — 참여를 입찰로 정의했다.
+     *
+     * @return 방이 없으면 빈 목록. 조회는 실패하지 않는다
+     */
+    public List<MyAuctionRoomResponseDto> getMyRooms(Long userId) {
+
+        List<RoomWithRole> rooms = Stream.concat(
+                        auctionRoomRepository.findOwnedRooms(userId).stream()
+                                .map(room -> new RoomWithRole(room, DealRole.SELLER)),
+                        auctionRoomRepository.findParticipatedRooms(userId).stream()
+                                .map(room -> new RoomWithRole(room, DealRole.BUYER)))
+                .sorted(RECENT_FIRST)
+                // 두 갈래가 각각 상한까지 읽어 오므로 합치면 상한의 두 배가 될 수 있다.
+                .limit(AuctionRoomRepository.MAX_MY_ROOM_SIZE)
+                .toList();
+
+        Map<Long, Long> itemCounts = countItems(rooms);
+
+        return rooms.stream()
+                .map(room -> room.toResponse(itemCounts.getOrDefault(room.roomId(), 0L)))
+                .toList();
+    }
+
+    /**
+     * 방마다 세면 방 수만큼 쿼리가 나가므로 한 번에 센다. 상한을 적용한 뒤 세는 이유는 잘려
+     * 나간 방의 물품까지 셀 필요가 없어서다.
+     */
+    private Map<Long, Long> countItems(List<RoomWithRole> rooms) {
+
+        if (rooms.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> roomIds = rooms.stream().map(RoomWithRole::roomId).toList();
+
+        return auctionItemRepository.countByAuctionRoomIds(roomIds).stream()
+                .collect(Collectors.toMap(
+                        RoomItemCountProjection::auctionRoomId, RoomItemCountProjection::itemCount));
+    }
+
+    /**
+     * 방과 그 방에서 나의 역할. 역할은 어느 쿼리가 이 방을 찾아냈는지로 정해지므로, 쿼리
+     * 결과를 합칠 때 짝지어 둔다.
+     */
+    private record RoomWithRole(AuctionRoom room, DealRole role) {
+
+        Long roomId() {
+            return room.getAuctionRoomId();
+        }
+
+        MyAuctionRoomResponseDto toResponse(Long itemCount) {
+            return new MyAuctionRoomResponseDto(
+                    room.getAuctionRoomId(),
+                    room.getName(),
+                    room.getCoverImageUrl(),
+                    room.getSellerProfile().getStoreName(),
+                    room.getStatus(),
+                    role,
+                    itemCount,
+                    room.getClosedAt(),
+                    room.getCreatedAt());
+        }
+    }
+
+    /**
+     * 최근에 만든 방이 먼저다. 종료 시각이 더 자연스러운 키지만 방 종료 상태 전이가 없어
+     * {@code closedAt} 이 지금 항상 {@code null} 이다.
+     *
+     * <p>키를 둘 두는 이유는 순서가 하나로 정해지게 하기 위해서다. 같은 시각에 만든 방이 있으면
+     * 순서가 요청마다 흔들려 화면이 다르게 보인다.
+     */
+    private static final Comparator<RoomWithRole> RECENT_FIRST =
+            Comparator.comparing(
+                            (RoomWithRole room) -> room.room().getCreatedAt(),
+                            Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(RoomWithRole::roomId, Comparator.reverseOrder());
 
     /**
      * 경매방의 물품별 낙찰 결과를 조회한다. 인증이 필요 없으며, 로그인한 요청에만 물품마다

@@ -1,8 +1,13 @@
 package com.hot6ix.upbid.domain.auction.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.bid.entity.Bid;
+import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -12,12 +17,14 @@ import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.data.domain.Limit;
 import org.springframework.context.annotation.Import;
 
 @DataJpaTest
@@ -212,5 +219,213 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
     void findByIdForUpdate_emptyWhenNotFound() {
 
         assertThat(auctionRoomRepository.findByIdForUpdate(999_999L)).isEmpty();
+    }
+
+    /** 물품과 상품은 Repository가 없으므로 EntityManager로 직접 저장한다. */
+    private AuctionItem newItem(AuctionRoom auctionRoom, SellerProfile sellerProfile, String productName) {
+        Product product = Product.builder()
+                .sellerProfile(sellerProfile)
+                .name(productName)
+                .description("미개봉 정품")
+                .build();
+        entityManager.persist(product);
+
+        AuctionItem item = AuctionItem.builder()
+                .auctionRoom(auctionRoom)
+                .product(product)
+                .startingPrice(10_000L)
+                .bidIncrement(1_000L)
+                .status(AuctionItemStatus.IN_PROGRESS)
+                .build();
+        entityManager.persist(item);
+        entityManager.flush();
+
+        return item;
+    }
+
+    /** 입찰 한 건. {@code (auction_item_id, amount)}에 유니크 제약이 있어 금액을 달리 준다. */
+    private void newBid(AuctionItem item, User bidder, long amount) {
+        entityManager.persist(Bid.builder()
+                .auctionItem(item)
+                .bidder(bidder)
+                .amount(amount)
+                .build());
+        entityManager.flush();
+    }
+
+    private List<AuctionRoom> findOwned(SellerProfile profile) {
+        entityManager.flush();
+        entityManager.clear();
+        return auctionRoomRepository.findOwnedRooms(profile.getUser().getUserId());
+    }
+
+    private List<AuctionRoom> findParticipated(SellerProfile profile) {
+        entityManager.flush();
+        entityManager.clear();
+        return auctionRoomRepository.findParticipatedRooms(profile.getUser().getUserId());
+    }
+
+    @Test
+    @DisplayName("개설방 조회는 내 방만 돌려주고 가게 이름을 함께 읽어 온다")
+    void findOwnedRoomsReturnsOnlyMine() {
+
+        SellerProfile mine = newSellerProfile("mine@hot6ix.com");
+        SellerProfile others = newSellerProfile("others@hot6ix.com");
+
+        AuctionRoom myRoom = newAuctionRoom(mine, "CODE0000000000201");
+        newAuctionRoom(others, "CODE0000000000202");
+
+        List<AuctionRoom> owned = findOwned(mine);
+
+        assertThat(owned)
+                .extracting(AuctionRoom::getAuctionRoomId)
+                .containsExactly(myRoom.getAuctionRoomId());
+        // fetch join 이 빠지면 세션이 닫힌 뒤 이 접근에서 터진다.
+        assertThat(owned.getFirst().getSellerProfile().getStoreName()).isEqualTo("승민상점");
+    }
+
+    @Test
+    @DisplayName("삭제된 방은 개설방 조회에서 빠진다")
+    void findOwnedRoomsExcludesDeleted() {
+
+        SellerProfile mine = newSellerProfile("owned-deleted@hot6ix.com");
+
+        AuctionRoom deleted = newAuctionRoom(mine, "CODE0000000000203");
+        deleted.softDelete(LocalDateTime.now());
+        auctionRoomRepository.flush();
+
+        assertThat(findOwned(mine)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("참여방 조회는 내가 입찰한 남의 방만 돌려준다")
+    void findParticipatedRoomsReturnsBidRooms() {
+
+        SellerProfile mine = newSellerProfile("bidder@hot6ix.com");
+        SellerProfile others = newSellerProfile("seller-joined@hot6ix.com");
+
+        AuctionRoom joined = newAuctionRoom(others, "CODE0000000000204");
+        AuctionItem item = newItem(joined, others, "남의물품");
+        newBid(item, mine.getUser(), 11_000L);
+        newAuctionRoom(others, "CODE0000000000205");
+
+        assertThat(findParticipated(mine))
+                .extracting(AuctionRoom::getAuctionRoomId)
+                .containsExactly(joined.getAuctionRoomId());
+    }
+
+    /** exists 가 하는 일. 조인으로 풀면 입찰 수만큼 같은 방이 늘어난다. */
+    @Test
+    @DisplayName("한 방에 여러 번 입찰해도 참여방은 한 줄만 나온다")
+    void findParticipatedRoomsDeduplicatesMultipleBids() {
+
+        SellerProfile mine = newSellerProfile("multi-bid@hot6ix.com");
+        SellerProfile others = newSellerProfile("seller-multi@hot6ix.com");
+
+        AuctionRoom room = newAuctionRoom(others, "CODE0000000000206");
+        AuctionItem first = newItem(room, others, "물품1");
+        AuctionItem second = newItem(room, others, "물품2");
+        newBid(first, mine.getUser(), 11_000L);
+        newBid(first, mine.getUser(), 12_000L);
+        newBid(second, mine.getUser(), 13_000L);
+
+        assertThat(findParticipated(mine))
+                .extracting(AuctionRoom::getAuctionRoomId)
+                .containsExactly(room.getAuctionRoomId());
+    }
+
+    /**
+     * 판매자 본인 입찰은 차단돼 있지만 그 규칙 이전 데이터가 남아 있을 수 있다. 조건이 없으면
+     * 한 방이 개설방과 참여방 양쪽에 나와 목록에 두 줄이 된다.
+     */
+    @Test
+    @DisplayName("내 방에 내가 입찰한 데이터가 있어도 참여방에는 안 들어간다")
+    void findParticipatedRoomsExcludesMyOwnRoom() {
+
+        SellerProfile mine = newSellerProfile("self-bid@hot6ix.com");
+
+        AuctionRoom myRoom = newAuctionRoom(mine, "CODE0000000000207");
+        AuctionItem item = newItem(myRoom, mine, "내물품");
+        newBid(item, mine.getUser(), 11_000L);
+
+        assertThat(findParticipated(mine)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("삭제된 방은 참여방 조회에서도 빠진다")
+    void findParticipatedRoomsExcludesDeleted() {
+
+        SellerProfile mine = newSellerProfile("joined-deleted@hot6ix.com");
+        SellerProfile others = newSellerProfile("seller-joined-deleted@hot6ix.com");
+
+        AuctionRoom room = newAuctionRoom(others, "CODE0000000000208");
+        AuctionItem item = newItem(room, others, "삭제방물품");
+        newBid(item, mine.getUser(), 11_000L);
+
+        room.softDelete(LocalDateTime.now());
+        auctionRoomRepository.flush();
+
+        assertThat(findParticipated(mine)).isEmpty();
+    }
+
+    /** 참여 이력은 지나간 사실이라 상대가 프로필을 지워도 내 목록에서 빠지지 않는다. */
+    @Test
+    @DisplayName("판매자가 프로필을 지운 방은 참여방에 남는다")
+    void findParticipatedRoomsKeepsRoomsWithDeletedSellerProfile() {
+
+        SellerProfile mine = newSellerProfile("kept@hot6ix.com");
+        SellerProfile others = newSellerProfile("seller-gone@hot6ix.com");
+
+        AuctionRoom room = newAuctionRoom(others, "CODE0000000000209");
+        AuctionItem item = newItem(room, others, "남은물품");
+        newBid(item, mine.getUser(), 11_000L);
+
+        others.softDelete(LocalDateTime.now());
+        sellerProfileRepository.flush();
+
+        assertThat(findParticipated(mine))
+                .extracting(AuctionRoom::getAuctionRoomId)
+                .containsExactly(room.getAuctionRoomId());
+    }
+
+    /**
+     * 합친 뒤 자르는 것으로는 서버가 받는 행을 막지 못한다. 상한이 각 갈래의 쿼리에 걸려
+     * 있는지를 작은 값으로 확인한다.
+     */
+    @Test
+    @DisplayName("개설방 조회는 상한을 넘으면 최근에 만든 방까지만 돌려준다")
+    void findOwnedRoomsStopsAtLimit() {
+
+        SellerProfile mine = newSellerProfile("owned-limit@hot6ix.com");
+
+        newAuctionRoom(mine, "CODE0000000000210");
+        AuctionRoom recent = newAuctionRoom(mine, "CODE0000000000211");
+
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(auctionRoomRepository.findOwnedRooms(mine.getUser().getUserId(), Limit.of(1)))
+                .extracting(AuctionRoom::getAuctionRoomId)
+                .containsExactly(recent.getAuctionRoomId());
+    }
+
+    @Test
+    @DisplayName("참여방 조회도 상한을 넘으면 최근에 만든 방까지만 돌려준다")
+    void findParticipatedRoomsStopsAtLimit() {
+
+        SellerProfile mine = newSellerProfile("joined-limit@hot6ix.com");
+        SellerProfile others = newSellerProfile("seller-joined-limit@hot6ix.com");
+
+        AuctionRoom older = newAuctionRoom(others, "CODE0000000000212");
+        newBid(newItem(older, others, "예전물품"), mine.getUser(), 11_000L);
+        AuctionRoom recent = newAuctionRoom(others, "CODE0000000000213");
+        newBid(newItem(recent, others, "최근물품"), mine.getUser(), 12_000L);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(auctionRoomRepository.findParticipatedRooms(mine.getUser().getUserId(), Limit.of(1)))
+                .extracting(AuctionRoom::getAuctionRoomId)
+                .containsExactly(recent.getAuctionRoomId());
     }
 }

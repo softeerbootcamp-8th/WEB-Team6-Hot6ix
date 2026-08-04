@@ -5,6 +5,7 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.MyAuctionRoomResponseDto;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,6 +14,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -51,6 +53,23 @@ public interface AuctionRoomApi {
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(
             @Parameter(description = "조회할 경매방 ID", required = true)
             @PathVariable Long roomId);
+
+    @Operation(
+            summary = "내 경매방 목록 조회",
+            description = "내가 만든 방과 내가 입찰한 방을 한 목록으로, 최근 생성 순으로 조회한다. "
+                    + "role 이 SELLER 면 개설방, BUYER 면 참여방이다. "
+                    + "참여는 입찰을 기준으로 판정하므로 입장만 하고 입찰하지 않은 방은 들어오지 않는다. "
+                    + "화면이 전체를 받아 상태별로 나누고 이름으로 검색하며 건수도 직접 세므로 "
+                    + "필터 파라미터가 없다. 삭제된 방은 빠지고, 판매자가 프로필을 지운 방은 남는다 — "
+                    + "참여 이력은 지나간 사실이라 상대가 나갔다고 없어지지 않는다. "
+                    + "참여자 수는 담지 않는다. 방이 없으면 빈 배열이다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)")
+    })
+    ResponseEntity<CommonResponse<List<MyAuctionRoomResponseDto>>> getMyRooms(
+            @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
             summary = "경매방 낙찰 결과 조회",

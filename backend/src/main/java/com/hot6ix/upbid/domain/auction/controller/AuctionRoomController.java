@@ -6,10 +6,12 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.MyAuctionRoomResponseDto;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
 import com.hot6ix.upbid.global.interceptor.GuestAllowed;
 import com.hot6ix.upbid.global.response.CommonResponse;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -36,6 +38,15 @@ public class AuctionRoomController implements AuctionRoomApi {
         AuctionRoomPublicResponseDto response = auctionRoomService.create(userId, request);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(CommonResponse.ok(response, "경매방이 생성되었습니다."));
+    }
+
+    @GetMapping("/me")
+    @Override
+    public ResponseEntity<CommonResponse<List<MyAuctionRoomResponseDto>>> getMyRooms(Long userId) {
+
+        List<MyAuctionRoomResponseDto> response = auctionRoomService.getMyRooms(userId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "내 경매방 목록 조회에 성공했습니다."));
     }
 
     @GetMapping("/{roomId}")
