@@ -20,6 +20,8 @@ public record AuctionRoomPublicResponseDto(
         String sellerStoreName,
         String sellerStoreImageUrl,
         LocalDateTime createdAt,
+        // 방이 종료된 시각. 종료 화면이 "종료 {날짜}"를 그리는 데 쓴다. 종료 전에는 null이다.
+        LocalDateTime closedAt,
         Long itemCount,
         // 입찰 도메인 담당자가 별도로 채울 필드라 여기서는 항상 null이다.
         Long participantCount
@@ -38,6 +40,7 @@ public record AuctionRoomPublicResponseDto(
                 .sellerStoreName(auctionRoom.getSellerProfile().getStoreName())
                 .sellerStoreImageUrl(auctionRoom.getSellerProfile().getStoreImageUrl())
                 .createdAt(auctionRoom.getCreatedAt())
+                .closedAt(auctionRoom.getClosedAt())
                 .itemCount(itemCount)
                 .build();
     }
