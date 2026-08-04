@@ -9,6 +9,7 @@ import com.hot6ix.upbid.domain.user.service.UserService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -29,8 +30,10 @@ public class AuthService {
 
         try {
             return AuthLoginResponseDto.from(userService.findOrCreateByOAuth(userInfo));
-        } catch (DataIntegrityViolationException e) {
+        } catch (DuplicateKeyException e) {
             return AuthLoginResponseDto.from(userService.getByOAuth(userInfo));
+        } catch (DataIntegrityViolationException e) {
+            throw new ApplicationException(AuthErrorType.USER_INFO_INVALID);
         }
     }
 }
