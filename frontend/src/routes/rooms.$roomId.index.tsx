@@ -800,6 +800,57 @@ function LiveRoomPage() {
   const openItem = (itemId: number) => setDetailItemId(itemId)
 
   /**
+   * 목록에서 물품을 눌렀을 때. 평소에는 상세를 열고, 빼기 모드에서는 고르기만 한다.
+   *
+   * 데스크톱과 모바일이 같은 규칙을 써야 해서 여기서 한 번만 정의해 양쪽에 넘긴다.
+   */
+  const handleSelectItem = (item: AuctionItemDetail) => {
+    if (!removeMode) {
+      openItem(item.id)
+      return
+    }
+    if (item.status !== 'READY') {
+      toast.error('진행 중이거나 끝난 물품은 뺄 수 없어요')
+      return
+    }
+    setSelectedForRemoval((prev) =>
+      prev.includes(item.id)
+        ? prev.filter((id) => id !== item.id)
+        : [...prev, item.id],
+    )
+  }
+
+  /**
+   * 판매자 편성 조작 묶음. 방 주인이 아니면 `undefined` 라 화면이 아예 안 그린다.
+   *
+   * 개별 prop 으로 늘어놓으면 열 개가 넘어가서 `devTools` 처럼 하나로 묶었다.
+   */
+  const sellerControls = isOwner
+    ? {
+        removeMode,
+        selectedCount: selectedForRemoval.length,
+        addDisabled: addItems.isPending,
+        removeDisabled:
+          usingMockItems || (!removeMode && removable.length === 0),
+        removeTitle: usingMockItems
+          ? '시연용 목업 물품이라 뺄 수 없어요'
+          : removable.length === 0
+            ? '시작 전 물품만 뺄 수 있어요'
+            : undefined,
+        onPick: () => setPicking(true),
+        onToggleRemoveMode: () => {
+          setRemoveMode((prev) => !prev)
+          setSelectedForRemoval([])
+        },
+        onCancelRemove: () => {
+          setRemoveMode(false)
+          setSelectedForRemoval([])
+        },
+        onConfirmRemove: () => setConfirmingRemoval(true),
+      }
+    : undefined
+
+  /**
    * 종료된 방의 물품은 전부 끝난 것으로 본다.
    *
    * 목업 물품은 마감 시각이 미래라, 방이 종료됐는데도 카운트다운이
@@ -940,6 +991,12 @@ function LiveRoomPage() {
           onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
           onBack={() => void navigate({ to: '/rooms' })}
           onOpenItem={openItem}
+          onSelectItem={handleSelectItem}
+          isSelected={(item) =>
+            removeMode && selectedForRemoval.includes(item.id)
+          }
+          isDimmed={(item) => removeMode && item.status !== 'READY'}
+          seller={sellerControls}
           onStart={isOwner && !usingMockItems ? handleStart : undefined}
           isOwner={isOwner}
           justClosedId={justClosedId}
@@ -1046,6 +1103,29 @@ function LiveRoomPage() {
         </Modal>
 
         {closeRoomDialog}
+
+        {/*
+         * 데스크톱과 같은 모달을 쓴다. 트리를 갈라 그리므로 한 번에 한 벌만
+         * 살아 있고, `<dialog>` 가 두 벌 겹쳐 문서를 죽이는 일은 없다.
+         */}
+        <ItemManagement
+          picking={picking}
+          onPickingChange={setPicking}
+          onAdd={handleAdd}
+          removing={
+            confirmingRemoval
+              ? roomItems.filter((item) => selectedForRemoval.includes(item.id))
+              : []
+          }
+          removePending={removeItem.isPending}
+          onRemovingCancel={() => setConfirmingRemoval(false)}
+          onRemove={async (targets) => {
+            await handleRemove(targets)
+            setConfirmingRemoval(false)
+            setRemoveMode(false)
+            setSelectedForRemoval([])
+          }}
+        />
       </>
     )
   }
@@ -1234,21 +1314,7 @@ function LiveRoomPage() {
                   justClosedId={justClosedId}
                   startingItemId={startingItemId}
                   onStart={isOwner && !usingMockItems ? handleStart : undefined}
-                  onSelect={(item) => {
-                    if (!removeMode) {
-                      openItem(item.id)
-                      return
-                    }
-                    if (item.status !== 'READY') {
-                      toast.error('진행 중이거나 끝난 물품은 뺄 수 없어요')
-                      return
-                    }
-                    setSelectedForRemoval((prev) =>
-                      prev.includes(item.id)
-                        ? prev.filter((id) => id !== item.id)
-                        : [...prev, item.id],
-                    )
-                  }}
+                  onSelect={handleSelectItem}
                 />
               ))}
 
