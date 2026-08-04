@@ -6,15 +6,18 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
@@ -22,6 +25,7 @@ import com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
+import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -58,6 +62,9 @@ class AuctionRoomServiceTest {
 
     @Mock
     private DealCandidateRepository dealCandidateRepository;
+
+    @Mock
+    private RoomSseManager roomSseManager;
 
     @InjectMocks
     private AuctionRoomService auctionRoomService;
@@ -356,36 +363,31 @@ class AuctionRoomServiceTest {
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
     }
 
-    private AuctionRoomListItemResponseDto newListItem(Long auctionRoomId) {
+    private AuctionRoomListItemResponseDto newListItem(Long auctionRoomId, AuctionRoomStatus status) {
         return AuctionRoomListItemResponseDto.builder()
                 .auctionRoomId(auctionRoomId)
                 .name("승민의 경매방")
-                .status(AuctionRoomStatus.BEFORE)
+                .status(status)
+                .role(AuctionRoomRole.SELLER)
+                .storeName("승민상점")
                 .createdAt(LocalDateTime.of(2026, 8, 3, 12, 0))
                 .itemCount(2L)
                 .build();
-    }
-
-    private SellerProfile givenSellerProfileForList() {
-        SellerProfile sellerProfile = newSellerProfile();
-        ReflectionTestUtils.setField(sellerProfile, "sellerProfileId", 5L);
-        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
-                .thenReturn(Optional.of(sellerProfile));
-        return sellerProfile;
     }
 
     @Test
     @DisplayName("내 경매방 목록을 조회하면 요청한 쪽 크기만큼만 담기고 다음 커서가 채워진다")
     void getMyRooms_hasNext() {
 
-        givenSellerProfileForList();
-
         // size 2를 요청하면 리포지토리는 hasNext 판정용으로 3건을 돌려준다.
-        when(auctionRoomRepository.search(5L, null, null, null, 2))
-                .thenReturn(List.of(newListItem(30L), newListItem(20L), newListItem(10L)));
+        when(auctionRoomRepository.search(1L, null, null, null, null, 2))
+                .thenReturn(List.of(
+                        newListItem(30L, AuctionRoomStatus.BEFORE),
+                        newListItem(20L, AuctionRoomStatus.BEFORE),
+                        newListItem(10L, AuctionRoomStatus.BEFORE)));
 
         CursorPageResponse<AuctionRoomListItemResponseDto> response =
-                auctionRoomService.getMyRooms(1L, null, null, null, 2);
+                auctionRoomService.getMyRooms(1L, null, null, null, null, 2);
 
         assertThat(response.content()).hasSize(2);
         assertThat(response.hasNext()).isTrue();
@@ -396,13 +398,11 @@ class AuctionRoomServiceTest {
     @DisplayName("마지막 쪽이면 다음 커서가 비어 있다")
     void getMyRooms_lastPage() {
 
-        givenSellerProfileForList();
-
-        when(auctionRoomRepository.search(5L, null, null, null, 2))
-                .thenReturn(List.of(newListItem(30L)));
+        when(auctionRoomRepository.search(1L, null, null, null, null, 2))
+                .thenReturn(List.of(newListItem(30L, AuctionRoomStatus.BEFORE)));
 
         CursorPageResponse<AuctionRoomListItemResponseDto> response =
-                auctionRoomService.getMyRooms(1L, null, null, null, 2);
+                auctionRoomService.getMyRooms(1L, null, null, null, null, 2);
 
         assertThat(response.content()).hasSize(1);
         assertThat(response.hasNext()).isFalse();
@@ -413,28 +413,71 @@ class AuctionRoomServiceTest {
     @DisplayName("쪽 크기를 주지 않으면 기본값으로 조회한다")
     void getMyRooms_defaultPageSize() {
 
-        givenSellerProfileForList();
-
-        when(auctionRoomRepository.search(5L, null, null, null, AuctionRoomRepository.DEFAULT_PAGE_SIZE))
+        when(auctionRoomRepository.search(1L, null, null, null, null, AuctionRoomRepository.DEFAULT_PAGE_SIZE))
                 .thenReturn(List.of());
 
         CursorPageResponse<AuctionRoomListItemResponseDto> response =
-                auctionRoomService.getMyRooms(1L, null, null, null, null);
+                auctionRoomService.getMyRooms(1L, null, null, null, null, null);
 
         assertThat(response.content()).isEmpty();
         assertThat(response.hasNext()).isFalse();
     }
 
     @Test
-    @DisplayName("판매자 프로필이 없으면 목록 조회 시 예외가 발생한다")
-    void getMyRooms_sellerProfileNotFound() {
+    @DisplayName("판매자 프로필이 없어도 목록이 조회된다")
+    void getMyRooms_worksWithoutSellerProfile() {
 
-        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+        when(auctionRoomRepository.search(1L, null, null, null, null, 2))
+                .thenReturn(List.of(newListItem(30L, AuctionRoomStatus.BEFORE)));
 
-        assertThatThrownBy(() -> auctionRoomService.getMyRooms(1L, null, null, null, null))
-                .isInstanceOf(ApplicationException.class)
-                .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+        CursorPageResponse<AuctionRoomListItemResponseDto> response =
+                auctionRoomService.getMyRooms(1L, null, null, null, null, 2);
+
+        assertThat(response.content()).hasSize(1);
+        verifyNoInteractions(sellerProfileRepository);
+    }
+
+    @Test
+    @DisplayName("OPEN인 방만 지금 접속 중인 참여자 수가 채워진다")
+    void getMyRooms_fillsParticipantCountForOpenRooms() {
+
+        when(auctionRoomRepository.search(1L, null, null, null, null, 2))
+                .thenReturn(List.of(
+                        newListItem(30L, AuctionRoomStatus.OPEN),
+                        newListItem(20L, AuctionRoomStatus.CLOSED)));
+        when(roomSseManager.getParticipantCount(30L)).thenReturn(12);
+
+        CursorPageResponse<AuctionRoomListItemResponseDto> response =
+                auctionRoomService.getMyRooms(1L, null, null, null, null, 2);
+
+        assertThat(response.content().get(0).participantCount()).isEqualTo(12L);
+        assertThat(response.content().get(1).participantCount()).isNull();
+        verify(roomSseManager, never()).getParticipantCount(20L);
+    }
+
+    @Test
+    @DisplayName("상태별 개수는 role을 문자열로 넘겨 조회한다")
+    void getMyRoomCounts_passesRoleAsString() {
+
+        when(auctionRoomRepository.countByStatus(1L, "포토카드", "SELLER"))
+                .thenReturn(new AuctionRoomCountsResponseDto(1L, 2L, 3L));
+
+        AuctionRoomCountsResponseDto counts =
+                auctionRoomService.getMyRoomCounts(1L, "포토카드", AuctionRoomRole.SELLER);
+
+        assertThat(counts.open()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("role이 없으면 개수 조회에도 null로 넘어간다")
+    void getMyRoomCounts_passesNullRole() {
+
+        when(auctionRoomRepository.countByStatus(1L, null, null))
+                .thenReturn(new AuctionRoomCountsResponseDto(0L, 0L, 0L));
+
+        AuctionRoomCountsResponseDto counts = auctionRoomService.getMyRoomCounts(1L, null, null);
+
+        assertThat(counts.before()).isZero();
     }
 
     private AuctionRoom newClosedRoom() {

@@ -104,7 +104,14 @@ export function toAuctionItemDetail(
     roomId: detail.auctionRoomId ?? fallback.roomId,
     name: dto.productName ?? fallback.name,
     description: detail.description ?? fallback.description,
-    productUrl: detail.referenceUrl ?? fallback.productUrl,
+    /*
+     * 목업으로 떨어지지 않는다. 목업 링크(`brand.com/…`)는 팀이 가진 도메인이
+     * 아니라서, 누르면 관계없는 사이트가 새 창으로 열린다. 없으면 링크를
+     * 감추는 게 맞다.
+     *
+     * 목록 응답에는 애초에 링크가 없다. 물품을 열어 상세를 받은 뒤에 뜬다.
+     */
+    productUrl: detail.referenceUrl ?? null,
     status,
     /*
      * 목록 응답에는 시작가가 없다. 아직 입찰이 없으면 현재가가 곧 시작가이므로
@@ -143,4 +150,32 @@ export function toAuctionItems(
   return dtos.map((dto, index) =>
     toAuctionItemDetail(dto, fallbackItem(index), myNickname),
   )
+}
+
+/**
+ * 층으로 띄운 물품 상세에 상세 응답을 얹는다.
+ *
+ * **상세 응답은 목록에 없는 필드만 채운다.** 실시간으로 바뀌는 값(현재가·
+ * 리더보드·최고 입찰자·마감 시각·상태)은 `live` 가 원본이다.
+ *
+ * 상세는 물품을 열 때 한 번만 부르고, 남의 입찰로는 다시 부르지 않는다. 그래서
+ * `toAuctionItemDetail` 을 쓰면 SSE 로 갱신한 값을 낡은 응답이 덮어써서 상세가
+ * 실시간으로 안 바뀐다 — 목록은 바뀌는데 상세만 멈춘 것처럼 보였다.
+ */
+export function mergeItemDetail(
+  dto: AuctionItemDetailResponseDto,
+  live: AuctionItemDetail,
+): AuctionItemDetail {
+  return {
+    ...live,
+    description: dto.description ?? live.description,
+    // 목록 값으로 되돌리지 않는다. 목록에는 링크가 없어서 목업만 남는다.
+    productUrl: dto.referenceUrl ?? null,
+    bidUnit: dto.bidIncrement ?? live.bidUnit,
+    /*
+     * 목록에서 온 `startPrice` 는 진행 중인 물품이면 현재가라 틀리다
+     * (목록 응답에 시작가가 없어 현재가로 대신한다). 상세 값이 있으면 그게 맞다.
+     */
+    startPrice: dto.startingPrice ?? live.startPrice,
+  }
 }

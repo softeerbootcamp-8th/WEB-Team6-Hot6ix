@@ -12,6 +12,7 @@ import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
@@ -54,6 +55,10 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
 
     @MockitoBean
     private AuctionRoomShareService auctionRoomShareService;
+
+    // @DataJpaTest 슬라이스에는 sse 도메인 빈이 안 올라온다. 목록 조회만 쓰는 의존이라 목으로 채운다.
+    @MockitoBean
+    private RoomSseManager roomSseManager;
 
     private SellerProfile newSellerProfile() {
         User user = userRepository.saveAndFlush(User.builder()

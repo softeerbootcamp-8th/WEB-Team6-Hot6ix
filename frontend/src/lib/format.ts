@@ -86,3 +86,19 @@ export function josa(
 
   return (code - 0xac00) % 28 === 0 ? withoutBatchim : withBatchim
 }
+
+/**
+ * 상품 링크의 `href` 값.
+ *
+ * 서버는 스킴을 포함해 저장한다(등록 폼이 `https://` 를 붙여 보내고 서버가
+ * `@URL` 로 검사한다). 화면에서 또 붙이면 `https://https://…` 가 되어 링크가
+ * 깨진다. 스킴이 없는 값도 들어올 수 있어(옛 데이터·직접 입력) 그때만 붙인다.
+ */
+export function toHref(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`
+}
+
+/** 링크를 화면에 적을 때 쓰는 짧은 형태. `https://` 와 끝 슬래시를 뗀다. */
+export function formatUrlLabel(url: string): string {
+  return url.replace(/^https?:\/\//i, '').replace(/\/$/, '')
+}

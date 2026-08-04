@@ -1,5 +1,5 @@
 import { Clock, Pencil, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { formatRemaining, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -29,6 +29,15 @@ function QuickBidCard({
 
   const minimum = item.currentPrice + item.bidUnit
   const [amount, setAmount] = useState(minimum)
+
+  /*
+   * 남이 입찰해서 최소가가 올라가면 입력 금액도 끌어올린다. 이게 없으면
+   * "최소 N부터" 오류가 뜬 채로 남아 입찰을 못 한다.
+   * 최소가 이상을 직접 적어둔 경우는 건드리지 않는다.
+   */
+  useEffect(() => {
+    setAmount((prev) => (prev < minimum ? minimum : prev))
+  }, [minimum])
 
   const notOnUnit = (amount - item.currentPrice) % item.bidUnit !== 0
   const error =
