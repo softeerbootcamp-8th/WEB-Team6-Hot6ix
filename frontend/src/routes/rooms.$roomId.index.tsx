@@ -21,9 +21,10 @@ import {
 } from '@/api/generated/경매-물품/경매-물품'
 import { getGetListQueryKey } from '@/api/generated/상품/상품'
 import type { AuctionItemAddRequestDto } from '@/api/generated/model'
-import { useGetRoom } from '@/api/generated/경매방/경매방'
+import { useGetResults, useGetRoom } from '@/api/generated/경매방/경매방'
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { toAuctionItemDetail, toAuctionItems } from '@/features/live/adapt-item'
+import { toRoomResult } from '@/features/live/adapt-result'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import { retryOnNetworkError } from '@/features/live/api-error'
 import { toBidErrorMessage } from '@/features/live/bid-error'
@@ -46,10 +47,12 @@ import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
 import { Button } from '@/components/ui/button'
-import { RouteError, RoutePending } from '@/components/route-states'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { EmptyState } from '@/components/page-header'
+import { GuestShell } from '@/components/layout/page-shell'
 import { Modal } from '@/components/ui/modal'
 import { QuickBidOverlay } from '@/features/live/components/quick-bid-overlay'
+import { RouteError, RoutePending } from '@/components/route-states'
 import { SharePanel } from '@/features/live/components/share-panel'
 import { cn } from '@/lib/utils'
 import { useCountdown } from '@/hooks/use-countdown'
@@ -159,6 +162,11 @@ function LiveRoomPage() {
     [roomQuery.data, roomItems],
   )
   const roomClosed = room.status === 'CLOSED'
+
+  // 진행 중인 방에서는 결과를 볼 일이 없다. 방이 닫혔을 때만 요청한다.
+  const resultsQuery = useGetResults(auctionRoomId, {
+    query: { enabled: roomClosed && Number.isInteger(auctionRoomId) },
+  })
 
   /**
    * SSE 이벤트 수신 핸들러.
@@ -850,25 +858,6 @@ function LiveRoomPage() {
       }
     : undefined
 
-  /**
-   * 종료된 방의 물품은 전부 끝난 것으로 본다.
-   *
-   * 목업 물품은 마감 시각이 미래라, 방이 종료됐는데도 카운트다운이
-   * 계속 흘렀다. 상태와 마감 시각을 함께 과거로 맞춘다.
-   */
-  const closedRoom = {
-    ...room,
-    items: roomItems.map((item) =>
-      item.status === 'CLOSED'
-        ? item
-        : {
-            ...item,
-            status: 'CLOSED' as const,
-            endsAt: new Date(Date.now() - 60_000).toISOString(),
-          },
-    ),
-  }
-
   const confirmBid = async () => {
     if (!pendingBid) return
 
@@ -934,8 +923,31 @@ function LiveRoomPage() {
   if (roomQuery.isPending) return <RoutePending />
 
   if (roomClosed) {
-    // 방 종료 시각은 서버 응답에 없다. 없으면 종료 화면이 그 줄을 그리지 않는다.
-    return <ClosedRoomView room={closedRoom} isGuest={isGuest} />
+    if (resultsQuery.isPending) return <RoutePending />
+    if (resultsQuery.isError) {
+      return (
+        <RouteError
+          error={resultsQuery.error}
+          reset={() => void resultsQuery.refetch()}
+        />
+      )
+    }
+
+    const result = toRoomResult(resultsQuery.data?.data)
+    if (!result) {
+      return (
+        <GuestShell title="종료된 경매방" back>
+          <EmptyState
+            title="결과를 찾을 수 없어요"
+            description="삭제되었거나 존재하지 않는 경매방입니다."
+          />
+        </GuestShell>
+      )
+    }
+
+    return (
+      <ClosedRoomView result={result} isGuest={isGuest} isOwner={isOwner} />
+    )
   }
 
   /*
