@@ -38,4 +38,17 @@ public record AuctionRoomUpdateRequestDto(
         @Max(value = 3600, message = "Soft Close 연장 초는 3600초(1시간) 이하여야 합니다.")
         Integer softCloseExtendSeconds
 ) {
+
+    /**
+     * 경매가 시작된 뒤에는 못 바꾸는 필드를 이 요청이 건드리는지 본다. 이름은 여기 없다 —
+     * 방송 중에 드러난 오타를 고칠 길이 하나는 있어야 해서 이름만 예외로 열어 두었다.
+     * 나머지는 참여자가 이미 보고 판단한 조건이라 진행 중에 바뀌면 안 된다.
+     */
+    public boolean touchesStartLockedFields() {
+        return coverImageUrl != null
+                || description != null
+                || liveUrl != null
+                || softCloseTriggerSeconds != null
+                || softCloseExtendSeconds != null;
+    }
 }

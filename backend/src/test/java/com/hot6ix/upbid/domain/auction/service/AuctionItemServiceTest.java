@@ -32,6 +32,8 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.event.DomainEvent;
+import com.hot6ix.upbid.global.event.payload.ItemAdded;
+import com.hot6ix.upbid.global.event.payload.ItemRemoved;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -388,6 +390,28 @@ class AuctionItemServiceTest {
     }
 
     @Test
+    @DisplayName("단건 추가도 ItemAdded를 발행해 구독자가 목록을 다시 읽게 한다")
+    void addPublishesItemAdded() {
+
+        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.OPEN);
+
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+                .thenReturn(Optional.of(newProduct(sellerProfile)));
+        when(auctionItemRepository.existsByProduct_ProductId(PRODUCT_ID)).thenReturn(false);
+        when(auctionItemRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        auctionItemService.add(USER_ID, ROOM_ID, newAddRequest());
+
+        ArgumentCaptor<DomainEvent> captor = ArgumentCaptor.forClass(DomainEvent.class);
+        verify(domainEventPublisher).publish(captor.capture());
+
+        assertThat(captor.getValue()).isInstanceOfSatisfying(ItemAdded.class, event -> {
+            assertThat(event.roomId()).isEqualTo(ROOM_ID);
+            assertThat(event.addedCount()).isEqualTo(1);
+        });
+    }
+
+    @Test
     @DisplayName("추가한 물품의 현재가는 시작가로 채워진다")
     void addSetsCurrentPriceToStartingPrice() {
 
@@ -550,6 +574,43 @@ class AuctionItemServiceTest {
     }
 
     @Test
+    @DisplayName("벌크로 여러 개를 넣어도 ItemAdded는 한 번만 발행된다")
+    void addAllPublishesSingleItemAdded() {
+
+        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.OPEN);
+
+        givenOwnedProducts(sellerProfile, PRODUCT_ID, PRODUCT_ID + 1);
+        givenAlreadyInAuction();
+        givenSaveAllEchoesBack();
+
+        auctionItemService.addAll(USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID, PRODUCT_ID + 1));
+
+        ArgumentCaptor<DomainEvent> captor = ArgumentCaptor.forClass(DomainEvent.class);
+        // 물품마다 보내면 구독자가 그 수만큼 목록을 다시 읽는다.
+        verify(domainEventPublisher).publish(captor.capture());
+
+        assertThat(captor.getValue()).isInstanceOfSatisfying(ItemAdded.class, event -> {
+            assertThat(event.roomId()).isEqualTo(ROOM_ID);
+            assertThat(event.addedCount()).isEqualTo(2);
+        });
+    }
+
+    @Test
+    @DisplayName("전부 거절돼 저장할 게 없으면 ItemAdded를 발행하지 않는다")
+    void addAllDoesNotPublishWhenNothingAdded() {
+
+        givenOwnedRoom(AuctionRoomStatus.OPEN);
+
+        // 소유 상품이 하나도 없어 전부 PRODUCT_NOT_FOUND로 거절된다.
+        givenOwnedProducts(newSellerProfile());
+        givenAlreadyInAuction();
+
+        auctionItemService.addAll(USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID, PRODUCT_ID + 1));
+
+        verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
     @DisplayName("거절된 상품이 있어도 나머지는 추가되고 거절 사유는 단건 추가와 같은 코드로 담긴다")
     void addAllKeepsGoingOnPartialFailure() {
 
@@ -702,6 +763,53 @@ class AuctionItemServiceTest {
         auctionItemService.remove(USER_ID, ROOM_ID, ITEM_ID);
 
         verify(auctionItemRepository).delete(auctionItem);
+    }
+
+    @Test
+    @DisplayName("물품을 빼면 ItemRemoved를 발행해 구독자가 목록을 다시 읽게 한다")
+    void removePublishesItemRemoved() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        ReflectionTestUtils.setField(sellerProfile, "sellerProfileId", 5L);
+        AuctionRoom auctionRoom = newRoom(sellerProfile, AuctionRoomStatus.OPEN);
+        AuctionItem auctionItem = newItem(auctionRoom, newProduct(sellerProfile), AuctionItemStatus.READY);
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                .thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.existsByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                ROOM_ID, 5L)).thenReturn(true);
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+
+        auctionItemService.remove(USER_ID, ROOM_ID, ITEM_ID);
+
+        ArgumentCaptor<DomainEvent> captor = ArgumentCaptor.forClass(DomainEvent.class);
+        verify(domainEventPublisher).publish(captor.capture());
+
+        assertThat(captor.getValue()).isInstanceOfSatisfying(ItemRemoved.class, event -> {
+            assertThat(event.roomId()).isEqualTo(ROOM_ID);
+            assertThat(event.itemId()).isEqualTo(ITEM_ID);
+        });
+    }
+
+    @Test
+    @DisplayName("시작된 물품이라 제외가 거절되면 이벤트를 발행하지 않는다")
+    void removeDoesNotPublishWhenRejected() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        ReflectionTestUtils.setField(sellerProfile, "sellerProfileId", 5L);
+        AuctionRoom auctionRoom = newRoom(sellerProfile, AuctionRoomStatus.OPEN);
+        AuctionItem auctionItem = newItem(auctionRoom, newProduct(sellerProfile), AuctionItemStatus.IN_PROGRESS);
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                .thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.existsByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                ROOM_ID, 5L)).thenReturn(true);
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+
+        assertThatThrownBy(() -> auctionItemService.remove(USER_ID, ROOM_ID, ITEM_ID))
+                .isInstanceOf(ApplicationException.class);
+
+        verify(domainEventPublisher, never()).publish(any());
     }
 
     @Test

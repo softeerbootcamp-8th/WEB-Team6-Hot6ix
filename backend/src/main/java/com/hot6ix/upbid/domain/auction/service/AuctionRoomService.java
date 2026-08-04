@@ -21,9 +21,12 @@ import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.event.payload.RoomUpdated;
+import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
 import com.hot6ix.upbid.global.response.CursorPageResponse;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -50,6 +53,7 @@ public class AuctionRoomService {
      * 낙찰 후보에 있어 한쪽은 반드시 경계를 넘어야 한다. 읽기만 하고 상태를 바꾸지 않는다.
      */
     private final DealCandidateRepository dealCandidateRepository;
+    private final DomainEventPublisher domainEventPublisher;
 
     /**
      * 판매자의 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며(충돌 시 재시도),
@@ -237,8 +241,17 @@ public class AuctionRoomService {
 
     /**
      * 소유자 본인의 경매방 설정을 부분 수정한다. 요청에서 생략된(null) 필드는 기존 값을 유지한다.
-     * 이 방의 물품 중 하나라도 READY가 아닌 상태로 경매에 올라간 적이 있으면(=경매가 시작된
-     * 적 있으면) 이후로도 계속 수정할 수 없다.
+     *
+     * <p>수정 가능 범위는 <b>무엇을 바꾸려 하는지</b>에 따라 다르다.
+     * <ul>
+     *   <li>이름만 바꾸는 요청은 경매가 진행 중이어도 통과한다 — 방송 중에 드러난 오타를
+     *       고칠 길이 하나는 있어야 한다</li>
+     *   <li>그 밖의 필드를 하나라도 건드리면, 이 방의 물품 중 하나라도 READY가 아닌 상태로
+     *       경매에 올라간 적이 있는 순간부터 거절된다. 참여자가 이미 보고 판단한 조건이라
+     *       진행 중에 바뀌면 안 된다</li>
+     *   <li>종료된 방은 이름조차 바꿀 수 없다 — 참여자에게는 결과 기록이라, 나중에 제목이
+     *       바뀌면 자기가 참여했던 방을 알아볼 수 없게 된다</li>
+     * </ul>
      *
      * @param userId        수정을 요청한 회원의 ID
      * @param auctionRoomId 수정할 경매방의 ID
@@ -246,16 +259,28 @@ public class AuctionRoomService {
      * @return 수정된 경매방
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
      *                               경매방이 없거나 본인 소유가 아닐 때(AUCTION_ROOM_NOT_FOUND),
-     *                               경매가 시작된 적 있을 때(AUCTION_ROOM_ALREADY_STARTED)
+     *                               경매방이 종료됐을 때(AUCTION_ROOM_CLOSED),
+     *                               이름 밖의 필드를 경매가 시작된 뒤에 바꾸려 할 때
+     *                               (AUCTION_ROOM_ALREADY_STARTED)
      */
     @Transactional
     public AuctionRoomPublicResponseDto update(Long userId, Long auctionRoomId, AuctionRoomUpdateRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
-        assertNotStarted(auctionRoomId);
+
+        assertNotClosed(auctionRoom);
+        if (request.touchesStartLockedFields()) {
+            assertNotStarted(auctionRoomId);
+        }
 
         auctionRoom.update(request);
+
+        /*
+         * 이미 방에 들어와 있는 사람들에게 방 정보를 다시 읽으라고 알린다. 이게 없으면
+         * 고친 본인 화면만 바뀌고 구매자 화면은 새로고침 전까지 옛 이름을 계속 보여준다.
+         */
+        domainEventPublisher.publish(RoomUpdated.of(auctionRoomId, LocalDateTime.now()));
 
         // findOwnedRoom을 통과했으므로 요청자가 곧 소유자다.
         return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId), true);
@@ -277,6 +302,12 @@ public class AuctionRoomService {
                 .findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
                         auctionRoomId, sellerProfile.getSellerProfileId())
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+    }
+
+    private void assertNotClosed(AuctionRoom auctionRoom) {
+        if (auctionRoom.getStatus() == AuctionRoomStatus.CLOSED) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED);
+        }
     }
 
     private void assertNotStarted(Long auctionRoomId) {

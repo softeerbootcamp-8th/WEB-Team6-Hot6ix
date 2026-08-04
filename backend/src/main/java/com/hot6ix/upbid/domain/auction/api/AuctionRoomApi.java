@@ -167,8 +167,17 @@ public interface AuctionRoomApi {
     @Operation(
             summary = "경매방 설정 수정",
             description = "소유자가 경매방 설정을 부분 수정한다. 요청에서 생략된 필드는 기존 값을 유지한다. "
-                    + "이 방의 물품 중 하나라도 READY가 아닌 상태로 경매에 올라간 적 있으면(=경매가 시작된 적 있으면) "
-                    + "이후로도 계속 수정할 수 없다. 로그인 세션의 회원을 소유자로 확인한다."
+                    + "로그인 세션의 회원을 소유자로 확인한다.\n\n"
+                    + "수정 가능 범위는 요청에 담긴 필드에 따라 다르다.\n"
+                    + "- **name만 보낸 요청**: 경매가 진행 중이어도 통과한다. 방송 중에 드러난 오타를 "
+                    + "고칠 길을 하나 열어 둔 것이다.\n"
+                    + "- **name 밖의 필드를 하나라도 보낸 요청**: 이 방의 물품 중 하나라도 READY가 아닌 "
+                    + "상태로 경매에 올라간 적 있으면(=경매가 시작된 적 있으면) 이후로도 계속 거절된다. "
+                    + "참여자가 이미 보고 판단한 조건이라 진행 중에 바뀌면 안 된다.\n"
+                    + "- **종료된 방**: 어떤 필드도 바꿀 수 없다. 참여자에게는 결과 기록이라 나중에 "
+                    + "제목이 바뀌면 자기가 참여했던 방을 알아볼 수 없게 된다.\n\n"
+                    + "bidIncrement는 애초에 수정 대상이 아니다 — 물품이 방의 값을 복사해 갖고 있어서 "
+                    + "방 값만 바꾸면 어긋난다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
@@ -176,7 +185,8 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
                     + "경매방이 없거나 본인 소유가 아님 (code 4002)"),
-            @ApiResponse(responseCode = "409", description = "경매방이 시작된 적 있는 물품을 포함해 수정 불가 (code 4003)")
+            @ApiResponse(responseCode = "409", description = "name 밖의 필드를 경매가 시작된 뒤에 "
+                    + "바꾸려 함 (code 4003) 또는 종료된 경매방 (code 4004)")
     })
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> update(
             @Parameter(hidden = true) @LoginUserId Long userId,

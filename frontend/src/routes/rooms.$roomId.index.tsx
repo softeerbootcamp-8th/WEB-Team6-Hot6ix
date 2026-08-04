@@ -48,6 +48,7 @@ import { ItemDetailPanel } from '@/features/live/components/item-detail-panel'
 import { LiveItemList } from '@/features/live/components/live-item-list'
 import { useListFlip } from '@/features/live/use-list-flip'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
+import { RoomSettingsModal } from '@/features/live/components/room-settings-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
 import { Button } from '@/components/ui/button'
@@ -220,6 +221,13 @@ function LiveRoomPage() {
                 : item,
             ),
           )
+          /*
+           * 첫 물품이 시작되면 방도 BEFORE → OPEN 이 된다. 이 창이 시작을 요청한
+           * 당사자가 아니어도 상태 표시(LIVE 배지)와 설정 잠금이 따라와야 한다.
+           */
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomQueryKey(auctionRoomId),
+          })
           break
 
         case 'ItemClosingSoon':
@@ -374,6 +382,34 @@ function LiveRoomPage() {
         case 'ParticipantCount':
           setParticipantCount(payload.participantCount)
           break
+
+        /*
+         * 판매자가 물품을 넣거나 뺐다. 목록만 다시 읽고 이벤트 피드에는 쌓지 않는다
+         * — 편성 변경은 입찰·마감 같은 경매 진행 사건이 아니고, 벌크로 20개를 넣으면
+         * 피드가 그것만으로 가득 찬다.
+         *
+         * 판매자 본인 화면도 `handleAdd`·`handleRemove` 에서 같은 방식으로 목록을
+         * 다시 읽는다. 양쪽이 같은 경로라 이벤트와 응답이 겹쳐도 물품이 두 번
+         * 들어가지 않는다 — `setItems(null)` 이 화면 편성분을 버리고 서버 목록으로
+         * 되돌리기 때문이다.
+         */
+        case 'ItemAdded':
+        case 'ItemRemoved':
+          setItems(null)
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(auctionRoomId),
+          })
+          break
+
+        /*
+         * 판매자가 방 설정을 바꿨다. 제목·소개는 방 정보에서 나오므로 그것만 다시
+         * 읽는다. 이게 없으면 이미 들어와 있던 사람은 새로고침 전까지 옛 이름을 본다.
+         */
+        case 'RoomUpdated':
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomQueryKey(auctionRoomId),
+          })
+          break
       }
     },
     [roomItems, myNickname, auctionRoomId, queryClient],
@@ -469,6 +505,8 @@ function LiveRoomPage() {
   const [startingItemId, setStartingItemId] = useState<number | null>(null)
   /** 판매자가 방 전체를 끝낼 때 한 번 더 확인받는다. */
   const [closingRoom, setClosingRoom] = useState(false)
+  /** 판매자가 방 설정을 고치는 중. 라우트를 옮기지 않아 실시간 연결이 유지된다. */
+  const [editingSettings, setEditingSettings] = useState(false)
   /** 화면 위에 얹어 보여줄 물품 상세 */
   const [detailItemId, setDetailItemId] = useState<number | null>(null)
   const [detailAmount, setDetailAmount] = useState(0)
@@ -589,6 +627,14 @@ function LiveRoomPage() {
         description: `${item.name} · ${minutes}분 진행`,
       })
       refreshItems(item.id)
+      /*
+       * 첫 물품이 시작되면 서버가 방을 BEFORE → OPEN 으로 바꾼다. 방 정보를 다시
+       * 읽지 않으면 화면의 `status` 가 BEFORE 로 남아, 설정 수정 모달이 이미 잠겨야
+       * 할 필드를 계속 열어 둔다.
+       */
+      void queryClient.invalidateQueries({
+        queryKey: getGetRoomQueryKey(auctionRoomId),
+      })
     } catch (error) {
       const { title, description } = toSellerActionErrorMessage(error, 'start')
       toast.error(title, { description })
@@ -978,6 +1024,24 @@ function LiveRoomPage() {
     />
   )
 
+  /*
+   * 방 설정 수정. 종료 확인과 같은 이유로 한 번 만들어 양쪽 분기에서 쓴다.
+   *
+   * 어댑터(`toAuctionRoomDetail`)가 `liveUrl`·`softCloseTriggerSeconds` 를
+   * 떨구기 때문에 **가공한 `room` 이 아니라 서버 응답을 그대로 넘긴다.**
+   */
+  const roomDto = roomQuery.data?.data
+  const settingsModal = roomDto ? (
+    <RoomSettingsModal
+      open={editingSettings}
+      onClose={() => setEditingSettings(false)}
+      room={roomDto}
+    />
+  ) : null
+
+  /** 판매자에게만 설정 버튼을 띄운다. 실제 권한은 PATCH 가 다시 본다. */
+  const openSettings = isOwner ? () => setEditingSettings(true) : undefined
+
   if (!isDesktop) {
     return (
       <>
@@ -991,6 +1055,7 @@ function LiveRoomPage() {
           liveItems={liveItems}
           rankedItems={rankedItems}
           onShare={() => setPanel('share')}
+          onOpenSettings={openSettings}
           onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
           onBack={() => void navigate({ to: '/rooms' })}
           onOpenItem={openItem}
@@ -1104,6 +1169,7 @@ function LiveRoomPage() {
         </Modal>
 
         {closeRoomDialog}
+        {settingsModal}
 
         {/*
          * 데스크톱과 같은 모달을 쓴다. 트리를 갈라 그리므로 한 번에 한 벌만
@@ -1138,6 +1204,7 @@ function LiveRoomPage() {
         isGuest={isGuest}
         participantCount={participantCount}
         onShare={() => setPanel(panel === 'share' ? 'leaderboard' : 'share')}
+        onOpenSettings={openSettings}
         onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
         overlay={
           detailItem ? (
@@ -1455,6 +1522,7 @@ function LiveRoomPage() {
       />
 
       {closeRoomDialog}
+      {settingsModal}
 
       <ItemManagement
         picking={picking}
