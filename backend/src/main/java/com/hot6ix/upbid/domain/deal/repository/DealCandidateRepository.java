@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.deal.repository;
 
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -120,6 +121,21 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
             + "and dc.bidder.userId = :bidderUserId")
     List<MyCandidateRankProjection> findMyRanksInRoom(@Param("auctionRoomId") Long auctionRoomId,
                                                       @Param("bidderUserId") Long bidderUserId);
+
+    /**
+     * 여러 물품의 후보를 한 번에 조회한다. 물품마다 조회하면 물품 수만큼 쿼리가 나간다.
+     *
+     * <p><b>탈퇴 회원도 걸러내지 않는다.</b> 이 목록으로 거래 상대와 후보 수를 동시에 계산하는데,
+     * 상대에서는 탈퇴자를 빼고 후보 수에는 넣어야 한다. 필터를 SQL 에 걸면 두 값의 모집단이
+     * 갈리므로 {@link com.hot6ix.upbid.domain.deal.entity.DealProgress} 가 자바에서 나눈다.
+     *
+     * <p>닉네임을 쓰므로 입찰자를 fetch join 한다. 정렬은 하지 않는다 — 순서를 정하는 규칙이
+     * {@code DealProgress} 에 있고, 두 곳에 두면 갈라진다.
+     */
+    @Query("select dc from DealCandidate dc "
+            + "join fetch dc.bidder "
+            + "where dc.auctionItem.auctionItemId in :auctionItemIds")
+    List<DealCandidate> findByAuctionItemIds(@Param("auctionItemIds") Collection<Long> auctionItemIds);
 
     /** 거래가 이미 끝났는지 판단한다. {@code COMPLETED} 후보가 있으면 더 바꿀 수 없다. */
     default boolean existsCompletedCandidate(Long auctionItemId) {

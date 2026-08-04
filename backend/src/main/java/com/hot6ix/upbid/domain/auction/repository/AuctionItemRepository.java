@@ -117,6 +117,30 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
             @Param("auctionRoomId") Long auctionRoomId, Limit limit);
 
     /**
+     * 경매방의 마감된 물품을 최근 마감 순으로 조회한다. 거래 현황이 쓰는 목록이며, 아직
+     * 시작하지 않았거나 진행 중인 물품은 거래가 시작된 적이 없어 빠진다.
+     *
+     * <p>정렬 키를 둘 두는 이유는 순서가 하나로 정해지게 하기 위해서다. 같은 시각에 마감된
+     * 물품이 흔하고, 그때 순서가 흔들리면 화면이 요청마다 다르게 보인다.
+     */
+    default List<ClosedAuctionItemProjection> findClosedItems(Long auctionRoomId) {
+        return findClosedItems(auctionRoomId,
+                List.of(AuctionItemStatus.SOLD, AuctionItemStatus.FAILED),
+                Limit.of(MAX_SUMMARY_SIZE));
+    }
+
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.ClosedAuctionItemProjection("
+            + "  ai.auctionItemId, p.name, ai.status) "
+            + "from AuctionItem ai "
+            + "join ai.product p "
+            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId "
+            + "and ai.status in :statuses "
+            + "order by ai.endAt desc, ai.auctionItemId desc")
+    List<ClosedAuctionItemProjection> findClosedItems(@Param("auctionRoomId") Long auctionRoomId,
+                                                      @Param("statuses") Collection<AuctionItemStatus> statuses,
+                                                      Limit limit);
+
+    /**
      * 여러 경매방의 물품 수를 한 번에 센다. 방마다 세면 방 수만큼 쿼리가 나간다.
      *
      * <p>물품이 없는 방은 행이 없다 — {@code group by} 가 빈 그룹을 만들지 않는다. 호출하는

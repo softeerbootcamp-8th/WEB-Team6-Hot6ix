@@ -437,6 +437,40 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 auctionRoom.getAuctionRoomId(), AuctionItemStatus.IN_PROGRESS)).isZero();
     }
 
+    @Test
+    @DisplayName("거래 현황용 조회는 마감된 물품만 최근 마감 순으로 돌려준다")
+    void findClosedItemsReturnsOnlyClosedNewestFirst() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+
+        AuctionItem sold = entityManager.persist(AuctionItem.builder()
+                .auctionRoom(auctionRoom)
+                .product(newProduct("낙찰물품"))
+                .startingPrice(10_000L)
+                .bidIncrement(1_000L)
+                .status(AuctionItemStatus.SOLD)
+                .endAt(LocalDateTime.of(2026, 7, 30, 21, 0))
+                .build());
+        AuctionItem failed = entityManager.persist(AuctionItem.builder()
+                .auctionRoom(auctionRoom)
+                .product(newProduct("유찰물품"))
+                .startingPrice(10_000L)
+                .bidIncrement(1_000L)
+                .status(AuctionItemStatus.FAILED)
+                .endAt(LocalDateTime.of(2026, 7, 28, 21, 0))
+                .build());
+        newAuctionItem(auctionRoom, "진행물품", AuctionItemStatus.IN_PROGRESS);
+        newAuctionItem(auctionRoom, "대기물품", AuctionItemStatus.READY);
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.findClosedItems(auctionRoom.getAuctionRoomId()))
+                .extracting(ClosedAuctionItemProjection::auctionItemId,
+                        ClosedAuctionItemProjection::productName)
+                .containsExactly(
+                        tuple(sold.getAuctionItemId(), "낙찰물품"),
+                        tuple(failed.getAuctionItemId(), "유찰물품"));
+    }
+
     /** 방마다 세면 방 수만큼 쿼리가 나가므로 한 번에 센다. */
     @Test
     @DisplayName("여러 방의 물품 수를 한 번에 세고, 물품이 없는 방은 행이 없다")

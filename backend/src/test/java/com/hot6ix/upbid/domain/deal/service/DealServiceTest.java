@@ -3,21 +3,28 @@ package com.hot6ix.upbid.domain.deal.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
+import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.auction.repository.ClosedAuctionItemProjection;
 import com.hot6ix.upbid.domain.deal.dto.response.AuctionItemDealStatusResponseDto;
 import com.hot6ix.upbid.domain.deal.dto.response.AuctionRoomDealStatusResponseDto;
 import com.hot6ix.upbid.domain.deal.dto.response.DealSummaryResponseDto;
+import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealItemStatus;
 import com.hot6ix.upbid.domain.deal.entity.DealRole;
+import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.DealRepository;
 import com.hot6ix.upbid.domain.deal.repository.DealSummaryProjection;
-import com.hot6ix.upbid.domain.deal.repository.RoomDealStatusProjection;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -32,6 +39,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 쿼리는 사실만 내보내고 역할·거래 상태 판정은 여기서 한다. 그 판정이 이 테스트의 대상이다.
@@ -42,13 +50,33 @@ class DealServiceTest {
 
     private static final Long USER_ID = 7L;
     private static final Long ROOM_ID = 1L;
+    private static final Long ITEM_ID = 2L;
+
+    /** 후보가 어느 물품 것인지 묶는 데만 쓰인다. 물품별로 나눠야 할 때는 withItem() 으로 바꾼다. */
+    private static final AuctionItem AUCTION_ITEM = auctionItem(ITEM_ID);
+
+    private static AuctionItem auctionItem(long auctionItemId) {
+        AuctionItem item = AuctionItem.builder()
+                .startingPrice(10_000L)
+                .bidIncrement(1_000L)
+                .status(AuctionItemStatus.SOLD)
+                .build();
+        ReflectionTestUtils.setField(item, "auctionItemId", auctionItemId);
+        return item;
+    }
     private static final LocalDateTime CLOSED_AT = LocalDateTime.of(2026, 7, 29, 21, 0);
 
     @Mock
     private DealRepository dealRepository;
 
     @Mock
+    private DealCandidateRepository dealCandidateRepository;
+
+    @Mock
     private AuctionRoomRepository auctionRoomRepository;
+
+    @Mock
+    private AuctionItemRepository auctionItemRepository;
 
     @Mock
     private SellerProfileRepository sellerProfileRepository;
@@ -218,63 +246,47 @@ class DealServiceTest {
                 .thenReturn(Optional.of(newAuctionRoom(sellerProfile)));
     }
 
-    private RoomDealStatusProjection roomItem(
-            AuctionItemStatus itemStatus, int dealCompleted,
-            Long dealCandidateId, Long amount, String partnerNickname,
-            int candidateCount, int failedCandidateCount) {
-
-        return new RoomDealStatusProjection() {
-            public Long getAuctionItemId() {
-                return 2L;
-            }
-
-            public String getProductName() {
-                return "포토카드";
-            }
-
-            public String getItemStatus() {
-                return itemStatus.name();
-            }
-
-            public Integer getDealCompleted() {
-                return dealCompleted;
-            }
-
-            public Long getDealCandidateId() {
-                return dealCandidateId;
-            }
-
-            public Long getAmount() {
-                return amount;
-            }
-
-            public String getPartnerNickname() {
-                return partnerNickname;
-            }
-
-            public Integer getCandidateCount() {
-                return candidateCount;
-            }
-
-            public Integer getFailedCandidateCount() {
-                return failedCandidateCount;
-            }
-        };
+    private ClosedAuctionItemProjection closedItem(long itemId, AuctionItemStatus status) {
+        return new ClosedAuctionItemProjection(itemId, "포토카드", status);
     }
 
+    private DealCandidate candidate(long id, int rank, long amount, String nickname) {
+        DealCandidate candidate = DealCandidate.builder()
+                .auctionItem(AUCTION_ITEM)
+                .bidder(User.builder()
+                        .email(nickname + "@hot6ix.com")
+                        .password("password")
+                        .nickname(nickname)
+                        .phoneNumber("010-1234-5678")
+                        .build())
+                .candidateRank(rank)
+                .bidAmount(amount)
+                .build();
+        ReflectionTestUtils.setField(candidate, "dealCandidateId", id);
+        return candidate;
+    }
+
+    /**
+     * 거래 상대 선정 규칙 자체는 {@code DealProgressTest} 가 DB 없이 본다. 여기서는 그 결과가
+     * 응답 필드에 제대로 실리는지, 상태 판정이 거래 내역과 같은지를 본다.
+     */
     @Test
     @DisplayName("거래 현황은 지금 상대와 그 상대의 금액을 함께 담는다")
     void getRoomDeals() {
 
         SellerProfile sellerProfile = newSellerProfile();
         소유자로_인정한다(sellerProfile);
-        when(dealRepository.findRoomDealStatuses(ROOM_ID)).thenReturn(List.of(
-                // 1순위가 실패해 2순위로 넘어간 상태. 금액도 2순위가 부른 값이어야 한다.
-                roomItem(AuctionItemStatus.SOLD, 0, 55L, 12_000L, "원기", 3, 1)));
+        when(auctionItemRepository.findClosedItems(ROOM_ID))
+                .thenReturn(List.of(closedItem(ITEM_ID, AuctionItemStatus.SOLD)));
+
+        // 1순위가 실패해 2순위로 넘어간 상태. 금액도 2순위가 부른 값이어야 한다.
+        DealCandidate first = candidate(54L, 1, 20_000L, "일등");
+        first.fail(LocalDateTime.of(2026, 7, 29, 22, 0));
+        when(dealCandidateRepository.findByAuctionItemIds(List.of(ITEM_ID)))
+                .thenReturn(List.of(first, candidate(55L, 2, 12_000L, "원기")));
 
         AuctionRoomDealStatusResponseDto response = dealService.getRoomDeals(ROOM_ID, USER_ID);
 
-        assertThat(response.auctionRoomId()).isEqualTo(newAuctionRoom(sellerProfile).getAuctionRoomId());
         assertThat(response.name()).isEqualTo("승민상점 경매방");
 
         AuctionItemDealStatusResponseDto item = response.items().getFirst();
@@ -282,7 +294,7 @@ class DealServiceTest {
         assertThat(item.dealCandidateId()).isEqualTo(55L);
         assertThat(item.amount()).isEqualTo(12_000L);
         assertThat(item.partnerNickname()).isEqualTo("원기");
-        assertThat(item.candidateCount()).isEqualTo(3);
+        assertThat(item.candidateCount()).isEqualTo(2);
         assertThat(item.failedCandidateCount()).isEqualTo(1);
     }
 
@@ -291,41 +303,50 @@ class DealServiceTest {
     void getRoomDealsSharesStatusRule() {
 
         소유자로_인정한다(newSellerProfile());
-        when(dealRepository.findRoomDealStatuses(ROOM_ID)).thenReturn(List.of(
-                roomItem(AuctionItemStatus.SOLD, 1, 55L, 12_000L, "원기", 2, 0),
-                roomItem(AuctionItemStatus.FAILED, 0, null, null, null, 0, 0),
-                // 후보 3명이 전부 실패해 상대가 없다.
-                roomItem(AuctionItemStatus.SOLD, 0, null, null, null, 3, 3)));
+        when(auctionItemRepository.findClosedItems(ROOM_ID)).thenReturn(List.of(
+                closedItem(1L, AuctionItemStatus.SOLD),
+                closedItem(2L, AuctionItemStatus.FAILED),
+                closedItem(3L, AuctionItemStatus.SOLD)));
+
+        DealCandidate completed = candidate(61L, 1, 20_000L, "성사");
+        completed.complete(LocalDateTime.of(2026, 7, 29, 22, 0));
+        DealCandidate allFailed = candidate(63L, 1, 20_000L, "전원실패");
+        allFailed.fail(LocalDateTime.of(2026, 7, 29, 22, 0));
+
+        when(dealCandidateRepository.findByAuctionItemIds(List.of(1L, 2L, 3L)))
+                .thenReturn(List.of(withItem(completed, 1L), withItem(allFailed, 3L)));
 
         assertThat(dealService.getRoomDeals(ROOM_ID, USER_ID).items())
                 .extracting(AuctionItemDealStatusResponseDto::dealStatus)
                 .containsExactly(
                         DealItemStatus.COMPLETED,
+                        // 유찰 물품은 후보가 없어 그룹에 행이 없다.
                         DealItemStatus.UNSOLD,
                         DealItemStatus.ALL_FAILED);
     }
 
-    /**
-     * 후보가 남아 있어도 거래할 수 있는 상대가 없으면 거래 중이 아니다. 유일한 대기 후보가
-     * 탈퇴한 경우가 그렇다 — 대기 여부를 따로 세면 여기서 IN_PROGRESS 가 나와, 판매자가 오지
-     * 않을 상대를 기다린다.
-     */
+    /** 물품별로 묶으려면 후보가 어느 물품 것인지 알아야 한다. */
+    private DealCandidate withItem(DealCandidate candidate, long auctionItemId) {
+        AuctionItem item = AuctionItem.builder()
+                .startingPrice(10_000L)
+                .bidIncrement(1_000L)
+                .status(AuctionItemStatus.SOLD)
+                .build();
+        ReflectionTestUtils.setField(item, "auctionItemId", auctionItemId);
+        ReflectionTestUtils.setField(candidate, "auctionItem", item);
+        return candidate;
+    }
+
     @Test
-    @DisplayName("대기 후보가 남아도 상대를 고를 수 없으면 ALL_FAILED다")
-    void getRoomDealsWhenOnlyWaitingCandidateIsUnavailable() {
+    @DisplayName("마감된 물품이 없으면 후보를 조회하지 않는다")
+    void getRoomDealsSkipsCandidateQueryWhenNoClosedItem() {
 
         소유자로_인정한다(newSellerProfile());
-        when(dealRepository.findRoomDealStatuses(ROOM_ID)).thenReturn(List.of(
-                // 후보는 1명 있고 실패로 처리된 적도 없는데, 상대로 뽑히지 않았다.
-                roomItem(AuctionItemStatus.SOLD, 0, null, null, null, 1, 0)));
+        when(auctionItemRepository.findClosedItems(ROOM_ID)).thenReturn(List.of());
 
-        AuctionItemDealStatusResponseDto item =
-                dealService.getRoomDeals(ROOM_ID, USER_ID).items().getFirst();
-
-        assertThat(item.dealStatus()).isEqualTo(DealItemStatus.ALL_FAILED);
-        assertThat(item.partnerNickname()).isNull();
-        assertThat(item.candidateCount()).isEqualTo(1);
-        assertThat(item.failedCandidateCount()).isZero();
+        assertThat(dealService.getRoomDeals(ROOM_ID, USER_ID).items()).isEmpty();
+        // 빈 목록으로 in () 을 만들면 문법 오류다.
+        verify(dealCandidateRepository, never()).findByAuctionItemIds(any());
     }
 
     @Test
