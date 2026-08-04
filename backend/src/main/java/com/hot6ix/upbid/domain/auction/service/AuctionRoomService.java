@@ -18,9 +18,12 @@ import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.event.payload.RoomUpdated;
+import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
 import com.hot6ix.upbid.global.response.CursorPageResponse;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -46,6 +49,7 @@ public class AuctionRoomService {
      * 낙찰 후보에 있어 한쪽은 반드시 경계를 넘어야 한다. 읽기만 하고 상태를 바꾸지 않는다.
      */
     private final DealCandidateRepository dealCandidateRepository;
+    private final DomainEventPublisher domainEventPublisher;
 
     /**
      * 판매자의 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며(충돌 시 재시도),
@@ -240,6 +244,12 @@ public class AuctionRoomService {
         }
 
         auctionRoom.update(request);
+
+        /*
+         * 이미 방에 들어와 있는 사람들에게 방 정보를 다시 읽으라고 알린다. 이게 없으면
+         * 고친 본인 화면만 바뀌고 구매자 화면은 새로고침 전까지 옛 이름을 계속 보여준다.
+         */
+        domainEventPublisher.publish(RoomUpdated.of(auctionRoomId, LocalDateTime.now()));
 
         // findOwnedRoom을 통과했으므로 요청자가 곧 소유자다.
         return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId), true);
