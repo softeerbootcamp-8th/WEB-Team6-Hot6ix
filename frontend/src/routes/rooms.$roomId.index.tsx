@@ -220,6 +220,13 @@ function LiveRoomPage() {
                 : item,
             ),
           )
+          /*
+           * 첫 물품이 시작되면 방도 BEFORE → OPEN 이 된다. 이 창이 시작을 요청한
+           * 당사자가 아니어도 상태 표시(LIVE 배지)와 설정 잠금이 따라와야 한다.
+           */
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomQueryKey(auctionRoomId),
+          })
           break
 
         case 'ItemClosingSoon':
@@ -384,6 +391,16 @@ function LiveRoomPage() {
           setItems(null)
           void queryClient.invalidateQueries({
             queryKey: getGetSummariesQueryKey(auctionRoomId),
+          })
+          break
+
+        /*
+         * 판매자가 방 설정을 바꿨다. 제목·소개는 방 정보에서 나오므로 그것만 다시
+         * 읽는다. 이게 없으면 이미 들어와 있던 사람은 새로고침 전까지 옛 이름을 본다.
+         */
+        case 'RoomUpdated':
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomQueryKey(auctionRoomId),
           })
           break
       }
@@ -588,6 +605,14 @@ function LiveRoomPage() {
         description: `${item.name} · ${minutes}분 진행`,
       })
       refreshItems(item.id)
+      /*
+       * 첫 물품이 시작되면 서버가 방을 BEFORE → OPEN 으로 바꾼다. 방 정보를 다시
+       * 읽지 않으면 화면의 `status` 가 BEFORE 로 남아, 설정 수정 모달이 이미 잠겨야
+       * 할 필드를 계속 열어 둔다.
+       */
+      void queryClient.invalidateQueries({
+        queryKey: getGetRoomQueryKey(auctionRoomId),
+      })
     } catch (error) {
       const { title, description } = toSellerActionErrorMessage(error, 'start')
       toast.error(title, { description })

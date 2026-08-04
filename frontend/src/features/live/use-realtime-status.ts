@@ -66,6 +66,11 @@ export type SseEventPayload =
    */
   | { kind: 'ItemAdded'; addedCount: number }
   | { kind: 'ItemRemoved'; itemId: number }
+  /*
+   * 판매자가 방 설정(이름·소개·라이브 URL·Soft Close)을 바꿨다. 이것도 신호라
+   * payload 가 비어 있고, 화면은 방 정보를 통째로 다시 읽는다.
+   */
+  | { kind: 'RoomUpdated' }
 
 /**
  * 실시간 SSE 연결과 상태.
@@ -124,6 +129,7 @@ export function useRealtimeStatus(
     es.addEventListener('ROOM_CLOSED', makeHandler('RoomClosed'))
     es.addEventListener('ITEM_ADDED', makeHandler('ItemAdded'))
     es.addEventListener('ITEM_REMOVED', makeHandler('ItemRemoved'))
+    es.addEventListener('ROOM_UPDATED', makeHandler('RoomUpdated'))
     es.addEventListener(
       'PARTICIPANT_COUNT_UPDATED',
       makeHandler('ParticipantCount'),
