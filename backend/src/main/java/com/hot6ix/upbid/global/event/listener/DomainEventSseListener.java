@@ -8,10 +8,12 @@ import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
 import com.hot6ix.upbid.domain.sse.dto.SoftCloseExtendedDto;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
 import com.hot6ix.upbid.global.event.DomainEvent;
+import com.hot6ix.upbid.global.event.EventType;
 import com.hot6ix.upbid.global.event.message.EventMessages;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
+import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import com.hot6ix.upbid.global.event.payload.RoomClosed;
 import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
@@ -46,7 +48,22 @@ public class DomainEventSseListener {
             return;
         }
 
-        roomSseManager.sendBroadCast(event.type().name(), event.roomId(), dto);
+        roomSseManager.sendBroadCast(sseEventName(event), event.roomId(), dto);
+    }
+
+    /**
+     * 화면으로 나갈 이벤트 이름. 대개 {@code EventType} 그대로지만 <b>유찰은 낙찰과 같은
+     * {@code ITEM_ENDED}로 내보낸다.</b> 화면 입장에서 둘은 "물품이 닫혔다"는 같은 사건이고,
+     * 낙찰자가 있었는지는 payload의 {@code winnerNickname}으로 갈리기 때문이다.
+     *
+     * <p>서버 안에서는 두 이벤트를 계속 나눠 둔다. 낙찰 후보 생성이 {@code ItemEnded}만
+     * 구독하므로, 합치면 입찰자가 없던 물품에도 그 로직이 돈다.
+     */
+    private String sseEventName(DomainEvent event) {
+        if (event instanceof ItemPassed) {
+            return EventType.ITEM_ENDED.name();
+        }
+        return event.type().name();
     }
 
     private Object toDto(DomainEvent event) {
@@ -59,6 +76,8 @@ public class DomainEventSseListener {
             // endedTime 소스가 없어 현재 이벤트 payload로는 계산 불가 — payload에 endedTime 추가 필요
             case SoftCloseExtended e -> new SoftCloseExtendedDto(e.itemId(), e.itemName(), e.extendSeconds(), null);
             case ItemEnded e -> new ItemEndedDto(e.itemId(), e.itemName(), e.finalPrice(), e.winnerNickname());
+            // 유찰도 낙찰과 같은 DTO로 내보낸다. 낙찰가·낙찰자가 없다는 뜻으로 null이 간다.
+            case ItemPassed e -> new ItemEndedDto(e.itemId(), e.itemName(), null, null);
             default -> null;
         };
     }

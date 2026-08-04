@@ -19,11 +19,12 @@ export type SseEventPayload =
       itemName: string
       extendSeconds: number
     }
+  // 유찰도 이 이벤트로 온다. 입찰이 없었으면 낙찰가·낙찰자가 둘 다 null 이다.
   | {
       kind: 'ItemEnded'
       itemId: number
       itemName: string
-      finalPrice: number
+      finalPrice: number | null
       winnerNickname: string | null
     }
 

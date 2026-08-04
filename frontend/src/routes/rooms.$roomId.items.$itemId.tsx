@@ -223,10 +223,12 @@ function AuctionItemPage() {
               message: payload.winnerNickname
                 ? `${payload.itemName} 낙찰 확정`
                 : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
-              ...(payload.winnerNickname && {
-                subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
-                emphasized: true,
-              }),
+              // 유찰이면 둘 다 null 이라 낙찰 줄을 붙이지 않는다.
+              ...(payload.winnerNickname &&
+                payload.finalPrice !== null && {
+                  subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
+                  emphasized: true,
+                }),
             },
           ])
           setOverride((prev) => ({
