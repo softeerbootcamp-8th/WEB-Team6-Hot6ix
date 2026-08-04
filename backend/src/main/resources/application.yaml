@@ -56,6 +56,10 @@ oauth:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  alert:
+    slack:
+      webhook-url: ${SLACK_WEBHOOK_URL:}
+      cooldown-seconds: ${SLACK_ALERT_COOLDOWN_SECONDS:60}
 
 ncp:
   sms:

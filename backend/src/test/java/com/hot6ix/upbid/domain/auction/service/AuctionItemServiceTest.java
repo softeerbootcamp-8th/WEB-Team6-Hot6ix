@@ -3,12 +3,15 @@ package com.hot6ix.upbid.domain.auction.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.LeaderboardEntryResponseDto;
@@ -32,7 +35,9 @@ import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import com.hot6ix.upbid.global.exception.CommonErrorType;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -131,6 +136,50 @@ class AuctionItemServiceTest {
                 .productId(PRODUCT_ID)
                 .startingPrice(50_000L)
                 .build();
+    }
+
+    private AuctionItemBulkAddRequestDto newBulkRequest(Long... productIds) {
+        return AuctionItemBulkAddRequestDto.builder()
+                .items(Arrays.stream(productIds)
+                        .map(productId -> AuctionItemAddRequestDto.builder()
+                                .productId(productId)
+                                .startingPrice(50_000L)
+                                .build())
+                        .toList())
+                .build();
+    }
+
+    /**
+     * 요청한 상품 중 <b>본인 소유로 조회되는 것만</b> 스텁한다. 여기 넣지 않은 ID는 조회
+     * 결과에서 빠져 서비스가 PRODUCT_NOT_FOUND로 거절하게 된다. {@code sellerProfile}이
+     * null이면 하나도 조회되지 않는다.
+     */
+    private void givenOwnedProducts(SellerProfile sellerProfile, Long... productIds) {
+        List<Product> products = sellerProfile == null ? List.of()
+                : Arrays.stream(productIds)
+                        .map(productId -> {
+                            Product product = newProduct(sellerProfile);
+                            ReflectionTestUtils.setField(product, "productId", productId);
+                            return product;
+                        })
+                        .toList();
+
+        when(productRepository.findByProductIdInAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                any(), eq(5L))).thenReturn(products);
+    }
+
+    /** 이미 다른 경매방에 올라가 있는 상품 ID들. 인자가 없으면 하나도 없다는 뜻이다. */
+    private void givenAlreadyInAuction(Long... productIds) {
+        when(auctionItemRepository.findProductIdsIn(any())).thenReturn(List.of(productIds));
+    }
+
+    private void givenItemCount(long count) {
+        when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(ROOM_ID)).thenReturn(count);
+    }
+
+    private void givenSaveAllEchoesBack() {
+        when(auctionItemRepository.saveAllAndFlush(any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     private AuctionItemStartRequestDto newStartRequest(int durationMinutes) {
@@ -458,6 +507,178 @@ class AuctionItemServiceTest {
                 .thenThrow(new DataIntegrityViolationException("uk_auction_items_product_id"));
 
         assertThatThrownBy(() -> auctionItemService.add(USER_ID, ROOM_ID, newAddRequest()))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
+    }
+
+    @Test
+    @DisplayName("단건 추가도 경매방 물품 상한에 걸리면 AUCTION_ITEM_LIMIT_EXCEEDED 예외가 발생한다")
+    void addThrowsWhenLimitExceeded() {
+
+        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
+
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+                .thenReturn(Optional.of(newProduct(sellerProfile)));
+        when(auctionItemRepository.existsByProduct_ProductId(PRODUCT_ID)).thenReturn(false);
+        givenItemCount(AuctionItemRepository.MAX_SUMMARY_SIZE);
+
+        assertThatThrownBy(() -> auctionItemService.add(USER_ID, ROOM_ID, newAddRequest()))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_LIMIT_EXCEEDED);
+
+        verify(auctionItemRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("여러 상품을 한 번에 추가하면 전부 READY로 만들어지고 거절 목록은 비어 있다")
+    void addAll() {
+
+        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
+
+        givenOwnedProducts(sellerProfile, PRODUCT_ID, PRODUCT_ID + 1);
+        givenAlreadyInAuction();
+        givenSaveAllEchoesBack();
+
+        AuctionItemBulkAddResponseDto response = auctionItemService.addAll(
+                USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID, PRODUCT_ID + 1));
+
+        assertThat(response.failed()).isEmpty();
+        assertThat(response.added()).hasSize(2)
+                .allSatisfy(item -> assertThat(item.status()).isEqualTo(AuctionItemStatus.READY));
+    }
+
+    @Test
+    @DisplayName("거절된 상품이 있어도 나머지는 추가되고 거절 사유는 단건 추가와 같은 코드로 담긴다")
+    void addAllKeepsGoingOnPartialFailure() {
+
+        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
+
+        // 21은 본인 소유가 아니라 조회에서 빠지고, 22는 이미 다른 방에 올라가 있다.
+        givenOwnedProducts(sellerProfile, PRODUCT_ID, PRODUCT_ID + 2);
+        givenAlreadyInAuction(PRODUCT_ID + 2);
+        givenSaveAllEchoesBack();
+
+        AuctionItemBulkAddResponseDto response = auctionItemService.addAll(
+                USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID, PRODUCT_ID + 1, PRODUCT_ID + 2));
+
+        assertThat(response.added()).hasSize(1);
+        assertThat(response.failed()).containsExactly(
+                AuctionItemBulkAddResponseDto.Failure.of(PRODUCT_ID + 1, ProductErrorType.PRODUCT_NOT_FOUND),
+                AuctionItemBulkAddResponseDto.Failure.of(
+                        PRODUCT_ID + 2, AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION));
+    }
+
+    @Test
+    @DisplayName("전부 거절되면 저장을 시도하지 않고 added만 빈 채로 응답한다")
+    void addAllReturnsEmptyAddedWhenAllRejected() {
+
+        givenOwnedRoom(AuctionRoomStatus.BEFORE);
+
+        givenOwnedProducts(null);
+        givenAlreadyInAuction();
+
+        AuctionItemBulkAddResponseDto response = auctionItemService.addAll(
+                USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID));
+
+        assertThat(response.added()).isEmpty();
+        assertThat(response.failed()).hasSize(1);
+        verify(auctionItemRepository, never()).saveAllAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("요청에 같은 상품이 두 번 들어오면 INVALID_REQUEST 예외가 발생한다")
+    void addAllThrowsOnDuplicateProductId() {
+
+        givenOwnedRoom(AuctionRoomStatus.BEFORE);
+
+        assertThatThrownBy(() -> auctionItemService.addAll(
+                USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID, PRODUCT_ID)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(CommonErrorType.INVALID_REQUEST);
+    }
+
+    @Test
+    @DisplayName("상한까지 딱 채우는 요청은 통과한다")
+    void addAllAllowsExactlyAtLimit() {
+
+        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
+
+        givenOwnedProducts(sellerProfile, PRODUCT_ID);
+        givenAlreadyInAuction();
+        givenItemCount(AuctionItemRepository.MAX_SUMMARY_SIZE - 1);
+        givenSaveAllEchoesBack();
+
+        AuctionItemBulkAddResponseDto response = auctionItemService.addAll(
+                USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID));
+
+        assertThat(response.added()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("상한을 한 개라도 넘기면 앞부분을 넣지 않고 요청 전체를 거절한다")
+    void addAllThrowsWhenLimitExceeded() {
+
+        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
+
+        givenOwnedProducts(sellerProfile, PRODUCT_ID, PRODUCT_ID + 1);
+        givenAlreadyInAuction();
+        givenItemCount(AuctionItemRepository.MAX_SUMMARY_SIZE - 1);
+
+        assertThatThrownBy(() -> auctionItemService.addAll(
+                USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID, PRODUCT_ID + 1)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_LIMIT_EXCEEDED);
+
+        verify(auctionItemRepository, never()).saveAllAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("거절된 상품은 상한 계산에서 빠진다")
+    void addAllCountsOnlyCandidatesAgainstLimit() {
+
+        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
+
+        // 두 개를 요청하지만 하나는 남의 상품이라 실제로 들어갈 건 하나뿐이다.
+        givenOwnedProducts(sellerProfile, PRODUCT_ID);
+        givenAlreadyInAuction();
+        givenItemCount(AuctionItemRepository.MAX_SUMMARY_SIZE - 1);
+        givenSaveAllEchoesBack();
+
+        AuctionItemBulkAddResponseDto response = auctionItemService.addAll(
+                USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID, PRODUCT_ID + 1));
+
+        assertThat(response.added()).hasSize(1);
+        assertThat(response.failed()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("종료된 경매방에 벌크로 추가하면 AUCTION_ROOM_CLOSED 예외가 발생한다")
+    void addAllThrowsWhenRoomClosed() {
+
+        givenOwnedRoom(AuctionRoomStatus.CLOSED);
+
+        assertThatThrownBy(() -> auctionItemService.addAll(USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_CLOSED);
+    }
+
+    @Test
+    @DisplayName("벌크 저장이 unique 제약에 걸리면 배치 전체가 PRODUCT_ALREADY_IN_AUCTION으로 실패한다")
+    void addAllTranslatesUniqueViolation() {
+
+        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
+
+        givenOwnedProducts(sellerProfile, PRODUCT_ID);
+        givenAlreadyInAuction();
+        when(auctionItemRepository.saveAllAndFlush(any()))
+                .thenThrow(new DataIntegrityViolationException("uk_auction_items_product_id"));
+
+        assertThatThrownBy(() -> auctionItemService.addAll(USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID)))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);

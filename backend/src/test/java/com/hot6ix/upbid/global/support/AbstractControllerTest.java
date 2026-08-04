@@ -3,6 +3,7 @@ package com.hot6ix.upbid.global.support;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.global.alert.SlackAlertService;
 import com.hot6ix.upbid.global.session.SessionManager;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,6 +36,9 @@ public abstract class AbstractControllerTest {
 
     @MockitoBean
     protected SessionManager sessionManager;
+
+    @MockitoBean
+    protected SlackAlertService slackAlertService;
 
     @BeforeEach
     void 로그인_세션을_스텁한다() {

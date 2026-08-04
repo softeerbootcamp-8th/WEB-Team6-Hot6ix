@@ -28,4 +28,5 @@ services:
       - NCP_SENDER_PHONE=${NCP_SENDER_PHONE}
       # 로그인 후 돌아갈 프론트 주소 (application.yaml 의 app.frontend-url)
       - FRONTEND_URL=${FRONTEND_URL}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
     restart: unless-stopped
