@@ -500,7 +500,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .itemCount(2L)
                 .build();
 
-        when(auctionRoomService.getMyRooms(1L, "승민", AuctionRoomStatus.OPEN, 20L, 2))
+        when(auctionRoomService.getMyRooms(1L, "승민", AuctionRoomStatus.OPEN, null, 20L, 2))
                 .thenReturn(CursorPageResponse.of(List.of(item), 10L));
 
         mockMvc.perform(get("/api/v1/auction-rooms/me")
@@ -522,7 +522,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     @DisplayName("만든 경매방이 없으면 200과 빈 배열을 반환한다")
     void getMyRooms_empty() throws Exception {
 
-        when(auctionRoomService.getMyRooms(1L, null, null, null, null))
+        when(auctionRoomService.getMyRooms(1L, null, null, null, null, null))
                 .thenReturn(CursorPageResponse.of(List.of(), null));
 
         mockMvc.perform(get("/api/v1/auction-rooms/me"))
@@ -544,7 +544,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     @DisplayName("판매자 프로필이 없으면 목록 조회 시 404와 3002를 반환한다")
     void getMyRooms_sellerProfileNotFound() throws Exception {
 
-        when(auctionRoomService.getMyRooms(1L, null, null, null, null))
+        when(auctionRoomService.getMyRooms(1L, null, null, null, null, null))
                 .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/auction-rooms/me"))

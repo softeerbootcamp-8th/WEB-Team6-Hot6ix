@@ -60,7 +60,7 @@ public class AuctionRoomController implements AuctionRoomApi {
             Long userId, String keyword, AuctionRoomStatus status, Long cursor, Integer size) {
 
         CursorPageResponse<AuctionRoomListItemResponseDto> response =
-                auctionRoomService.getMyRooms(userId, keyword, status, cursor, size);
+                auctionRoomService.getMyRooms(userId, keyword, status, null, cursor, size);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "내 경매방 목록 조회에 성공했습니다."));
     }
