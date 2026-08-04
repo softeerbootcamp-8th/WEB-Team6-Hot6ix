@@ -8,6 +8,10 @@ import { EmptyState, PageHeader } from '@/components/page-header'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
 import { toDeals, type DealItemStatus } from '@/features/trades/adapt-deal'
+import {
+  DEAL_STATUS_LABEL,
+  DEAL_STATUS_TONE,
+} from '@/features/trades/deal-status'
 import { cn } from '@/lib/utils'
 import { formatWon, josa } from '@/lib/format'
 import { requireMember } from '@/lib/route-guards'
@@ -42,44 +46,39 @@ const STATUS_STYLE: Record<
   }
 > = {
   IN_PROGRESS: {
-    label: '거래 중',
-    chip: 'bg-result-progress-surface',
-    text: 'text-result-progress',
+    label: DEAL_STATUS_LABEL.IN_PROGRESS,
+    chip: DEAL_STATUS_TONE.IN_PROGRESS.chip,
+    text: DEAL_STATUS_TONE.IN_PROGRESS.text,
     mini: 'bg-[#fff8e9]',
-    value: 'text-result-progress',
+    value: DEAL_STATUS_TONE.IN_PROGRESS.text,
     hint: (partner) =>
       partner
         ? `거래: ${partner}${josa(partner, '과', '와')} 진행 중`
         : '거래: 연락할 상대를 확인할 수 없어요.',
   },
   COMPLETED: {
-    label: '거래 완료',
-    chip: 'bg-result-won-surface',
-    text: 'text-result-won',
-    mini: 'bg-result-won-surface',
-    value: 'text-result-won',
+    label: DEAL_STATUS_LABEL.COMPLETED,
+    chip: DEAL_STATUS_TONE.COMPLETED.chip,
+    text: DEAL_STATUS_TONE.COMPLETED.text,
+    mini: DEAL_STATUS_TONE.COMPLETED.chip,
+    value: DEAL_STATUS_TONE.COMPLETED.text,
     hint: (partner) =>
       partner ? `거래: ${partner} · 거래 완료` : '거래: 거래 완료',
   },
   UNSOLD: {
-    label: '유찰',
-    chip: 'bg-result-failed-surface',
-    text: 'text-live',
-    mini: 'bg-result-failed-surface',
-    value: 'text-live',
+    label: DEAL_STATUS_LABEL.UNSOLD,
+    chip: DEAL_STATUS_TONE.UNSOLD.chip,
+    text: DEAL_STATUS_TONE.UNSOLD.text,
+    mini: DEAL_STATUS_TONE.UNSOLD.chip,
+    value: DEAL_STATUS_TONE.UNSOLD.text,
     hint: () => '거래할 후보가 없어 종료되었어요.',
   },
-  /*
-   * 유찰과 나눠 둔다. 둘 다 거래 없이 끝났지만 유찰은 입찰이 아예 없던 것이고
-   * 이쪽은 후보가 있었는데 전부 실패한 것이다. 판매자가 취할 조치가 다르다.
-   * 색은 유찰과 같게 두고 이름으로 구분한다 — 결과가 같은 갈래이기 때문이다.
-   */
   ALL_FAILED: {
-    label: '거래 불성립',
-    chip: 'bg-result-failed-surface',
-    text: 'text-live',
-    mini: 'bg-result-failed-surface',
-    value: 'text-live',
+    label: DEAL_STATUS_LABEL.ALL_FAILED,
+    chip: DEAL_STATUS_TONE.ALL_FAILED.chip,
+    text: DEAL_STATUS_TONE.ALL_FAILED.text,
+    mini: DEAL_STATUS_TONE.ALL_FAILED.chip,
+    value: DEAL_STATUS_TONE.ALL_FAILED.text,
     hint: () => '낙찰 후보가 모두 실패해 종료되었어요.',
   },
 }
