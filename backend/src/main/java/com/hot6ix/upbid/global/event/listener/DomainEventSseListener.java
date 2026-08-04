@@ -1,8 +1,10 @@
 package com.hot6ix.upbid.global.event.listener;
 
 import com.hot6ix.upbid.domain.sse.dto.BidPlacedDto;
+import com.hot6ix.upbid.domain.sse.dto.ItemAddedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemClosingSoonDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
+import com.hot6ix.upbid.domain.sse.dto.ItemRemovedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemStartedDto;
 import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
 import com.hot6ix.upbid.domain.sse.dto.SoftCloseExtendedDto;
@@ -11,9 +13,11 @@ import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.EventType;
 import com.hot6ix.upbid.global.event.message.EventMessages;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
+import com.hot6ix.upbid.global.event.payload.ItemAdded;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
+import com.hot6ix.upbid.global.event.payload.ItemRemoved;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import com.hot6ix.upbid.global.event.payload.RoomClosed;
 import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
@@ -70,6 +74,9 @@ public class DomainEventSseListener {
         return switch (event) {
 
             case RoomClosed e -> new RoomClosedDto(e.roomTitle(), e.occurredAt());
+            // 편성 변경은 "목록을 다시 읽어라"는 신호다. 이벤트 피드에는 쌓이지 않는다.
+            case ItemAdded e -> new ItemAddedDto(e.addedCount());
+            case ItemRemoved e -> new ItemRemovedDto(e.itemId());
             case ItemStarted e -> new ItemStartedDto(e.itemId(), e.itemName(), e.endAt());
             case ItemClosingSoon e -> new ItemClosingSoonDto(e.itemId(), e.itemName());
             case BidPlaced e -> new BidPlacedDto(e.itemId(), e.itemName(), e.bidPrice(), e.bidderNickname());

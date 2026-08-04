@@ -6,6 +6,10 @@ public enum EventType {
     ROOM_ENTERED,
     ROOM_CLOSED,
 
+    // 경매방 편성 — 화면에 물품 목록을 다시 읽으라는 신호다(피드에는 쌓이지 않는다)
+    ITEM_ADDED,
+    ITEM_REMOVED,
+
     // 물품 단위
     ITEM_STARTED,
     ITEM_ENDED,
