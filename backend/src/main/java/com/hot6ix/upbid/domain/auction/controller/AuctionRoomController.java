@@ -3,10 +3,12 @@ package com.hot6ix.upbid.domain.auction.controller;
 import com.hot6ix.upbid.domain.auction.api.AuctionRoomApi;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomCloseService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
@@ -57,12 +59,23 @@ public class AuctionRoomController implements AuctionRoomApi {
     @GetMapping("/me")
     @Override
     public ResponseEntity<CommonResponse<CursorPageResponse<AuctionRoomListItemResponseDto>>> getMyRooms(
-            Long userId, String keyword, AuctionRoomStatus status, Long cursor, Integer size) {
+            Long userId, String keyword, AuctionRoomStatus status, AuctionRoomRole role,
+            Long cursor, Integer size) {
 
         CursorPageResponse<AuctionRoomListItemResponseDto> response =
-                auctionRoomService.getMyRooms(userId, keyword, status, null, cursor, size);
+                auctionRoomService.getMyRooms(userId, keyword, status, role, cursor, size);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "내 경매방 목록 조회에 성공했습니다."));
+    }
+
+    @GetMapping("/me/counts")
+    @Override
+    public ResponseEntity<CommonResponse<AuctionRoomCountsResponseDto>> getMyRoomCounts(
+            Long userId, String keyword, AuctionRoomRole role) {
+
+        AuctionRoomCountsResponseDto response = auctionRoomService.getMyRoomCounts(userId, keyword, role);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "내 경매방 상태별 개수 조회에 성공했습니다."));
     }
 
     @GetMapping("/{roomId}/results")
