@@ -62,6 +62,9 @@ class AuctionRoomServiceTest {
     @InjectMocks
     private AuctionRoomService auctionRoomService;
 
+    /** 방을 만든 판매자의 회원 ID. isOwner 판정이 이 값과 조회자를 비교한다. */
+    private static final Long SELLER_USER_ID = 1L;
+
     private SellerProfile newSellerProfile() {
         User user = User.builder()
                 .email("seller@hot6ix.com")
@@ -69,6 +72,7 @@ class AuctionRoomServiceTest {
                 .nickname("승민")
                 .phoneNumber("010-1234-5678")
                 .build();
+        ReflectionTestUtils.setField(user, "userId", SELLER_USER_ID);
 
         return SellerProfile.builder()
                 .user(user)
@@ -167,7 +171,7 @@ class AuctionRoomServiceTest {
     }
 
     @Test
-    @DisplayName("경매방 공개 정보를 조회한다")
+    @DisplayName("방 주인이 조회하면 공개 정보와 함께 isOwner가 true다")
     void getRoom() {
 
         AuctionRoom auctionRoom = AuctionRoom.builder()
@@ -182,12 +186,32 @@ class AuctionRoomServiceTest {
         when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(auctionRoom));
         when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(10L)).thenReturn(3L);
 
-        AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(10L);
+        AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(10L, SELLER_USER_ID);
 
         assertThat(response.name()).isEqualTo("승민의 경매방");
         assertThat(response.status()).isEqualTo(AuctionRoomStatus.BEFORE);
         assertThat(response.sellerStoreName()).isEqualTo("승민상점");
         assertThat(response.itemCount()).isEqualTo(3L);
+        assertThat(response.isOwner()).isTrue();
+    }
+
+    @Test
+    @DisplayName("다른 회원이나 게스트가 조회하면 isOwner가 false다")
+    void getRoom_notOwner() {
+
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .status(AuctionRoomStatus.BEFORE)
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+
+        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(auctionRoom));
+
+        assertThat(auctionRoomService.getRoom(10L, SELLER_USER_ID + 1).isOwner()).isFalse();
+        assertThat(auctionRoomService.getRoom(10L, null).isOwner()).isFalse();
     }
 
     @Test
@@ -196,7 +220,7 @@ class AuctionRoomServiceTest {
 
         when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> auctionRoomService.getRoom(999L))
+        assertThatThrownBy(() -> auctionRoomService.getRoom(999L, SELLER_USER_ID))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
@@ -221,11 +245,13 @@ class AuctionRoomServiceTest {
                 .thenReturn(Optional.of(auctionRoom));
         when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(10L)).thenReturn(3L);
 
-        AuctionRoomPublicResponseDto response = auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234");
+        AuctionRoomPublicResponseDto response =
+                auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", SELLER_USER_ID);
 
         assertThat(response.auctionRoomId()).isEqualTo(10L);
         assertThat(response.name()).isEqualTo("승민의 경매방");
         assertThat(response.itemCount()).isEqualTo(3L);
+        assertThat(response.isOwner()).isTrue();
     }
 
     @Test
@@ -235,7 +261,7 @@ class AuctionRoomServiceTest {
         when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("unknownShareCode"))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> auctionRoomService.getRoomByShareCode("unknownShareCode"))
+        assertThatThrownBy(() -> auctionRoomService.getRoomByShareCode("unknownShareCode", SELLER_USER_ID))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);

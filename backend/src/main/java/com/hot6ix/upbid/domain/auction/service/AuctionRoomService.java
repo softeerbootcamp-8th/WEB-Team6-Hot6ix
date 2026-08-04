@@ -70,40 +70,49 @@ public class AuctionRoomService {
 
         // 물품 추가는 이미 만들어진 방에만 할 수 있어서, 생성 직후엔 itemCount가 항상 0이다
         // — 조회 없이 바로 0을 넣는다.
-        return AuctionRoomPublicResponseDto.from(auctionRoom, 0L);
+        return AuctionRoomPublicResponseDto.from(auctionRoom, 0L, true);
     }
 
     /**
      * 경매방 공개 정보를 조회한다. 인증이 필요 없으며, BEFORE를 포함한 모든 상태에서
      * 동일하게 노출한다(상태별 분기 없음).
      *
+     * <p>{@code isOwner}만 보는 사람에 따라 달라진다. 화면이 판매자 조작 UI를 띄울지 정하는 값이고,
+     * 실제 권한은 조작 API가 다시 검증한다.
+     *
      * @param auctionRoomId 조회할 경매방의 ID
+     * @param viewerUserId  조회한 회원의 ID. 로그인하지 않았으면 null
      * @return 조회된 경매방
      * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    public AuctionRoomPublicResponseDto getRoom(Long auctionRoomId) {
+    public AuctionRoomPublicResponseDto getRoom(Long auctionRoomId, Long viewerUserId) {
 
         AuctionRoom auctionRoom = auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
-        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId));
+        return AuctionRoomPublicResponseDto.from(
+                auctionRoom, countItems(auctionRoomId), isOwnedBy(auctionRoom, viewerUserId));
     }
 
     /**
      * 공유 코드로 경매방 공개 정보를 조회한다. 공유 링크를 받은 사람이 방에 진입할 때 쓰며,
-     * {@link #getRoom(Long)}과 응답이 동일하다. roomId 대신 share_code로 진입점을 두는 이유는
+     * {@link #getRoom(Long, Long)}과 응답이 동일하다. roomId 대신 share_code로 진입점을 두는 이유는
      * 순차 증가하는 숫자 PK를 공개 URL에 노출하면 남의 방을 추측해 순회 조회할 수 있기 때문이다.
      *
-     * @param shareCode 조회할 경매방의 공유 코드
+     * @param shareCode    조회할 경매방의 공유 코드
+     * @param viewerUserId 조회한 회원의 ID. 로그인하지 않았으면 null
      * @return 조회된 경매방
      * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    public AuctionRoomPublicResponseDto getRoomByShareCode(String shareCode) {
+    public AuctionRoomPublicResponseDto getRoomByShareCode(String shareCode, Long viewerUserId) {
 
         AuctionRoom auctionRoom = auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(shareCode)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
-        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoom.getAuctionRoomId()));
+        return AuctionRoomPublicResponseDto.from(
+                auctionRoom,
+                countItems(auctionRoom.getAuctionRoomId()),
+                isOwnedBy(auctionRoom, viewerUserId));
     }
 
     /**
@@ -217,7 +226,19 @@ public class AuctionRoomService {
 
         auctionRoom.update(request);
 
-        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId));
+        // findOwnedRoom을 통과했으므로 요청자가 곧 소유자다.
+        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId), true);
+    }
+
+    /**
+     * 보는 사람이 이 방의 주인인지 판정한다. 판매자 프로필을 따로 조회하지 않고 방에 매달린
+     * 프로필의 user_id와 바로 비교한다 — 프로필이 없는 평범한 구매자까지 조회 예외로 걸러야
+     * 하는 흐름을 피하려는 것이고, LAZY 프록시에서 식별자만 꺼내는 것은 초기화를 일으키지
+     * 않아 추가 쿼리도 없다.
+     */
+    private boolean isOwnedBy(AuctionRoom auctionRoom, Long viewerUserId) {
+        return viewerUserId != null
+                && viewerUserId.equals(auctionRoom.getSellerProfile().getUser().getUserId());
     }
 
     private AuctionRoom findOwnedRoom(SellerProfile sellerProfile, Long auctionRoomId) {
