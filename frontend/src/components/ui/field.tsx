@@ -138,6 +138,7 @@ export function NumberField({
   onValueChange,
   steps,
   min = 0,
+  disabled,
   ...props
 }: BaseProps &
   Omit<
@@ -165,7 +166,7 @@ export function NumberField({
               <StepButton
                 sign="minus"
                 label={`${step.toLocaleString('ko-KR')}${unit} 줄이기`}
-                disabled={value - step < min}
+                disabled={disabled || value - step < min}
                 onClick={() => stepBy(-step)}
               />
             )}
@@ -173,6 +174,7 @@ export function NumberField({
             <input
               {...props}
               {...field}
+              disabled={disabled}
               inputMode="numeric"
               value={value.toLocaleString('ko-KR')}
               onChange={(event) =>
@@ -190,6 +192,7 @@ export function NumberField({
               <StepButton
                 sign="plus"
                 label={`${step.toLocaleString('ko-KR')}${unit} 늘리기`}
+                disabled={disabled}
                 onClick={() => stepBy(step)}
               />
             )}
@@ -208,10 +211,11 @@ export function NumberField({
                 <button
                   key={candidate}
                   type="button"
+                  disabled={disabled}
                   onClick={() => setStepIndex(index)}
                   aria-pressed={index === stepIndex}
                   className={cn(
-                    'ease-soft h-8 rounded-lg border px-3 text-[12px] font-bold transition-all duration-150 active:scale-95',
+                    'ease-soft h-8 rounded-lg border px-3 text-[12px] font-bold transition-all duration-150 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40',
                     index === stepIndex
                       ? 'border-brand-300 bg-brand-50 text-brand-500'
                       : 'bg-card text-neutral-tertiary hover:border-border-strong',

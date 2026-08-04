@@ -48,6 +48,7 @@ import { ItemDetailPanel } from '@/features/live/components/item-detail-panel'
 import { LiveItemList } from '@/features/live/components/live-item-list'
 import { useListFlip } from '@/features/live/use-list-flip'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
+import { RoomSettingsModal } from '@/features/live/components/room-settings-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
 import { Button } from '@/components/ui/button'
@@ -462,6 +463,8 @@ function LiveRoomPage() {
   const [startingItemId, setStartingItemId] = useState<number | null>(null)
   /** 판매자가 방 전체를 끝낼 때 한 번 더 확인받는다. */
   const [closingRoom, setClosingRoom] = useState(false)
+  /** 판매자가 방 설정을 고치는 중. 라우트를 옮기지 않아 실시간 연결이 유지된다. */
+  const [editingSettings, setEditingSettings] = useState(false)
   /** 화면 위에 얹어 보여줄 물품 상세 */
   const [detailItemId, setDetailItemId] = useState<number | null>(null)
   const [detailAmount, setDetailAmount] = useState(0)
@@ -956,6 +959,24 @@ function LiveRoomPage() {
     />
   )
 
+  /*
+   * 방 설정 수정. 종료 확인과 같은 이유로 한 번 만들어 양쪽 분기에서 쓴다.
+   *
+   * 어댑터(`toAuctionRoomDetail`)가 `liveUrl`·`softCloseTriggerSeconds` 를
+   * 떨구기 때문에 **가공한 `room` 이 아니라 서버 응답을 그대로 넘긴다.**
+   */
+  const roomDto = roomQuery.data?.data
+  const settingsModal = roomDto ? (
+    <RoomSettingsModal
+      open={editingSettings}
+      onClose={() => setEditingSettings(false)}
+      room={roomDto}
+    />
+  ) : null
+
+  /** 판매자에게만 설정 버튼을 띄운다. 실제 권한은 PATCH 가 다시 본다. */
+  const openSettings = isOwner ? () => setEditingSettings(true) : undefined
+
   if (!isDesktop) {
     return (
       <>
@@ -969,6 +990,7 @@ function LiveRoomPage() {
           liveItems={liveItems}
           rankedItems={rankedItems}
           onShare={() => setPanel('share')}
+          onOpenSettings={openSettings}
           onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
           onBack={() => void navigate({ to: '/rooms' })}
           onOpenItem={openItem}
@@ -1084,6 +1106,7 @@ function LiveRoomPage() {
         </Modal>
 
         {closeRoomDialog}
+        {settingsModal}
 
         {/*
          * 데스크톱과 같은 모달을 쓴다. 트리를 갈라 그리므로 한 번에 한 벌만
@@ -1118,6 +1141,7 @@ function LiveRoomPage() {
         isGuest={isGuest}
         participantCount={participantCount}
         onShare={() => setPanel(panel === 'share' ? 'leaderboard' : 'share')}
+        onOpenSettings={openSettings}
         onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
         overlay={
           detailItem ? (
@@ -1437,6 +1461,7 @@ function LiveRoomPage() {
       />
 
       {closeRoomDialog}
+      {settingsModal}
 
       <ItemManagement
         picking={picking}
