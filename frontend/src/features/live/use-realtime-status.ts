@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+/**
+ * SSE 는 axios 를 타지 않아 `custom-instance.ts` 의 baseURL 이 적용되지 않는다.
+ * 그래서 여기서 직접 붙인다.
+ *
+ * 상대경로로 두면 **운영에서만** 깨진다. 화면은 CloudFront(upbid.store)에서
+ * 뜨는데 API 는 다른 호스트(api.upbid.store)라, `/api/...` 요청이 S3 로 가서
+ * SPA fallback 인 index.html(text/html)을 받고 EventSource 가 바로 에러를 낸다.
+ * 로컬은 vite dev proxy 가 동일 출처로 만들어줘서 이 문제가 드러나지 않는다.
+ *
+ * 로컬에는 이 환경변수가 없어(`.env` 에 카카오 키만 있다) 빈 문자열이 되고,
+ * 그러면 지금까지처럼 상대경로 + dev proxy 로 동작한다.
+ */
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+
 export type RealtimeStatus =
   'connecting' | 'connected' | 'reconnecting' | 'failed'
 
@@ -64,9 +78,10 @@ export function useRealtimeStatus(
   useEffect(() => {
     setStatus('connecting')
 
-    const es = new EventSource(`/api/v1/auction-rooms/${roomId}/subscribe`, {
-      withCredentials: true,
-    })
+    const es = new EventSource(
+      `${API_BASE_URL}/api/v1/auction-rooms/${roomId}/subscribe`,
+      { withCredentials: true },
+    )
 
     es.onopen = () => {
       console.log('[SSE] connected')
