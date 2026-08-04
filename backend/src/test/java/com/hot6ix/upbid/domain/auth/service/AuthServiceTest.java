@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -12,6 +13,7 @@ import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
 import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
 import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
+import com.hot6ix.upbid.domain.auth.exception.SmsVerificationErrorType;
 import com.hot6ix.upbid.domain.auth.oauth.service.OauthClientManager;
 import com.hot6ix.upbid.domain.auth.session.PendingSignupManager;
 import com.hot6ix.upbid.domain.user.service.UserService;
@@ -43,6 +45,9 @@ class AuthServiceTest {
 
     @Mock
     private PendingSignupManager pendingSignupManager;
+
+    @Mock
+    private SmsVerificationService smsVerificationService;
 
     @InjectMocks
     private AuthService authService;
@@ -90,6 +95,50 @@ class AuthServiceTest {
         assertThat(saved.email()).isEqualTo("a@b.com");
         assertThat(saved.nickname()).isEqualTo("닉네임");
         assertThat(saved.isVerified()).isFalse();
+    }
+
+    @Test
+    @DisplayName("가입 대기 상태에서 인증에 성공하면 인증된 전화번호를 세션에 기록한다")
+    void verifyPhone_recordsVerifiedNumber() {
+
+        PendingSignup pendingSignup = new PendingSignup(
+                OauthProvider.KAKAO, "1", "a@b.com", "닉네임", null);
+        when(pendingSignupManager.find(request)).thenReturn(Optional.of(pendingSignup));
+
+        authService.verifyPhone(request, "01012345678", "123456");
+
+        verify(smsVerificationService).verifyCode("01012345678", "123456");
+
+        ArgumentCaptor<PendingSignup> captor = ArgumentCaptor.forClass(PendingSignup.class);
+        verify(pendingSignupManager).save(any(), captor.capture());
+
+        assertThat(captor.getValue().isVerified()).isTrue();
+        assertThat(captor.getValue().verifiedPhoneNumber()).isEqualTo("01012345678");
+    }
+
+    @Test
+    @DisplayName("가입 대기 상태가 아니면 검증만 하고 세션에 기록하지 않는다")
+    void verifyPhone_withoutPendingSignup() {
+
+        when(pendingSignupManager.find(request)).thenReturn(Optional.empty());
+
+        authService.verifyPhone(request, "01012345678", "123456");
+
+        verify(smsVerificationService).verifyCode("01012345678", "123456");
+        verify(pendingSignupManager, never()).save(any(), any());
+    }
+
+    @Test
+    @DisplayName("인증에 실패하면 세션에 기록하지 않는다")
+    void verifyPhone_verificationFailed() {
+
+        doThrow(new ApplicationException(SmsVerificationErrorType.CODE_MISMATCH))
+                .when(smsVerificationService).verifyCode("01012345678", "999999");
+
+        assertThatThrownBy(() -> authService.verifyPhone(request, "01012345678", "999999"))
+                .isInstanceOf(ApplicationException.class);
+
+        verify(pendingSignupManager, never()).save(any(), any());
     }
 
     @Test

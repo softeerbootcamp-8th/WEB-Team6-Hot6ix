@@ -24,6 +24,7 @@ public class AuthService {
     private final OauthClientManager oauthClientManager;
     private final SessionManager sessionManager;
     private final PendingSignupManager pendingSignupManager;
+    private final SmsVerificationService smsVerificationService;
 
     public OAuthLoginResult login(HttpServletRequest request, String authorizationCode) {
 
@@ -43,5 +44,14 @@ public class AuthService {
         pendingSignupManager.save(request, PendingSignup.from(userInfo));
 
         return OAuthLoginResult.SIGNUP_REQUIRED;
+    }
+
+    public void verifyPhone(HttpServletRequest request, String phoneNumber, String code) {
+
+        smsVerificationService.verifyCode(phoneNumber, code);
+
+        pendingSignupManager.find(request)
+                .ifPresent(pendingSignup ->
+                        pendingSignupManager.save(request, pendingSignup.withVerified(phoneNumber)));
     }
 }

@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auth.controller;
 import com.hot6ix.upbid.domain.auth.dto.request.SmsSendRequestDto;
 import com.hot6ix.upbid.domain.auth.dto.request.SmsVerifyRequestDto;
 import com.hot6ix.upbid.domain.auth.exception.SmsVerificationErrorType;
+import com.hot6ix.upbid.domain.auth.service.AuthService;
 import com.hot6ix.upbid.domain.auth.service.SmsVerificationService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
@@ -15,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -33,6 +35,9 @@ class SmsVerificationControllerTest extends AbstractControllerTest {
 
     @MockitoBean
     private SmsVerificationService smsVerificationService;
+
+    @MockitoBean
+    private AuthService authService;
 
     // ==================== POST /send ====================
 
@@ -117,7 +122,7 @@ class SmsVerificationControllerTest extends AbstractControllerTest {
     @Test
     @DisplayName("올바른 인증번호로 검증 요청하면 200을 반환한다")
     void verifyCode_성공() throws Exception {
-        doNothing().when(smsVerificationService).verifyCode(any(), any());
+        doNothing().when(authService).verifyPhone(any(), any(), any());
 
         mockMvc.perform(post(VERIFY_URL)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -126,14 +131,14 @@ class SmsVerificationControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("인증이 완료되었습니다."));
 
-        verify(smsVerificationService).verifyCode(PHONE_NUMBER, VALID_CODE);
+        verify(authService).verifyPhone(any(), eq(PHONE_NUMBER), eq(VALID_CODE));
     }
 
     @Test
     @DisplayName("비로그인 상태로 검증 요청해도 200을 반환한다")
     void verifyCode_비로그인_허용() throws Exception {
         비로그인_상태로_바꾼다();
-        doNothing().when(smsVerificationService).verifyCode(any(), any());
+        doNothing().when(authService).verifyPhone(any(), any(), any());
 
         mockMvc.perform(post(VERIFY_URL)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -156,7 +161,7 @@ class SmsVerificationControllerTest extends AbstractControllerTest {
     @DisplayName("인증번호가 만료됐으면 400을 반환한다")
     void verifyCode_인증번호_만료() throws Exception {
         doThrow(new ApplicationException(SmsVerificationErrorType.CODE_EXPIRED))
-                .when(smsVerificationService).verifyCode(any(), any());
+                .when(authService).verifyPhone(any(), any(), any());
 
         mockMvc.perform(post(VERIFY_URL)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -170,7 +175,7 @@ class SmsVerificationControllerTest extends AbstractControllerTest {
     @DisplayName("인증번호가 틀리면 400을 반환한다")
     void verifyCode_인증번호_불일치() throws Exception {
         doThrow(new ApplicationException(SmsVerificationErrorType.CODE_MISMATCH))
-                .when(smsVerificationService).verifyCode(any(), any());
+                .when(authService).verifyPhone(any(), any(), any());
 
         mockMvc.perform(post(VERIFY_URL)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -184,7 +189,7 @@ class SmsVerificationControllerTest extends AbstractControllerTest {
     @DisplayName("인증 시도 횟수를 초과하면 400을 반환한다")
     void verifyCode_시도_횟수_초과() throws Exception {
         doThrow(new ApplicationException(SmsVerificationErrorType.CODE_MAX_FAIL_EXCEEDED))
-                .when(smsVerificationService).verifyCode(any(), any());
+                .when(authService).verifyPhone(any(), any(), any());
 
         mockMvc.perform(post(VERIFY_URL)
                         .contentType(MediaType.APPLICATION_JSON)
