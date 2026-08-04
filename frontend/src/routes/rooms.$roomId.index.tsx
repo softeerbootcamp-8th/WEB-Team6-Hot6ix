@@ -524,6 +524,17 @@ function LiveRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailItemId])
 
+  /*
+   * 남이 입찰해서 최소가가 올라가면 입력 금액도 끌어올린다.
+   *
+   * 이게 없으면 버튼에 낡은 금액이 남고 `amount < minimum` 이라 입찰이 잠긴다.
+   * 최소가 이상을 직접 적어둔 경우는 건드리지 않는다 — 올려 적은 금액을
+   * 남의 입찰 때문에 되돌리면 안 된다.
+   */
+  useEffect(() => {
+    setDetailAmount((prev) => (prev < detailMinimum ? detailMinimum : prev))
+  }, [detailMinimum])
+
   const placeBid = usePlace()
   const startItem = useStart()
   const addItems = useAddAll()
