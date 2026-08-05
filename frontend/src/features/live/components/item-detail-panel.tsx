@@ -179,72 +179,75 @@ export function ItemDetailPanel({
                 {closed ? '마감된 물품이에요' : '아직 시작하지 않은 물품이에요'}
               </p>
             ) : (
-              <div className="flex flex-col gap-2 rounded-2xl border bg-surface-subtle px-3 py-2.5">
-                {/* 행 1: 칩 버튼 + 금액 입력 */}
-                <div className="flex items-center gap-2">
-                  {PRESETS.map((multiplier) => (
-                    <button
-                      key={multiplier}
-                      type="button"
-                      onClick={() =>
-                        setAmount((prev) => prev + item.bidUnit * multiplier)
-                      }
-                      className="ease-soft h-9 shrink-0 rounded-xl bg-fill px-3 text-[12px] font-bold tabular-nums text-neutral-secondary transition-all duration-150 hover:text-brand-500 active:scale-95"
-                    >
-                      +{(item.bidUnit * multiplier).toLocaleString('ko-KR')}
-                    </button>
-                  ))}
+              <div className="flex items-center gap-2 rounded-2xl border bg-surface-subtle px-3 py-2.5">
+                {/* 칩 버튼 */}
+                {PRESETS.map((multiplier) => (
+                  <button
+                    key={multiplier}
+                    type="button"
+                    onClick={() =>
+                      setAmount((prev) => prev + item.bidUnit * multiplier)
+                    }
+                    className="ease-soft h-9 shrink-0 rounded-xl bg-fill px-3 text-[12px] font-bold tabular-nums text-neutral-secondary transition-all duration-150 hover:text-brand-500 active:scale-95"
+                  >
+                    +{(item.bidUnit * multiplier).toLocaleString('ko-KR')}
+                  </button>
+                ))}
 
-                  <label
+                {/* 금액 입력 */}
+                <label
+                  className={cn(
+                    'ease-soft flex h-9 min-w-0 flex-1 cursor-text items-center gap-1 rounded-xl border-2 bg-card px-2.5 transition-all duration-150',
+                    'focus-within:ring-2 focus-within:ring-brand-200',
+                    amount < minimum
+                      ? 'border-live/50'
+                      : 'border-brand-300 hover:border-brand-400',
+                  )}
+                >
+                  <Pencil
+                    aria-hidden
+                    className="size-3 shrink-0 text-neutral-muted"
+                  />
+                  <span className="sr-only">입찰 금액</span>
+                  <input
+                    inputMode="numeric"
+                    onFocus={(event) => event.currentTarget.select()}
+                    value={amount.toLocaleString('ko-KR')}
+                    onChange={(event) =>
+                      setAmount(
+                        Number(event.target.value.replace(/\D/g, '')) || 0,
+                      )
+                    }
                     className={cn(
-                      'ease-soft flex h-9 min-w-0 flex-1 cursor-text items-center gap-1 rounded-xl border-2 bg-card px-2.5 transition-all duration-150',
-                      'focus-within:ring-2 focus-within:ring-brand-200',
-                      amount < minimum
-                        ? 'border-live/50'
-                        : 'border-brand-300 hover:border-brand-400',
+                      'min-w-0 flex-1 bg-transparent text-right text-[16px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
+                      amount < minimum ? 'text-live' : 'text-brand-600',
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      'shrink-0 text-[12px] font-bold',
+                      amount < minimum ? 'text-live' : 'text-brand-600',
                     )}
                   >
-                    <Pencil
-                      aria-hidden
-                      className="size-3 shrink-0 text-neutral-muted"
-                    />
-                    <span className="sr-only">입찰 금액</span>
-                    <input
-                      inputMode="numeric"
-                      onFocus={(event) => event.currentTarget.select()}
-                      value={amount.toLocaleString('ko-KR')}
-                      onChange={(event) =>
-                        setAmount(
-                          Number(event.target.value.replace(/\D/g, '')) || 0,
-                        )
-                      }
-                      className={cn(
-                        'min-w-0 flex-1 bg-transparent text-right text-[16px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
-                        amount < minimum ? 'text-live' : 'text-brand-600',
-                      )}
-                    />
-                    <span
-                      className={cn(
-                        'shrink-0 text-[12px] font-bold',
-                        amount < minimum ? 'text-live' : 'text-brand-600',
-                      )}
-                    >
-                      원
-                    </span>
-                  </label>
-                </div>
+                    원
+                  </span>
+                </label>
 
-                {/* 행 2: 입찰 버튼 전체 너비 */}
+                {/*
+                 * 입찰 버튼 — 금액은 바로 왼쪽 입력칸에 이미 표시되므로
+                 * 버튼 텍스트는 "입찰"만 담아 너비를 최소화한다.
+                 * 버튼이 좁아진 만큼 입력칸이 더 넓어져 13자리까지 잘리지 않는다.
+                 */}
                 <button
                   type="button"
                   disabled={bidBlocked || pending}
                   onClick={onBid}
-                  className="ease-soft flex h-9 w-full items-center justify-center gap-1.5 rounded-xl bg-brand-500 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
+                  className="ease-soft flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
                 >
                   {pending && (
                     <Loader2 aria-hidden className="size-3.5 animate-spin" />
                   )}
-                  {pending ? '처리 중…' : `${formatWon(amount)} 입찰하기`}
+                  {pending ? '처리 중…' : '입찰'}
                 </button>
               </div>
             )}
