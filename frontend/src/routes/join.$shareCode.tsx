@@ -273,7 +273,7 @@ function JoinRoomPage() {
                */}
               <Link
                 to="/"
-                search={{ redirect: `/rooms/${shareCode}` }}
+                search={{ redirect: `/join/${shareCode}` }}
                 className="ease-soft mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-brand-500 text-card-title font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
               >
                 로그인하고 참여하기
