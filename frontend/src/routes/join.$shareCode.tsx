@@ -11,7 +11,10 @@ import { StatusBadge } from '@/components/status-badge'
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
 import { useCurrentUser } from '@/lib/session'
-import { getGetRoomByShareCodeQueryKey, useGetRoomByShareCode } from '@/api/generated/경매방/경매방'
+import {
+  getGetRoomByShareCodeQueryKey,
+  useGetRoomByShareCode,
+} from '@/api/generated/경매방/경매방'
 import { useGetSummaries } from '@/api/generated/경매-물품/경매-물품'
 import { axiosInstance } from '@/api/mutator/custom-instance'
 
