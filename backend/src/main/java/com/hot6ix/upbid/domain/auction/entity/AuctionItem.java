@@ -32,6 +32,12 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class AuctionItem extends BaseTimeEntity {
 
+    /**
+     * Soft Close 누적 연장 상한. 마감 직전 입찰이 계속 들어와도 한 물품이 원래 마감보다 1시간
+     * 넘게 끌지 못하게 한다. 방마다 다르게 둘 값이 아니라 서비스 정책이라 상수로 둔다.
+     */
+    public static final int MAX_TOTAL_EXTENSION_SECONDS = 3600;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "auction_item_id")
@@ -146,5 +152,48 @@ public class AuctionItem extends BaseTimeEntity {
     public void applyBid(User bidder, Long amount) {
         this.leaderUser = bidder;
         this.currentPrice = amount;
+    }
+
+    /**
+     * 마감이 임박한 상태였으면 Soft Close로 마감을 뒤로 밀고 누적 연장에 더한다. 연장 폭과
+     * 임박 판정 기준은 이 물품이 속한 <b>경매방의 설정</b>이다.
+     *
+     * <p>연장이 일어나면 {@code endAt}이 바뀌므로, 호출한 쪽은 걸어둔 마감 예약을 새 시각으로
+     * 갈아 끼워야 한다.
+     *
+     * <p><b>입찰 트랜잭션 안, 물품 행 락을 잡은 채로 불러야 한다.</b> 입찰 커밋과 마감 시각
+     * 갱신이 갈라지면 그 사이에 마감이 끼어들어, 입찰은 성공했는데 연장은 없던 일이 되는
+     * 구간이 생긴다.
+     *
+     * <p>연장하지 않는 경우가 셋이다. 경매방에 Soft Close 설정이 없거나(값이 {@code null}),
+     * 아직 임박 구간에 들어오지 않았거나, 이번 연장까지 더하면 누적이
+     * {@link #MAX_TOTAL_EXTENSION_SECONDS}를 넘는 경우다. 상한을 넘길 때 남은 만큼만 밀지
+     * 않는 것은 연장 폭이 언제나 방 설정값과 같아야 화면에 알리는 "몇 초 연장"과 실제 마감
+     * 시각이 어긋나지 않기 때문이다.
+     *
+     * @param now 판정 기준 시각. 같은 트랜잭션의 다른 검증과 <b>같은 값</b>을 받아야 한다
+     * @return 연장했으면 {@code true}. {@code false}면 아무 값도 바뀌지 않았다
+     */
+    public boolean extendIfClosingSoon(LocalDateTime now) {
+
+        Integer triggerSeconds = auctionRoom.getSoftCloseTriggerSeconds();
+        Integer extendSeconds = auctionRoom.getSoftCloseExtendSeconds();
+
+        if (endAt == null || triggerSeconds == null || extendSeconds == null) {
+            return false;
+        }
+
+        if (now.isBefore(endAt.minusSeconds(triggerSeconds))) {
+            return false;
+        }
+
+        if (totalExtensionSeconds + extendSeconds > MAX_TOTAL_EXTENSION_SECONDS) {
+            return false;
+        }
+
+        this.endAt = endAt.plusSeconds(extendSeconds);
+        this.totalExtensionSeconds += extendSeconds;
+
+        return true;
     }
 }

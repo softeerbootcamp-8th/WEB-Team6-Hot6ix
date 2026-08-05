@@ -1,8 +1,10 @@
 package com.hot6ix.upbid.domain.bid.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,18 +21,24 @@ import com.hot6ix.upbid.domain.bid.repository.BidRepository;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
+import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
+import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
+import com.hot6ix.upbid.support.ScriptedClock;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -48,6 +56,12 @@ class BidServiceTest {
     private static final long STARTING_PRICE = 10_000L;
     private static final long BID_INCREMENT = 1_000L;
 
+    /** 경계 테스트용 고정 마감 시각. 실제 시계와 무관해야 결과가 흔들리지 않는다. */
+    private static final LocalDateTime FIXED_END_AT = LocalDateTime.of(2026, 8, 5, 12, 0);
+
+    private static final int SOFT_CLOSE_TRIGGER_SECONDS = 30;
+    private static final int SOFT_CLOSE_EXTEND_SECONDS = 30;
+
     @Mock
     private BidRepository bidRepository;
 
@@ -60,7 +74,6 @@ class BidServiceTest {
     @Mock
     private DomainEventPublisher domainEventPublisher;
 
-    @InjectMocks
     private BidService bidService;
 
     private User bidder;
@@ -68,6 +81,24 @@ class BidServiceTest {
     @BeforeEach
     void setUp() {
         bidder = user(BIDDER_ID, "한기");
+        bidService = newBidService(Clock.systemDefaultZone());
+    }
+
+    private BidService newBidService(Clock clock) {
+        return new BidService(bidRepository, auctionItemRepository, userRepository,
+                domainEventPublisher, clock);
+    }
+
+    /**
+     * 시각을 읽는 순서대로 정해 둔다. 값을 둘 주면 <b>도착 시각과 락을 잡은 뒤의 시각</b>이
+     * 갈리므로, 락을 기다리는 동안 시간이 흐른 상황을 재현할 수 있다.
+     */
+    private void givenClock(Instant... instants) {
+        bidService = newBidService(ScriptedClock.of(instants));
+    }
+
+    private static Instant at(LocalDateTime dateTime) {
+        return dateTime.atZone(ZoneId.systemDefault()).toInstant();
     }
 
     private User user(Long userId, String nickname) {
@@ -83,9 +114,22 @@ class BidServiceTest {
 
     /**
      * 진행중이고 마감이 한참 남은 물품. 개별 테스트에서 상태·마감·최고입찰자만 바꿔 쓴다.
+     *
+     * <p>경매방에 Soft Close 설정을 두지 않아 연장이 일어나지 않는다. 연장을 보려면
+     * {@link #auctionItem(AuctionItemStatus, LocalDateTime, User, Integer)}를 쓴다.
      */
     private AuctionItem auctionItem(AuctionItemStatus status, LocalDateTime endAt, User leader) {
-        AuctionRoom auctionRoom = AuctionRoom.builder().name("승민상점 경매방").bidIncrement(1_000L).build();
+        return auctionItem(status, endAt, leader, null);
+    }
+
+    private AuctionItem auctionItem(AuctionItemStatus status, LocalDateTime endAt, User leader,
+                                    Integer softCloseTriggerSeconds) {
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .name("승민상점 경매방")
+                .bidIncrement(1_000L)
+                .softCloseTriggerSeconds(softCloseTriggerSeconds)
+                .softCloseExtendSeconds(softCloseTriggerSeconds == null ? null : SOFT_CLOSE_EXTEND_SECONDS)
+                .build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", ROOM_ID);
 
         Product product = Product.builder().name("한정판피규어").build();
@@ -376,5 +420,155 @@ class BidServiceTest {
                 .isInstanceOf(ApplicationException.class);
 
         verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("마감 임박 입찰은 같은 트랜잭션에서 마감을 밀고 SoftCloseExtended를 발행한다")
+    void extendsOnClosingSoonBid() {
+
+        AuctionItem auctionItem = closingSoonItem();
+        LocalDateTime endAtBefore = auctionItem.getEndAt();
+        givenBidder();
+        givenItem(auctionItem);
+        givenSaveSucceeds();
+
+        bidService.place(ITEM_ID, BIDDER_ID, 15_000L);
+
+        assertThat(auctionItem.getEndAt())
+                .as("연장을 커밋 뒤로 미루면 그 사이에 마감이 끼어들어 방금 받은 입찰이 무시된다")
+                .isEqualTo(endAtBefore.plusSeconds(SOFT_CLOSE_EXTEND_SECONDS));
+
+        SoftCloseExtended published = (SoftCloseExtended) publishedEvents().get(1);
+        assertThat(published.itemId()).isEqualTo(ITEM_ID);
+        assertThat(published.extendSeconds()).isEqualTo(SOFT_CLOSE_EXTEND_SECONDS);
+        assertThat(published.endAt())
+                .as("화면과 스케줄러가 이 값으로 마감 시각을 다시 맞춘다")
+                .isEqualTo(auctionItem.getEndAt());
+    }
+
+    @Test
+    @DisplayName("연장 이벤트는 입찰 이벤트보다 나중에 나간다")
+    void publishesExtensionAfterBid() {
+
+        givenBidder();
+        givenItem(closingSoonItem());
+        givenSaveSucceeds();
+
+        bidService.place(ITEM_ID, BIDDER_ID, 15_000L);
+
+        assertThat(publishedEvents())
+                .as("연장이 먼저 보이면 무엇 때문에 밀렸는지 이벤트 피드에서 알 수 없다")
+                .map(Object::getClass)
+                .containsExactly(BidPlaced.class, SoftCloseExtended.class);
+    }
+
+    @Test
+    @DisplayName("마감이 아직 먼 입찰은 연장하지 않는다")
+    void doesNotExtendWhenNotClosingSoon() {
+
+        AuctionItem auctionItem = auctionItem(AuctionItemStatus.IN_PROGRESS,
+                LocalDateTime.now().plusMinutes(10), null, SOFT_CLOSE_TRIGGER_SECONDS);
+        LocalDateTime endAtBefore = auctionItem.getEndAt();
+        givenBidder();
+        givenItem(auctionItem);
+        givenSaveSucceeds();
+
+        bidService.place(ITEM_ID, BIDDER_ID, 15_000L);
+
+        assertThat(auctionItem.getEndAt()).isEqualTo(endAtBefore);
+        assertThat(publishedEvents()).map(Object::getClass).containsExactly(BidPlaced.class);
+    }
+
+    @Test
+    @DisplayName("마감 1밀리초 전에 도착한 입찰은 받는다")
+    void acceptsOneMilliBeforeDeadline() {
+
+        givenClock(at(FIXED_END_AT).minusMillis(1));
+        givenBidder();
+        givenItem(itemEndingAt(FIXED_END_AT));
+        givenSaveSucceeds();
+
+        assertThatCode(() -> bidService.place(ITEM_ID, BIDDER_ID, 15_000L))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("마감 정각에 도착한 입찰은 거절한다")
+    void rejectsExactlyAtDeadline() {
+
+        givenClock(at(FIXED_END_AT));
+        givenBidder();
+        givenItem(itemEndingAt(FIXED_END_AT));
+
+        assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, 15_000L))
+                .as("정각을 받을지 말지는 취향이 아니라 명세다. end_at은 '이 시각부터 닫힘'을 뜻한다")
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(BidErrorType.ITEM_CLOSED);
+    }
+
+    @Test
+    @DisplayName("마감 1밀리초 뒤에 도착한 입찰은 거절한다")
+    void rejectsOneMilliAfterDeadline() {
+
+        givenClock(at(FIXED_END_AT).plusMillis(1));
+        givenBidder();
+        givenItem(itemEndingAt(FIXED_END_AT));
+
+        assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, 15_000L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(BidErrorType.ITEM_CLOSED);
+    }
+
+    @Test
+    @DisplayName("락을 기다리다 마감을 넘겨도 도착이 마감 전이었으면 받는다")
+    void acceptsWhenArrivedBeforeDeadlineDespiteLockWait() {
+
+        // 마감 100ms 전에 도착했지만 락을 300ms 기다려 판정은 마감 200ms 뒤에 이뤄졌다.
+        givenClock(at(FIXED_END_AT).minusMillis(100), at(FIXED_END_AT).plusMillis(200));
+        givenBidder();
+        givenItem(itemEndingAt(FIXED_END_AT));
+        givenSaveSucceeds();
+
+        assertThatCode(() -> bidService.place(ITEM_ID, BIDDER_ID, 15_000L))
+                .as("앞사람이 같은 물품에 입찰 중이라 줄을 섰을 뿐인데 그 대기가 불이익이 되면 안 된다")
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("도착 때는 연장 구간 밖이었어도 락을 기다리는 사이 들어왔으면 연장한다")
+    void extendsByPostLockTimeNotArrivalTime() {
+
+        // 연장 구간은 마감 30초 전부터다. 도착은 35초 전(밖), 판정은 25초 전(안).
+        givenClock(at(FIXED_END_AT).minusSeconds(35), at(FIXED_END_AT).minusSeconds(25));
+        AuctionItem auctionItem = auctionItem(AuctionItemStatus.IN_PROGRESS, FIXED_END_AT, null,
+                SOFT_CLOSE_TRIGGER_SECONDS);
+        givenBidder();
+        givenItem(auctionItem);
+        givenSaveSucceeds();
+
+        bidService.place(ITEM_ID, BIDDER_ID, 15_000L);
+
+        assertThat(auctionItem.getEndAt())
+                .as("연장까지 도착 시각으로 판정하면 실제로는 임박한 입찰을 놓친다")
+                .isEqualTo(FIXED_END_AT.plusSeconds(SOFT_CLOSE_EXTEND_SECONDS));
+    }
+
+    private AuctionItem itemEndingAt(LocalDateTime endAt) {
+        return auctionItem(AuctionItemStatus.IN_PROGRESS, endAt, null);
+    }
+
+    private List<DomainEvent> publishedEvents() {
+        ArgumentCaptor<DomainEvent> captor = ArgumentCaptor.forClass(DomainEvent.class);
+        verify(domainEventPublisher, atLeastOnce()).publish(captor.capture());
+        return captor.getAllValues();
+    }
+
+    /** Soft Close 트리거 구간 안에 있는 물품. 지금 입찰하면 연장 대상이다. */
+    private AuctionItem closingSoonItem() {
+        return auctionItem(AuctionItemStatus.IN_PROGRESS,
+                LocalDateTime.now().plusSeconds(SOFT_CLOSE_TRIGGER_SECONDS - 5L),
+                null, SOFT_CLOSE_TRIGGER_SECONDS);
     }
 }

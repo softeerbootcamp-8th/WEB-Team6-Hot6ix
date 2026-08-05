@@ -105,7 +105,7 @@ class AuctionRoomServiceTest {
                 .coverImageUrl("https://cdn.hot6ix.com/cover.png")
                 .description("한정판 피규어 경매")
                 .liveUrl("https://instagram.com/hot6ix")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
     }
@@ -197,7 +197,7 @@ class AuctionRoomServiceTest {
                 .name("승민의 경매방")
                 .shareCode("aBcD1234aBcD1234")
                 .status(AuctionRoomStatus.BEFORE)
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 
@@ -220,7 +220,7 @@ class AuctionRoomServiceTest {
                 .name("승민의 경매방")
                 .shareCode("aBcD1234aBcD1234")
                 .status(AuctionRoomStatus.BEFORE)
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
@@ -444,7 +444,7 @@ class AuctionRoomServiceTest {
                 .sellerProfile(sellerProfile)
                 .name("승민의 경매방")
                 .status(status)
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
     }
@@ -579,7 +579,7 @@ class AuctionRoomServiceTest {
                 .name("승민의 경매방")
                 .shareCode(SHARE_CODE)
                 .status(AuctionRoomStatus.CLOSED)
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
         // 결과 조회는 공유 코드로 찾은 방에서 ID를 꺼내 물품을 읽는다. 없으면 조회가 빈손이 된다.

@@ -66,7 +66,7 @@ class AuctionRoomShareServiceTest {
                 .name("승민의 경매방")
                 .shareCode(SHARE_CODE)
                 .status(AuctionRoomStatus.BEFORE)
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", ROOM_ID);
