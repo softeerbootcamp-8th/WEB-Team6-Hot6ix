@@ -56,6 +56,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         nickname: data.nickname,
         kakaoEmail: data.email,
         phone: prevUser?.phone ?? null,
+        profileImageUrl: data.profileImageUrl,
       })
     } catch {
       // 401 등 인증 실패 → 게스트 유지. 앱 로드를 막지 않는다.

@@ -73,10 +73,22 @@ const rooms = data ?? []
 | `MOCK_PRODUCTS`     | `/seller`, `/seller/products`, 물품 추가 모달                | 판매자 상품                 |
 | `MOCK_TRADES`       | 판매자 상품 상세, `/seller` 요약 (`/trades`, 종료된 경매방은 연동 완료) | 거래           |
 | `themedRoomItems()` | 방 제목에 맞춰 물품 이름을 바꾸는 목업 전용 함수             | **연동 시 삭제**            |
-| `mocks/images.ts`   | 상품·프로필 사진                                             | 서버 `imageUrl` 로 교체     |
 
 목업이 하나도 남지 않으면 `src/mocks/` 폴더와 `src/lib/session.ts` 의
 `MOCK_MEMBER`/`MOCK_SELLER`, `src/components/dev/` 를 통째로 지웁니다.
+
+### 사진 (`mocks/images.ts` — 삭제 완료)
+
+상품·프로필 사진을 이름으로 골라 주던 목업이었습니다. #138·#139 에서 서버
+`imageUrl` 로 바꾸면서 파일을 지웠습니다. `ProductThumbnail`·`ProfilePhoto` 는
+**`src` 가 없으면 목업으로 떨어지지 않고 회색 아이콘·사람 아이콘을 그립니다.**
+
+아직 서버 사진이 안 붙어 회색으로 보이는 자리:
+
+| 화면                    | 이유                                                           |
+| ----------------------- | -------------------------------------------------------------- |
+| `/trades` 목록          | `DealSummaryResponseDto` 에 `imageUrl` 이 없다 (서버 변경 필요) |
+| `/join/$shareCode` 커버 | `coverImageUrl` 을 채울 화면이 없다 (#163)                      |
 
 ## 3. 상태 처리 규칙
 

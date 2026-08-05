@@ -307,9 +307,7 @@ export function ItemPickerModal({
                           </span>
 
                           <ProductThumbnail
-                            name={name}
                             src={product.imageUrl}
-                            size={200}
                             iconClassName="size-5"
                             className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
                           />
