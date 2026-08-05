@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auth.service;
 
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class DevAuthService {
 
-    private static final String DEV_PROVIDER = "dev";
     private static final String DEV_PROVIDER_ID = "dev-test-user";
 
     private final UserRepository userRepository;
@@ -20,9 +20,9 @@ public class DevAuthService {
     @Transactional
     public Long findOrCreateDevUser() {
 
-        return userRepository.findByProviderId(DEV_PROVIDER_ID)
+        return userRepository.findByProviderAndProviderId(OauthProvider.DEV, DEV_PROVIDER_ID)
                 .orElseGet(() -> userRepository.save(User.builder()
-                        .provider(DEV_PROVIDER)
+                        .provider(OauthProvider.DEV)
                         .providerId(DEV_PROVIDER_ID)
                         .nickname("테스트유저")
                         .build()))

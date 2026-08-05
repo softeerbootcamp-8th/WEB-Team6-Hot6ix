@@ -1,9 +1,9 @@
 package com.hot6ix.upbid.domain.user.service;
 
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
+import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
 import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
-import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
-import com.hot6ix.upbid.domain.user.dto.UserOAuthLoginDto;
 import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
 import com.hot6ix.upbid.domain.user.entity.User;
@@ -23,27 +23,20 @@ public class UserService {
     private final UserRepository userRepository;
     private final ImageUrlValidator imageUrlValidator;
 
-    @Transactional
-    public UserOAuthLoginDto findOrCreateByOAuth(OAuthUserInfo userInfo) {
+    @Transactional(readOnly = true)
+    public Optional<Long> findByOAuth(OauthProvider provider, String providerId) {
 
-        Optional<User> found = userRepository.findByProviderId(userInfo.providerId());
-
-        if (found.isPresent()) {
-            return UserOAuthLoginDto.of(verifyNotWithdrawn(found.get()), false);
-        }
-
-        User created = userRepository.save(User.ofOAuth(userInfo));
-
-        return UserOAuthLoginDto.of(created, true);
+        return userRepository.findByProviderAndProviderId(provider, providerId)
+                .map(this::verifyNotWithdrawn)
+                .map(User::getUserId);
     }
 
-    @Transactional(readOnly = true)
-    public UserOAuthLoginDto getByOAuth(OAuthUserInfo userInfo) {
+    @Transactional
+    public Long create(PendingSignup pendingSignup) {
 
-        User user = userRepository.findByProviderId(userInfo.providerId())
-                .orElseThrow(() -> new ApplicationException(AuthErrorType.OAUTH_LOGIN_FAILED));
+        User user = userRepository.saveAndFlush(User.ofPendingSignup(pendingSignup));
 
-        return UserOAuthLoginDto.of(verifyNotWithdrawn(user), false);
+        return user.getUserId();
     }
 
     @Transactional(readOnly = true)

@@ -56,6 +56,7 @@ oauth:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  onboarding-session-timeout: ${ONBOARDING_SESSION_TIMEOUT:10m}
   alert:
     slack:
       webhook-url: ${SLACK_WEBHOOK_URL:}

@@ -12,7 +12,8 @@ import org.springframework.web.client.RestClient;
 @EnableConfigurationProperties(KakaoProperties.class)
 public class KakaoRestClientConfig {
 
-    private static final Duration TIMEOUT = Duration.ofSeconds(1);
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(2);
 
     @Bean
     public RestClient kakaoRestClient() {
@@ -23,8 +24,8 @@ public class KakaoRestClientConfig {
 
     private ClientHttpRequestFactory kakaoClientHttpRequestFactory() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(TIMEOUT);
-        factory.setReadTimeout(TIMEOUT);
+        factory.setConnectTimeout(CONNECT_TIMEOUT);
+        factory.setReadTimeout(READ_TIMEOUT);
         return factory;
     }
 }
