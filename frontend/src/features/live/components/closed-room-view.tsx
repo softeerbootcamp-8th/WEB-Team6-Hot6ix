@@ -6,6 +6,8 @@ import { AppHeader, GuestHeader } from '@/components/layout/app-header'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { RoomDealStatus } from '@/features/rooms/components/room-deal-status'
+import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
+import { toDeals } from '@/features/trades/adapt-deal'
 import { cn } from '@/lib/utils'
 import { formatDate, formatWon } from '@/lib/format'
 import type { RoomResult } from '@/features/live/adapt-result'
@@ -19,9 +21,13 @@ import type { RoomResult } from '@/features/live/adapt-result'
 /**
  * 결과 한 줄. 이어지는 거래를 볼 권한이 있을 때만 그 거래 상세로 보낸다.
  *
- * 거래 상대(판매자·낙찰자)만 `/trades/$itemId` 를 볼 수 있고, 그 외 사용자는
+ * 거래 상대(판매자·구매자)만 `/trades/$itemId` 를 볼 수 있고, 그 외 사용자는
  * 눌러도 403 이 난다. 서버가 실제로 판정하지만(루트 CLAUDE.md), 볼 수 없는
  * 링크를 미리 감춰 헛걸음을 없앤다.
+ *
+ * `isMyWin`(최종 1순위 낙찰)만으로는 부족하다 — 1순위가 거래를 접어 차순위로
+ * 넘어온 경우도 거래 상대다. `/deals` 는 내 거래만 내려주므로, 그 목록에
+ * `auctionItemId` 가 있으면 순위와 무관하게 내가 상대라는 뜻이다.
  *
  * 예전에는 이름으로 거래를 찾다 실패하면 `itemId % 거래수` 로 아무 거래나
  * 골라서, 물품을 눌렀는데 전혀 다른 물품의 거래가 떴다.
@@ -72,6 +78,26 @@ export function ClosedRoomView({
   }, [items, keyword])
 
   const closedAtLabel = result.closedAt ? formatDate(result.closedAt) : null
+
+  /*
+   * 차순위로 넘어온 거래 상대를 잡으려고 내 거래 목록을 대조한다(#178).
+   * 게스트는 거래가 있을 수 없으니 아예 부르지 않는다.
+   */
+  const dealsQuery = useGetDeals({ query: { enabled: !isGuest } })
+  const myDealItemIds = useMemo(
+    () =>
+      new Set(toDeals(dealsQuery.data?.data).map((deal) => deal.auctionItemId)),
+    [dealsQuery.data],
+  )
+
+  /*
+   * `result.unsoldCount`(adapt-result.ts)는 `FAILED` 만 센다 — `/results` 를
+   * 라이브 방과도 같이 쓰느라 진행 중(`PENDING`)인 물품을 유찰과 구분해야
+   * 해서다. 이 화면은 방이 닫혔을 때만 그려지므로 `PENDING` 은 "시작한 적
+   * 없이 끝난 물품" 뿐이라 유찰과 같다. 아래 배지(`won` 판정)도 SOLD 가
+   * 아니면 전부 유찰로 그리므로, 요약 숫자도 그 기준(전체 − 낙찰)에 맞춘다.
+   */
+  const unsoldCount = items.length - result.soldCount
 
   return (
     <>
@@ -129,7 +155,7 @@ export function ClosedRoomView({
               },
               {
                 label: '유찰',
-                value: `${result.unsoldCount}건`,
+                value: `${unsoldCount}건`,
                 accent: 'text-result-failed',
                 bg: 'bg-result-failed-surface',
               },
@@ -168,8 +194,8 @@ export function ClosedRoomView({
               전체 낙찰 결과
             </h3>
             <p className="mt-2 text-[12px] font-medium text-neutral-tertiary">
-              낙찰 {result.soldCount}건 · 유찰 {result.unsoldCount}건 · 총
-              낙찰액 {formatWon(result.totalAmount)}
+              낙찰 {result.soldCount}건 · 유찰 {unsoldCount}건 · 총 낙찰액{' '}
+              {formatWon(result.totalAmount)}
             </p>
 
             <ul className="mt-3 space-y-2">
@@ -180,7 +206,11 @@ export function ClosedRoomView({
                   <li key={item.auctionItemId}>
                     <ResultRow
                       itemId={item.auctionItemId}
-                      canLink={isOwner || item.isMyWin}
+                      canLink={
+                        isOwner ||
+                        item.isMyWin ||
+                        myDealItemIds.has(item.auctionItemId)
+                      }
                       className={cn(
                         'flex items-center gap-2 rounded-xl border px-3 py-2.5',
                         // 내가 낙찰받은 물품은 한눈에 찾을 수 있어야 한다.
@@ -304,7 +334,11 @@ export function ClosedRoomView({
                         {/* 누르면 그 물품의 거래 상세로 간다. */}
                         <ResultRow
                           itemId={item.auctionItemId}
-                          canLink={isOwner || item.isMyWin}
+                          canLink={
+                            isOwner ||
+                            item.isMyWin ||
+                            myDealItemIds.has(item.auctionItemId)
+                          }
                           className={cn(
                             'flex gap-3 rounded-2xl border p-3',
                             item.isMyWin
@@ -387,7 +421,7 @@ export function ClosedRoomView({
                       },
                       {
                         label: '유찰',
-                        value: `${result.unsoldCount}건`,
+                        value: `${unsoldCount}건`,
                         bg: 'bg-result-failed-surface',
                         color: 'text-result-failed',
                       },
@@ -426,7 +460,7 @@ export function ClosedRoomView({
                     전체 물품 결과
                   </h3>
                   <p className="mt-1 shrink-0 text-[12px] font-medium text-neutral-tertiary">
-                    낙찰 {result.soldCount}건 · 유찰 {result.unsoldCount}건
+                    낙찰 {result.soldCount}건 · 유찰 {unsoldCount}건
                   </p>
 
                   <div className="mt-3 flex h-10 shrink-0 items-center rounded-lg bg-surface-subtle px-4 text-[11px] font-semibold text-neutral-tertiary">
@@ -446,7 +480,11 @@ export function ClosedRoomView({
                         <li key={item.auctionItemId}>
                           <ResultRow
                             itemId={item.auctionItemId}
-                            canLink={isOwner || item.isMyWin}
+                            canLink={
+                              isOwner ||
+                              item.isMyWin ||
+                              myDealItemIds.has(item.auctionItemId)
+                            }
                             className="flex h-14 items-center rounded-[10px] border bg-card px-4 text-[13px]"
                           >
                             <span className="min-w-0 flex-1 truncate font-medium text-foreground">
