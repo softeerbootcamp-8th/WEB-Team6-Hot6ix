@@ -36,7 +36,9 @@ function MyProfileEditPage() {
 
   const [nickname, setNickname] = useState(user?.nickname ?? '')
   const [profileFile, setProfileFile] = useState<File | null>(null)
-  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(user?.profileImageUrl ?? null)
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(
+    user?.profileImageUrl ?? null,
+  )
   const [nicknameError, setNicknameError] = useState<string | undefined>()
 
   const { uploadImage, uploading } = useImageUpload(
