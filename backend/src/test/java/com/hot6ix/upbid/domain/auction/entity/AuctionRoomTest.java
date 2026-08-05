@@ -15,7 +15,7 @@ class AuctionRoomTest {
                 .coverImageUrl("https://cdn.hot6ix.com/cover.png")
                 .description("한정판 피규어 경매")
                 .liveUrl("https://instagram.com/hot6ix")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
     }
@@ -36,7 +36,7 @@ class AuctionRoomTest {
         assertThat(auctionRoom.getCoverImageUrl()).isEqualTo("https://cdn.hot6ix.com/cover.png");
         assertThat(auctionRoom.getDescription()).isEqualTo("한정판 피규어 경매");
         assertThat(auctionRoom.getLiveUrl()).isEqualTo("https://instagram.com/hot6ix");
-        assertThat(auctionRoom.getSoftCloseTriggerSeconds()).isEqualTo(30);
+        assertThat(auctionRoom.getSoftCloseTriggerSeconds()).isEqualTo(60);
         assertThat(auctionRoom.getSoftCloseExtendSeconds()).isEqualTo(60);
     }
 
@@ -51,8 +51,8 @@ class AuctionRoomTest {
                 .coverImageUrl("https://cdn.hot6ix.com/new-cover.png")
                 .description("새로운 소개")
                 .liveUrl("https://youtube.com/@newroom")
-                .softCloseTriggerSeconds(10)
-                .softCloseExtendSeconds(20)
+                .softCloseTriggerSeconds(90)
+                .softCloseExtendSeconds(120)
                 .build();
 
         auctionRoom.update(request);
@@ -61,8 +61,8 @@ class AuctionRoomTest {
         assertThat(auctionRoom.getCoverImageUrl()).isEqualTo("https://cdn.hot6ix.com/new-cover.png");
         assertThat(auctionRoom.getDescription()).isEqualTo("새로운 소개");
         assertThat(auctionRoom.getLiveUrl()).isEqualTo("https://youtube.com/@newroom");
-        assertThat(auctionRoom.getSoftCloseTriggerSeconds()).isEqualTo(10);
-        assertThat(auctionRoom.getSoftCloseExtendSeconds()).isEqualTo(20);
+        assertThat(auctionRoom.getSoftCloseTriggerSeconds()).isEqualTo(90);
+        assertThat(auctionRoom.getSoftCloseExtendSeconds()).isEqualTo(120);
     }
 
     @Test

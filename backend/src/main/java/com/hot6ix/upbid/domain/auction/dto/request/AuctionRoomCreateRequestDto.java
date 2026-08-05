@@ -39,12 +39,20 @@ public record AuctionRoomCreateRequestDto(
         Long bidIncrement,
 
         @NotNull(message = "Soft Close 트리거 초는 필수 값입니다.")
-        @Min(value = 1, message = "Soft Close 트리거 초는 1초 이상이어야 합니다.")
+        @Min(value = 60, message = "Soft Close 트리거 초는 60초(1분) 이상이어야 합니다.")
         @Max(value = 3600, message = "Soft Close 트리거 초는 3600초(1시간) 이하여야 합니다.")
         Integer softCloseTriggerSeconds,
 
+        /**
+         * 하한이 60초인 것은 연장 폭이 <b>네트워크 지연 편차보다 충분히 커야</b> 의미가 있기
+         * 때문이다. 사람마다 요청이 도착하는 시각이 수십에서 수백 밀리초씩 다른데, 연장이
+         * 1초면 그 편차가 승부를 가르는 비중이 그대로 남아 Soft Close를 넣은 이유가 사라진다.
+         *
+         * <p>값을 60으로 잡은 것은 화면이 <b>분 단위로만</b> 입력받아 최소가 1분이기 때문이다.
+         * 화면에서 만들 수 없는 값을 API가 받아주면 두 쪽 규칙이 갈린다.
+         */
         @NotNull(message = "Soft Close 연장 초는 필수 값입니다.")
-        @Min(value = 1, message = "Soft Close 연장 초는 1초 이상이어야 합니다.")
+        @Min(value = 60, message = "Soft Close 연장 초는 60초(1분) 이상이어야 합니다.")
         @Max(value = 3600, message = "Soft Close 연장 초는 3600초(1시간) 이하여야 합니다.")
         Integer softCloseExtendSeconds
 ) {

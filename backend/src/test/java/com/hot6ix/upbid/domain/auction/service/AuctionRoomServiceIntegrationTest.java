@@ -91,7 +91,7 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
                 .sellerProfile(sellerProfile)
                 .name("이미 있는 방")
                 .shareCode("REGRESSIONDUPLICATE")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
         auctionRoomRepository.saveAndFlush(existing);
@@ -103,7 +103,7 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
                 .bidIncrement(1_000L)
                 .name("회귀 테스트 경매방")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 
