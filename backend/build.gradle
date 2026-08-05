@@ -13,6 +13,11 @@ java {
 	}
 }
 
+// Boot BOM이 관리하는 com.querydsl 5.1.0은 Hibernate 6 기준 빌드라 Boot 4(Hibernate 7.2) 위에서는 검증되지 않은 조합임.
+ext {
+	queryDslVersion = '7.5'
+}
+
 repositories {
 	mavenCentral()
 }
@@ -32,6 +37,14 @@ dependencies {
 	// Database
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// QueryDSL — apt는 :jpa 분류자여야 JPAAnnotationProcessor가 등록된다.
+	// 분류자 없는 jar에는 그 서비스 등록이 없어 Q타입이 안 생긴다.
+	// jakarta.persistence-api·jakarta.annotation-api는 querydsl-apt가 compile scope로
+	// 끌고 오므로 annotationProcessor에 따로 선언하지 않는다.
+	// Lombok보다 뒤에 두어 애노테이션 프로세서 순서를 Lombok 우선으로 유지한다.
+	implementation "io.github.openfeign.querydsl:querydsl-jpa:${queryDslVersion}"
+	annotationProcessor "io.github.openfeign.querydsl:querydsl-apt:${queryDslVersion}:jpa"
 
 	// AWS S3 — presigned URL 발급용.
 	// S3Presigner는 s3 아티팩트 안에 들어 있다(software.amazon.awssdk.services.s3.presigner).
