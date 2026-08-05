@@ -56,8 +56,8 @@ public class AuctionRoomService {
     private final DomainEventPublisher domainEventPublisher;
 
     /**
-     * 판매자의 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며(충돌 시 재시도),
-     * 이를 노출하는 API는 이 서비스가 아닌 별도 PR 소관이다.
+     * 판매자의 경매방을 생성한다. share_code는 서버가 발급해(충돌 시 재시도) 응답에 담는다 —
+     * 공개 화면이 이 방을 지목하는 유일한 식별자다.
      * <p>이 메서드 자체는 트랜잭션으로 감싸지 않는다({@code NOT_SUPPORTED}) — {@link #saveWithUniqueShareCode}가
      * 시도마다 {@code saveAndFlush()}를 호출하는데, 감싸는 트랜잭션이 있으면 모든 시도가 같은
      * Hibernate 세션을 공유하게 되고, 첫 충돌 이후에는 세션이 오염돼 재시도가 항상 깨진다
@@ -82,30 +82,15 @@ public class AuctionRoomService {
     }
 
     /**
-     * 경매방 공개 정보를 조회한다. 인증이 필요 없으며, BEFORE를 포함한 모든 상태에서
+     * 공유 코드로 경매방 공개 정보를 조회한다. 인증이 필요 없으며, BEFORE를 포함한 모든 상태에서
      * 동일하게 노출한다(상태별 분기 없음).
+     *
+     * <p>숫자 PK로 들어오는 문은 두지 않는다. auto_increment PK를 공개 URL에 노출하면
+     * {@code 1, 2, 3...}을 순서대로 불러 공유 링크 없이 남의 방을 전부 훑을 수 있다.
+     * 공유 코드는 16자 랜덤이라 추측으로 도달할 수 없다.
      *
      * <p>{@code isOwner}만 보는 사람에 따라 달라진다. 화면이 판매자 조작 UI를 띄울지 정하는 값이고,
      * 실제 권한은 조작 API가 다시 검증한다.
-     *
-     * @param auctionRoomId 조회할 경매방의 ID
-     * @param viewerUserId  조회한 회원의 ID. 로그인하지 않았으면 null
-     * @return 조회된 경매방
-     * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
-     */
-    public AuctionRoomPublicResponseDto getRoom(Long auctionRoomId, Long viewerUserId) {
-
-        AuctionRoom auctionRoom = auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
-
-        return AuctionRoomPublicResponseDto.from(
-                auctionRoom, countItems(auctionRoomId), isOwnedBy(auctionRoom, viewerUserId));
-    }
-
-    /**
-     * 공유 코드로 경매방 공개 정보를 조회한다. 공유 링크를 받은 사람이 방에 진입할 때 쓰며,
-     * {@link #getRoom(Long, Long)}과 응답이 동일하다. roomId 대신 share_code로 진입점을 두는 이유는
-     * 순차 증가하는 숫자 PK를 공개 URL에 노출하면 남의 방을 추측해 순회 조회할 수 있기 때문이다.
      *
      * @param shareCode    조회할 경매방의 공유 코드
      * @param viewerUserId 조회한 회원의 ID. 로그인하지 않았으면 null
@@ -114,8 +99,7 @@ public class AuctionRoomService {
      */
     public AuctionRoomPublicResponseDto getRoomByShareCode(String shareCode, Long viewerUserId) {
 
-        AuctionRoom auctionRoom = auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(shareCode)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+        AuctionRoom auctionRoom = findRoomByShareCode(shareCode);
 
         return AuctionRoomPublicResponseDto.from(
                 auctionRoom,
@@ -191,14 +175,14 @@ public class AuctionRoomService {
      * <p>쿼리는 두 번이다 — 물품과 낙찰자를 한 번, 요청자의 순위를 한 번. 물품마다 후보를
      * 조회하면 물품 수만큼 쿼리가 나간다.
      *
-     * @param auctionRoomId 조회할 경매방의 ID
-     * @param userId        요청자의 회원 ID. 비로그인이면 {@code null}
-     * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
+     * @param shareCode 조회할 경매방의 공유 코드
+     * @param userId    요청자의 회원 ID. 비로그인이면 {@code null}
+     * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    public AuctionRoomResultResponseDto getResults(Long auctionRoomId, Long userId) {
+    public AuctionRoomResultResponseDto getResults(String shareCode, Long userId) {
 
-        AuctionRoom auctionRoom = auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+        AuctionRoom auctionRoom = findRoomByShareCode(shareCode);
+        Long auctionRoomId = auctionRoom.getAuctionRoomId();
 
         Map<Long, MyCandidateRankProjection> myRanks = findMyRanks(auctionRoomId, userId);
 
@@ -296,6 +280,11 @@ public class AuctionRoomService {
     private boolean isOwnedBy(AuctionRoom auctionRoom, Long viewerUserId) {
         return viewerUserId != null
                 && viewerUserId.equals(auctionRoom.getSellerProfile().getUser().getUserId());
+    }
+
+    private AuctionRoom findRoomByShareCode(String shareCode) {
+        return auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(shareCode)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
     }
 
     private AuctionRoom findOwnedRoom(SellerProfile sellerProfile, Long auctionRoomId) {

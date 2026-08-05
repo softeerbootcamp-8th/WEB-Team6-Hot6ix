@@ -29,29 +29,35 @@ public interface AuctionItemApi {
                     + "물품마다 `leaderboard`에 상위 입찰자 3명이 순위·닉네임·금액으로 담긴다. "
                     + "한 사람이 여러 번 입찰해도 그 사람의 최고가로 한 줄만 나오고, "
                     + "탈퇴한 회원은 순위에서 빠진다. 입찰이 없으면 빈 배열이다. "
-                    + "비로그인으로 조회할 수 있다."
+                    + "비로그인으로 조회할 수 있다.\n\n"
+                    + "인증이 필요 없는 공개 경로라 경매방을 숫자 ID가 아닌 공유 코드로 지목한다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공. 물품이 없으면 빈 배열"),
-            @ApiResponse(responseCode = "400", description = "경로 변수가 숫자가 아니라면 code 2002 반환"),
-            @ApiResponse(responseCode = "404", description = "존재하지 않거나 삭제된 경매방이라면 code 4002")
+            @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
     })
     ResponseEntity<CommonResponse<List<AuctionItemSummaryResponseDto>>> getSummaries(
-            @Parameter(description = "조회할 경매방 ID", required = true)
-            @PathVariable Long auctionRoomId);
+            @Parameter(description = "조회할 경매방의 공유 코드", required = true)
+            @PathVariable String shareCode);
 
     @Operation(
             summary = "경매 물품 상세 조회",
             description = "물품 상세를 조회한다. 낙찰·유찰된 물품도 조회된다. "
                     + "`leaderboard`에 상위 입찰자 3명이 담긴다. 규칙은 목록 조회와 같다. "
-                    + "비로그인으로 조회할 수 있다."
+                    + "비로그인으로 조회할 수 있다.\n\n"
+                    + "**물품이 그 경매방 소속인지 확인한다.** 방만 공유 코드로 가리고 물품을 숫자 ID로 열어 두면 "
+                    + "열거할 수 있는 지점이 물품으로 옮겨갈 뿐이다 — 이 응답의 auctionRoomId가 방을 다시 "
+                    + "알려주기 때문에 더 그렇다. 남의 방 물품을 지목하면 물품이 없을 때와 똑같이 404다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "400", description = "경로 변수가 숫자가 아니라면 code 2002"),
-            @ApiResponse(responseCode = "404", description = "존재하지 않는 경매 물품이라면 code 4001")
+            @ApiResponse(responseCode = "400", description = "물품 ID가 숫자가 아니라면 code 2002"),
+            @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002), "
+                    + "물품이 없거나 그 경매방 소속이 아님 (code 4001)")
     })
     ResponseEntity<CommonResponse<AuctionItemDetailResponseDto>> getDetail(
+            @Parameter(description = "물품이 속한 경매방의 공유 코드", required = true)
+            @PathVariable String shareCode,
             @Parameter(description = "조회할 물품 ID", required = true)
             @PathVariable Long auctionItemId);
 
