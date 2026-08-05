@@ -97,6 +97,22 @@ class UploadServiceTest {
     }
 
     @Test
+    @DisplayName("경매방 커버는 auction-room-covers 아래로 간다")
+    void buildsKeyForAuctionRoomCover() {
+
+        PresignedUrlResponseDto response = uploadService.createPresignedUrl(
+                USER_ID,
+                PresignedUrlRequestDto.builder()
+                        .domain(UploadDomain.AUCTION_ROOM_COVER)
+                        .contentType("image/jpeg")
+                        .build());
+
+        assertThat(response.fileUrl())
+                .startsWith(PUBLIC_BASE_URL + "/auction-room-covers/" + USER_ID + "/")
+                .endsWith(".jpg");
+    }
+
+    @Test
     @DisplayName("content-type에 맞는 확장자를 붙인다")
     void derivesExtensionFromContentType() {
 

@@ -18,6 +18,7 @@ import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -54,6 +55,8 @@ public class AuctionRoomService {
      */
     private final DealCandidateRepository dealCandidateRepository;
     private final DomainEventPublisher domainEventPublisher;
+    /** 커버 주소는 클라이언트가 문자열로 보낸다. 우리 버킷에서 온 것인지 본다. */
+    private final ImageUrlValidator imageUrlValidator;
 
     /**
      * 판매자의 경매방을 생성한다. share_code는 서버가 발급해(충돌 시 재시도) 응답에 담는다 —
@@ -72,6 +75,8 @@ public class AuctionRoomService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AuctionRoomPublicResponseDto create(Long userId, AuctionRoomCreateRequestDto request) {
+
+        imageUrlValidator.validate(request.coverImageUrl());
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = saveWithUniqueShareCode(sellerProfile, request);
@@ -250,6 +255,9 @@ public class AuctionRoomService {
      */
     @Transactional
     public AuctionRoomPublicResponseDto update(Long userId, Long auctionRoomId, AuctionRoomUpdateRequestDto request) {
+
+        // 등록만 막으면 검증이 없는 것과 같다. 수정으로도 URL이 통째로 들어온다.
+        imageUrlValidator.validate(request.coverImageUrl());
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
