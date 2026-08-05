@@ -2,7 +2,9 @@ package com.hot6ix.upbid.domain.user.service;
 
 import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
 import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.dto.UserOAuthLoginDto;
+import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.response.UserMeResponseDto;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
@@ -19,6 +21,7 @@ import java.util.Optional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final ImageUrlValidator imageUrlValidator;
 
     @Transactional
     public UserOAuthLoginDto findOrCreateByOAuth(OAuthUserInfo userInfo) {
@@ -48,6 +51,19 @@ public class UserService {
 
         User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new ApplicationException(UserErrorType.USER_NOT_FOUND));
+
+        return UserMeResponseDto.from(user);
+    }
+
+    @Transactional
+    public UserMeResponseDto updateMe(Long userId, UserUpdateRequestDto request) {
+
+        imageUrlValidator.validate(request.profileImageUrl());
+
+        User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new ApplicationException(UserErrorType.USER_NOT_FOUND));
+
+        user.updateProfile(request.nickname(), request.profileImageUrl());
 
         return UserMeResponseDto.from(user);
     }
