@@ -9,13 +9,5 @@
 **그 외 환경**: 카카오 로그인 후 발급된 SESSION 쿠키가 자동으로 포함됩니다.
  * OpenAPI spec version: v1
  */
-import type { UserUpdateRequestDtoProfileImageUrl } from './userUpdateRequestDtoProfileImageUrl';
 
-export interface UserUpdateRequestDto {
-  /**
-   * @minLength 0
-   * @maxLength 10
-   */
-  nickname: string;
-  profileImageUrl?: UserUpdateRequestDtoProfileImageUrl;
-}
+export type UserUpdateRequestDtoProfileImageUrl = string | null;
