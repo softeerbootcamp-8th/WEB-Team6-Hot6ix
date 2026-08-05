@@ -87,6 +87,7 @@ function MyProfileEditPage() {
             sessionStore.signIn({
               ...user,
               nickname: updated.nickname ?? user.nickname,
+              profileImageUrl: updated.profileImageUrl ?? null,
             })
           }
           // 루트 beforeLoad 가 ['session', 'me'] 캐시로 sessionStore 를 덮어쓰므로
