@@ -64,22 +64,29 @@ cd frontend && pnpm install && pnpm dev
 | 경로 | 파일 | ? | 화면 |
 |---|---|---|---|
 | `/rooms` | `rooms.index.tsx` | ✓ | 참여 경매방 목록 |
-| `/rooms/1` | `rooms.$roomId.index.tsx` | | **라이브 경매방** (웹 3열 / 모바일 전용 뷰) |
-| `/rooms/3` | 〃 | | **종료된 경매방** (`ClosedRoomView` 로 분기, 결과·거래 현황 API 연동) |
-| `/rooms/7` | 〃 | | **빈 경매방** — 물품·이벤트 0 (`MOCK_EMPTY_ROOM`) |
-| `/rooms/1/items/1` | `rooms.$roomId.items.$itemId.tsx` | | 물품 상세 (LIVE) |
-| `/rooms/1/result` | `rooms.$roomId.result.tsx` | | 경매방 종료 요약 (`GET /auction-rooms/{roomId}/results` 연동) |
+| `/rooms/{shareCode}` | `rooms.$shareCode.index.tsx` | ✓ | **라이브 경매방** (웹 3열 / 모바일 전용 뷰). 방 상태가 `CLOSED` 면 `ClosedRoomView` 로 분기 |
+| `/rooms/{shareCode}/items/{itemId}` | `rooms.$shareCode.items.$itemId.tsx` | ✓ | 물품 상세 (링크로 바로 들어올 때) |
+| `/rooms/{shareCode}/result` | `rooms.$shareCode.result.tsx` | ✓ | 경매방 종료 요약 |
 | `/join/{shareCode}` | `join.$shareCode.tsx` | ✓ | 링크 입장 — 정상 / 종료 / 유효하지 않은 링크 |
 
-`/join` 은 **실제 API 로 동작한다** — `GET /api/v1/auction-rooms/share/{shareCode}`
-(비로그인 허용). 응답 404 면 "유효하지 않은 링크", `status === 'CLOSED'` 면
-"종료된 경매방" 으로 갈린다. 그래서 목업 시절의 `/join/abc123`·`/join/expired`
-같은 고정 경로는 더 이상 의미가 없고, 화면을 보려면 DB 에 실제로 있는
-share_code 가 필요하다.
+**방 주소에 숫자 ID 를 쓰지 않는다.** `/rooms/1` 처럼 순차 증가하는 PK 를 주소에
+두면 공유 링크를 못 받은 사람도 1, 2, 3... 을 훑어 남의 방을 전부 볼 수 있었다.
+지금은 공개 경로가 전부 16자 랜덤 `share_code` 아래에 있다 (이슈 #167).
 
-**단 물품 목록은 아직 목업이다.** 공개 조회 응답에는 물품 개수(`itemCount`)만
-있고 목록은 별도 엔드포인트라, 그 연동은 다음 이슈로 미뤘다. 참여자 수는 서버가
-아직 채우지 않아(`participantCount` 항상 null) 화면에서 뺐다.
+- `GET /api/v1/auction-rooms/share/{shareCode}` — 방 정보
+- `.../share/{shareCode}/auction-items` · `/auction-items/{itemId}` — 물품 목록·상세
+- `.../share/{shareCode}/results` — 낙찰 결과
+- `.../share/{shareCode}/subscribe` — 실시간 SSE
+
+넷 다 비로그인 허용이고, 없는 코드는 404 다.
+
+**판매자 조작(방 종료·설정 수정·물품 추가/제외)만 숫자 `roomId` 를 그대로 쓴다.**
+로그인과 소유 검증이 있어 열거 위험이 없어서다. 그래서 라이브 화면은 주소의
+`shareCode` 와 응답의 `auctionRoomId` 를 함께 들고 있다.
+
+**화면을 보려면 DB 에 실제로 있는 share_code 가 필요하다.** 목업 시절의
+`/rooms/1`·`/join/abc123` 같은 고정 경로는 더 이상 열리지 않는다. 방을 하나
+만들고(`/seller/rooms/new`) 생성 완료 화면의 링크로 들어가는 것이 가장 빠르다.
 
 ### 거래
 

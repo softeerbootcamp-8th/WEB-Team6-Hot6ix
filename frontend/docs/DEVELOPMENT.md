@@ -170,8 +170,8 @@ frontend/
 | ----------------------------------- | ---------------------------- |
 | `index.tsx`                         | `/`                          |
 | `rooms.index.tsx`                   | `/rooms`                     |
-| `rooms.$roomId.index.tsx`           | `/rooms/:roomId`             |
-| `rooms.$roomId.items.$itemId.tsx`   | `/rooms/:roomId/items/:itemId` |
+| `rooms.$shareCode.index.tsx`        | `/rooms/:shareCode`          |
+| `rooms.$shareCode.items.$itemId.tsx` | `/rooms/:shareCode/items/:itemId` |
 | `seller.products.$productId.edit.tsx` | `/seller/products/:productId/edit` |
 
 파일을 만들면 `routeTree.gen.ts` 가 자동으로 갱신됩니다(개발 서버 실행 중).
