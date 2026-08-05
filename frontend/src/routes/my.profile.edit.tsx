@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useState, type FormEvent } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,12 @@ import { TextField } from '@/components/ui/field'
 import { requireMember } from '@/lib/route-guards'
 import { sessionStore, useCurrentUser } from '@/lib/session'
 import { toast } from '@/lib/toast'
+import { useUpdateMe } from '@/api/generated/유저/유저'
+import {
+  ImageUploadError,
+  useImageUpload,
+} from '@/features/seller/use-image-upload'
+import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
 
 /**
  * 내 프로필 수정.
@@ -24,43 +31,72 @@ export const Route = createFileRoute('/my/profile/edit')({
 
 function MyProfileEditPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const user = useCurrentUser()
 
   const [nickname, setNickname] = useState(user?.nickname ?? '')
-  const [error, setError] = useState<string | undefined>()
-  const [saving, setSaving] = useState(false)
+  const [profileFile, setProfileFile] = useState<File | null>(null)
+  const [nicknameError, setNicknameError] = useState<string | undefined>()
 
-  // 저장 뒤 화면을 떠나므로 남은 목업 타이머는 언마운트 때 정리한다.
-  const timer = useRef<number | null>(null)
-  useEffect(
-    () => () => {
-      if (timer.current !== null) window.clearTimeout(timer.current)
-    },
-    [],
+  const { uploadImage, uploading } = useImageUpload(
+    PresignedUrlRequestDtoDomain.USER_PROFILE,
   )
+  const updateMe = useUpdateMe()
+
+  const saving = uploading || updateMe.isPending
 
   if (!user) return null
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
 
     const trimmed = nickname.trim()
     if (trimmed.length < 2) {
-      setError('닉네임은 2자 이상이어야 해요.')
+      setNicknameError('닉네임은 2자 이상이어야 해요.')
       return
     }
-    if (trimmed.length > 12) {
-      setError('닉네임은 12자 이하로 입력해주세요.')
+    if (trimmed.length > 10) {
+      setNicknameError('닉네임은 10자 이하로 입력해주세요.')
       return
     }
 
-    setSaving(true)
-    // TODO: PATCH /api/v1/users/me 연동 (현재 목업)
-    timer.current = window.setTimeout(() => {
-      sessionStore.signIn({ ...user, nickname: trimmed })
-      toast.success('프로필을 저장했어요')
-      void navigate({ to: '/my' })
-    }, 500)
+    let profileImageUrl: string | null | undefined = undefined
+
+    if (profileFile) {
+      try {
+        profileImageUrl = await uploadImage(profileFile)
+      } catch (err) {
+        if (err instanceof ImageUploadError) {
+          toast.error(err.message)
+        } else {
+          toast.error('이미지를 올리지 못했어요.')
+        }
+        return
+      }
+    }
+
+    updateMe.mutate(
+      { data: { nickname: trimmed, profileImageUrl } },
+      {
+        onSuccess(response) {
+          const updated = response.data
+          if (updated) {
+            sessionStore.signIn({
+              ...user,
+              nickname: updated.nickname ?? user.nickname,
+            })
+          }
+          // 루트 beforeLoad 가 ['session', 'me'] 캐시로 sessionStore 를 덮어쓰므로
+          // 이 키를 stale 로 만들어 다음 navigation 에서 서버 재요청이 일어나게 한다.
+          void queryClient.invalidateQueries({ queryKey: ['session', 'me'] })
+          toast.success('프로필을 저장했어요')
+          void navigate({ to: '/my' })
+        },
+        onError() {
+          toast.error('저장에 실패했어요. 다시 시도해 주세요.')
+        },
+      },
+    )
   }
 
   return (
@@ -75,13 +111,14 @@ function MyProfileEditPage() {
       </div>
 
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(e) => void handleSubmit(e)}
         className="mt-4 grid gap-8 rounded-[20px] border bg-card p-6 md:p-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-12"
       >
         <ImageUploadField
           label="프로필 사진"
           uploadText="사진 변경"
           maxWidth={280}
+          onFileChange={setProfileFile}
         />
 
         <div className="flex flex-col">
@@ -89,13 +126,13 @@ function MyProfileEditPage() {
             <TextField
               label="닉네임"
               required
-              hint="입찰 기록과 리더보드에 이 이름이 보여요. 2~12자."
-              error={error}
+              hint="입찰 기록과 리더보드에 이 이름이 보여요. 2~10자."
+              error={nicknameError}
               value={nickname}
               placeholder="닉네임을 입력해 주세요"
               onChange={(event) => {
                 setNickname(event.target.value)
-                setError(undefined)
+                setNicknameError(undefined)
               }}
             />
           </div>

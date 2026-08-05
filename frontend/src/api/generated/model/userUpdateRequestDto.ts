@@ -10,12 +10,7 @@
  * OpenAPI spec version: v1
  */
 
-export type PresignedUrlRequestDtoDomain = typeof PresignedUrlRequestDtoDomain[keyof typeof PresignedUrlRequestDtoDomain];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const PresignedUrlRequestDtoDomain = {
-  SELLER_PROFILE: 'SELLER_PROFILE',
-  PRODUCT: 'PRODUCT',
-  USER_PROFILE: 'USER_PROFILE',
-} as const;
+export interface UserUpdateRequestDto {
+  nickname: string;
+  profileImageUrl?: string | null;
+}

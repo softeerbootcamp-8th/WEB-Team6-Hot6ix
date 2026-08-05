@@ -90,4 +90,5 @@ export * from './smsSendRequestDto';
 export * from './smsVerifyRequestDto';
 export * from './sseEmitter';
 export * from './userMeResponseDto';
+export * from './userUpdateRequestDto';
 export * from './validationError';
