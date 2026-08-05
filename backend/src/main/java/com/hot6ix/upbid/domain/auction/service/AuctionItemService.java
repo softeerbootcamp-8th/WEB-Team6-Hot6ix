@@ -36,7 +36,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -126,8 +125,15 @@ public class AuctionItemService {
      * 소유자 본인의 경매방에 자기 상품을 READY 물품으로 추가한다. 입찰 단위는 요청으로 받지 않고
      * 경매방 값을 그대로 복사해, 한 방의 모든 물품이 같은 단위를 갖게 한다.
      *
-     * <p>한 상품은 한 번에 한 경매방에만 올릴 수 있다. 이미 어딘가에 올라가 있으면 상태와 무관하게
-     * 거절하며, 물품을 빼면 행이 사라지므로 그 상품은 다시 올릴 수 있다.
+     * <p>재등록을 지원하므로 한 상품이 여러 {@code AuctionItem}을 가질 수 있다. 이미 올라간
+     * 물품이 있어도 그게 유찰(FAILED)이거나 낙찰 후 거래가 전원 실패했으면 다시 올릴 수 있다
+     * ({@link AuctionItemRepository#findBlockedProductIdsIn} 참고). 진행 중이거나 낙찰돼
+     * 거래가 살아 있는 상품만 거절한다.
+     *
+     * <p>상품 행에 쓰기 락을 걸고 읽는다({@link ProductRepository#findOwnedForUpdate}).
+     * 차단 검사와 INSERT 사이에 다른 요청이 끼어들면 같은 상품이 물품 두 개로 동시에 올라갈
+     * 수 있다 — {@code auction_items.product_id}의 unique 제약이 없어진 뒤로는 이 락이 유일한
+     * 방어선이다. {@code READ_COMMITTED}가 필요한 이유는 {@link #start}의 같은 문단을 본다.
      *
      * <p>저장이 커밋되면 {@code ItemAdded}를 발행해 구독자가 목록을 다시 읽게 한다. 이게 없으면
      * 라이브 중에 추가한 물품이 구매자 화면에 새로고침 전까지 나타나지 않는다.
@@ -140,9 +146,9 @@ public class AuctionItemService {
      *                               경매방이 없거나 본인 소유가 아닐 때(AUCTION_ROOM_NOT_FOUND),
      *                               경매방이 종료됐을 때(AUCTION_ROOM_CLOSED),
      *                               상품이 없거나 본인 소유가 아닐 때(PRODUCT_NOT_FOUND),
-     *                               이미 경매방에 올라간 상품일 때(PRODUCT_ALREADY_IN_AUCTION)
+     *                               아직 경매·거래가 진행 중인 상품일 때(PRODUCT_ALREADY_IN_AUCTION)
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public AuctionItemDetailResponseDto add(Long userId, Long auctionRoomId, AuctionItemAddRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
@@ -150,16 +156,14 @@ public class AuctionItemService {
 
         assertRoomNotClosed(auctionRoom);
 
-        Product product = findOwnedProduct(sellerProfile, request.productId());
+        Product product = findOwnedProductForUpdate(sellerProfile, request.productId());
 
-        if (auctionItemRepository.existsByProduct_ProductId(product.getProductId())) {
-            throw new ApplicationException(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
-        }
+        assertNotBlocked(product.getProductId());
 
         assertWithinLimit(auctionRoomId, 1);
 
         AuctionItem auctionItem = AuctionItem.from(auctionRoom, product, request);
-        AuctionItem saved = save(auctionItem);
+        AuctionItem saved = auctionItemRepository.save(auctionItem);
 
         domainEventPublisher.publish(ItemAdded.of(auctionRoomId, LocalDateTime.now(), 1));
 
@@ -173,15 +177,16 @@ public class AuctionItemService {
      * 다시 고를 필요가 없다.
      *
      * <p>같은 판매자 프로필·경매방을 상품 수만큼 다시 조회하지 않는 것이 이 메서드의 이유다.
-     * 상품 조회와 중복 검사도 {@code IN} 절로 한 번에 끝내, 물품이 몇 개든 쿼리 수가 늘지 않는다.
+     * 상품 조회·락과 차단 판정도 {@code IN} 절로 한 번에 끝내, 물품이 몇 개든 쿼리 수가 늘지 않는다.
      *
      * <p>저장이 커밋되면 {@code ItemAdded}를 <b>한 번만</b> 발행한다. 물품마다 보내면 구독자가
      * 추가한 수만큼 목록을 다시 읽는다.
      *
      * <p><b>부분 성공이 한 트랜잭션 안에서 성립하는 이유</b>는 거절 판정이 전부 저장 <i>전에</i>
      * 끝나기 때문이다. 거절된 상품은 애초에 INSERT를 시도하지 않으므로 롤백할 것이 없다.
-     * 다만 {@code product_id} unique 제약 위반은 예외다 — 그건 저장 시점에 터져서 배치 전체가
-     * 롤백되므로 {@link #saveAll}이 전체 실패(409)로 바꾼다. 동시 요청이 겹친 드문 경우다.
+     * {@link ProductRepository#findOwnedForUpdate(java.util.Collection, Long) 상품 행 락}이
+     * 상품 집합이 겹치는 동시 요청을 줄 세우므로, {@link #add}와 달리 여기서는 저장 시점에
+     * 걸릴 경합이 남지 않는다.
      *
      * @param userId        추가를 요청한 회원의 ID
      * @param auctionRoomId 물품을 추가할 경매방의 ID
@@ -193,7 +198,7 @@ public class AuctionItemService {
      *                               요청에 같은 상품이 두 번 들어왔을 때(INVALID_REQUEST),
      *                               추가하면 경매방 물품 상한을 넘을 때(AUCTION_ITEM_LIMIT_EXCEEDED)
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public AuctionItemBulkAddResponseDto addAll(Long userId, Long auctionRoomId,
                                                 AuctionItemBulkAddRequestDto request) {
 
@@ -209,12 +214,11 @@ public class AuctionItemService {
         assertNoDuplicate(productIds);
 
         Map<Long, Product> ownedProducts = productRepository
-                .findByProductIdInAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-                        productIds, sellerProfile.getSellerProfileId())
+                .findOwnedForUpdate(productIds, sellerProfile.getSellerProfileId())
                 .stream()
                 .collect(Collectors.toMap(Product::getProductId, Function.identity()));
 
-        Set<Long> alreadyInAuction = Set.copyOf(auctionItemRepository.findProductIdsIn(productIds));
+        Set<Long> blocked = Set.copyOf(auctionItemRepository.findBlockedProductIdsIn(productIds));
 
         List<AuctionItemBulkAddResponseDto.Failure> failed = new ArrayList<>();
         List<AuctionItem> candidates = new ArrayList<>();
@@ -227,7 +231,7 @@ public class AuctionItemService {
                         item.productId(), ProductErrorType.PRODUCT_NOT_FOUND));
                 continue;
             }
-            if (alreadyInAuction.contains(item.productId())) {
+            if (blocked.contains(item.productId())) {
                 failed.add(AuctionItemBulkAddResponseDto.Failure.of(
                         item.productId(), AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION));
                 continue;
@@ -235,7 +239,7 @@ public class AuctionItemService {
             candidates.add(AuctionItem.from(auctionRoom, product, item));
         }
 
-        // 넣을 게 하나도 없으면 상한을 볼 이유도, 빈 배치를 flush할 이유도 없다.
+        // 넣을 게 하나도 없으면 상한을 볼 이유도, 빈 배치를 저장할 이유도 없다.
         if (candidates.isEmpty()) {
             return new AuctionItemBulkAddResponseDto(List.of(), failed);
         }
@@ -243,7 +247,7 @@ public class AuctionItemService {
         // 실제로 들어갈 물품만 센다. 거절된 상품까지 세면 넣지도 않을 것 때문에 상한에 걸린다.
         assertWithinLimit(auctionRoomId, candidates.size());
 
-        List<AuctionItemDetailResponseDto> added = saveAll(candidates).stream()
+        List<AuctionItemDetailResponseDto> added = auctionItemRepository.saveAll(candidates).stream()
                 .map(AuctionItemDetailResponseDto::from)
                 .toList();
 
@@ -428,33 +432,6 @@ public class AuctionItemService {
                 auctionRoom.getAuctionRoomId(), AuctionItemStatus.IN_PROGRESS);
     }
 
-    /**
-     * product_id unique 제약 위반을 중복 등록 거절로 바꾼다. 위 존재 검사가 정상 경로를
-     * 거르므로, 여기까지 오는 것은 동시 요청 두 건이 함께 통과한 경우다.
-     * {@code saveAndFlush}로 즉시 flush해야 제약 위반을 이 자리에서 잡을 수 있다.
-     */
-    private AuctionItem save(AuctionItem auctionItem) {
-        try {
-            return auctionItemRepository.saveAndFlush(auctionItem);
-        } catch (DataIntegrityViolationException e) {
-            throw new ApplicationException(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
-        }
-    }
-
-    /**
-     * {@link #save}의 벌크판. 다른 점은 <b>제약 위반이 배치 전체를 무르게 한다</b>는 것이다 —
-     * INSERT 하나가 걸려도 같은 flush에 묶인 나머지가 함께 롤백되므로, 어느 상품이 걸렸는지
-     * 가려내 부분 성공으로 만들 수 없다. 사전 검사가 정상 경로를 거르므로 여기까지 오는 것은
-     * 동시 요청이 겹친 경우뿐이고, 그때는 판매자가 다시 시도하면 사전 검사에 정확히 걸린다.
-     */
-    private List<AuctionItem> saveAll(List<AuctionItem> auctionItems) {
-        try {
-            return auctionItemRepository.saveAllAndFlush(auctionItems);
-        } catch (DataIntegrityViolationException e) {
-            throw new ApplicationException(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
-        }
-    }
-
     private void assertRoomNotClosed(AuctionRoom auctionRoom) {
         if (auctionRoom.getStatus() == AuctionRoomStatus.CLOSED) {
             throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED);
@@ -511,10 +488,24 @@ public class AuctionItemService {
         }
     }
 
-    private Product findOwnedProduct(SellerProfile sellerProfile, Long productId) {
+    /**
+     * 소유자 확인과 상품 행 쓰기 락을 한 쿼리로 끝낸다({@link ProductRepository#findOwnedForUpdate}).
+     * 물품 추가는 "차단 상태인지 보고 → INSERT" 흐름이라 락 없이는 동시 요청 두 건이 함께
+     * 통과할 수 있다.
+     */
+    private Product findOwnedProductForUpdate(SellerProfile sellerProfile, Long productId) {
         return productRepository
-                .findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-                        productId, sellerProfile.getSellerProfileId())
+                .findOwnedForUpdate(productId, sellerProfile.getSellerProfileId())
                 .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
+    }
+
+    /**
+     * 상품에 재등록을 막는 물품이 있으면 거절한다. 상품 행 락을 먼저 잡은 뒤에 호출해야
+     * 검사와 INSERT 사이에 다른 요청이 끼어들지 못한다.
+     */
+    private void assertNotBlocked(Long productId) {
+        if (!auctionItemRepository.findBlockedProductIdsIn(List.of(productId)).isEmpty()) {
+            throw new ApplicationException(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
+        }
     }
 }

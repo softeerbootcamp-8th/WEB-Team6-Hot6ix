@@ -59,8 +59,8 @@ public interface AuctionItemApi {
             summary = "경매방 물품 추가",
             description = "소유자가 자기 상품을 경매방에 대기(READY) 물품으로 올린다. "
                     + "입찰 단위는 요청으로 받지 않고 경매방 값을 그대로 복사해, 한 방의 모든 물품이 같은 단위를 갖는다. "
-                    + "한 상품은 한 번에 한 경매방에만 올릴 수 있어 이미 어딘가에 올라가 있으면 상태와 무관하게 거절한다"
-                    + "(시작 전이라면 그 방에서 빼고 다시 올릴 수 있다). "
+                    + "진행 중이거나 낙찰돼 거래가 살아 있는 상품은 거절한다. 유찰된 상품과 낙찰 후 거래가 전원 "
+                    + "실패한 상품은 다시 올릴 수 있다 — 이전 물품 행은 이력으로 남고 새 물품 행이 생긴다. "
                     + "종료된 경매방에는 올릴 수 없고, 방송 중(OPEN)인 방에는 올릴 수 있다. "
                     + "경매방이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다(상품도 동일)."
                     + " 응답의 `leaderboard`는 항상 빈 배열이다 — 방금 추가한 물품에는 입찰이 없다."
@@ -73,7 +73,7 @@ public interface AuctionItemApi {
                     + "경매방이 없거나 본인 소유가 아님 (code 4002), "
                     + "상품이 없거나 본인 소유가 아님 (code 5001)"),
             @ApiResponse(responseCode = "409", description = "종료된 경매방 (code 4004) 또는 "
-                    + "이미 경매방에 올라간 상품 (code 4005)")
+                    + "아직 경매·거래가 진행 중인 상품 (code 4005)")
     })
     ResponseEntity<CommonResponse<AuctionItemDetailResponseDto>> add(
             @Parameter(hidden = true) @LoginUserId Long userId,
@@ -101,7 +101,7 @@ public interface AuctionItemApi {
                     + "경매방이 없거나 본인 소유가 아님 (code 4002)"),
             @ApiResponse(responseCode = "409", description = "종료된 경매방 (code 4004), "
                     + "경매방 물품 상한 초과 (code 4009), "
-                    + "동시 요청이 겹쳐 이미 올라간 상품 (code 4005)")
+                    + "아직 경매·거래가 진행 중인 상품 (code 4005)")
     })
     ResponseEntity<CommonResponse<AuctionItemBulkAddResponseDto>> addAll(
             @Parameter(hidden = true) @LoginUserId Long userId,

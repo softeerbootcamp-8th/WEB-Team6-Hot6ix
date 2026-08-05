@@ -17,25 +17,12 @@ import org.springframework.data.repository.query.Param;
 public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>, AuctionItemRepositoryCustom {
 
     /**
-     * 이 상품이 어느 경매방엔가 물품으로 올라가 있는지 확인한다. 상태를 따지지 않는 이유는
-     * "한 상품은 한 번에 한 경매방에만" 규칙이 상태와 무관하기 때문이다. 물품을 빼면 행이
-     * 물리 삭제되므로, 뺀 상품은 이 검사를 자연히 통과해 다시 올릴 수 있다.
-     *
-     * <p>이 검사만으로는 동시 요청 두 건이 함께 통과할 수 있어
-     * {@code auction_items.product_id}에 unique 제약이 함께 걸려 있다. 여기서 거르는 건
-     * 정상 경로에서 읽기 쉬운 에러를 주기 위한 것이고, 최후 방어선은 그 제약이다.
+     * 이 상품이 어느 경매방엔가 물품으로 올라가 있는지 확인한다. 상태를 따지지 않는다 —
+     * 재등록 지원 전의 낡은 규칙("한 상품은 한 번에 한 경매방에만")을 그대로 검증하는 데만
+     * 아직 쓰인다({@code ProductService.assertNotInAuction}, 상품 삭제 가드). 물품 추가
+     * 경로는 더 이상 이 메서드를 쓰지 않는다 — {@link #findBlockedProductIdsIn}을 쓴다.
      */
     boolean existsByProduct_ProductId(Long productId);
-
-    /**
-     * 넘긴 상품들 중 <b>이미 어느 경매방엔가 올라가 있는 상품의 ID만</b> 골라낸다.
-     * {@link #existsByProduct_ProductId}의 벌크판이며 판정 규칙도 같다(상태를 따지지 않는다).
-     *
-     * <p>벌크 추가에서 상품 수만큼 exists 쿼리를 돌리지 않으려고 한 번에 조회한다.
-     * 엔티티가 아니라 ID만 뽑는 이유는 이 값이 "거절 목록"을 만드는 데만 쓰이기 때문이다.
-     */
-    @Query("select ai.product.productId from AuctionItem ai where ai.product.productId in :productIds")
-    List<Long> findProductIdsIn(@Param("productIds") List<Long> productIds);
 
     /**
      * 이 상품이 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는지 확인한다

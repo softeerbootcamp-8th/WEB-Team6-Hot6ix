@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,6 +41,7 @@ import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -48,10 +50,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -166,13 +168,13 @@ class AuctionItemServiceTest {
                         })
                         .toList();
 
-        when(productRepository.findByProductIdInAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-                any(), eq(5L))).thenReturn(products);
+        when(productRepository.findOwnedForUpdate(
+                (Collection<Long>) any(), eq(5L))).thenReturn(products);
     }
 
-    /** 이미 다른 경매방에 올라가 있는 상품 ID들. 인자가 없으면 하나도 없다는 뜻이다. */
-    private void givenAlreadyInAuction(Long... productIds) {
-        when(auctionItemRepository.findProductIdsIn(any())).thenReturn(List.of(productIds));
+    /** 재등록을 막는 물품이 있는 상품 ID들. 인자가 없으면 하나도 없다는 뜻이다. */
+    private void givenBlockedProducts(Long... productIds) {
+        when(auctionItemRepository.findBlockedProductIdsIn(any())).thenReturn(List.of(productIds));
     }
 
     private void givenItemCount(long count) {
@@ -180,7 +182,7 @@ class AuctionItemServiceTest {
     }
 
     private void givenSaveAllEchoesBack() {
-        when(auctionItemRepository.saveAllAndFlush(any()))
+        when(auctionItemRepository.saveAll(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
@@ -375,10 +377,10 @@ class AuctionItemServiceTest {
 
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+        when(productRepository.findOwnedForUpdate(PRODUCT_ID, 5L))
                 .thenReturn(Optional.of(newProduct(sellerProfile)));
-        when(auctionItemRepository.existsByProduct_ProductId(PRODUCT_ID)).thenReturn(false);
-        when(auctionItemRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        givenBlockedProducts();
+        when(auctionItemRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AuctionItemDetailResponseDto response = auctionItemService.add(USER_ID, ROOM_ID, newAddRequest());
 
@@ -395,10 +397,10 @@ class AuctionItemServiceTest {
 
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.OPEN);
 
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+        when(productRepository.findOwnedForUpdate(PRODUCT_ID, 5L))
                 .thenReturn(Optional.of(newProduct(sellerProfile)));
-        when(auctionItemRepository.existsByProduct_ProductId(PRODUCT_ID)).thenReturn(false);
-        when(auctionItemRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        givenBlockedProducts();
+        when(auctionItemRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         auctionItemService.add(USER_ID, ROOM_ID, newAddRequest());
 
@@ -417,10 +419,10 @@ class AuctionItemServiceTest {
 
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+        when(productRepository.findOwnedForUpdate(PRODUCT_ID, 5L))
                 .thenReturn(Optional.of(newProduct(sellerProfile)));
-        when(auctionItemRepository.existsByProduct_ProductId(PRODUCT_ID)).thenReturn(false);
-        when(auctionItemRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        givenBlockedProducts();
+        when(auctionItemRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AuctionItemDetailResponseDto response = auctionItemService.add(USER_ID, ROOM_ID, newAddRequest());
 
@@ -433,10 +435,10 @@ class AuctionItemServiceTest {
 
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.OPEN);
 
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+        when(productRepository.findOwnedForUpdate(PRODUCT_ID, 5L))
                 .thenReturn(Optional.of(newProduct(sellerProfile)));
-        when(auctionItemRepository.existsByProduct_ProductId(PRODUCT_ID)).thenReturn(false);
-        when(auctionItemRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        givenBlockedProducts();
+        when(auctionItemRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         AuctionItemDetailResponseDto response = auctionItemService.add(USER_ID, ROOM_ID, newAddRequest());
 
@@ -491,7 +493,7 @@ class AuctionItemServiceTest {
 
         givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+        when(productRepository.findOwnedForUpdate(PRODUCT_ID, 5L))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> auctionItemService.add(USER_ID, ROOM_ID, newAddRequest()))
@@ -501,39 +503,40 @@ class AuctionItemServiceTest {
     }
 
     @Test
-    @DisplayName("이미 경매방에 올라간 상품을 추가하면 PRODUCT_ALREADY_IN_AUCTION 예외가 발생한다")
+    @DisplayName("아직 경매·거래가 진행 중인 상품을 추가하면 PRODUCT_ALREADY_IN_AUCTION 예외가 발생한다")
     void addThrowsWhenProductAlreadyInAuction() {
 
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+        when(productRepository.findOwnedForUpdate(PRODUCT_ID, 5L))
                 .thenReturn(Optional.of(newProduct(sellerProfile)));
-        when(auctionItemRepository.existsByProduct_ProductId(PRODUCT_ID)).thenReturn(true);
+        givenBlockedProducts(PRODUCT_ID);
 
         assertThatThrownBy(() -> auctionItemService.add(USER_ID, ROOM_ID, newAddRequest()))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
 
-        verify(auctionItemRepository, never()).saveAndFlush(any());
+        verify(auctionItemRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("동시 요청으로 unique 제약에 걸려도 PRODUCT_ALREADY_IN_AUCTION 예외로 바뀐다")
-    void addTranslatesUniqueViolation() {
+    @DisplayName("상품 행을 잠근 뒤 차단 여부를 검사하고 그다음에 저장한다")
+    void addLocksProductBeforeCheckingAndSaving() {
 
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+        when(productRepository.findOwnedForUpdate(PRODUCT_ID, 5L))
                 .thenReturn(Optional.of(newProduct(sellerProfile)));
-        when(auctionItemRepository.existsByProduct_ProductId(PRODUCT_ID)).thenReturn(false);
-        when(auctionItemRepository.saveAndFlush(any()))
-                .thenThrow(new DataIntegrityViolationException("uk_auction_items_product_id"));
+        givenBlockedProducts();
+        when(auctionItemRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThatThrownBy(() -> auctionItemService.add(USER_ID, ROOM_ID, newAddRequest()))
-                .isInstanceOf(ApplicationException.class)
-                .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
+        auctionItemService.add(USER_ID, ROOM_ID, newAddRequest());
+
+        InOrder order = inOrder(productRepository, auctionItemRepository);
+        order.verify(productRepository).findOwnedForUpdate(PRODUCT_ID, 5L);
+        order.verify(auctionItemRepository).findBlockedProductIdsIn(List.of(PRODUCT_ID));
+        order.verify(auctionItemRepository).save(any());
     }
 
     @Test
@@ -542,9 +545,9 @@ class AuctionItemServiceTest {
 
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(PRODUCT_ID, 5L))
+        when(productRepository.findOwnedForUpdate(PRODUCT_ID, 5L))
                 .thenReturn(Optional.of(newProduct(sellerProfile)));
-        when(auctionItemRepository.existsByProduct_ProductId(PRODUCT_ID)).thenReturn(false);
+        givenBlockedProducts();
         givenItemCount(AuctionItemRepository.MAX_SUMMARY_SIZE);
 
         assertThatThrownBy(() -> auctionItemService.add(USER_ID, ROOM_ID, newAddRequest()))
@@ -552,7 +555,7 @@ class AuctionItemServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_LIMIT_EXCEEDED);
 
-        verify(auctionItemRepository, never()).saveAndFlush(any());
+        verify(auctionItemRepository, never()).save(any());
     }
 
     @Test
@@ -562,7 +565,7 @@ class AuctionItemServiceTest {
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
         givenOwnedProducts(sellerProfile, PRODUCT_ID, PRODUCT_ID + 1);
-        givenAlreadyInAuction();
+        givenBlockedProducts();
         givenSaveAllEchoesBack();
 
         AuctionItemBulkAddResponseDto response = auctionItemService.addAll(
@@ -580,7 +583,7 @@ class AuctionItemServiceTest {
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.OPEN);
 
         givenOwnedProducts(sellerProfile, PRODUCT_ID, PRODUCT_ID + 1);
-        givenAlreadyInAuction();
+        givenBlockedProducts();
         givenSaveAllEchoesBack();
 
         auctionItemService.addAll(USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID, PRODUCT_ID + 1));
@@ -603,7 +606,7 @@ class AuctionItemServiceTest {
 
         // 소유 상품이 하나도 없어 전부 PRODUCT_NOT_FOUND로 거절된다.
         givenOwnedProducts(newSellerProfile());
-        givenAlreadyInAuction();
+        givenBlockedProducts();
 
         auctionItemService.addAll(USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID, PRODUCT_ID + 1));
 
@@ -618,7 +621,7 @@ class AuctionItemServiceTest {
 
         // 21은 본인 소유가 아니라 조회에서 빠지고, 22는 이미 다른 방에 올라가 있다.
         givenOwnedProducts(sellerProfile, PRODUCT_ID, PRODUCT_ID + 2);
-        givenAlreadyInAuction(PRODUCT_ID + 2);
+        givenBlockedProducts(PRODUCT_ID + 2);
         givenSaveAllEchoesBack();
 
         AuctionItemBulkAddResponseDto response = auctionItemService.addAll(
@@ -638,14 +641,14 @@ class AuctionItemServiceTest {
         givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
         givenOwnedProducts(null);
-        givenAlreadyInAuction();
+        givenBlockedProducts();
 
         AuctionItemBulkAddResponseDto response = auctionItemService.addAll(
                 USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID));
 
         assertThat(response.added()).isEmpty();
         assertThat(response.failed()).hasSize(1);
-        verify(auctionItemRepository, never()).saveAllAndFlush(any());
+        verify(auctionItemRepository, never()).saveAll(any());
     }
 
     @Test
@@ -668,7 +671,7 @@ class AuctionItemServiceTest {
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
         givenOwnedProducts(sellerProfile, PRODUCT_ID);
-        givenAlreadyInAuction();
+        givenBlockedProducts();
         givenItemCount(AuctionItemRepository.MAX_SUMMARY_SIZE - 1);
         givenSaveAllEchoesBack();
 
@@ -685,7 +688,7 @@ class AuctionItemServiceTest {
         SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
 
         givenOwnedProducts(sellerProfile, PRODUCT_ID, PRODUCT_ID + 1);
-        givenAlreadyInAuction();
+        givenBlockedProducts();
         givenItemCount(AuctionItemRepository.MAX_SUMMARY_SIZE - 1);
 
         assertThatThrownBy(() -> auctionItemService.addAll(
@@ -694,7 +697,7 @@ class AuctionItemServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_LIMIT_EXCEEDED);
 
-        verify(auctionItemRepository, never()).saveAllAndFlush(any());
+        verify(auctionItemRepository, never()).saveAll(any());
     }
 
     @Test
@@ -705,7 +708,7 @@ class AuctionItemServiceTest {
 
         // 두 개를 요청하지만 하나는 남의 상품이라 실제로 들어갈 건 하나뿐이다.
         givenOwnedProducts(sellerProfile, PRODUCT_ID);
-        givenAlreadyInAuction();
+        givenBlockedProducts();
         givenItemCount(AuctionItemRepository.MAX_SUMMARY_SIZE - 1);
         givenSaveAllEchoesBack();
 
@@ -726,23 +729,6 @@ class AuctionItemServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_CLOSED);
-    }
-
-    @Test
-    @DisplayName("벌크 저장이 unique 제약에 걸리면 배치 전체가 PRODUCT_ALREADY_IN_AUCTION으로 실패한다")
-    void addAllTranslatesUniqueViolation() {
-
-        SellerProfile sellerProfile = givenOwnedRoom(AuctionRoomStatus.BEFORE);
-
-        givenOwnedProducts(sellerProfile, PRODUCT_ID);
-        givenAlreadyInAuction();
-        when(auctionItemRepository.saveAllAndFlush(any()))
-                .thenThrow(new DataIntegrityViolationException("uk_auction_items_product_id"));
-
-        assertThatThrownBy(() -> auctionItemService.addAll(USER_ID, ROOM_ID, newBulkRequest(PRODUCT_ID)))
-                .isInstanceOf(ApplicationException.class)
-                .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(AuctionErrorType.PRODUCT_ALREADY_IN_AUCTION);
     }
 
     @Test
