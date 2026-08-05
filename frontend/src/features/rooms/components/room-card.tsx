@@ -40,9 +40,7 @@ export function RoomCard({ room }: { room: RoomCardData }) {
     <li className="rounded-2xl border bg-card p-4">
       <div className="flex gap-4">
         <ProductThumbnail
-          name={room.title}
           src={room.imageUrl}
-          size={320}
           className="flex size-[124px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-fill text-neutral-muted sm:size-[136px]"
         />
 

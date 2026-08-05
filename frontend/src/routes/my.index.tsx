@@ -45,7 +45,6 @@ function MyPage() {
       <div className="md:hidden">
         <section className="flex items-center gap-4 rounded-[18px] border bg-card p-4">
           <ProfilePhoto
-            seed={user.nickname}
             src={user.profileImageUrl}
             className="size-14 shrink-0 rounded-full border border-brand-300 bg-brand-50"
           />
@@ -142,9 +141,7 @@ function MyPage() {
             <h2 className="text-[18px] font-bold text-foreground">내 프로필</h2>
 
             <ProfilePhoto
-              seed={user.nickname}
               src={user.profileImageUrl}
-              size={320}
               className="mt-4 size-32 shrink-0 self-center rounded-full border border-brand-300 bg-brand-50"
             />
 

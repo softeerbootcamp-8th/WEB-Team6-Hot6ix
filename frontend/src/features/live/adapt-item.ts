@@ -17,16 +17,14 @@ import type {
  * 박혀 있다. 화면 타입을 서버에 맞추면 라이브 기능을 통째로 다시 써야 하므로,
  * 변환을 여기 한 곳에 몰아넣고 없는 값만 목업에서 빌려온다.
  *
- * **리더보드와 최고 입찰자는 목업을 쓰지 않는다.** 실제 입찰과 무관한 순위가
- * 화면에 남는 문제(#136) 때문에 서버 값만 쓰고, 없으면 비워 둔다.
+ * **리더보드·최고 입찰자·사진은 목업을 쓰지 않는다.** 실제 입찰과 무관한 순위가
+ * 화면에 남는 문제(#136) 때문에 서버 값만 쓰고, 없으면 비워 둔다. 사진도 같은
+ * 이유다 — 이름으로 고른 목업 사진이 뜨면 판매자가 올린 것과 다른 사진이
+ * 경매 중에 보인다(#138).
  *
  * ponytail: 임시물이다. 남은 목업 필드가 실제 값으로 채워지면
  * (`history` 는 #134, `extended` 는 Soft Close 연장 로직) `fallback` 인자를
  * 지우고 순수 변환 함수로 줄인다.
- *
- * 서버 `imageUrl` 은 버린다. 화면 타입에 사진 자리가 없고 `mocks/images.ts` 가
- * 물품 이름으로 사진을 고르기 때문이다. 이름은 서버 값이라 사진도 따라간다.
- * 사진을 서버 값으로 바꾸는 건 `API-INTEGRATION.md` 대응표에 남은 별도 작업이다.
  */
 
 /**
@@ -103,6 +101,11 @@ export function toAuctionItemDetail(
     id: dto.auctionItemId ?? fallback.id,
     roomId: detail.auctionRoomId ?? fallback.roomId,
     name: dto.productName ?? fallback.name,
+    /*
+     * 목업으로 떨어지지 않는다. 값이 없으면 `ProductThumbnail` 이 회색 아이콘을
+     * 그린다. 목록 응답과 상세 응답 둘 다 `imageUrl` 을 준다.
+     */
+    imageUrl: dto.imageUrl ?? null,
     description: detail.description ?? fallback.description,
     /*
      * 목업으로 떨어지지 않는다. 목업 링크(`brand.com/…`)는 팀이 가진 도메인이
