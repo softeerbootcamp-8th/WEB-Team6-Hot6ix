@@ -80,7 +80,7 @@ public class AuctionItemCloseService {
         LocalDateTime endAt = auctionItem.getEndAt();
 
         if (endAt != null && now.isBefore(endAt)) {
-            log.info("마감 시각이 밀려 다시 예약한다: itemId={}, endAt={}", auctionItemId, endAt);
+            log.info("마감 시각이 아직 남아 닫지 않는다: itemId={}, endAt={}", auctionItemId, endAt);
             return Optional.of(endAt);
         }
 
