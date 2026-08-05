@@ -94,8 +94,8 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     private void addParticipant(AuctionRoom auctionRoom, SellerProfile participant) {
-        auctionParticipantRepository.insertIfAbsent(
-                auctionRoom.getAuctionRoomId(), participant.getUser().getUserId());
+        auctionParticipantRepository.recordAgreement(
+                auctionRoom.getAuctionRoomId(), participant.getUser().getUserId(), "v1");
     }
 
     private void addItem(AuctionRoom auctionRoom, SellerProfile sellerProfile, String productName) {
