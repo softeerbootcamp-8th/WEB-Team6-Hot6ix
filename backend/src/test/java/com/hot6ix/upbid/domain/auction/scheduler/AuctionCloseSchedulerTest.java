@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,10 +14,12 @@ import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
+import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ScheduledFuture;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +39,8 @@ class AuctionCloseSchedulerTest {
     private static final Long ITEM_ID = 30L;
     private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 8, 2, 21, 0);
     private static final LocalDateTime END_AT = LocalDateTime.of(2026, 8, 2, 21, 10);
+    /** Soft Close로 30초 밀린 마감 시각. */
+    private static final LocalDateTime EXTENDED_END_AT = END_AT.plusSeconds(30);
 
     @Mock
     private TaskScheduler taskScheduler;
@@ -77,11 +82,12 @@ class AuctionCloseSchedulerTest {
     void delegatesToCloseService() {
 
         givenScheduledFuture();
+        givenClosed();
         auctionCloseScheduler.on(itemStarted());
 
         scheduledTask().run();
 
-        verify(auctionItemCloseService).close(ITEM_ID);
+        verify(auctionItemCloseService).closeIfDue(ITEM_ID);
     }
 
     @Test
@@ -91,7 +97,7 @@ class AuctionCloseSchedulerTest {
         givenScheduledFuture();
         auctionCloseScheduler.on(itemStarted());
         doThrow(new IllegalStateException("DB 연결 끊김"))
-                .when(auctionItemCloseService).close(ITEM_ID);
+                .when(auctionItemCloseService).closeIfDue(ITEM_ID);
 
         Runnable task = scheduledTask();
 
@@ -105,6 +111,7 @@ class AuctionCloseSchedulerTest {
     void discardsHandleOnRun() {
 
         givenScheduledFuture();
+        givenClosed();
         auctionCloseScheduler.on(itemStarted());
         assertThat(schedules()).containsKey(ITEM_ID);
 
@@ -113,6 +120,60 @@ class AuctionCloseSchedulerTest {
         assertThat(schedules())
                 .as("끝난 물품의 핸들이 쌓이면 취소할 수도 없는 채로 메모리에 남는다")
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName("같은 물품에 다시 예약하면 이전 예약을 취소한다")
+    void cancelsPreviousScheduleOnReschedule() {
+
+        ScheduledFuture<?> first = mock(ScheduledFuture.class);
+        ScheduledFuture<?> second = mock(ScheduledFuture.class);
+        doReturn(first).doReturn(second)
+                .when(taskScheduler).schedule(any(Runnable.class), any(Instant.class));
+
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
+        auctionCloseScheduler.schedule(ITEM_ID, EXTENDED_END_AT);
+
+        // 취소하지 않으면 옛 예약이 살아남아 연장 전 시각에 물품을 닫는다.
+        verify(first).cancel(false);
+        assertThat(schedules()).containsEntry(ITEM_ID, second);
+    }
+
+    @Test
+    @DisplayName("Soft Close 연장을 받으면 밀린 마감 시각으로 예약을 갈아 끼운다")
+    void reschedulesOnSoftCloseExtended() {
+
+        givenScheduledFuture();
+
+        auctionCloseScheduler.on(SoftCloseExtended.of(
+                ROOM_ID, ITEM_ID, "한정판 피규어", 30, EXTENDED_END_AT, END_AT));
+
+        ArgumentCaptor<Instant> captor = ArgumentCaptor.forClass(Instant.class);
+        verify(taskScheduler).schedule(any(Runnable.class), captor.capture());
+
+        assertThat(captor.getValue())
+                .isEqualTo(EXTENDED_END_AT.atZone(ZoneId.systemDefault()).toInstant());
+    }
+
+    @Test
+    @DisplayName("아직 마감 시각이 아니라는 답을 받으면 그 시각으로 다시 예약한다")
+    void reschedulesWhenNotDueYet() {
+
+        givenScheduledFuture();
+        auctionCloseScheduler.on(itemStarted());
+        when(auctionItemCloseService.closeIfDue(ITEM_ID)).thenReturn(Optional.of(EXTENDED_END_AT));
+
+        // 캡처를 먼저 해둔다. 실행하면 재예약이 일어나 schedule 호출이 두 번이 된다.
+        Runnable task = scheduledTask();
+        task.run();
+
+        ArgumentCaptor<Instant> captor = ArgumentCaptor.forClass(Instant.class);
+        verify(taskScheduler, times(2)).schedule(any(Runnable.class), captor.capture());
+
+        assertThat(captor.getAllValues())
+                .as("락을 기다리는 사이 연장이 커밋된 경우다. 닫지 말고 새 시각에 다시 걸어야 한다")
+                .last()
+                .isEqualTo(EXTENDED_END_AT.atZone(ZoneId.systemDefault()).toInstant());
     }
 
     @Test
@@ -148,6 +209,7 @@ class AuctionCloseSchedulerTest {
     void cancelIsNoopAfterRun() {
 
         givenScheduledFuture();
+        givenClosed();
         auctionCloseScheduler.on(itemStarted());
         scheduledTask().run();
 
@@ -169,6 +231,11 @@ class AuctionCloseSchedulerTest {
         // when().thenReturn()은 schedule()의 반환 타입이 ScheduledFuture<?>라 와일드카드 캡처가 어긋난다.
         doReturn(schedule).when(taskScheduler).schedule(any(Runnable.class), any(Instant.class));
         return schedule;
+    }
+
+    /** 마감 시각이 지나 실제로 닫히는 경우. 재예약할 시각이 없다는 뜻으로 빈 값을 돌려준다. */
+    private void givenClosed() {
+        when(auctionItemCloseService.closeIfDue(ITEM_ID)).thenReturn(Optional.empty());
     }
 
     /** 실제 시각을 기다리지 않고 예약된 작업만 꺼내 직접 실행한다. */

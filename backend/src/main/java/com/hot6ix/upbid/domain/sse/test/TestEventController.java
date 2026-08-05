@@ -83,8 +83,9 @@ public class TestEventController {
             @RequestParam(defaultValue = "한정판 조던 스니커즈") String itemName,
             @RequestParam(defaultValue = "60") int extendSeconds
     ) {
-        eventPublisher.publishEvent(
-                SoftCloseExtended.of(roomId, itemId, itemName, extendSeconds, LocalDateTime.now())
-        );
+        LocalDateTime now = LocalDateTime.now();
+
+        eventPublisher.publishEvent(SoftCloseExtended.of(
+                roomId, itemId, itemName, extendSeconds, now.plusSeconds(extendSeconds), now));
     }
 }

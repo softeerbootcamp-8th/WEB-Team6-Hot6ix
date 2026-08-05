@@ -4,6 +4,8 @@ import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
+import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Map;
@@ -32,10 +34,13 @@ public class AuctionCloseScheduler {
     private final AuctionItemCloseService auctionItemCloseService;
 
     /**
-     * 아직 실행되지 않은 예약의 핸들. 마감된 물품의 예약을 취소하는 데 쓰고, 2주차 Soft Close
-     * 연장("기존 예약을 취소하고 새 마감 시각으로 다시 건다")도 여기서 취소할 대상을 찾는다.
+     * 아직 실행되지 않은 예약의 핸들. 마감된 물품의 예약을 취소하는 데 쓰고, Soft Close 연장이
+     * 예약을 새 마감 시각으로 갈아 끼울 때 취소할 대상을 찾는 데도 쓴다.
      */
     private final Map<Long, ScheduledFuture<?>> schedules = new ConcurrentHashMap<>();
+
+    /** 예약한 마감 시각. 실제 실행이 얼마나 늦었는지 재는 기준이며, 로그 외에는 쓰지 않는다. */
+    private final Map<Long, LocalDateTime> scheduledEndAts = new ConcurrentHashMap<>();
 
     /**
      * 물품 시작이 커밋된 뒤에 마감을 예약한다. 시작 트랜잭션이 롤백되면 이 메서드가 아예
@@ -81,6 +86,26 @@ public class AuctionCloseScheduler {
     }
 
     /**
+     * Soft Close로 밀린 마감 시각에 맞춰 예약을 다시 건다. {@link #schedule}이 이전 예약을
+     * 취소하고 새로 걸어 주므로 여기서 따로 취소하지 않는다.
+     *
+     * <p>커밋 후에 받는 이유는 {@link #on(ItemEnded)}과 같다. 커밋 전에 예약을 밀어두면 입찰이
+     * 롤백됐을 때 마감 시각은 그대로인데 예약만 뒤로 가 있게 된다.
+     *
+     * <p>예외를 삼키는 것도 같은 이유다. 여기서 던지면 입찰은 이미 저장됐는데 요청은 실패로
+     * 보인다. 예약을 못 바꾸면 옛 시각에 마감이 돌지만, 그때 {@code closeIfDue}가 밀린
+     * {@code end_at}을 보고 닫지 않고 다시 예약하므로 물품이 일찍 닫히지는 않는다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(SoftCloseExtended event) {
+        try {
+            schedule(event.itemId(), event.endAt());
+        } catch (Exception e) {
+            log.error("Soft Close 마감 재예약 실패: itemId={}, endAt={}", event.itemId(), event.endAt(), e);
+        }
+    }
+
+    /**
      * 물품의 마감 예약을 취소한다. 예약이 없거나 이미 실행이 시작됐으면 아무 일도 하지 않는다.
      *
      * <p>{@code false}는 실행 중인 작업을 중단시키지 말라는 뜻이다. 마감 트랜잭션 도중에
@@ -90,6 +115,7 @@ public class AuctionCloseScheduler {
      */
     public void cancel(Long auctionItemId) {
         ScheduledFuture<?> schedule = schedules.remove(auctionItemId);
+        scheduledEndAts.remove(auctionItemId);
 
         if (schedule != null) {
             schedule.cancel(false);
@@ -98,20 +124,34 @@ public class AuctionCloseScheduler {
 
     /**
      * 지정한 시각에 물품을 마감하도록 예약한다. 이미 지난 시각을 주면 곧바로 실행된다.
+     * <b>이미 걸려 있던 예약은 취소하고 갈아 끼운다</b> — Soft Close 연장과 재예약이 이 동작에
+     * 기댄다. 취소하지 않으면 옛 예약이 살아남아 원래 시각에 물품을 닫아버린다.
      *
-     * <p>{@code compute}로 넣는 것은 키 단위로 원자적이기 때문이다. 즉시 실행되는 경우
-     * 작업 쪽의 삭제가 이 등록보다 먼저 일어나 핸들이 영영 남을 수 있다.
+     * <p>{@code compute}로 넣는 것은 키 단위로 원자적이기 때문이다. 취소와 재등록을 두 번에
+     * 나눠 부르면 그 사이에 다른 스레드가 끼어들 수 있고, 즉시 실행되는 경우에는 작업 쪽의
+     * 삭제가 이 등록보다 먼저 일어나 핸들이 영영 남는다.
      *
      * @param auctionItemId 마감할 물품의 ID
      * @param endAt         마감 시각. 서버 시간 기준 절대값
      */
     public void schedule(Long auctionItemId, LocalDateTime endAt) {
-        schedules.compute(auctionItemId, (itemId, previous) -> taskScheduler.schedule(
-                () -> close(itemId), endAt.atZone(ZoneId.systemDefault()).toInstant()));
+
+        scheduledEndAts.put(auctionItemId, endAt);
+
+        schedules.compute(auctionItemId, (itemId, previous) -> {
+            if (previous != null) {
+                previous.cancel(false);
+            }
+            return taskScheduler.schedule(
+                    () -> close(itemId), endAt.atZone(ZoneId.systemDefault()).toInstant());
+        });
     }
 
     /**
      * 예약된 마감을 실행한다. 실행이 시작된 예약은 더 이상 취소할 수 없으므로 핸들을 먼저 버린다.
+     *
+     * <p>마감 시각이 아직 안 됐다는 답이 오면(Soft Close 연장이 락을 기다리는 사이에 커밋된
+     * 경우) 닫지 않고 새 시각으로 다시 예약한다.
      *
      * <p>예외를 삼키는 것은 스케줄러 스레드에서 예외가 올라가면 그 스레드에 걸린 다른 예약까지
      * 함께 죽기 때문이다. <b>재시도는 하지 않는다</b> — 실패한 물품은 다음 서버 기동의 복구가
@@ -120,11 +160,33 @@ public class AuctionCloseScheduler {
     private void close(Long auctionItemId) {
 
         schedules.remove(auctionItemId);
+        LocalDateTime scheduledFor = scheduledEndAts.remove(auctionItemId);
 
         try {
-            auctionItemCloseService.close(auctionItemId);
+            logDelay(auctionItemId, scheduledFor);
+
+            auctionItemCloseService.closeIfDue(auctionItemId)
+                    .ifPresent(endAt -> schedule(auctionItemId, endAt));
         } catch (Exception e) {
             log.error("물품 마감 실패: itemId={}", auctionItemId, e);
         }
+    }
+
+    /**
+     * 예약한 시각보다 실제 실행이 얼마나 늦었는지 남긴다. 스케줄러 스레드가 모자라거나 마감이
+     * 행 락을 기다리면 늦어지는데, 지금은 늦는지조차 알 수 없어 스레드 수를 정할 근거가 없다.
+     *
+     * <p>측정만 하고 아무것도 조정하지 않는다. 이 로그로 분포를 뽑아 스레드 수와 전용 스케줄러
+     * 분리 여부를 정하는 것은 별도 작업이다(이슈 #198).
+     */
+    private void logDelay(Long auctionItemId, LocalDateTime scheduledFor) {
+
+        if (scheduledFor == null) {
+            return;
+        }
+
+        long delayMillis = Duration.between(scheduledFor, LocalDateTime.now()).toMillis();
+
+        log.info("물품 마감 실행: itemId={}, 예정={}, 지연={}ms", auctionItemId, scheduledFor, delayMillis);
     }
 }
