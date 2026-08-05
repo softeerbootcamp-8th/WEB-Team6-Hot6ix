@@ -221,49 +221,6 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 .containsExactly(targetItem.getAuctionItemId());
     }
 
-    @Test
-    @DisplayName("READY 상태의 AuctionItem만 있으면 시작된 적 없는 것으로 본다")
-    void existsByProductAndStatusNot_false_whenOnlyReady() {
-
-        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
-        Product product = newProduct("대기상품");
-        newAuctionItem(auctionRoom, product, AuctionItemStatus.READY);
-        entityManager.flush();
-
-        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
-                product.getProductId(), AuctionItemStatus.READY);
-
-        assertThat(started).isFalse();
-    }
-
-    @Test
-    @DisplayName("READY가 아닌 AuctionItem이 하나라도 있으면 시작된 적 있는 것으로 본다")
-    void existsByProductAndStatusNot_true_whenNotReady() {
-
-        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
-        Product product = newProduct("낙찰상품");
-        newAuctionItem(auctionRoom, product, AuctionItemStatus.SOLD);
-        entityManager.flush();
-
-        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
-                product.getProductId(), AuctionItemStatus.READY);
-
-        assertThat(started).isTrue();
-    }
-
-    @Test
-    @DisplayName("연결된 AuctionItem이 없으면 시작된 적 없는 것으로 본다")
-    void existsByProductAndStatusNot_false_whenNoAuctionItem() {
-
-        Product product = newProduct("미등록상품");
-        entityManager.flush();
-
-        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
-                product.getProductId(), AuctionItemStatus.READY);
-
-        assertThat(started).isFalse();
-    }
-
     /**
      * 트랜잭션이 둘 필요해 락의 실제 차단은 볼 수 없어 락 모드만 단정한다. {@code clear()}가
      * 필요한 이유는 같은 트랜잭션에서 INSERT한 엔티티가 이미 쓰기 상태로 표시돼 있기 때문이다.
@@ -333,31 +290,6 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(auctionItemRepository.findSellerUserId(item.getAuctionItemId())).isEmpty();
     }
 
-    @Test
-    @DisplayName("경매방에 올라간 상품이면 상태와 무관하게 존재 검사가 참이다")
-    void existsByProductIdIgnoresStatus() {
-
-        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
-        Product ready = newProduct("대기상품");
-        Product sold = newProduct("낙찰상품");
-        newAuctionItem(auctionRoom, ready, AuctionItemStatus.READY);
-        newAuctionItem(auctionRoom, sold, AuctionItemStatus.SOLD);
-        entityManager.flush();
-
-        assertThat(auctionItemRepository.existsByProduct_ProductId(ready.getProductId())).isTrue();
-        assertThat(auctionItemRepository.existsByProduct_ProductId(sold.getProductId())).isTrue();
-    }
-
-    @Test
-    @DisplayName("어느 경매방에도 없는 상품이면 존재 검사가 거짓이다")
-    void existsByProductIdIsFalseWhenNotListed() {
-
-        Product product = newProduct("미등록상품");
-        entityManager.flush();
-
-        assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isFalse();
-    }
-
     /**
      * 유찰·거래 전원 실패 상품 재등록을 지원하면서 {@code product_id} unique 제약을 없앴다
      * ({@code AuctionItem} javadoc 참고). 예전엔 이 제약이 동시 등록 두 건이 함께 통과하는
@@ -414,12 +346,13 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         auctionItemRepository.delete(first);
         entityManager.flush();
 
-        assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isFalse();
+        assertThat(auctionItemRepository.findBlockedProductIdsIn(List.of(product.getProductId()))).isEmpty();
 
         newAuctionItem(newAuctionRoom("두 번째 방"), product, AuctionItemStatus.READY);
         entityManager.flush();
 
-        assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isTrue();
+        assertThat(auctionItemRepository.findBlockedProductIdsIn(List.of(product.getProductId())))
+                .containsExactly(product.getProductId());
     }
 
     /**

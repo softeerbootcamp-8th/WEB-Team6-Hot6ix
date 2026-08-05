@@ -17,21 +17,6 @@ import org.springframework.data.repository.query.Param;
 public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>, AuctionItemRepositoryCustom {
 
     /**
-     * 이 상품이 어느 경매방엔가 물품으로 올라가 있는지 확인한다. 상태를 따지지 않는다 —
-     * 재등록 지원 전의 낡은 규칙("한 상품은 한 번에 한 경매방에만")을 그대로 검증하는 데만
-     * 아직 쓰인다({@code ProductService.assertNotInAuction}, 상품 삭제 가드). 물품 추가
-     * 경로는 더 이상 이 메서드를 쓰지 않는다 — {@link #findBlockedProductIdsIn}을 쓴다.
-     */
-    boolean existsByProduct_ProductId(Long productId);
-
-    /**
-     * 이 상품이 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는지 확인한다
-     * (진행중·낙찰·유찰 전부 포함). Product 수정·삭제 시 "경매방이 시작된 적 있는 상품은
-     * 이후로도 계속 수정·삭제 불가" 규칙을 검증하는 데 쓰인다.
-     */
-    boolean existsByProduct_ProductIdAndStatusNot(Long productId, AuctionItemStatus status);
-
-    /**
      * 이 경매방에 속한 물품 중 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는 게
      * 있는지 확인한다. 경매방 설정 수정(PATCH) 시 "경매 시작 전"만 허용하는 규칙을
      * 검증하는 데 쓰인다.
