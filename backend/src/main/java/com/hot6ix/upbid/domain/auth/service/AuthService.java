@@ -14,7 +14,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -77,12 +76,9 @@ public class AuthService {
         try {
             return userService.create(pendingSignup);
 
-        } catch (DuplicateKeyException e) {
-            return userService.findByOAuth(pendingSignup.provider(), pendingSignup.providerId())
-                    .orElseThrow(() -> new ApplicationException(AuthErrorType.OAUTH_LOGIN_FAILED));
-
         } catch (DataIntegrityViolationException e) {
-            throw new ApplicationException(AuthErrorType.USER_INFO_INVALID);
+            return userService.findByOAuth(pendingSignup.provider(), pendingSignup.providerId())
+                    .orElseThrow(() -> new ApplicationException(AuthErrorType.USER_INFO_INVALID));
         }
     }
 }

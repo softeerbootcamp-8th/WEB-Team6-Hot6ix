@@ -28,7 +28,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 @ExtendWith(MockitoExtension.class)
@@ -192,12 +191,12 @@ class AuthServiceTest {
 
     @Test
     @DisplayName("동시 가입으로 유니크 제약을 위반하면 먼저 저장된 회원으로 로그인시킨다")
-    void signup_duplicateKeyRace() {
+    void signup_uniqueViolationRace() {
 
         PendingSignup verified = new PendingSignup(
                 OauthProvider.KAKAO, "1", "a@b.com", "닉네임", "01012345678");
         when(pendingSignupManager.find(request)).thenReturn(Optional.of(verified));
-        when(userService.create(verified)).thenThrow(new DuplicateKeyException("duplicate"));
+        when(userService.create(verified)).thenThrow(new DataIntegrityViolationException("Duplicate entry"));
         when(userService.findByOAuth(OauthProvider.KAKAO, "1")).thenReturn(Optional.of(7L));
 
         authService.signup(request);
@@ -206,13 +205,14 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("유니크 제약이 아닌 데이터 오류는 USER_INFO_INVALID 예외로 변환한다")
-    void signup_nonDuplicateDataIntegrityViolation() {
+    @DisplayName("데이터 오류인데 기존 회원도 찾을 수 없으면 USER_INFO_INVALID 예외로 변환한다")
+    void signup_dataIntegrityViolationWithoutExistingUser() {
 
         PendingSignup verified = new PendingSignup(
                 OauthProvider.KAKAO, "1", "a@b.com", "닉네임", "01012345678");
         when(pendingSignupManager.find(request)).thenReturn(Optional.of(verified));
         when(userService.create(verified)).thenThrow(new DataIntegrityViolationException("data too long"));
+        when(userService.findByOAuth(OauthProvider.KAKAO, "1")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.signup(request))
                 .isInstanceOf(ApplicationException.class)

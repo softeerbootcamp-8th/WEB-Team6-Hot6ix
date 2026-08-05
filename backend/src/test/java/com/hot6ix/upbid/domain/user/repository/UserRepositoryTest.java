@@ -1,7 +1,9 @@
 package com.hot6ix.upbid.domain.user.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
@@ -12,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -48,5 +51,25 @@ class UserRepositoryTest extends AbstractMySqlContainerTest {
         userRepository.saveAndFlush(user);
 
         assertThat(userRepository.findByUserIdAndDeletedAtIsNull(user.getUserId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("provider+providerId가 중복되면 DataIntegrityViolationException이 발생한다")
+    void save_duplicateProviderAndProviderId_throwsDataIntegrityViolationException() {
+
+        userRepository.saveAndFlush(User.builder()
+                .provider(OauthProvider.KAKAO)
+                .providerId("kakao-dup")
+                .nickname("first")
+                .build());
+
+        User duplicate = User.builder()
+                .provider(OauthProvider.KAKAO)
+                .providerId("kakao-dup")
+                .nickname("second")
+                .build();
+
+        assertThatThrownBy(() -> userRepository.saveAndFlush(duplicate))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }
