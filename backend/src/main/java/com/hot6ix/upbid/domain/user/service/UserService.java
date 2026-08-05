@@ -1,9 +1,11 @@
 package com.hot6ix.upbid.domain.user.service;
 
+import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
+import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
 import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
-import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
-import com.hot6ix.upbid.domain.user.dto.UserOAuthLoginDto;
-import com.hot6ix.upbid.domain.user.dto.response.UserMeResponseDto;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
+import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
+import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
@@ -19,37 +21,44 @@ import java.util.Optional;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final ImageUrlValidator imageUrlValidator;
+
+    @Transactional(readOnly = true)
+    public Optional<Long> findByOAuth(OauthProvider provider, String providerId) {
+
+        return userRepository.findByProviderAndProviderId(provider, providerId)
+                .map(this::verifyNotWithdrawn)
+                .map(User::getUserId);
+    }
 
     @Transactional
-    public UserOAuthLoginDto findOrCreateByOAuth(OAuthUserInfo userInfo) {
+    public Long create(PendingSignup pendingSignup) {
 
-        Optional<User> found = userRepository.findByProviderId(userInfo.providerId());
+        User user = userRepository.saveAndFlush(User.ofPendingSignup(pendingSignup));
 
-        if (found.isPresent()) {
-            return UserOAuthLoginDto.of(verifyNotWithdrawn(found.get()), false);
-        }
-
-        User created = userRepository.save(User.ofOAuth(userInfo));
-
-        return UserOAuthLoginDto.of(created, true);
+        return user.getUserId();
     }
 
     @Transactional(readOnly = true)
-    public UserOAuthLoginDto getByOAuth(OAuthUserInfo userInfo) {
-
-        User user = userRepository.findByProviderId(userInfo.providerId())
-                .orElseThrow(() -> new ApplicationException(AuthErrorType.OAUTH_LOGIN_FAILED));
-
-        return UserOAuthLoginDto.of(verifyNotWithdrawn(user), false);
-    }
-
-    @Transactional(readOnly = true)
-    public UserMeResponseDto getMe(Long userId) {
+    public UserResponseDto getMe(Long userId) {
 
         User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new ApplicationException(UserErrorType.USER_NOT_FOUND));
 
-        return UserMeResponseDto.from(user);
+        return UserResponseDto.from(user);
+    }
+
+    @Transactional
+    public UserResponseDto updateMe(Long userId, UserUpdateRequestDto request) {
+
+        imageUrlValidator.validate(request.profileImageUrl());
+
+        User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new ApplicationException(UserErrorType.USER_NOT_FOUND));
+
+        user.updateProfile(request.nickname(), request.profileImageUrl());
+
+        return UserResponseDto.from(user);
     }
 
     private User verifyNotWithdrawn(User user) {

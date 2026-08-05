@@ -84,12 +84,16 @@ export type SseEventPayload =
 /**
  * 실시간 SSE 연결과 상태.
  *
- * roomId 가 바뀌거나 retry() 를 호출하면 EventSource 를 닫고 다시 연다.
+ * 구독 경로는 인증이 필요 없는 공개 경로라 방을 숫자 ID 가 아닌 공유 코드로 지목한다.
+ * 숫자 ID 를 받던 시절에는 링크를 못 받은 사람도 1, 2, 3... 을 훑어 남의 방 이벤트를
+ * 구독할 수 있었다.
+ *
+ * shareCode 가 바뀌거나 retry() 를 호출하면 EventSource 를 닫고 다시 연다.
  * onEvent 는 매 렌더에서 ref 로 최신값을 유지하므로 바뀌어도 재연결하지 않는다.
  * 언마운트 시 EventSource 를 닫아 구독을 정리한다.
  */
 export function useRealtimeStatus(
-  roomId: string,
+  shareCode: string,
   onEvent: (payload: SseEventPayload) => void,
 ) {
   const [status, setStatus] = useState<RealtimeStatus>('connecting')
@@ -105,7 +109,7 @@ export function useRealtimeStatus(
     setStatus('connecting')
 
     const es = new EventSource(
-      `${API_BASE_URL}/api/v1/auction-rooms/${roomId}/subscribe`,
+      `${API_BASE_URL}/api/v1/auction-rooms/share/${shareCode}/subscribe`,
       { withCredentials: true },
     )
 
@@ -145,7 +149,7 @@ export function useRealtimeStatus(
     )
 
     return () => es.close()
-  }, [roomId, retryKey])
+  }, [shareCode, retryKey])
 
   const retry = useCallback(() => {
     setStatus('reconnecting')

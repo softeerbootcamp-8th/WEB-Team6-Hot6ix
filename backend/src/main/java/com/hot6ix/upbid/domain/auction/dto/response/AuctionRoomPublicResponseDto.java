@@ -5,10 +5,19 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import java.time.LocalDateTime;
 import lombok.Builder;
 
-/** 누구나 보는 경매방 단독 페이지 정보. 생성 응답(POST) + 공개 조회(GET /{roomId})가 공용으로 쓴다. */
+/**
+ * 누구나 보는 경매방 단독 페이지 정보. 생성·수정·종료 응답과 공개 조회
+ * (GET /auction-rooms/share/{shareCode})가 공용으로 쓴다.
+ */
 @Builder
 public record AuctionRoomPublicResponseDto(
         Long auctionRoomId,
+        /**
+         * 공개 경로가 이 방을 지목하는 식별자. 생성 직후 판매자가 공유 링크를 만들거나 자기 방으로
+         * 들어갈 때 쓴다. 공개 조회로 이 응답을 받는 사람은 이미 코드를 알고 요청한 것이라
+         * 새로 알려주는 정보가 아니다.
+         */
+        String shareCode,
         String name,
         String coverImageUrl,
         String description,
@@ -32,6 +41,7 @@ public record AuctionRoomPublicResponseDto(
     public static AuctionRoomPublicResponseDto from(AuctionRoom auctionRoom, Long itemCount, boolean isOwner) {
         return AuctionRoomPublicResponseDto.builder()
                 .auctionRoomId(auctionRoom.getAuctionRoomId())
+                .shareCode(auctionRoom.getShareCode())
                 .name(auctionRoom.getName())
                 .coverImageUrl(auctionRoom.getCoverImageUrl())
                 .description(auctionRoom.getDescription())

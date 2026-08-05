@@ -19,6 +19,9 @@ public interface DealSummaryProjection {
 
     Long getAuctionRoomId();
 
+    /** 거래 상세 화면이 물품 상세를 부를 때 방을 지목하는 공개 식별자. */
+    String getShareCode();
+
     /** 판매 건만 값이 있다. 내가 산 물건은 내 상품이 아니다. */
     Long getProductId();
 

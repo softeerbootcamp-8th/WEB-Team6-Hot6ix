@@ -1,8 +1,7 @@
 package com.hot6ix.upbid.domain.auth.controller;
 
-import com.hot6ix.upbid.domain.auth.dto.AuthLoginResponseDto;
+import com.hot6ix.upbid.domain.auth.domain.OAuthLoginResult;
 import com.hot6ix.upbid.domain.auth.service.AuthService;
-import com.hot6ix.upbid.global.session.SessionManager;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -21,11 +20,16 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class OAuthController {
 
+    // 이미 가입된 회원이 로그인했을 때 이동할 경로
+    private static final String HOME_PATH = "/rooms";
+
+    // 신규 사용자가 전화번호 인증을 진행할 온보딩 경로
+    private static final String SIGNUP_PATH = "/signup/phone";
+
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
     private final AuthService authService;
-    private final SessionManager sessionManager;
 
     @GetMapping("/kakao/callback")
     public void kakaoLogin(
@@ -33,9 +37,11 @@ public class OAuthController {
             HttpServletRequest request,
             HttpServletResponse response
     ) throws IOException {
-        AuthLoginResponseDto login = authService.login(code);
-        sessionManager.create(request, login.userId());
 
-        response.sendRedirect(frontendUrl + "/rooms");
+        OAuthLoginResult result = authService.login(request, code);
+
+        String path = (result == OAuthLoginResult.SIGNUP_REQUIRED) ? SIGNUP_PATH : HOME_PATH;
+
+        response.sendRedirect(frontendUrl + path);
     }
 }

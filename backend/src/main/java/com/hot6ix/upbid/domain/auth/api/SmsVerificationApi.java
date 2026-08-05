@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 
 @Tag(name = "SMS 인증", description = "전화번호 인증 API")
@@ -31,11 +32,13 @@ public interface SmsVerificationApi {
             description = "입력한 인증번호가 발급된 번호와 일치하는지 검증한다. "
                     + "인증번호는 발송 후 3분(UI 기준)이 지나면 만료된다. "
                     + "5회 연속 실패 시 인증번호가 폐기되며 재발급이 필요하다. "
-                    + "인증 성공 시 인증번호는 즉시 삭제된다."
+                    + "인증 성공 시 인증번호는 즉시 삭제된다. "
+                    + "가입 대기 상태(카카오 인증 후 회원가입 전)라면 인증된 전화번호가 세션에 기록되어 "
+                    + "이후 회원가입 API에서 사용된다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "인증 성공"),
             @ApiResponse(responseCode = "400", description = "인증번호 없음 (code 8002) / 만료 (code 8003) / 불일치 (code 8004) / 시도 횟수 초과 (code 8005)")
     })
-    ResponseEntity<CommonResponse<Void>> verifyCode(SmsVerifyRequestDto request);
+    ResponseEntity<CommonResponse<Void>> verifyCode(HttpServletRequest httpRequest, SmsVerifyRequestDto request);
 }

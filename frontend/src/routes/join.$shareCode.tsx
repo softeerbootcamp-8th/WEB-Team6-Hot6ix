@@ -42,15 +42,11 @@ function JoinRoomPage() {
   const { data, isPending, isError, error, refetch } =
     useGetRoomByShareCode(shareCode)
 
-  const auctionRoomId = data?.data?.auctionRoomId
   /*
-   * 물품 목록은 방을 찾은 뒤에야 부를 수 있다(roomId 가 그 응답에서 나온다).
-   * 이게 실패해도 방 카드는 그대로 그린다 — 물품 하나 못 받았다고 링크 전체가
-   * 죽은 것처럼 보이면 안 된다.
+   * 물품 목록도 같은 공유 코드로 부른다. 이게 실패해도 방 카드는 그대로 그린다 —
+   * 물품 하나 못 받았다고 링크 전체가 죽은 것처럼 보이면 안 된다.
    */
-  const itemsQuery = useGetSummaries(auctionRoomId ?? 0, {
-    query: { enabled: auctionRoomId !== undefined },
-  })
+  const itemsQuery = useGetSummaries(shareCode)
 
   if (isPending) return <RoutePending />
 
@@ -114,10 +110,7 @@ function JoinRoomPage() {
     if (!isGuest && !agreed) return
     setEntering(true)
     // TODO: POST /api/v1/agreements 후 입장 (현재 목업)
-    void navigate({
-      to: '/rooms/$roomId',
-      params: { roomId: String(room.auctionRoomId) },
-    })
+    void navigate({ to: '/rooms/$shareCode', params: { shareCode } })
   }
 
   return (
@@ -258,7 +251,7 @@ function JoinRoomPage() {
                */}
               <Link
                 to="/"
-                search={{ redirect: `/rooms/${room.auctionRoomId}` }}
+                search={{ redirect: `/rooms/${shareCode}` }}
                 className="ease-soft mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-brand-500 text-card-title font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
               >
                 로그인하고 참여하기

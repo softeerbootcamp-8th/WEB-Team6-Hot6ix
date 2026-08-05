@@ -79,6 +79,9 @@ class AuctionRoomServiceTest {
     /** 방을 만든 판매자의 회원 ID. isOwner 판정이 이 값과 조회자를 비교한다. */
     private static final Long SELLER_USER_ID = 1L;
 
+    /** 공개 조회는 숫자 PK를 받지 않는다. 방을 지목하는 값은 항상 이 공유 코드다. */
+    private static final String SHARE_CODE = "aBcD1234aBcD1234";
+
     private SellerProfile newSellerProfile() {
         User user = User.builder()
                 .email("seller@hot6ix.com")
@@ -185,59 +188,26 @@ class AuctionRoomServiceTest {
     }
 
     @Test
-    @DisplayName("방 주인이 조회하면 공개 정보와 함께 isOwner가 true다")
-    void getRoom() {
-
-        AuctionRoom auctionRoom = AuctionRoom.builder()
-                .bidIncrement(1_000L)
-                .sellerProfile(newSellerProfile())
-                .name("승민의 경매방")
-                .status(AuctionRoomStatus.BEFORE)
-                .softCloseTriggerSeconds(60)
-                .softCloseExtendSeconds(60)
-                .build();
-
-        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(auctionRoom));
-        when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(10L)).thenReturn(3L);
-
-        AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(10L, SELLER_USER_ID);
-
-        assertThat(response.name()).isEqualTo("승민의 경매방");
-        assertThat(response.status()).isEqualTo(AuctionRoomStatus.BEFORE);
-        assertThat(response.sellerStoreName()).isEqualTo("승민상점");
-        assertThat(response.itemCount()).isEqualTo(3L);
-        assertThat(response.isOwner()).isTrue();
-    }
-
-    @Test
     @DisplayName("다른 회원이나 게스트가 조회하면 isOwner가 false다")
-    void getRoom_notOwner() {
+    void getRoomByShareCode_notOwner() {
 
         AuctionRoom auctionRoom = AuctionRoom.builder()
                 .bidIncrement(1_000L)
                 .sellerProfile(newSellerProfile())
                 .name("승민의 경매방")
+                .shareCode("aBcD1234aBcD1234")
                 .status(AuctionRoomStatus.BEFORE)
                 .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 
-        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L)).thenReturn(Optional.of(auctionRoom));
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("aBcD1234aBcD1234"))
+                .thenReturn(Optional.of(auctionRoom));
 
-        assertThat(auctionRoomService.getRoom(10L, SELLER_USER_ID + 1).isOwner()).isFalse();
-        assertThat(auctionRoomService.getRoom(10L, null).isOwner()).isFalse();
-    }
-
-    @Test
-    @DisplayName("존재하지 않거나 삭제된 경매방을 조회하면 예외가 발생한다")
-    void getRoom_notFound() {
-
-        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> auctionRoomService.getRoom(999L, SELLER_USER_ID))
-                .isInstanceOf(ApplicationException.class)
-                .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+        assertThat(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", SELLER_USER_ID + 1)
+                .isOwner()).isFalse();
+        assertThat(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", null)
+                .isOwner()).isFalse();
     }
 
     @Test
@@ -263,7 +233,11 @@ class AuctionRoomServiceTest {
                 auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", SELLER_USER_ID);
 
         assertThat(response.auctionRoomId()).isEqualTo(10L);
+        // 소유자 전용 API는 여전히 숫자 ID를 받으므로 화면이 두 식별자를 함께 들고 있어야 한다.
+        assertThat(response.shareCode()).isEqualTo("aBcD1234aBcD1234");
         assertThat(response.name()).isEqualTo("승민의 경매방");
+        assertThat(response.status()).isEqualTo(AuctionRoomStatus.BEFORE);
+        assertThat(response.sellerStoreName()).isEqualTo("승민상점");
         assertThat(response.itemCount()).isEqualTo(3L);
         assertThat(response.isOwner()).isTrue();
     }
@@ -304,7 +278,7 @@ class AuctionRoomServiceTest {
     }
 
     @Test
-    @DisplayName("물품 중 하나라도 시작된 적 있으면 이름 밖의 설정 수정 시 예외가 발생한다")
+    @DisplayName("물품 중 하나라도 시작된 적 있으면 이름·방송 링크 밖의 설정 수정 시 예외가 발생한다")
     void update_throwsWhenItemAlreadyStarted() {
 
         SellerProfile sellerProfile = newSellerProfile();
@@ -324,6 +298,34 @@ class AuctionRoomServiceTest {
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_ALREADY_STARTED);
 
         assertThat(auctionRoom.getName()).isEqualTo("승민의 경매방");
+    }
+
+    /**
+     * 방송 링크는 방송을 켜고 "안 열려요"라는 말을 듣고서야 잘못이 드러난다. 시작과 함께
+     * 잠그면 정작 고쳐야 할 순간에 못 고치므로, 이름과 함께 진행 중에도 열어 둔다.
+     */
+    @Test
+    @DisplayName("방송 링크는 물품이 시작된 뒤에도 바꾸거나 지울 수 있다")
+    void update_liveUrlSucceedsAfterStart() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoom auctionRoom = newUpdatableRoom(sellerProfile, AuctionRoomStatus.OPEN);
+
+        stubOwnedRoom(sellerProfile, auctionRoom);
+
+        auctionRoomService.update(1L, 10L, AuctionRoomUpdateRequestDto.builder()
+                .liveUrl("https://youtube.com/@fixed")
+                .build());
+        assertThat(auctionRoom.getLiveUrl()).isEqualTo("https://youtube.com/@fixed");
+
+        auctionRoomService.update(1L, 10L, AuctionRoomUpdateRequestDto.builder()
+                .liveUrl("")
+                .build());
+        assertThat(auctionRoom.getLiveUrl()).isNull();
+
+        // 시작 여부를 아예 묻지 않는다 — 방송 링크는 진행 중에도 열려 있어서다.
+        verify(auctionItemRepository, never())
+                .existsByAuctionRoom_AuctionRoomIdAndStatusNot(any(), any());
     }
 
     @Test
@@ -571,14 +573,19 @@ class AuctionRoomServiceTest {
     }
 
     private AuctionRoom newClosedRoom() {
-        return AuctionRoom.builder()
+        AuctionRoom auctionRoom = AuctionRoom.builder()
                 .bidIncrement(1_000L)
                 .sellerProfile(newSellerProfile())
                 .name("승민의 경매방")
+                .shareCode(SHARE_CODE)
                 .status(AuctionRoomStatus.CLOSED)
                 .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
+        // 결과 조회는 공유 코드로 찾은 방에서 ID를 꺼내 물품을 읽는다. 없으면 조회가 빈손이 된다.
+        ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
+
+        return auctionRoom;
     }
 
     /** 낙찰 1건 + 유찰 1건. 결과 화면이 둘을 나눠 세는 최소 조합이다. */
@@ -596,12 +603,12 @@ class AuctionRoomServiceTest {
     @DisplayName("낙찰 물품은 낙찰가와 낙찰자가, 유찰 물품은 둘 다 비어서 조회된다")
     void getResults() {
 
-        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L))
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
                 .thenReturn(Optional.of(newClosedRoom()));
         when(auctionItemRepository.findResults(10L)).thenReturn(newResultRows());
         when(dealCandidateRepository.findMyRanksInRoom(10L, 1L)).thenReturn(List.of());
 
-        AuctionRoomResultResponseDto response = auctionRoomService.getResults(10L, 1L);
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(SHARE_CODE, 1L);
 
         assertThat(response.name()).isEqualTo("승민의 경매방");
         assertThat(response.sellerStoreName()).isEqualTo("승민상점");
@@ -620,7 +627,7 @@ class AuctionRoomServiceTest {
     @DisplayName("진행 중인 물품은 최고 입찰자가 있어도 낙찰자로 내려가지 않는다")
     void getResults_inProgressItemHasNoWinner() {
 
-        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L))
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
                 .thenReturn(Optional.of(newClosedRoom()));
         when(auctionItemRepository.findResults(10L)).thenReturn(List.of(
                 new AuctionItemResultProjection(
@@ -628,7 +635,7 @@ class AuctionRoomServiceTest {
                         AuctionItemStatus.IN_PROGRESS, 50_000L, "지금1위")));
         when(dealCandidateRepository.findMyRanksInRoom(10L, 1L)).thenReturn(List.of());
 
-        AuctionRoomResultResponseDto response = auctionRoomService.getResults(10L, 1L);
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(SHARE_CODE, 1L);
 
         assertThat(response.items().getFirst().status()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
         assertThat(response.items().getFirst().winnerNickname()).isNull();
@@ -639,13 +646,13 @@ class AuctionRoomServiceTest {
     @DisplayName("후보로 오른 물품에만 내 순위가 담긴다")
     void getResults_fillsMyRankOnlyWhereCandidate() {
 
-        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L))
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
                 .thenReturn(Optional.of(newClosedRoom()));
         when(auctionItemRepository.findResults(10L)).thenReturn(newResultRows());
         when(dealCandidateRepository.findMyRanksInRoom(10L, 1L))
                 .thenReturn(List.of(new MyCandidateRankProjection(101L, 7, 60_000L)));
 
-        AuctionRoomResultResponseDto response = auctionRoomService.getResults(10L, 1L);
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(SHARE_CODE, 1L);
 
         assertThat(response.items().getFirst().myRank()).isEqualTo(7);
         assertThat(response.items().getFirst().myAmount()).isEqualTo(60_000L);
@@ -657,11 +664,11 @@ class AuctionRoomServiceTest {
     @DisplayName("비로그인 요청은 내 순위를 조회하지 않고 전부 비운다")
     void getResults_guestHasNoMyRank() {
 
-        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(10L))
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
                 .thenReturn(Optional.of(newClosedRoom()));
         when(auctionItemRepository.findResults(10L)).thenReturn(newResultRows());
 
-        AuctionRoomResultResponseDto response = auctionRoomService.getResults(10L, null);
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(SHARE_CODE, null);
 
         assertThat(response.items())
                 .allSatisfy(item -> {
@@ -672,12 +679,12 @@ class AuctionRoomServiceTest {
     }
 
     @Test
-    @DisplayName("존재하지 않거나 삭제된 경매방의 결과를 조회하면 예외가 발생한다")
+    @DisplayName("존재하지 않는 공유 코드의 결과를 조회하면 예외가 발생한다")
     void getResults_notFound() {
 
-        when(auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("nope")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> auctionRoomService.getResults(999L, 1L))
+        assertThatThrownBy(() -> auctionRoomService.getResults("nope", 1L))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);

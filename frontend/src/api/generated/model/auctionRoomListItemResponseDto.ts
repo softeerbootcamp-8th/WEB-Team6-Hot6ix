@@ -14,6 +14,7 @@ import type { AuctionRoomListItemResponseDtoRole } from './auctionRoomListItemRe
 
 export interface AuctionRoomListItemResponseDto {
   auctionRoomId?: number;
+  shareCode?: string;
   name?: string;
   coverImageUrl?: string;
   status?: AuctionRoomListItemResponseDtoStatus;

@@ -66,6 +66,21 @@ class AuctionRoomTest {
     }
 
     @Test
+    @DisplayName("update()는 liveUrl·description에 빈 문자열이 오면 삭제로 보고 null로 만든다")
+    void update_blankClearsLiveUrlAndDescription() {
+
+        AuctionRoom auctionRoom = newAuctionRoom();
+
+        auctionRoom.update(AuctionRoomUpdateRequestDto.builder()
+                .liveUrl("")
+                .description("   ")
+                .build());
+
+        assertThat(auctionRoom.getLiveUrl()).isNull();
+        assertThat(auctionRoom.getDescription()).isNull();
+    }
+
+    @Test
     @DisplayName("update()로는 입찰 단위를 바꿀 수 없다")
     void update_keepsBidIncrement() {
 

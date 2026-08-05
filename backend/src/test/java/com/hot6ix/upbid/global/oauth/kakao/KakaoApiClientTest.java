@@ -11,7 +11,8 @@ import com.hot6ix.upbid.domain.auth.oauth.kakao.KakaoApiClient;
 import com.hot6ix.upbid.domain.auth.oauth.kakao.config.KakaoProperties;
 import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoTokenResponse;
 import com.hot6ix.upbid.domain.auth.oauth.kakao.dto.KakaoUserInfoResponse;
-import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -73,39 +74,49 @@ class KakaoApiClientTest {
     }
 
     @Test
-    @DisplayName("타임아웃이 발생하면 1회 재시도 후 성공한다")
-    void retriesOnceOnTimeout() {
+    @DisplayName("토큰 발급은 연결 실패에도 재시도하지 않는다")
+    void issueTokenDoesNotRetryOnConnectionFailure() {
         setUp();
         server.expect(requestTo(TOKEN_URI))
                 .andRespond(request -> {
-                    throw new IOException("timeout");
-                });
-        server.expect(requestTo(TOKEN_URI))
-                .andRespond(withSuccess("""
-                        {"access_token": "access-token"}
-                        """, MediaType.APPLICATION_JSON));
-
-        KakaoTokenResponse response = kakaoApiClient.issueToken("code");
-
-        assertThat(response.accessToken()).isEqualTo("access-token");
-        server.verify();
-    }
-
-    @Test
-    @DisplayName("재시도도 실패하면 예외가 그대로 전파된다")
-    void propagatesExceptionWhenRetryAlsoFails() {
-        setUp();
-        server.expect(requestTo(TOKEN_URI))
-                .andRespond(request -> {
-                    throw new IOException("timeout");
-                });
-        server.expect(requestTo(TOKEN_URI))
-                .andRespond(request -> {
-                    throw new IOException("timeout");
+                    throw new ConnectException("connection refused");
                 });
 
         assertThatThrownBy(() -> kakaoApiClient.issueToken("code"))
                 .isInstanceOf(ResourceAccessException.class);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("토큰 발급은 응답 지연에도 재시도하지 않는다 - 인가 코드가 이미 소진됐을 수 있다")
+    void issueTokenDoesNotRetryOnReadTimeout() {
+        setUp();
+        server.expect(requestTo(TOKEN_URI))
+                .andRespond(request -> {
+                    throw new SocketTimeoutException("Read timed out");
+                });
+
+        assertThatThrownBy(() -> kakaoApiClient.issueToken("code"))
+                .isInstanceOf(ResourceAccessException.class);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("사용자 정보 조회는 멱등하므로 응답 지연에도 1회 재시도 후 성공한다")
+    void getUserInfoRetriesOnceOnReadTimeout() {
+        setUp();
+        server.expect(requestTo(USER_INFO_URI))
+                .andRespond(request -> {
+                    throw new SocketTimeoutException("Read timed out");
+                });
+        server.expect(requestTo(USER_INFO_URI))
+                .andRespond(withSuccess("""
+                        {"id": 1, "kakao_account": {"phone_number": "010-1234-5678"}}
+                        """, MediaType.APPLICATION_JSON));
+
+        KakaoUserInfoResponse response = kakaoApiClient.getUserInfo("access-token");
+
+        assertThat(response.id()).isEqualTo(1L);
         server.verify();
     }
 

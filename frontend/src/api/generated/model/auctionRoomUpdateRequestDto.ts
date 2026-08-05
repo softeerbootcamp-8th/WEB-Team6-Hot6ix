@@ -17,7 +17,6 @@ export interface AuctionRoomUpdateRequestDto {
   coverImageUrl?: string;
   /** @pattern ^[^<>"'\\;]*$ */
   description?: string;
-  /** @pattern .*\S.* */
   liveUrl?: string;
   /**
    * @minimum 1

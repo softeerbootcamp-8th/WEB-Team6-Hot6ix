@@ -13,6 +13,7 @@ import type { AuctionRoomPublicResponseDtoStatus } from './auctionRoomPublicResp
 
 export interface AuctionRoomPublicResponseDto {
   auctionRoomId?: number;
+  shareCode?: string;
   name?: string;
   coverImageUrl?: string;
   description?: string;

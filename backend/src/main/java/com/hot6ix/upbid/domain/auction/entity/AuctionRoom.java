@@ -134,6 +134,10 @@ public class AuctionRoom extends BaseEntity {
 
     /**
      * 요청에서 값이 온 필드만 부분 병합한다. 생략된(null) 필드는 기존 값을 그대로 유지한다.
+     *
+     * <p>{@code description}과 {@code liveUrl}은 <b>빈 문자열이 "지운다"는 뜻</b>이고 null로
+     * 저장한다. 생략(유지)과 빈 문자열(삭제)이 이 두 필드에서 갈리므로, "값 없음"을 판별하는
+     * 코드가 빈 문자열과 null 두 가지를 다 보지 않아도 되게 한다.
      */
     public void update(AuctionRoomUpdateRequestDto request) {
         if (request.name() != null) {
@@ -143,10 +147,10 @@ public class AuctionRoom extends BaseEntity {
             this.coverImageUrl = request.coverImageUrl();
         }
         if (request.description() != null) {
-            this.description = request.description();
+            this.description = blankToNull(request.description());
         }
         if (request.liveUrl() != null) {
-            this.liveUrl = request.liveUrl();
+            this.liveUrl = blankToNull(request.liveUrl());
         }
         if (request.softCloseTriggerSeconds() != null) {
             this.softCloseTriggerSeconds = request.softCloseTriggerSeconds();
@@ -154,5 +158,9 @@ public class AuctionRoom extends BaseEntity {
         if (request.softCloseExtendSeconds() != null) {
             this.softCloseExtendSeconds = request.softCloseExtendSeconds();
         }
+    }
+
+    private static String blankToNull(String value) {
+        return value.isBlank() ? null : value;
     }
 }

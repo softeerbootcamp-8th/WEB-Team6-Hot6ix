@@ -3,19 +3,29 @@ package com.hot6ix.upbid.global.session;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+import java.time.Duration;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class SessionManagerTest {
 
     private static final Long USER_ID = 1L;
 
+    private static final Duration LOGIN_TIMEOUT = Duration.ofHours(2);
+
     private final SessionManager sessionManager = new SessionManager();
     private final MockHttpServletRequest request = new MockHttpServletRequest();
+
+    @BeforeEach
+    void 로그인_세션_수명을_주입한다() {
+        ReflectionTestUtils.setField(sessionManager, "loginTimeout", LOGIN_TIMEOUT);
+    }
 
     @Nested
     @DisplayName("create")
@@ -29,6 +39,18 @@ class SessionManagerTest {
 
             assertThat(request.getSession(false)).isNotNull();
             assertThat(request.getSession(false).getAttribute(SessionKeys.USER_ID)).isEqualTo(USER_ID);
+        }
+
+        @Test
+        @DisplayName("온보딩 중 짧게 조정된 세션 수명을 로그인용으로 되돌린다")
+        void restoresLoginTimeout() {
+
+            request.getSession(true).setMaxInactiveInterval(600);
+
+            sessionManager.create(request, USER_ID);
+
+            assertThat(request.getSession(false).getMaxInactiveInterval())
+                    .isEqualTo((int) LOGIN_TIMEOUT.toSeconds());
         }
 
         @Test

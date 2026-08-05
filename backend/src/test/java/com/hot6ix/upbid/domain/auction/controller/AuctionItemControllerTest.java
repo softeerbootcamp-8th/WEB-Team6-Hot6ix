@@ -42,6 +42,9 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @MockitoBean
     private AuctionItemService auctionItemService;
 
+    /** 공개 조회는 숫자 PK를 받지 않는다. 방을 지목하는 값은 항상 이 공유 코드다. */
+    private static final String SHARE_CODE = "abcdefghij123456";
+
     private AuctionItemAddRequestDto newAddRequest() {
         return AuctionItemAddRequestDto.builder()
                 .productId(20L)
@@ -95,9 +98,9 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("경매방 물품 목록을 조회하면 200과 물품 배열을 반환한다")
     void getSummaries() throws Exception {
 
-        when(auctionItemService.getSummaries(10L)).thenReturn(List.of(sampleSummary()));
+        when(auctionItemService.getSummaries(SHARE_CODE)).thenReturn(List.of(sampleSummary()));
 
-        mockMvc.perform(get("/api/v1/auction-rooms/10/auction-items"))
+        mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items", SHARE_CODE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("경매 물품 목록 조회에 성공했습니다."))
@@ -113,9 +116,9 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("물품이 없는 경매방은 200과 빈 배열을 반환한다")
     void getSummariesReturnsEmptyArray() throws Exception {
 
-        when(auctionItemService.getSummaries(10L)).thenReturn(List.of());
+        when(auctionItemService.getSummaries(SHARE_CODE)).thenReturn(List.of());
 
-        mockMvc.perform(get("/api/v1/auction-rooms/10/auction-items"))
+        mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items", SHARE_CODE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray())
@@ -123,13 +126,13 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     }
 
     @Test
-    @DisplayName("없는 경매방의 물품 목록을 조회하면 404와 4002를 반환한다")
+    @DisplayName("없는 공유 코드의 물품 목록을 조회하면 404와 4002를 반환한다")
     void getSummariesRoomNotFound() throws Exception {
 
-        when(auctionItemService.getSummaries(999L))
+        when(auctionItemService.getSummaries("nope"))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
-        mockMvc.perform(get("/api/v1/auction-rooms/999/auction-items"))
+        mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items", "nope"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(4002))
@@ -141,9 +144,10 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("물품 상세를 조회하면 200과 물품 정보를 반환한다")
     void getDetail() throws Exception {
 
-        when(auctionItemService.getDetail(1L)).thenReturn(sampleDetail());
+        when(auctionItemService.getDetail(SHARE_CODE, 1L)).thenReturn(sampleDetail());
 
-        mockMvc.perform(get("/api/v1/auction-items/1"))
+        mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items/{itemId}",
+                        SHARE_CODE, 1L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("경매 물품 상세 조회에 성공했습니다."))
@@ -159,9 +163,9 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     void getSummariesAllowsGuest() throws Exception {
 
         비로그인_상태로_바꾼다();
-        when(auctionItemService.getSummaries(10L)).thenReturn(List.of(sampleSummary()));
+        when(auctionItemService.getSummaries(SHARE_CODE)).thenReturn(List.of(sampleSummary()));
 
-        mockMvc.perform(get("/api/v1/auction-rooms/10/auction-items"))
+        mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items", SHARE_CODE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
     }
@@ -171,26 +175,46 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     void getDetailAllowsGuest() throws Exception {
 
         비로그인_상태로_바꾼다();
-        when(auctionItemService.getDetail(1L)).thenReturn(sampleDetail());
+        when(auctionItemService.getDetail(SHARE_CODE, 1L)).thenReturn(sampleDetail());
 
-        mockMvc.perform(get("/api/v1/auction-items/1"))
+        mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items/{itemId}",
+                        SHARE_CODE, 1L))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
     }
 
     @Test
-    @DisplayName("없는 물품을 상세 조회하면 404와 4001을 반환한다")
+    @DisplayName("없거나 그 방 소속이 아닌 물품을 상세 조회하면 404와 4001을 반환한다")
     void getDetailNotFound() throws Exception {
 
-        when(auctionItemService.getDetail(999L))
+        when(auctionItemService.getDetail(SHARE_CODE, 999L))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
-        mockMvc.perform(get("/api/v1/auction-items/999"))
+        mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items/{itemId}",
+                        SHARE_CODE, 999L))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(4001))
                 .andExpect(jsonPath("$.message").value("존재하지 않는 경매 물품입니다."))
                 .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    /**
+     * 방만 공유 코드로 가려도 물품이 숫자 ID로 열려 있으면 열거 지점이 옮겨갈 뿐이다.
+     * 매핑이 사라졌다는 것을 회귀로 못 박는다.
+     *
+     * <p>물품 목록 경로는 404가 아니라 405다 — 같은 경로에 소유자용 POST(물품 추가)가 남아 있어
+     * Spring이 "경로는 있는데 GET은 안 된다"고 답한다. 어느 쪽이든 읽히지 않는 것은 같다.
+     */
+    @Test
+    @DisplayName("숫자 PK로 들어오는 공개 조회 경로는 더 이상 없다")
+    void legacyNumericPublicPathsAreGone() throws Exception {
+
+        mockMvc.perform(get("/api/v1/auction-rooms/10/auction-items"))
+                .andExpect(status().is4xxClientError());
+
+        mockMvc.perform(get("/api/v1/auction-items/1"))
+                .andExpect(status().is4xxClientError());
     }
 
     @Test
