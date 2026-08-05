@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -7,6 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatPhoneNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { hydrateSession } from '@/lib/session'
+import { toast } from '@/lib/toast'
+import { toPhoneVerificationErrorMessage } from '@/features/auth/phone-verification-error'
+import { useSendCode, useVerifyCode } from '@/api/generated/sms-인증/sms-인증'
+import { useSignup } from '@/api/generated/인증/인증'
 
 export const Route = createFileRoute('/signup/phone')({
   validateSearch: (search: Record<string, unknown>): { redirect?: string } =>
@@ -14,11 +20,9 @@ export const Route = createFileRoute('/signup/phone')({
   component: PhoneVerificationPage,
 })
 
-/** 인증번호 유효 시간. 서버가 내려주는 값으로 대체될 자리다. */
+/** 서버가 안내하는 인증번호 유효 시간(발송 후 3분, UI 기준). */
 const CODE_TTL_SECONDS = 180
 const CODE_LENGTH = 6
-/** 서버 연동 전까지 쓰는 임시 인증번호. 어떤 번호를 넣어도 통과한다. */
-const MOCK_CODE = '000000'
 
 function formatCountdown(seconds: number) {
   const minutes = Math.floor(seconds / 60)
@@ -28,13 +32,21 @@ function formatCountdown(seconds: number) {
 
 function PhoneVerificationPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { redirect } = Route.useSearch()
 
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [sent, setSent] = useState(false)
   const [remaining, setRemaining] = useState(0)
+  // 인증까지는 끝났지만 회원가입 호출이 실패했을 때만 true 가 된다.
+  // 이미 사용된 인증번호를 다시 보내지 않도록 재시도는 가입만 다시 부른다.
+  const [verified, setVerified] = useState(false)
   const codeInputRef = useRef<HTMLInputElement>(null)
+
+  const sendCode = useSendCode()
+  const verifyCode = useVerifyCode()
+  const signup = useSignup()
 
   // 남은 시간 카운트다운. 화면을 떠나면 반드시 정리한다.
   useEffect(() => {
@@ -48,29 +60,80 @@ function PhoneVerificationPage() {
   }, [sent, remaining])
 
   const phoneDigits = phone.replace(/\D/g, '')
-  const canRequest = phoneDigits.length >= 10
+  const canRequest = phoneDigits.length >= 10 && !sendCode.isPending
   const expired = sent && remaining === 0
-  // 목업 단계에서는 자릿수만 채우면 통과시킨다. 실제 확인은 서버가 한다.
-  const canSubmit = sent && !expired && code.length > 0
+  const submitting = verifyCode.isPending || signup.isPending
+  const canSubmit =
+    verified || (sent && !expired && code.length === CODE_LENGTH && !submitting)
 
   const requestCode = () => {
     if (!canRequest) return
-    // TODO: POST /api/v1/phone-verifications 연동 (현재 목업)
-    setSent(true)
-    setRemaining(CODE_TTL_SECONDS)
-    // 아직 실제 문자가 오지 않으니 화면을 막지 않도록 미리 채워둔다.
-    setCode(MOCK_CODE)
-    codeInputRef.current?.focus()
+
+    sendCode.mutate(
+      { data: { phoneNumber: phoneDigits } },
+      {
+        onSuccess() {
+          setSent(true)
+          setVerified(false)
+          setRemaining(CODE_TTL_SECONDS)
+          setCode('')
+          codeInputRef.current?.focus()
+        },
+        onError(error) {
+          const { title, description } = toPhoneVerificationErrorMessage(error)
+          toast.error(title, { description })
+        },
+      },
+    )
+  }
+
+  const runSignup = () => {
+    signup.mutate(undefined, {
+      async onSuccess() {
+        setVerified(true)
+        try {
+          // 회원가입 응답은 body 가 없다 — 실제 회원 정보는 /me 로 다시 조회한다.
+          await queryClient.fetchQuery({
+            queryKey: ['session', 'me'],
+            queryFn: () => hydrateSession(formatPhoneNumber(phoneDigits)),
+            staleTime: Infinity,
+          })
+        } catch {
+          // 루트 beforeLoad 가 다음 진입에서 다시 시도한다.
+        }
+        void navigate({
+          to: '/signup/complete',
+          search: redirect ? { redirect } : {},
+        })
+      },
+      onError(error) {
+        // 인증 자체는 서버 세션에 이미 기록돼 있어, 재시도는 가입만 다시 부르면 된다.
+        setVerified(true)
+        const { title, description } = toPhoneVerificationErrorMessage(error)
+        toast.error(title, { description })
+      },
+    })
   }
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     if (!canSubmit) return
-    // TODO: POST /api/v1/phone-verifications/{id}/confirm 연동 (현재 목업)
-    void navigate({
-      to: '/signup/complete',
-      search: redirect ? { redirect } : {},
-    })
+
+    if (verified) {
+      runSignup()
+      return
+    }
+
+    verifyCode.mutate(
+      { data: { phoneNumber: phoneDigits, code } },
+      {
+        onSuccess: runSignup,
+        onError(error) {
+          const { title, description } = toPhoneVerificationErrorMessage(error)
+          toast.error(title, { description })
+        },
+      },
+    )
   }
 
   return (
@@ -123,7 +186,11 @@ function PhoneVerificationPage() {
                 disabled={!canRequest || (sent && !expired)}
                 className="h-12 shrink-0 rounded-xl px-4 text-caption font-bold"
               >
-                {sent ? '인증번호 다시 받기' : '인증번호 받기'}
+                {sendCode.isPending
+                  ? '보내는 중…'
+                  : sent
+                    ? '인증번호 다시 받기'
+                    : '인증번호 받기'}
               </Button>
             </div>
           </div>
@@ -147,7 +214,7 @@ function PhoneVerificationPage() {
                 onChange={(event) =>
                   setCode(event.target.value.replace(/\D/g, ''))
                 }
-                disabled={!sent || expired}
+                disabled={!sent || expired || verified}
                 aria-invalid={expired}
                 aria-describedby="code-help"
                 className="pr-16"
@@ -172,11 +239,13 @@ function PhoneVerificationPage() {
                 expired ? 'text-live' : 'text-neutral-tertiary',
               )}
             >
-              {expired
-                ? '인증 시간이 지났어요. 인증번호를 다시 받아주세요.'
-                : sent
-                  ? '연동 전이라 어떤 번호를 넣어도 통과합니다.'
-                  : '가입에는 본인 확인이 한 번 필요해요.'}
+              {verified
+                ? '인증은 끝났어요. 가입을 다시 시도해 주세요.'
+                : expired
+                  ? '인증 시간이 지났어요. 인증번호를 다시 받아주세요.'
+                  : sent
+                    ? '문자로 받은 인증번호를 입력해 주세요.'
+                    : '가입에는 본인 확인이 한 번 필요해요.'}
             </p>
           </div>
 
@@ -184,9 +253,15 @@ function PhoneVerificationPage() {
             type="submit"
             size="cta"
             variant="brand"
-            disabled={!canSubmit}
+            disabled={!canSubmit || submitting}
           >
-            인증하고 가입 완료
+            {signup.isPending
+              ? '가입 처리 중…'
+              : verifyCode.isPending
+                ? '인증 확인 중…'
+                : verified
+                  ? '가입 다시 시도'
+                  : '인증하고 가입 완료'}
           </Button>
         </form>
 
