@@ -102,11 +102,15 @@ export function useCurrentUser(): SessionUser | null {
   return session.status === 'member' ? session.user : null
 }
 
-/** `GET /api/v1/users/me` 응답 DTO. 서버 `UserResponseDto` 와 필드를 맞춘다. */
+/**
+ * `GET /api/v1/users/me` 응답 DTO. 서버 `UserResponseDto` 와 필드를 맞춘다.
+ * `email` 은 로컬 전용 테스트 로그인(`dev-login`) 유저처럼 카카오 이메일이
+ * 없는 경우 null 로 온다.
+ */
 interface MeResponseData {
   userId: number
   nickname: string
-  email: string
+  email: string | null
   profileImageUrl: string | null
 }
 
@@ -137,7 +141,7 @@ export async function hydrateSession(
   const user: SessionUser = {
     id: data.data.userId,
     nickname: data.data.nickname,
-    kakaoEmail: data.data.email,
+    kakaoEmail: data.data.email ?? '',
     phone: phone ?? prevPhone,
     profileImageUrl: data.data.profileImageUrl ?? null,
   }
