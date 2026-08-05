@@ -28,7 +28,7 @@ public final class EventMessages {
             case ItemEnded e -> Optional.of(e.itemName() + " 낙찰 1순위 확정 · " + won(e.finalPrice())
                     + " (" + e.winnerNickname() + "님)");
             case ItemPassed e -> Optional.of(e.itemName() + " 유찰 · 입찰자가 없습니다");
-            case ItemClosingSoon e -> Optional.of(e.itemName() + " 마감 1분 전");
+            case ItemClosingSoon e -> Optional.of(e.itemName() + " 마감 " + remaining(e.remainingSeconds()) + " 전");
             case BidPlaced e -> Optional.of(e.bidderNickname() + "님이 " + won(e.bidPrice())
                     + " 입찰 · " + e.itemName());
             case SoftCloseExtended e -> Optional.of("Soft Close 발동 · " + e.itemName()
@@ -45,5 +45,16 @@ public final class EventMessages {
 
     private static String won(long value) {
         return String.format("%,d원", value);
+    }
+
+    /**
+     * 남은 시간을 사람이 읽는 단위로 바꾼다. 분으로 떨어지면 분으로, 아니면 초로 적는다.
+     * 트리거가 60~3600초라 대개 분으로 떨어지고, 90초 같은 값만 초로 남는다.
+     *
+     * <p>화면에도 같은 규칙이 한 번 더 있다. 이 클래스는 로그 문구만 만들고 화면으로 나가지
+     * 않아서 공유할 수 없다.
+     */
+    private static String remaining(int seconds) {
+        return seconds % 60 == 0 ? (seconds / 60) + "분" : seconds + "초";
     }
 }
