@@ -12,4 +12,5 @@
 
 export interface AuctionRoomShareResponseDto {
   shareUrl?: string;
+  shareCode?: string;
 }

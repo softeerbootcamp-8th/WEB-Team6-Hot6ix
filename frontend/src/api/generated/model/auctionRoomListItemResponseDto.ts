@@ -10,13 +10,18 @@
  * OpenAPI spec version: v1
  */
 import type { AuctionRoomListItemResponseDtoStatus } from './auctionRoomListItemResponseDtoStatus';
+import type { AuctionRoomListItemResponseDtoRole } from './auctionRoomListItemResponseDtoRole';
 
 export interface AuctionRoomListItemResponseDto {
   auctionRoomId?: number;
+  shareCode?: string;
   name?: string;
   coverImageUrl?: string;
   status?: AuctionRoomListItemResponseDtoStatus;
+  role?: AuctionRoomListItemResponseDtoRole;
+  storeName?: string;
   createdAt?: string;
+  closedAt?: string;
   itemCount?: number;
   participantCount?: number;
 }

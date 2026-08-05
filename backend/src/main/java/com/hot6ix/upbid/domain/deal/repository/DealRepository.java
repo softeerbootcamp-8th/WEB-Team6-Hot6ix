@@ -27,6 +27,7 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                 AuctionItemStatus.SOLD.name(),
                 AuctionItemStatus.FAILED.name(),
                 DealCandidateStatus.COMPLETED.name(),
+                DealCandidateStatus.WAITING.name(),
                 DealCandidateStatus.FAILED.name(),
                 MAX_DEAL_SIZE);
     }
@@ -65,6 +66,7 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
             (SELECT 1                   AS sellerRow,
                    ai.auction_item_id   AS auctionItemId,
                    ar.auction_room_id   AS auctionRoomId,
+                   ar.share_code        AS shareCode,
                    p.product_id         AS productId,
                    p.name               AS productName,
                    ar.name              AS auctionRoomName,
@@ -72,6 +74,9 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    EXISTS (SELECT 1 FROM deal_candidates c
                             WHERE c.auction_item_id = ai.auction_item_id
                               AND c.status = :completedStatus) AS dealCompleted,
+                   EXISTS (SELECT 1 FROM deal_candidates c
+                            WHERE c.auction_item_id = ai.auction_item_id
+                              AND c.status = :waitingStatus) AS hasWaitingCandidate,
                    ai.current_price     AS amount,
                    (SELECT bu.nickname
                       FROM deal_candidates c
@@ -94,6 +99,7 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
             (SELECT 0                   AS sellerRow,
                    ai.auction_item_id   AS auctionItemId,
                    ar.auction_room_id   AS auctionRoomId,
+                   ar.share_code        AS shareCode,
                    NULL                 AS productId,
                    p.name               AS productName,
                    ar.name              AS auctionRoomName,
@@ -101,6 +107,9 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    EXISTS (SELECT 1 FROM deal_candidates c
                             WHERE c.auction_item_id = ai.auction_item_id
                               AND c.status = :completedStatus) AS dealCompleted,
+                   EXISTS (SELECT 1 FROM deal_candidates c
+                            WHERE c.auction_item_id = ai.auction_item_id
+                              AND c.status = :waitingStatus) AS hasWaitingCandidate,
                    dc.bid_amount        AS amount,
                    su.nickname          AS partnerNickname,
                    sp.seller_profile_id AS sellerProfileId,
@@ -120,6 +129,7 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                                           @Param("soldStatus") String soldStatus,
                                           @Param("failedStatus") String failedStatus,
                                           @Param("completedStatus") String completedStatus,
+                                          @Param("waitingStatus") String waitingStatus,
                                           @Param("failedCandidateStatus") String failedCandidateStatus,
                                           @Param("size") int size);
 }

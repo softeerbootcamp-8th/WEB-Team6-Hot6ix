@@ -7,8 +7,8 @@ import {
   ImageUploadError,
   useImageUpload,
 } from '@/features/seller/use-image-upload'
+import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
-import { mockProductImage } from '@/mocks/images'
 import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
 import type {
   ProductCreateRequestDto,
@@ -129,6 +129,7 @@ export function ProductForm({
   submitLabel,
   uploadText,
   submitting,
+  className,
   onSubmit,
 }: {
   initial?: ProductResponseDto
@@ -136,6 +137,8 @@ export function ProductForm({
   /** 이미지 칸 문구. 등록은 "이미지 업로드", 수정은 "상품 이미지 변경". */
   uploadText: string
   submitting: boolean
+  /** 카드 겉모양을 바꾼다. 모달 안에서는 테두리·여백이 겹쳐서 지운다. */
+  className?: string
   onSubmit: (body: ProductCreateRequestDto) => void
 }) {
   const [values, setValues] = useState<FormValues>({
@@ -184,7 +187,10 @@ export function ProductForm({
   return (
     <form
       onSubmit={(event) => void handleSubmit(event)}
-      className="grid gap-8 rounded-[20px] border bg-card p-8 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-10"
+      className={cn(
+        'grid gap-8 rounded-[20px] border bg-card p-8 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-10',
+        className,
+      )}
     >
       <ImageUploadField
         label="상품 이미지"
@@ -192,12 +198,9 @@ export function ProductForm({
         maxWidth={360}
         onFileChange={setImageFile}
         // 등록된 상품을 고칠 때는 지금 사진이 보여야 한다.
-        // 서버에 사진이 없으면 상품 이름으로 만든 목업 사진을 대신 보여준다.
-        initialUrl={
-          initial
-            ? (initial.imageUrl ?? mockProductImage(initial.name ?? '', 720))
-            : undefined
-        }
+        // 올린 사진이 없으면 비운다. 목업 사진을 대신 넣으면 판매자가 올린 적
+        // 없는 사진을 "지금 사진"으로 보게 된다.
+        initialUrl={initial?.imageUrl ?? undefined}
       />
 
       <div className="flex flex-col">

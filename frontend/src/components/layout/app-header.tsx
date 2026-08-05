@@ -62,8 +62,13 @@ export function AppHeader() {
   )
 }
 
-/** 비로그인 화면(랜딩·링크 입장)의 상단바. */
-export function GuestHeader({ state = '비로그인' }: { state?: string }) {
+/**
+ * 비로그인 화면(랜딩·링크 입장)의 상단바.
+ *
+ * `state` 를 주지 않으면 우측 pill 을 그리지 않는다 — 로그인 화면에서는 그 자리가
+ * 누를 수 있는 버튼처럼 보여서 뺐다(`MobileAppBar` 도 같은 규칙이다).
+ */
+export function GuestHeader({ state }: { state?: string }) {
   return (
     <header className="h-16 shrink-0 border-b bg-card">
       {/* 좌우 여백은 아래 카드(랜딩 컨테이너)와 같은 값을 쓴다. */}
@@ -71,9 +76,11 @@ export function GuestHeader({ state = '비로그인' }: { state?: string }) {
         <Link to="/" className="text-logo font-extrabold text-brand-500">
           UpBid
         </Link>
-        <span className="ml-auto rounded-full border border-brand-200 bg-brand-50 px-3.5 py-1.5 text-[13px] font-semibold text-neutral-tertiary">
-          {state}
-        </span>
+        {state && (
+          <span className="ml-auto rounded-full border border-brand-200 bg-brand-50 px-3.5 py-1.5 text-[13px] font-semibold text-neutral-tertiary">
+            {state}
+          </span>
+        )}
       </div>
     </header>
   )

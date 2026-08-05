@@ -10,6 +10,7 @@
  * OpenAPI spec version: v1
  */
 import type { GetMyRoomsStatus } from './getMyRoomsStatus';
+import type { GetMyRoomsRole } from './getMyRoomsRole';
 
 export type GetMyRoomsParams = {
 /**
@@ -20,6 +21,10 @@ keyword?: string;
  * 경매방 상태 필터 — BEFORE(시작 전) / OPEN(방송 중) / CLOSED(종료)
  */
 status?: GetMyRoomsStatus;
+/**
+ * 역할 필터 — SELLER(내가 만든 방) / BUYER(참여한 남의 방)
+ */
+role?: GetMyRoomsRole;
 /**
  * 이전 페이지 마지막 경매방의 auctionRoomId, 없으면 첫 페이지
  */

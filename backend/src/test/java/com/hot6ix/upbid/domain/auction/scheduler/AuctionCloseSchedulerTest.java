@@ -3,12 +3,15 @@ package com.hot6ix.upbid.domain.auction.scheduler;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
+import com.hot6ix.upbid.global.event.payload.ItemEnded;
+import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -112,6 +115,48 @@ class AuctionCloseSchedulerTest {
                 .isEmpty();
     }
 
+    @Test
+    @DisplayName("낙찰로 마감되면 남은 예약을 취소한다")
+    void cancelsScheduleOnItemEnded() {
+
+        ScheduledFuture<?> schedule = givenScheduledFuture();
+        auctionCloseScheduler.on(itemStarted());
+
+        auctionCloseScheduler.on(ItemEnded.of(ROOM_ID, ITEM_ID, "한정판 피규어", 12_000L, "한기", END_AT));
+
+        verify(schedule).cancel(false);
+        assertThat(schedules())
+                .as("방 종료로 먼저 닫힌 물품의 예약이 남으면 방 길이만큼 핸들이 메모리에 머문다")
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("유찰로 마감돼도 남은 예약을 취소한다")
+    void cancelsScheduleOnItemPassed() {
+
+        ScheduledFuture<?> schedule = givenScheduledFuture();
+        auctionCloseScheduler.on(itemStarted());
+
+        auctionCloseScheduler.on(ItemPassed.of(ROOM_ID, ITEM_ID, "한정판 피규어", END_AT));
+
+        verify(schedule).cancel(false);
+        assertThat(schedules()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("예약이 스스로 실행돼 마감한 경우에는 취소할 대상이 없다")
+    void cancelIsNoopAfterRun() {
+
+        givenScheduledFuture();
+        auctionCloseScheduler.on(itemStarted());
+        scheduledTask().run();
+
+        assertThatCode(() -> auctionCloseScheduler.on(
+                ItemPassed.of(ROOM_ID, ITEM_ID, "한정판 피규어", END_AT)))
+                .as("실행이 시작된 예약은 이미 핸들을 버린 뒤라 취소가 겉돌아야 한다")
+                .doesNotThrowAnyException();
+    }
+
     private ItemStarted itemStarted() {
         return ItemStarted.of(ROOM_ID, ITEM_ID, "한정판 피규어", STARTED_AT, END_AT);
     }
@@ -119,9 +164,11 @@ class AuctionCloseSchedulerTest {
     /**
      * 반환값을 비워 두면 {@code compute}가 항목을 넣지 않고 지워 버려 핸들 보관을 검증할 수 없다.
      */
-    private void givenScheduledFuture() {
-        when(taskScheduler.schedule(any(Runnable.class), any(Instant.class)))
-                .thenReturn(mock(ScheduledFuture.class));
+    private ScheduledFuture<?> givenScheduledFuture() {
+        ScheduledFuture<?> schedule = mock(ScheduledFuture.class);
+        // when().thenReturn()은 schedule()의 반환 타입이 ScheduledFuture<?>라 와일드카드 캡처가 어긋난다.
+        doReturn(schedule).when(taskScheduler).schedule(any(Runnable.class), any(Instant.class));
+        return schedule;
     }
 
     /** 실제 시각을 기다리지 않고 예약된 작업만 꺼내 직접 실행한다. */

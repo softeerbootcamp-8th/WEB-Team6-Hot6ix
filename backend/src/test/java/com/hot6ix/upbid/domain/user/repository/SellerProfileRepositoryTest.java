@@ -88,6 +88,30 @@ class SellerProfileRepositoryTest extends AbstractMySqlContainerTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    /**
+     * #103의 뿌리다. user_id UNIQUE는 deleted_at을 모르므로, 삭제된 뒤에도 그 행은 자리를 차지한다
+     * — 재등록을 INSERT로 풀 수 없는 이유이자, 되살릴 행을 찾는 조회에 deletedAt 조건을 넣지
+     * 않는 이유다.
+     */
+    @Test
+    @DisplayName("삭제된 프로필도 findByUser_UserId로는 찾히고, 그 자리에 새 행은 못 넣는다")
+    void findByUserId_includesDeleted() {
+
+        User user = newUser("seller4@hot6ix.com");
+        SellerProfile sellerProfile = sellerProfileRepository.saveAndFlush(newSellerProfile(user));
+        sellerProfile.softDelete(LocalDateTime.now());
+        sellerProfileRepository.flush();
+
+        assertThat(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(user.getUserId()))
+                .isEmpty();
+        assertThat(sellerProfileRepository.findByUser_UserId(user.getUserId()))
+                .containsSame(sellerProfile);
+
+        SellerProfile reinserted = newSellerProfile(user);
+        assertThatThrownBy(() -> sellerProfileRepository.saveAndFlush(reinserted))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
     @Test
     @DisplayName("필드를 수정하고 flush하면 updatedAt이 실제로 갱신된다")
     void updatedAt_refreshed_afterFlush() throws InterruptedException {

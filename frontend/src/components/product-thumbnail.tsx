@@ -2,34 +2,29 @@ import { ImageIcon } from 'lucide-react'
 import { useState } from 'react'
 
 import { cn } from '@/lib/utils'
-import { mockProductImage } from '@/mocks/images'
 
 /**
  * 상품 썸네일.
  *
- * 지금은 이름으로 목업 사진을 고른다. API 가 붙으면 `src` 에 서버가 준
- * `imageUrl` 을 넘기면 되고, 나머지 동작(로딩·실패 대체)은 그대로 쓴다.
+ * `src` 에 서버가 준 `imageUrl` 을 넘긴다. 주소가 없거나 내려받기에 실패하면
+ * 회색 아이콘으로 떨어진다. 네트워크가 없어도 배치가 무너지지 않아야 한다.
  *
- * 사진을 못 받으면 원래 쓰던 회색 아이콘으로 돌아간다. 네트워크가 없어도
- * 배치가 무너지지 않아야 한다.
+ * **주소가 없어도 목업 사진으로 떨어지지 않는다.** 예전에는 `src` 가 없으면
+ * 상품 이름으로 목업 사진을 골랐다. 그래서 판매자가 사진을 올리지 않은 물품에
+ * 관계없는 사진이 뜨고, 경매 중에 판매자가 올린 것과 다른 사진이 보였다(#138).
+ * 비어 보이는 게 틀린 사진보다 낫다.
  */
 export function ProductThumbnail({
-  name,
   src,
-  size = 480,
   className,
   iconClassName = 'size-6',
 }: {
-  name: string
-  /** 서버가 준 이미지 주소. 없으면 목업 사진을 고른다. */
+  /** 서버가 준 이미지 주소. 없으면 회색 아이콘을 그린다. */
   src?: string | null
-  /** 내려받을 사진 크기(px). 큰 영역은 크게 받는다. */
-  size?: number
   className?: string
   iconClassName?: string
 }) {
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
-  const url = src ?? mockProductImage(name, size)
 
   return (
     <span
@@ -37,9 +32,9 @@ export function ProductThumbnail({
       className={cn('relative overflow-hidden', className)}
       // 배경색은 호출한 쪽 클래스를 그대로 쓴다.
     >
-      {state !== 'failed' && (
+      {src && state !== 'failed' && (
         <img
-          src={url}
+          src={src}
           alt=""
           loading="lazy"
           decoding="async"
@@ -52,11 +47,11 @@ export function ProductThumbnail({
         />
       )}
 
-      {state === 'loading' && (
+      {src && state === 'loading' && (
         <span className="animate-skeleton absolute inset-0 size-full bg-fill" />
       )}
 
-      {state === 'failed' && (
+      {(!src || state === 'failed') && (
         <span className="flex size-full items-center justify-center">
           <ImageIcon className={iconClassName} />
         </span>

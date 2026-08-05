@@ -19,6 +19,9 @@ public interface DealSummaryProjection {
 
     Long getAuctionRoomId();
 
+    /** 거래 상세 화면이 물품 상세를 부를 때 방을 지목하는 공개 식별자. */
+    String getShareCode();
+
     /** 판매 건만 값이 있다. 내가 산 물건은 내 상품이 아니다. */
     Long getProductId();
 
@@ -31,6 +34,12 @@ public interface DealSummaryProjection {
 
     /** 이 물품에 성사된 후보가 있으면 1이다. */
     Integer getDealCompleted();
+
+    /**
+     * 이 물품에 아직 처리되지 않은 후보가 있으면 1이다. 성사된 후보도 대기 후보도 없으면
+     * 후보가 전원 실패한 것이라, 이 값이 유찰과 전원 실패를 가른다.
+     */
+    Integer getHasWaitingCandidate();
 
     Long getAmount();
 

@@ -69,6 +69,19 @@ public class SellerProfile extends BaseEntity {
                 .build();
     }
 
+    /**
+     * 삭제됐던 프로필을 등록 요청 값으로 되살린다. 새 행을 넣는 대신 이 행을 되살리므로
+     * {@code seller_profile_id}가 유지되고, 이 값을 가리키던 경매방·상품·거래가 그대로 붙는다.
+     */
+    public void restore(SellerProfileCreateRequestDto request) {
+        super.restore();
+        this.storeName = request.storeName();
+        this.storeImageUrl = request.storeImageUrl();
+        this.snsUrl = request.snsUrl();
+        this.storePhoneNumber = request.storePhoneNumber();
+        this.storeDescription = request.storeDescription();
+    }
+
     public void update(SellerProfileUpdateRequestDto request) {
         this.storeName = request.storeName();
         this.storeImageUrl = request.storeImageUrl();

@@ -5,6 +5,7 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDt
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
@@ -101,6 +102,55 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
             @Param("auctionRoomId") Long auctionRoomId, Limit limit);
 
     /**
+     * 경매방의 물품별 결과를 최대 {@link #MAX_SUMMARY_SIZE}건 조회한다. 정렬과 상한을
+     * {@link #findSummaries}와 같게 두는 이유는 두 목록이 같은 방을 보여주기 때문이다 —
+     * 순서가 다르면 물품 목록과 결과 목록에서 같은 물품이 다른 자리에 있게 된다.
+     *
+     * <p>최고 입찰자를 {@code left join}으로 가져온다. 입찰이 한 번도 없었으면
+     * {@code leaderUser}가 없고, 그런 물품이 결과에서 빠지면 유찰을 셀 수 없다.
+     *
+     * <p>탈퇴한 회원도 걸러내지 않는다. 낙찰은 지나간 사실이라 낙찰자가 나갔다고 결과에서
+     * 사라지면 안 된다 — {@code DealRepository.findDeals}가 거래 내역에서 같은 판단을 한다.
+     */
+    default List<AuctionItemResultProjection> findResults(Long auctionRoomId) {
+        return findResults(auctionRoomId, Limit.of(MAX_SUMMARY_SIZE));
+    }
+
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection("
+            + "  ai.auctionItemId, p.name, p.imageUrl, ai.status, ai.currentPrice, lu.nickname) "
+            + "from AuctionItem ai "
+            + "join ai.product p "
+            + "left join ai.leaderUser lu "
+            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId "
+            + "order by " + STATUS_RANK + " asc, ai.auctionItemId asc")
+    List<AuctionItemResultProjection> findResults(
+            @Param("auctionRoomId") Long auctionRoomId, Limit limit);
+
+    /**
+     * 경매방의 마감된 물품을 최근 마감 순으로 조회한다. 거래 현황이 쓰는 목록이며, 아직
+     * 시작하지 않았거나 진행 중인 물품은 거래가 시작된 적이 없어 빠진다.
+     *
+     * <p>정렬 키를 둘 두는 이유는 순서가 하나로 정해지게 하기 위해서다. 같은 시각에 마감된
+     * 물품이 흔하고, 그때 순서가 흔들리면 화면이 요청마다 다르게 보인다.
+     */
+    default List<ClosedAuctionItemProjection> findClosedItems(Long auctionRoomId) {
+        return findClosedItems(auctionRoomId,
+                List.of(AuctionItemStatus.SOLD, AuctionItemStatus.FAILED),
+                Limit.of(MAX_SUMMARY_SIZE));
+    }
+
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.ClosedAuctionItemProjection("
+            + "  ai.auctionItemId, p.name, ai.status) "
+            + "from AuctionItem ai "
+            + "join ai.product p "
+            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId "
+            + "and ai.status in :statuses "
+            + "order by ai.endAt desc, ai.auctionItemId desc")
+    List<ClosedAuctionItemProjection> findClosedItems(@Param("auctionRoomId") Long auctionRoomId,
+                                                      @Param("statuses") Collection<AuctionItemStatus> statuses,
+                                                      Limit limit);
+
+    /**
      * 물품 상세를 조회한다. 상태로 거르지 않으므로 낙찰·유찰된 물품도 조회된다.
      * 유찰 화면이 시작가를 표시하므로 {@code startingPrice}도 함께 내린다 —
      * 유찰이면 입찰이 없어 {@code currentPrice}가 시작가와 같지만, 그건 결과일 뿐이다.
@@ -122,6 +172,23 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
+
+    /**
+     * 경매방에서 지정 상태인 물품의 ID를 <b>오름차순으로</b> 조회한다. 방 종료가 진행 중인 물품을
+     * 한꺼번에 마감할 때 쓴다.
+     *
+     * <p>정렬이 이 쿼리의 핵심이다. 방 종료는 물품마다 행 락을 잡는데, 잡는 순서가 요청마다
+     * 다르면 같은 방을 동시에 닫는 두 요청이 서로의 물품을 기다리다 데드락에 빠진다. ID
+     * 오름차순으로 고정하면 그 순환이 만들어지지 않는다.
+     *
+     * <p>엔티티가 아니라 ID만 뽑는 이유는 실제 마감이 {@code AuctionItemCloseService}에서
+     * 행 락을 걸고 다시 읽기 때문이다. 여기서 엔티티를 읽어봐야 그 사이에 값이 바뀔 수 있다.
+     */
+    @Query("select ai.auctionItemId from AuctionItem ai "
+            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId and ai.status = :status "
+            + "order by ai.auctionItemId asc")
+    List<Long> findIdsByRoomAndStatus(
+            @Param("auctionRoomId") Long auctionRoomId, @Param("status") AuctionItemStatus status);
 
     /** 물품 전체를 읽지 않고 상태만 본다. 마감됐는지 판정하는 데 쓴다. */
     @Query("select ai.status from AuctionItem ai where ai.auctionItemId = :auctionItemId")

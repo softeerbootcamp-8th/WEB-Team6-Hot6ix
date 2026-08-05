@@ -19,6 +19,8 @@ export interface SessionUser {
   kakaoEmail: string
   /** 전화번호 인증을 마쳐야 입찰할 수 있다. */
   phone: string | null
+  /** `/users/me` 의 `profileImageUrl`. 올린 적 없으면 null 이다. */
+  profileImageUrl: string | null
 }
 
 export type Session =
@@ -34,6 +36,7 @@ export const MOCK_MEMBER: SessionUser = {
   nickname: '기승민',
   kakaoEmail: 'seungmin@kakao.com',
   phone: '010-1234-5678',
+  profileImageUrl: null,
 }
 
 function read(): Session {

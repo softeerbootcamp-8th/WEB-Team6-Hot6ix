@@ -3,10 +3,14 @@ package com.hot6ix.upbid.domain.auction.controller;
 import com.hot6ix.upbid.domain.auction.api.AuctionRoomApi;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
+import com.hot6ix.upbid.domain.auction.service.AuctionRoomCloseService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
 import com.hot6ix.upbid.global.interceptor.GuestAllowed;
@@ -29,6 +33,7 @@ public class AuctionRoomController implements AuctionRoomApi {
 
     private final AuctionRoomService auctionRoomService;
     private final AuctionRoomShareService auctionRoomShareService;
+    private final AuctionRoomCloseService auctionRoomCloseService;
 
     @PostMapping
     @Override
@@ -40,25 +45,37 @@ public class AuctionRoomController implements AuctionRoomApi {
         return ResponseEntity.status(HttpStatus.CREATED).body(CommonResponse.ok(response, "경매방이 생성되었습니다."));
     }
 
-    @GetMapping("/{roomId}")
-    @GuestAllowed
-    @Override
-    public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(@PathVariable Long roomId) {
-
-        AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(roomId);
-
-        return ResponseEntity.ok(CommonResponse.ok(response, "경매방 정보 조회에 성공했습니다."));
-    }
-
     @GetMapping("/me")
     @Override
     public ResponseEntity<CommonResponse<CursorPageResponse<AuctionRoomListItemResponseDto>>> getMyRooms(
-            Long userId, String keyword, AuctionRoomStatus status, Long cursor, Integer size) {
+            Long userId, String keyword, AuctionRoomStatus status, AuctionRoomRole role,
+            Long cursor, Integer size) {
 
         CursorPageResponse<AuctionRoomListItemResponseDto> response =
-                auctionRoomService.getMyRooms(userId, keyword, status, cursor, size);
+                auctionRoomService.getMyRooms(userId, keyword, status, role, cursor, size);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "내 경매방 목록 조회에 성공했습니다."));
+    }
+
+    @GetMapping("/me/counts")
+    @Override
+    public ResponseEntity<CommonResponse<AuctionRoomCountsResponseDto>> getMyRoomCounts(
+            Long userId, String keyword, AuctionRoomRole role) {
+
+        AuctionRoomCountsResponseDto response = auctionRoomService.getMyRoomCounts(userId, keyword, role);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "내 경매방 상태별 개수 조회에 성공했습니다."));
+    }
+
+    @GetMapping("/share/{shareCode}/results")
+    @GuestAllowed
+    @Override
+    public ResponseEntity<CommonResponse<AuctionRoomResultResponseDto>> getResults(
+            @PathVariable String shareCode, Long userId) {
+
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(shareCode, userId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "경매방 낙찰 결과 조회에 성공했습니다."));
     }
 
     @GetMapping("/{roomId}/share")
@@ -75,9 +92,9 @@ public class AuctionRoomController implements AuctionRoomApi {
     @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoomByShareCode(
-            @PathVariable String shareCode) {
+            Long userId, @PathVariable String shareCode) {
 
-        AuctionRoomPublicResponseDto response = auctionRoomService.getRoomByShareCode(shareCode);
+        AuctionRoomPublicResponseDto response = auctionRoomService.getRoomByShareCode(shareCode, userId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매방 정보 조회에 성공했습니다."));
     }
@@ -90,5 +107,15 @@ public class AuctionRoomController implements AuctionRoomApi {
         AuctionRoomPublicResponseDto response = auctionRoomService.update(userId, roomId, request);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매방이 수정되었습니다."));
+    }
+
+    @PostMapping("/{roomId}/close")
+    @Override
+    public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> close(
+            Long userId, @PathVariable Long roomId) {
+
+        AuctionRoomPublicResponseDto response = auctionRoomCloseService.close(userId, roomId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "경매방이 종료되었습니다."));
     }
 }

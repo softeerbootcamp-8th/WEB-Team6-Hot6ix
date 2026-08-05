@@ -1,11 +1,11 @@
 import { ChevronLeft, Loader2, Pencil } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
 import { cn } from '@/lib/utils'
-import { formatRemaining, formatWon } from '@/lib/format'
+import { formatRemaining, formatWon, toHref } from '@/lib/format'
 import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
 
 /**
@@ -50,6 +50,12 @@ export function MobileItemDetailView({
   onBid: () => void
 }) {
   const [tab, setTab] = useState<'events' | 'leaderboard'>('events')
+  const [confirming, setConfirming] = useState(false)
+
+  // 입찰 요청이 끝나면(성공·실패 모두) 확인 화면을 닫는다.
+  useEffect(() => {
+    if (!pending) setConfirming(false)
+  }, [pending])
 
   /** 지금 금액을 조절할 수 있는 상태인지 */
   const biddable = !closed && !ready && onAmountChange !== undefined
@@ -110,7 +116,13 @@ export function MobileItemDetailView({
           <div className="mt-5 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3.5">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-[12px] font-semibold text-brand-600">
-                {closed ? '낙찰가' : ready ? '시작가' : '현재 최고가'}
+                {closed
+                  ? item.sold
+                    ? '낙찰가'
+                    : '유찰 · 시작가'
+                  : ready
+                    ? '시작가'
+                    : '현재 최고가'}
               </span>
               <span className="text-[20px] font-extrabold tabular-nums text-brand-600">
                 {formatWon(ready ? item.startPrice : item.currentPrice)}
@@ -134,7 +146,7 @@ export function MobileItemDetailView({
           <div className="mt-5 border-t pt-5">
             {item.productUrl ? (
               <a
-                href={`https://${item.productUrl}`}
+                href={toHref(item.productUrl)}
                 target="_blank"
                 rel="noreferrer"
                 className="text-[12px] font-semibold text-brand-500 hover:underline"
@@ -228,7 +240,7 @@ export function MobileItemDetailView({
        */}
       <div className="mt-4 px-4 pb-16">
         <div className="rounded-2xl border bg-card p-4">
-          {biddable ? (
+          {biddable && !confirming ? (
             <>
               <p className="text-[11px] font-medium text-neutral-tertiary">
                 현재가 {formatWon(item.currentPrice)} · 단위 +
@@ -263,7 +275,7 @@ export function MobileItemDetailView({
                       )
                     }
                     className={cn(
-                      'min-w-0 flex-1 bg-transparent text-right text-[22px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
+                      'min-w-0 flex-1 bg-transparent text-right text-[18px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
                       belowMinimum ? 'text-live' : 'text-brand-600',
                     )}
                   />
@@ -309,19 +321,61 @@ export function MobileItemDetailView({
             </>
           ) : null}
 
-          <button
-            type="button"
-            onClick={onBid}
-            disabled={bidBlocked || pending}
-            className="ease-soft mt-3 flex h-13 w-full items-center justify-center gap-2 rounded-[14px] bg-brand-500 text-[16px] font-bold text-white transition-all duration-150 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-border-strong disabled:opacity-100 disabled:active:scale-100"
-          >
-            {pending && <Loader2 aria-hidden className="size-5 animate-spin" />}
-            {closed
-              ? '마감된 물품이에요'
-              : ready
-                ? '아직 시작 전이에요'
-                : `${formatWon(amount)} 입찰하기`}
-          </button>
+          {confirming && (
+            /* 확인 화면 — 금액을 보여주고 확정/취소를 고른다 */
+            <div className="mb-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3.5">
+              <p className="text-center text-[12px] font-semibold text-brand-600">
+                입찰 금액
+              </p>
+              <p className="mt-1 text-center text-[26px] font-extrabold tabular-nums text-brand-600">
+                {formatWon(amount)}
+              </p>
+              <p className="mt-1 text-center text-[12px] font-semibold tabular-nums text-brand-500">
+                현재가보다 +
+                {(amount - item.currentPrice).toLocaleString('ko-KR')}원
+              </p>
+              <p className="mt-1 text-center text-[11px] font-medium text-neutral-muted">
+                확인하면 즉시 입찰에 반영됩니다.
+              </p>
+            </div>
+          )}
+
+          {confirming ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => setConfirming(false)}
+                className="ease-soft flex h-13 flex-1 items-center justify-center rounded-[14px] border bg-card text-[15px] font-bold text-neutral-secondary transition-all duration-150 active:scale-[0.99] disabled:opacity-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={onBid}
+                className="ease-soft flex h-13 flex-[1.4] items-center justify-center gap-2 rounded-[14px] bg-brand-500 text-[15px] font-bold text-white transition-all duration-150 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100"
+              >
+                {pending && (
+                  <Loader2 aria-hidden className="size-5 animate-spin" />
+                )}
+                {pending ? '처리 중…' : '입찰 확정'}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={biddable ? () => setConfirming(true) : undefined}
+              disabled={bidBlocked || pending}
+              className="ease-soft mt-3 flex h-13 w-full items-center justify-center gap-2 rounded-[14px] bg-brand-500 text-[16px] font-bold text-white transition-all duration-150 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-border-strong disabled:opacity-100 disabled:active:scale-100"
+            >
+              {closed
+                ? '마감된 물품이에요'
+                : ready
+                  ? '아직 시작 전이에요'
+                  : `${formatWon(amount)} 입찰하기`}
+            </button>
+          )}
         </div>
       </div>
     </div>

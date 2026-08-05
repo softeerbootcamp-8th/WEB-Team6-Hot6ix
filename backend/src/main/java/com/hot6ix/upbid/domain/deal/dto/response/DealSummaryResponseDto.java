@@ -13,10 +13,13 @@ import java.time.LocalDateTime;
  * @param sellerProfileId 구매자가 판매자에게 연락할 때 쓰는 프로필 조회 키. 연락처를 목록에
  *                        싣지 않는 이유는 거래와 무관한 화면까지 개인 정보를 들고 다니게 되기
  *                        때문이다
+ * @param shareCode       거래 상세 화면이 물품 상세를 부를 때 방을 지목하는 공개 식별자.
+ *                        물품 상세는 공개 경로라 숫자 PK를 받지 않는다
  */
 public record DealSummaryResponseDto(
         Long auctionItemId,
         Long auctionRoomId,
+        String shareCode,
         Long productId,
         String productName,
         String auctionRoomName,

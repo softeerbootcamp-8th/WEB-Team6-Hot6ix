@@ -77,4 +77,9 @@ public class User extends BaseEntity {
                 .phoneNumber(pendingSignup.verifiedPhoneNumber())
                 .build();
     }
+
+    public void updateProfile(String nickname, String profileImageUrl) {
+        this.nickname = nickname;
+        this.profileImageUrl = profileImageUrl;
+    }
 }

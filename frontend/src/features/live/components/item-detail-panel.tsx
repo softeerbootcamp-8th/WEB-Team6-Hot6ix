@@ -1,10 +1,16 @@
 import { Clock, Loader2, Pencil, Share2 } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 
 import { ItemEventList } from '@/features/live/components/item-event-list'
 import { LeaderboardRows } from '@/features/live/components/leaderboard-rows'
 import { ProductThumbnail } from '@/components/product-thumbnail'
-import { formatRemaining, formatWon } from '@/lib/format'
+import {
+  formatRemaining,
+  formatUrlLabel,
+  formatWon,
+  toHref,
+} from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 
@@ -24,7 +30,7 @@ const PRESETS = [1, 5] as const
  */
 export function ItemDetailPanel({
   item,
-  roomId,
+  shareCode,
   itemId,
   events,
   isGuest,
@@ -40,7 +46,7 @@ export function ItemDetailPanel({
   action,
 }: {
   item: AuctionItemDetail
-  roomId: string
+  shareCode: string
   itemId: string
   events: RoomEvent[]
   isGuest: boolean
@@ -63,6 +69,13 @@ export function ItemDetailPanel({
     onAmountChange(typeof next === 'function' ? next(amount) : next)
   const bidBlocked = closed || ready || amount < minimum
 
+  const [confirming, setConfirming] = useState(false)
+
+  // 입찰 요청이 끝나면(성공·실패 모두) 확인 화면을 닫는다.
+  useEffect(() => {
+    if (!pending) setConfirming(false)
+  }, [pending])
+
   return (
     <div className="animate-rise rounded-[20px] border bg-card p-5 lg:min-h-0 lg:flex-1 lg:overflow-hidden">
       <div className="grid gap-5 lg:h-full xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
@@ -70,8 +83,7 @@ export function ItemDetailPanel({
         <div className="min-w-0 overflow-y-auto">
           <div className="relative">
             <ProductThumbnail
-              name={item.name}
-              size={640}
+              src={item.imageUrl}
               iconClassName="size-8"
               className="flex h-[220px] items-center justify-center rounded-xl bg-fill text-neutral-muted"
             />
@@ -90,7 +102,13 @@ export function ItemDetailPanel({
               {item.name}
             </h2>
             <span className="ml-auto shrink-0 text-[12px] font-medium text-neutral-tertiary">
-              {closed ? '낙찰가' : ready ? '시작가' : '현재 최고가'}
+              {closed
+                ? item.sold
+                  ? '낙찰가'
+                  : '유찰 · 시작가'
+                : ready
+                  ? '시작가'
+                  : '현재 최고가'}
             </span>
             <span className="shrink-0 text-[14px] font-bold tabular-nums text-neutral-secondary">
               {formatWon(ready ? item.startPrice : item.currentPrice)}
@@ -99,13 +117,13 @@ export function ItemDetailPanel({
 
           {item.productUrl && (
             <a
-              href={`https://${item.productUrl}`}
+              href={toHref(item.productUrl)}
               target="_blank"
               rel="noreferrer noopener"
               className="mt-4 flex items-center gap-1.5 text-[13px] font-semibold text-brand-500 hover:underline"
             >
               <Share2 aria-hidden className="size-3.5" />
-              상품 링크 · {item.productUrl}
+              상품 링크 · {formatUrlLabel(item.productUrl)}
             </a>
           )}
 
@@ -158,7 +176,7 @@ export function ItemDetailPanel({
             ) : isGuest ? (
               <Link
                 to="/"
-                search={{ redirect: `/rooms/${roomId}/items/${itemId}` }}
+                search={{ redirect: `/rooms/${shareCode}/items/${itemId}` }}
                 className="ease-soft flex h-11 items-center justify-center rounded-xl bg-brand-500 text-[14px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
               >
                 로그인하고 입찰하기
@@ -167,6 +185,38 @@ export function ItemDetailPanel({
               <p className="flex h-11 items-center justify-center rounded-xl bg-fill text-[13px] font-medium text-neutral-tertiary">
                 {closed ? '마감된 물품이에요' : '아직 시작하지 않은 물품이에요'}
               </p>
+            ) : confirming ? (
+              /* 입찰 확인 행 — 금액을 한 번 더 보여주고 확정/취소를 고른다 */
+              <div className="flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-bold tabular-nums text-brand-600">
+                    {formatWon(amount)}
+                  </p>
+                  <p className="text-[11px] font-medium tabular-nums text-brand-400">
+                    현재가보다 +
+                    {(amount - item.currentPrice).toLocaleString('ko-KR')}원
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setConfirming(false)}
+                  className="ease-soft flex h-9 shrink-0 items-center justify-center rounded-xl border bg-card px-3 text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95 disabled:opacity-50"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={onBid}
+                  className="ease-soft flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100"
+                >
+                  {pending && (
+                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                  )}
+                  {pending ? '처리 중…' : '입찰 확정'}
+                </button>
+              </div>
             ) : (
               <div className="flex items-center gap-2 rounded-2xl border bg-surface-subtle px-3 py-2.5">
                 {/* 칩 버튼 */}
@@ -222,17 +272,18 @@ export function ItemDetailPanel({
                   </span>
                 </label>
 
-                {/* 입찰 버튼 */}
+                {/*
+                 * 입찰 버튼 — 금액은 바로 왼쪽 입력칸에 이미 표시되므로
+                 * 버튼 텍스트는 "입찰"만 담아 너비를 최소화한다.
+                 * 버튼이 좁아진 만큼 입력칸이 더 넓어져 13자리까지 잘리지 않는다.
+                 */}
                 <button
                   type="button"
-                  disabled={bidBlocked || pending}
-                  onClick={onBid}
+                  disabled={bidBlocked}
+                  onClick={() => setConfirming(true)}
                   className="ease-soft flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
                 >
-                  {pending && (
-                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
-                  )}
-                  {pending ? '처리 중…' : `${formatWon(amount)} 입찰하기`}
+                  입찰
                 </button>
               </div>
             )}

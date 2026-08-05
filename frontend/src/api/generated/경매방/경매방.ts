@@ -31,9 +31,12 @@ import type {
 import type {
   AuctionRoomCreateRequestDto,
   AuctionRoomUpdateRequestDto,
+  CommonResponseAuctionRoomCountsResponseDto,
   CommonResponseAuctionRoomPublicResponseDto,
+  CommonResponseAuctionRoomResultResponseDto,
   CommonResponseAuctionRoomShareResponseDto,
   CommonResponseCursorPageResponseAuctionRoomListItemResponseDto,
+  GetMyRoomCountsParams,
   GetMyRoomsParams
 } from '.././model';
 
@@ -46,7 +49,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * 판매자가 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며, 이를 노출하는 API는 별도로 제공된다. 로그인 세션의 회원으로 생성한다. 입찰 단위(bidIncrement)는 이 방의 모든 물품이 공유하며, 물품을 추가할 때 물품으로 복사된다. 복사된 뒤에는 어긋날 수 있어 설정 수정(PATCH)으로는 바꿀 수 없다.
+ * 판매자가 경매방을 생성한다. shareCode는 서버가 발급해 응답에 담아 준다 — 공개 화면이 이 방을 지목하는 유일한 식별자이며, 완성된 공유 링크는 GET /{roomId}/share로 받는다. 로그인 세션의 회원으로 생성한다. 입찰 단위(bidIncrement)는 이 방의 모든 물품이 공유하며, 물품을 추가할 때 물품으로 복사된다. 복사된 뒤에는 어긋날 수 있어 설정 수정(PATCH)으로는 바꿀 수 없다.
  * @summary 경매방 생성
  */
 export const create2 = (
@@ -111,100 +114,79 @@ export const useCreate2 = <TError = ErrorType<CommonResponseAuctionRoomPublicRes
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 경매방의 공개 정보를 조회한다. 인증이 필요 없으며, 경매 시작 전(BEFORE)을 포함한 모든 상태에서 동일하게 노출한다.
- * @summary 경매방 정보 조회
+ * 소유자가 방송을 끝내고 경매방을 종료한다. 요청 본문은 없다. 진행 중이던 물품은 모두 그 자리에서 마감되어 입찰이 있으면 낙찰(SOLD), 없으면 유찰(FAILED)로 확정된다. **아직 시작하지 않은 READY 물품은 그대로 남는다** — 시작한 적 없는 물품을 유찰로 적으면 결과 집계에서 실제 유찰과 섞이기 때문이다. 물품을 하나도 시작하지 않은 방(BEFORE)도 종료할 수 있다. 종료된 방에서는 물품 추가·시작이 모두 막히며, **되돌리는 API는 없다.** 응답의 closedAt이 종료 시각이고, 종료를 참여자에게 알리는 ROOM_CLOSED 이벤트가 SSE로 함께 나간다.
+ * @summary 경매방 종료
  */
-export const getRoom = (
+export const close = (
     roomId: number,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
       
       return customInstance<CommonResponseAuctionRoomPublicResponseDto>(
-      {url: `/api/v1/auction-rooms/${roomId}`, method: 'GET', signal
+      {url: `/api/v1/auction-rooms/${roomId}/close`, method: 'POST', signal
     },
       options);
     }
   
 
 
+export const getCloseMutationOptions = <TError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof close>>, TError,{roomId: number}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof close>>, TError,{roomId: number}, TContext> => {
 
-export const getGetRoomQueryKey = (roomId?: number,) => {
-    return [
-    `/api/v1/auction-rooms/${roomId}`
-    ] as const;
-    }
+const mutationKey = ['close'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
 
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof close>>, {roomId: number}> = (props) => {
+          const {roomId} = props ?? {};
+
+          return  close(roomId,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CloseMutationResult = NonNullable<Awaited<ReturnType<typeof close>>>
     
-export const getGetRoomQueryOptions = <TData = Awaited<ReturnType<typeof getRoom>>, TError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>>(roomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
-) => {
+    export type CloseMutationError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>
 
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetRoomQueryKey(roomId);
-
-  
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRoom>>> = ({ signal }) => getRoom(roomId, requestOptions, signal);
-
-      
-
-      
-
-   return  { queryKey, queryFn, enabled: !!(roomId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetRoomQueryResult = NonNullable<Awaited<ReturnType<typeof getRoom>>>
-export type GetRoomQueryError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>
-
-
-export function useGetRoom<TData = Awaited<ReturnType<typeof getRoom>>, TError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>>(
- roomId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getRoom>>,
-          TError,
-          Awaited<ReturnType<typeof getRoom>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetRoom<TData = Awaited<ReturnType<typeof getRoom>>, TError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>>(
- roomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getRoom>>,
-          TError,
-          Awaited<ReturnType<typeof getRoom>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetRoom<TData = Awaited<ReturnType<typeof getRoom>>, TError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>>(
- roomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary 경매방 정보 조회
+    /**
+ * @summary 경매방 종료
  */
+export const useClose = <TError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof close>>, TError,{roomId: number}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof close>>,
+        TError,
+        {roomId: number},
+        TContext
+      > => {
 
-export function useGetRoom<TData = Awaited<ReturnType<typeof getRoom>>, TError = ErrorType<CommonResponseAuctionRoomPublicResponseDto>>(
- roomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRoom>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient 
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+      const mutationOptions = getCloseMutationOptions(options);
 
-  const queryOptions = getGetRoomQueryOptions(roomId,options)
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * 소유자가 경매방 설정을 부분 수정한다. 요청에서 생략된 필드는 기존 값을 유지한다. 로그인 세션의 회원을 소유자로 확인한다.
 
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+description과 liveUrl은 **빈 문자열을 보내면 지워진다**(null로 저장). 생략은 "유지", 빈 문자열은 "삭제"로 갈린다. 나머지 필드는 빈 값을 받지 않는다.
 
-  query.queryKey = queryOptions.queryKey ;
+수정 가능 범위는 요청에 담긴 필드에 따라 다르다.
+- **name만 보낸 요청**: 경매가 진행 중이어도 통과한다. 방송 중에 드러난 오타를 고칠 길을 하나 열어 둔 것이다.
+- **name 밖의 필드를 하나라도 보낸 요청**: 이 방의 물품 중 하나라도 READY가 아닌 상태로 경매에 올라간 적 있으면(=경매가 시작된 적 있으면) 이후로도 계속 거절된다. 참여자가 이미 보고 판단한 조건이라 진행 중에 바뀌면 안 된다.
+- **종료된 방**: 어떤 필드도 바꿀 수 없다. 참여자에게는 결과 기록이라 나중에 제목이 바뀌면 자기가 참여했던 방을 알아볼 수 없게 된다.
 
-  return query;
-}
-
-
-
-
-/**
- * 소유자가 경매방 설정을 부분 수정한다. 요청에서 생략된 필드는 기존 값을 유지한다. 이 방의 물품 중 하나라도 READY가 아닌 상태로 경매에 올라간 적 있으면(=경매가 시작된 적 있으면) 이후로도 계속 수정할 수 없다. 로그인 세션의 회원을 소유자로 확인한다.
+bidIncrement는 애초에 수정 대상이 아니다 — 물품이 방의 값을 복사해 갖고 있어서 방 값만 바꾸면 어긋난다.
  * @summary 경매방 설정 수정
  */
 export const update2 = (
@@ -362,7 +344,11 @@ export function useGetShareInfo<TData = Awaited<ReturnType<typeof getShareInfo>>
 
 
 /**
- * 공유 링크·QR로 들어온 사람이 방에 진입할 때 쓴다. 인증이 필요 없으며 응답은 경매방 정보 조회(GET /{roomId})와 동일하다. 숫자 PK인 roomId를 공개 URL에 노출하면 다른 방을 추측해 순회 조회할 수 있어, 공개 진입점은 share_code로만 제공한다.
+ * 공유 링크·QR로 들어온 사람이 방에 진입할 때 쓴다. 인증이 필요 없으며, 경매 시작 전(BEFORE)을 포함한 모든 상태에서 동일하게 노출한다.
+
+**경매방 공개 조회의 유일한 진입점이다.** 숫자 PK를 받는 공개 경로는 두지 않는다 — auto_increment PK를 URL에 노출하면 1, 2, 3...을 순서대로 불러 공유 링크 없이 남의 방을 전부 훑을 수 있다. 물품 목록·물품 상세·SSE 구독도 같은 이유로 이 코드 아래에 있다.
+
+isOwner만 보는 사람에 따라 달라진다 — 방 주인이 로그인한 상태로 조회했을 때만 true이며, 화면이 판매자 조작(물품 추가·빼기·시작) UI를 띄울지 정하는 값이다. 실제 권한은 각 조작 API가 다시 검증하므로 이 값을 권한의 근거로 쓰지 않는다.
  * @summary 공유 코드로 경매방 정보 조회
  */
 export const getRoomByShareCode = (
@@ -455,7 +441,102 @@ export function useGetRoomByShareCode<TData = Awaited<ReturnType<typeof getRoomB
 
 
 /**
- * 로그인한 판매자 본인이 만든 경매방을 auctionRoomId 최신순으로 조회한다. 정렬 키를 항상 불변인 auctionRoomId로 고정해 커서 페이지네이션이 안정적으로 동작하며, 상태는 정렬이 아니라 필터로만 사용한다. **참여 경매방 목록이 아니다** — 내가 개설한 방만 나온다. itemCount는 그 방에 등록된 물품 수이며, participantCount는 참여자를 기록하는 코드가 아직 없어 항상 null이다.
+ * 경매방의 물품별 낙찰·유찰 결과를 한 번에 조회한다. 인증이 필요 없고, 로그인한 요청에만 물품마다 요청자의 최종 순위(myRank)와 부른 최고가(myAmount)가 함께 담긴다. 낙찰가와 낙찰자는 낙찰(SOLD)인 물품에만 있다 — 유찰 물품의 현재가는 아무도 부르지 않은 시작가라 가격으로 내리지 않는다. 방 상태로 거르지 않으므로 아직 열려 있는 방도 조회되며, 진행 중인 물품은 status로 드러난다. 낙찰 건수·유찰 건수·총 낙찰액은 화면이 items에서 직접 세므로 응답에 없다. 참여자 수도 없다 — 종료된 방의 참여자 수는 입찰한 사람 수인지 방송을 보던 사람 수인지 구분되지 않아 내리지 않는다.
+
+인증이 필요 없는 공개 경로라 경매방을 숫자 ID가 아닌 공유 코드로 지목한다.
+ * @summary 경매방 낙찰 결과 조회
+ */
+export const getResults = (
+    shareCode: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseAuctionRoomResultResponseDto>(
+      {url: `/api/v1/auction-rooms/share/${shareCode}/results`, method: 'GET', signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetResultsQueryKey = (shareCode?: string,) => {
+    return [
+    `/api/v1/auction-rooms/share/${shareCode}/results`
+    ] as const;
+    }
+
+    
+export const getGetResultsQueryOptions = <TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetResultsQueryKey(shareCode);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getResults>>> = ({ signal }) => getResults(shareCode, requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(shareCode), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetResultsQueryResult = NonNullable<Awaited<ReturnType<typeof getResults>>>
+export type GetResultsQueryError = ErrorType<CommonResponseAuctionRoomResultResponseDto>
+
+
+export function useGetResults<TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(
+ shareCode: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getResults>>,
+          TError,
+          Awaited<ReturnType<typeof getResults>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetResults<TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getResults>>,
+          TError,
+          Awaited<ReturnType<typeof getResults>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetResults<TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 경매방 낙찰 결과 조회
+ */
+
+export function useGetResults<TData = Awaited<ReturnType<typeof getResults>>, TError = ErrorType<CommonResponseAuctionRoomResultResponseDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getResults>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetResultsQueryOptions(shareCode,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
+ * 로그인한 사용자의 경매방을 auctionRoomId 최신순으로 조회한다. **내가 만든 방과 내가 참여한 방이 함께 나온다.** 방마다 role로 갈리며, role 파라미터로 한쪽만 볼 수 있다. 판매자로 등록하지 않은 사용자도 조회할 수 있다. 정렬 키를 항상 불변인 auctionRoomId로 고정해 커서 페이지네이션이 안정적으로 동작하며, 상태는 정렬이 아니라 필터로만 사용한다. itemCount는 그 방에 등록된 물품 수이며, participantCount는 방송 중(OPEN)인 방의 지금 접속 중인 수다 — 시작 전·종료된 방은 null이다. 전체 개수는 커서 페이지네이션이라 이 응답으로 알 수 없다. 상태별 개수는 GET /auction-rooms/me/counts로 따로 조회한다.
  * @summary 내 경매방 목록 조회
  */
 export const getMyRooms = (
@@ -537,6 +618,100 @@ export function useGetMyRooms<TData = Awaited<ReturnType<typeof getMyRooms>>, TE
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetMyRoomsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
+ * 목록 화면 필터 바의 탭 숫자용이다. 목록과 같은 조건에서 상태만 빼고 세므로 상태 탭을 바꿔도 이 값은 변하지 않는다. 역할 필터나 검색어를 바꿀 때만 다시 부른다. 화면의 '전체'는 세 값을 더한 수다.
+ * @summary 내 경매방 상태별 개수 조회
+ */
+export const getMyRoomCounts = (
+    params?: GetMyRoomCountsParams,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseAuctionRoomCountsResponseDto>(
+      {url: `/api/v1/auction-rooms/me/counts`, method: 'GET',
+        params, signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetMyRoomCountsQueryKey = (params?: GetMyRoomCountsParams,) => {
+    return [
+    `/api/v1/auction-rooms/me/counts`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetMyRoomCountsQueryOptions = <TData = Awaited<ReturnType<typeof getMyRoomCounts>>, TError = ErrorType<CommonResponseAuctionRoomCountsResponseDto>>(params?: GetMyRoomCountsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRoomCounts>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMyRoomCountsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMyRoomCounts>>> = ({ signal }) => getMyRoomCounts(params, requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMyRoomCounts>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetMyRoomCountsQueryResult = NonNullable<Awaited<ReturnType<typeof getMyRoomCounts>>>
+export type GetMyRoomCountsQueryError = ErrorType<CommonResponseAuctionRoomCountsResponseDto>
+
+
+export function useGetMyRoomCounts<TData = Awaited<ReturnType<typeof getMyRoomCounts>>, TError = ErrorType<CommonResponseAuctionRoomCountsResponseDto>>(
+ params: undefined |  GetMyRoomCountsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRoomCounts>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyRoomCounts>>,
+          TError,
+          Awaited<ReturnType<typeof getMyRoomCounts>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyRoomCounts<TData = Awaited<ReturnType<typeof getMyRoomCounts>>, TError = ErrorType<CommonResponseAuctionRoomCountsResponseDto>>(
+ params?: GetMyRoomCountsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRoomCounts>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getMyRoomCounts>>,
+          TError,
+          Awaited<ReturnType<typeof getMyRoomCounts>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetMyRoomCounts<TData = Awaited<ReturnType<typeof getMyRoomCounts>>, TError = ErrorType<CommonResponseAuctionRoomCountsResponseDto>>(
+ params?: GetMyRoomCountsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRoomCounts>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 내 경매방 상태별 개수 조회
+ */
+
+export function useGetMyRoomCounts<TData = Awaited<ReturnType<typeof getMyRoomCounts>>, TError = ErrorType<CommonResponseAuctionRoomCountsResponseDto>>(
+ params?: GetMyRoomCountsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMyRoomCounts>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetMyRoomCountsQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

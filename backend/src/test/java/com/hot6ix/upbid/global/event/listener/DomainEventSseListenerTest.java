@@ -1,0 +1,87 @@
+package com.hot6ix.upbid.global.event.listener;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+
+import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
+import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
+import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
+import com.hot6ix.upbid.global.event.payload.ItemEnded;
+import com.hot6ix.upbid.global.event.payload.ItemPassed;
+import com.hot6ix.upbid.global.event.payload.RoomClosed;
+import java.time.LocalDateTime;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+@ExtendWith(MockitoExtension.class)
+class DomainEventSseListenerTest {
+
+    private static final Long ROOM_ID = 10L;
+    private static final Long ITEM_ID = 30L;
+    private static final LocalDateTime OCCURRED_AT = LocalDateTime.of(2026, 8, 4, 21, 0);
+
+    @Mock
+    private RoomSseManager roomSseManager;
+
+    @InjectMocks
+    private DomainEventSseListener domainEventSseListener;
+
+    @Test
+    @DisplayName("낙찰은 ITEM_ENDED로 낙찰가와 낙찰자를 함께 내보낸다")
+    void sendsItemEnded() {
+
+        domainEventSseListener.on(
+                ItemEnded.of(ROOM_ID, ITEM_ID, "한정판 피규어", 12_000L, "한기", OCCURRED_AT));
+
+        assertThat(sentDto("ITEM_ENDED")).isEqualTo(
+                new ItemEndedDto(ITEM_ID, "한정판 피규어", 12_000L, "한기"));
+    }
+
+    @Test
+    @DisplayName("유찰도 ITEM_ENDED로 내보내며 낙찰가와 낙찰자는 비운다")
+    void sendsItemPassedAsItemEnded() {
+
+        domainEventSseListener.on(ItemPassed.of(ROOM_ID, ITEM_ID, "한정판 피규어", OCCURRED_AT));
+
+        assertThat(sentDto("ITEM_ENDED"))
+                .as("화면에서 낙찰과 유찰은 '물품이 닫혔다'는 같은 사건이고, "
+                        + "구분은 winnerNickname으로 한다. ITEM_PASSED로 내보내면 화면이 듣지 않는다")
+                .isEqualTo(new ItemEndedDto(ITEM_ID, "한정판 피규어", null, null));
+    }
+
+    @Test
+    @DisplayName("경매방 종료는 ROOM_CLOSED로 방 이름과 종료 시각을 내보낸다")
+    void sendsRoomClosed() {
+
+        domainEventSseListener.on(RoomClosed.of(ROOM_ID, "승민의 경매방", OCCURRED_AT));
+
+        assertThat(sentDto("ROOM_CLOSED"))
+                .isEqualTo(new RoomClosedDto("승민의 경매방", OCCURRED_AT));
+    }
+
+    @Test
+    @DisplayName("화면에 뿌릴 DTO가 없는 이벤트는 내보내지 않는다")
+    void skipsEventWithoutDto() {
+
+        domainEventSseListener.on(
+                DealRightAssigned.of(ROOM_ID, ITEM_ID, 1L, 1, 40L, 12_000L, OCCURRED_AT));
+
+        verify(roomSseManager, never()).sendBroadCast(any(), any(), any());
+    }
+
+    /** 지정한 이름으로 나간 payload를 꺼낸다. 이름이 다르면 그 자리에서 검증이 실패한다. */
+    private Object sentDto(String eventName) {
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(roomSseManager).sendBroadCast(eq(eventName), eq(ROOM_ID), captor.capture());
+        return captor.getValue();
+    }
+}

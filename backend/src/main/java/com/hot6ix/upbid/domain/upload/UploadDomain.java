@@ -17,7 +17,8 @@ import lombok.RequiredArgsConstructor;
 public enum UploadDomain {
 
     SELLER_PROFILE("seller-profiles"),
-    PRODUCT("products");
+    PRODUCT("products"),
+    USER_PROFILE("user-profiles");
 
     private final String prefix;
 }

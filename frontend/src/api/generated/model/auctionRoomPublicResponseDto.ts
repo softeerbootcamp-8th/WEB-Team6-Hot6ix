@@ -13,6 +13,7 @@ import type { AuctionRoomPublicResponseDtoStatus } from './auctionRoomPublicResp
 
 export interface AuctionRoomPublicResponseDto {
   auctionRoomId?: number;
+  shareCode?: string;
   name?: string;
   coverImageUrl?: string;
   description?: string;
@@ -24,6 +25,8 @@ export interface AuctionRoomPublicResponseDto {
   sellerStoreName?: string;
   sellerStoreImageUrl?: string;
   createdAt?: string;
+  closedAt?: string;
   itemCount?: number;
   participantCount?: number;
+  isOwner?: boolean;
 }

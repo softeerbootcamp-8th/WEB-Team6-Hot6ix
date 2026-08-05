@@ -9,13 +9,12 @@
 **그 외 환경**: 카카오 로그인 후 발급된 SESSION 쿠키가 자동으로 포함됩니다.
  * OpenAPI spec version: v1
  */
-import type { UserMeResponseDto } from './userMeResponseDto';
-import type { ValidationError } from './validationError';
 
-export interface CommonResponseUserMeResponseDto {
-  success?: boolean;
-  data?: UserMeResponseDto;
-  code?: number;
-  message?: string;
-  errors?: ValidationError[];
-}
+export type GetMyRoomsRole = typeof GetMyRoomsRole[keyof typeof GetMyRoomsRole];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetMyRoomsRole = {
+  SELLER: 'SELLER',
+  BUYER: 'BUYER',
+} as const;

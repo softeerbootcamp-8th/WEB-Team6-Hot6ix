@@ -11,9 +11,9 @@ export type DealRole = DealSummaryResponseDtoRole
  * 물품 하나의 거래가 어디까지 왔는지. 후보 한 명의 상태가 아니라 물품 단위이고,
  * 판매자와 구매자가 같은 값을 본다.
  *
- * `UNSOLD` 는 유효한 입찰이 없어 후보가 아예 없는 경우다. 후보가 있었는데 전원
- * 실패한 물품은 아직 자리가 없어 `IN_PROGRESS` 로 내려온다 — 그때는
- * `partnerNickname` 이 비므로 화면에서 그걸로 갈라 준다.
+ * 거래 없이 끝난 건이 둘로 갈린다. `UNSOLD` 는 유효한 입찰이 없어 후보가 아예 없는
+ * 경우고, `ALL_FAILED` 는 후보가 있었는데 전부 실패한 경우다. 판매자가 취할 조치가
+ * 달라서 서버가 상태로 구분해 준다 — 화면이 `partnerNickname` 으로 추측하지 않는다.
  */
 export type DealItemStatus = DealSummaryResponseDtoStatus
 
@@ -21,6 +21,8 @@ export type DealItemStatus = DealSummaryResponseDtoStatus
 export interface Deal {
   auctionItemId: number
   auctionRoomId: number | null
+  /** 물품 상세를 부를 때 방을 지목하는 공개 식별자. 숫자 ID 로는 못 부른다. */
+  shareCode: string | null
   auctionRoomName: string
   productName: string
   role: DealRole
@@ -53,6 +55,7 @@ export function toDeals(dtos: DealSummaryResponseDto[] | undefined): Deal[] {
       {
         auctionItemId: dto.auctionItemId,
         auctionRoomId: dto.auctionRoomId ?? null,
+        shareCode: dto.shareCode ?? null,
         auctionRoomName: dto.auctionRoomName ?? '',
         productName: dto.productName ?? '이름 없는 물품',
         role: dto.role,

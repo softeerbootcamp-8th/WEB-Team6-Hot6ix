@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   BidIcon,
@@ -42,6 +42,8 @@ function resolveTone(event: RoomEvent) {
   }
 }
 
+const BOTTOM_THRESHOLD = 10 // px
+
 /** 시간 오름차순 — 늦은 이벤트가 아래로 간다 (웹 피드와 같은 규칙). */
 export function MobileEventFeed({ events }: { events: RoomEvent[] }) {
   const ordered = [...events].sort(
@@ -49,13 +51,35 @@ export function MobileEventFeed({ events }: { events: RoomEvent[] }) {
   )
   const scrollRef = useRef<HTMLDivElement>(null)
   const entranceOf = useEventEntrance()
+  const isAtBottomRef = useRef(true)
+  const [hasNewEvents, setHasNewEvents] = useState(false)
 
-  // 새 이벤트가 오면 맨 아래로 부드럽게 따라간다.
-  useEffect(() => {
+  function handleScroll() {
+    const node = scrollRef.current
+    if (!node) return
+    const atBottom =
+      node.scrollTop + node.clientHeight >= node.scrollHeight - BOTTOM_THRESHOLD
+    isAtBottomRef.current = atBottom
+    if (atBottom) setHasNewEvents(false)
+  }
+
+  function scrollToBottom() {
     const node = scrollRef.current
     if (!node) return
     node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' })
-  }, [events])
+    setHasNewEvents(false)
+  }
+
+  // 새 이벤트가 오면(length 증가): 맨 아래를 보고 있을 때만 따라가고,
+  // 위로 올려둔 상태면 위치를 유지하고 배지를 표시한다.
+  useEffect(() => {
+    if (isAtBottomRef.current) {
+      scrollToBottom()
+    } else {
+      setHasNewEvents(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events.length])
 
   return (
     <div className="flex h-full flex-col p-4">
@@ -64,54 +88,65 @@ export function MobileEventFeed({ events }: { events: RoomEvent[] }) {
           아직 이벤트가 없어요.
         </p>
       ) : (
-        <div
-          ref={scrollRef}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1"
-        >
-          {/* 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다 */}
-          <ul className="flex min-h-full flex-col justify-end gap-2">
-            {ordered.map((event, index) => {
-              const tone = resolveTone(event)
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="h-full overflow-y-auto overscroll-contain pr-1"
+          >
+            {/* 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다 */}
+            <ul className="flex min-h-full flex-col justify-end gap-2">
+              {ordered.map((event, index) => {
+                const tone = resolveTone(event)
 
-              return (
-                <li
-                  key={event.id}
-                  style={
-                    entranceOf(event.id) === 'incoming'
-                      ? undefined
-                      : { animationDelay: `${index * 40}ms` }
-                  }
-                  className={cn(
-                    'flex min-h-[52px] items-center gap-3 rounded-xl px-2',
-                    tone.row,
-                    entranceOf(event.id) === 'incoming'
-                      ? 'animate-event'
-                      : 'animate-rise',
-                  )}
-                >
-                  <span
+                return (
+                  <li
+                    key={event.id}
+                    style={
+                      entranceOf(event.id) === 'incoming'
+                        ? undefined
+                        : { animationDelay: `${index * 40}ms` }
+                    }
                     className={cn(
-                      'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
-                      tone.chip,
-                      entranceOf(event.id) === 'incoming' &&
-                        'animate-event-chip',
+                      'flex min-h-[52px] items-center gap-3 rounded-xl px-2',
+                      tone.row,
+                      entranceOf(event.id) === 'incoming'
+                        ? 'animate-event'
+                        : 'animate-rise',
                     )}
                   >
-                    {tone.icon}
-                  </span>
+                    <span
+                      className={cn(
+                        'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
+                        tone.chip,
+                        entranceOf(event.id) === 'incoming' &&
+                          'animate-event-chip',
+                      )}
+                    >
+                      {tone.icon}
+                    </span>
 
-                  <div className="min-w-0 flex-1 py-2">
-                    <p className="text-[13px] font-semibold text-foreground">
-                      {event.message}
-                    </p>
-                    <time className="mt-1 block text-[11px] font-medium tabular-nums text-neutral-muted">
-                      {formatTime(event.at)}
-                    </time>
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+                    <div className="min-w-0 flex-1 py-2">
+                      <p className="text-[13px] font-semibold text-foreground">
+                        {event.message}
+                      </p>
+                      <time className="mt-1 block text-[11px] font-medium tabular-nums text-neutral-muted">
+                        {formatTime(event.at)}
+                      </time>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+          {hasNewEvents && (
+            <button
+              onClick={scrollToBottom}
+              className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-foreground px-3 py-1 text-[11px] font-semibold text-background shadow-md"
+            >
+              새 이벤트 ↓
+            </button>
+          )}
         </div>
       )}
     </div>

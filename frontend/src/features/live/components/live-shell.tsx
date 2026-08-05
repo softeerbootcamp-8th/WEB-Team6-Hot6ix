@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Share2, Square, Users } from 'lucide-react'
+import { Settings, Share2, Square, Users } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
@@ -18,7 +18,9 @@ import type { AuctionRoomDetail } from '@/mocks/types'
 export function LiveShell({
   room,
   isGuest,
+  participantCount,
   onShare,
+  onOpenSettings,
   onCloseRoom,
   left,
   headerActions,
@@ -31,10 +33,16 @@ export function LiveShell({
 }: {
   room: AuctionRoomDetail
   isGuest: boolean
+  /**
+   * SSE 로 받은 실시간 참여자 수. 아직 못 받았으면 방 정보의 값을 쓴다.
+   */
+  participantCount?: number | null
   /** 방 헤더의 공유 버튼. 오른쪽 열에 공유 패널을 띄운다. */
   onShare?: () => void
   /** 공유 버튼 왼쪽에 들어가는 보조 조작(개발용 시점 전환 등) */
   headerActions?: ReactNode
+  /** 판매자만 받는다. 방 설정 수정 모달을 연다. */
+  onOpenSettings?: () => void
   /** 판매자만 받는다. 방 전체를 끝낸다. */
   onCloseRoom?: () => void
   leftLabel: ReactNode
@@ -87,7 +95,7 @@ export function LiveShell({
 
           <p className="flex items-center gap-1.5 text-[13px] font-medium text-neutral-tertiary">
             <Users aria-hidden className="size-[15px]" />
-            {room.participantCount}명 참여 중
+            {participantCount ?? room.participantCount}명 참여 중
           </p>
 
           <div className="ml-auto flex items-center gap-2">
@@ -101,6 +109,18 @@ export function LiveShell({
               <Share2 aria-hidden className="size-[15px]" />
               공유
             </button>
+
+            {/* 방을 만든 사람만 보인다. */}
+            {onOpenSettings && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-border-strong bg-card px-3 text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
+              >
+                <Settings aria-hidden className="size-[15px]" />
+                설정
+              </button>
+            )}
 
             {/* 방을 만든 사람만 보인다. 되돌릴 수 없어 확인을 한 번 받는다. */}
             {onCloseRoom && (

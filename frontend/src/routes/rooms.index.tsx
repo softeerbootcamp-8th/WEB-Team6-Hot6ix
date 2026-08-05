@@ -1,18 +1,18 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Search } from 'lucide-react'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { EmptyState } from '@/components/page-header'
 import { Input } from '@/components/ui/input'
-import { MOCK_ROOMS } from '@/mocks/data'
+import { JoinByLinkModal } from '@/features/rooms/components/join-by-link-modal'
 import {
   RoomCard,
   type RoomCardData,
 } from '@/features/rooms/components/room-card'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
-import { useMySellerProfile } from '@/features/seller/use-my-seller-profile'
-import { useSellerRoomList } from '@/features/rooms/use-seller-room-list'
+import { useMyRoomList } from '@/features/rooms/use-my-room-list'
+import { useMyRoomCounts } from '@/features/rooms/use-my-room-counts'
 import type { GetMyRoomsStatus } from '@/api/generated/model'
 import type { RoomStatus } from '@/mocks/types'
 import { cn } from '@/lib/utils'
@@ -45,61 +45,51 @@ function MyRoomsPage() {
   // 상태(전체/LIVE/종료)와 직교하는 축이라 탭이 아니라 별도 토글이다.
   // 같은 줄에 4번째 탭으로 넣으면 "내가 만든 방 중 LIVE"를 고를 수 없다.
   const [mineOnly, setMineOnly] = useState(false)
+  const [joiningByLink, setJoiningByLink] = useState(false)
 
   const debouncedKeyword = useDebouncedValue(keyword.trim())
-  const { profile } = useMySellerProfile()
 
-  const sellerRooms = useSellerRoomList(
-    {
-      keyword: debouncedKeyword || undefined,
-      status: STATUS_PARAM[filter],
-    },
-    mineOnly,
-  )
+  const listQuery = useMyRoomList({
+    keyword: debouncedKeyword || undefined,
+    status: STATUS_PARAM[filter],
+    role: mineOnly ? 'SELLER' : undefined,
+  })
 
-  // 참여 경매방 목록 API는 아직 없어(이슈 #118) 토글이 꺼져 있을 때만 목업을 쓴다.
-  const mockRooms: RoomCardData[] = MOCK_ROOMS
-  const apiRooms: RoomCardData[] = useMemo(
-    () =>
-      sellerRooms.rooms.map((room) => ({
-        id: room.auctionRoomId ?? 0,
-        title: room.name ?? '',
-        sellerName: profile?.storeName ?? '내 가게',
-        status: CARD_STATUS[room.status ?? 'BEFORE'] ?? 'READY',
-        role: 'SELLER',
-        itemCount: room.itemCount ?? 0,
-        // 서버가 못 채우는 값이라 카드에서 아예 뺀다.
-        participantCount: room.participantCount ?? null,
-        imageUrl: room.coverImageUrl,
-      })),
-    [sellerRooms.rooms, profile?.storeName],
-  )
+  // 상태를 안 보낸다. 탭을 바꿔도 숫자가 흔들리면 안 된다.
+  const countsQuery = useMyRoomCounts({
+    keyword: debouncedKeyword || undefined,
+    role: mineOnly ? 'SELLER' : undefined,
+  })
 
-  const rooms = mineOnly ? apiRooms : mockRooms
-  const liveRooms = rooms.filter((room) => room.status === 'LIVE')
-  const closedRooms = rooms.filter((room) => room.status === 'CLOSED')
+  const before = countsQuery.counts?.before ?? 0
+  const open = countsQuery.counts?.open ?? 0
+  const closed = countsQuery.counts?.closed ?? 0
+  const total = before + open + closed
 
-  const visible = useMemo(() => {
-    // 내가 만든 방은 서버가 이미 상태·검색어로 걸러 준다.
-    if (mineOnly) return rooms
+  const rooms: RoomCardData[] = listQuery.rooms.map((room) => ({
+    id: room.auctionRoomId ?? 0,
+    shareCode: room.shareCode ?? '',
+    title: room.name ?? '',
+    sellerName: room.storeName ?? '',
+    status: CARD_STATUS[room.status ?? 'BEFORE'] ?? 'READY',
+    role: room.role === 'BUYER' ? 'BUYER' : 'SELLER',
+    itemCount: room.itemCount ?? 0,
+    // 방송 중인 방만 서버가 채운다. 없으면 카드가 그 줄을 안 그린다.
+    participantCount: room.participantCount ?? null,
+    closedAt: room.closedAt ?? null,
+    imageUrl: room.coverImageUrl,
+  }))
 
-    const byStatus =
-      filter === 'ALL' ? rooms : rooms.filter((room) => room.status === filter)
-
-    const trimmed = keyword.trim()
-    if (!trimmed) return byStatus
-    return byStatus.filter((room) => room.title.includes(trimmed))
-  }, [rooms, filter, keyword, mineOnly])
-
-  const visibleLive = visible.filter((room) => room.status === 'LIVE')
+  // 서버가 이미 상태·역할·검색어로 걸러 준다. 여기서 다시 거르지 않는다.
+  const visibleLive = rooms.filter((room) => room.status === 'LIVE')
   // 시작 전인 방을 종료로 묶으면 방금 만든 방이 "종료"로 보인다.
-  const visibleReady = visible.filter((room) => room.status === 'READY')
-  const visibleClosed = visible.filter((room) => room.status === 'CLOSED')
+  const visibleReady = rooms.filter((room) => room.status === 'READY')
+  const visibleClosed = rooms.filter((room) => room.status === 'CLOSED')
 
   const FILTERS: { key: StatusFilter; label: string; count: number }[] = [
-    { key: 'ALL', label: '전체', count: rooms.length },
-    { key: 'LIVE', label: 'LIVE', count: liveRooms.length },
-    { key: 'CLOSED', label: '종료', count: closedRooms.length },
+    { key: 'ALL', label: '전체', count: total },
+    { key: 'LIVE', label: 'LIVE', count: open },
+    { key: 'CLOSED', label: '종료', count: closed },
   ]
 
   return (
@@ -109,20 +99,20 @@ function MyRoomsPage() {
         <div className="hidden md:block">
           <h1 className="text-[20px] font-bold text-foreground">참여 경매방</h1>
           <p className="mt-2 text-[13px] font-medium text-neutral-tertiary">
-            {rooms.length > 0
+            {total > 0
               ? '참여한 경매방의 진행 상태와 결과를 확인할 수 있어요'
               : '참여하거나 만든 경매방이 이곳에 표시됩니다.'}
           </p>
         </div>
 
         <div className="flex w-full gap-2 md:w-auto">
-          <Link
-            to="/join/$shareCode"
-            params={{ shareCode: 'abc123' }}
+          <button
+            type="button"
+            onClick={() => setJoiningByLink(true)}
             className="ease-soft flex h-10 flex-1 items-center justify-center rounded-[10px] border bg-card px-4 text-[13px] font-semibold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95 md:h-9 md:flex-none"
           >
             링크로 참여
-          </Link>
+          </button>
           <Link
             to="/seller/rooms/new"
             className="ease-soft flex h-10 flex-1 items-center justify-center rounded-[10px] bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95 md:h-9 md:flex-none"
@@ -132,9 +122,9 @@ function MyRoomsPage() {
         </div>
       </div>
 
+      {/* 개수는 목록이 아니라 counts 응답에서 온다. "더 보기"를 눌러도 안 변한다. */}
       <p className="mt-6 text-[13px] font-bold text-neutral-secondary md:mt-8">
-        {mineOnly ? '내가 만든 경매방' : '참여 경매방'} ({rooms.length}
-        {mineOnly && sellerRooms.hasNextPage ? '+' : ''})
+        {mineOnly ? '내가 만든 경매방' : '내 경매방'} ({total})
       </p>
 
       {/*
@@ -193,7 +183,7 @@ function MyRoomsPage() {
         </div>
       </div>
 
-      {mineOnly && sellerRooms.isPending ? (
+      {listQuery.isPending ? (
         <ul aria-hidden className="mt-6 grid gap-4 md:mt-8 xl:grid-cols-2">
           {Array.from({ length: 4 }).map((_, index) => (
             <li
@@ -202,7 +192,7 @@ function MyRoomsPage() {
             />
           ))}
         </ul>
-      ) : mineOnly && sellerRooms.isError ? (
+      ) : listQuery.isError ? (
         <div className="mt-4">
           <EmptyState
             title="경매방을 불러오지 못했어요"
@@ -210,7 +200,7 @@ function MyRoomsPage() {
             action={
               <button
                 type="button"
-                onClick={() => void sellerRooms.refetch()}
+                onClick={() => void listQuery.refetch()}
                 className="ease-soft rounded-[14px] bg-brand-500 px-6 py-3.5 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
               >
                 다시 시도
@@ -220,33 +210,25 @@ function MyRoomsPage() {
         </div>
       ) : (
         <>
-          {visible.length === 0 ? (
+          {rooms.length === 0 ? (
             <div className="mt-4">
-              {mineOnly ? (
+              {debouncedKeyword || filter !== 'ALL' ? (
+                <EmptyState
+                  title="조건에 맞는 경매방이 없어요"
+                  description="필터나 검색어를 바꿔보세요."
+                />
+              ) : mineOnly ? (
                 <EmptyState
                   icon="0"
-                  title={
-                    debouncedKeyword || filter !== 'ALL'
-                      ? '조건에 맞는 경매방이 없어요'
-                      : '아직 만든 경매방이 없어요'
-                  }
-                  description={
-                    debouncedKeyword || filter !== 'ALL'
-                      ? '필터나 검색어를 바꿔보세요.'
-                      : '경매방을 만들면 여기에서 다시 찾을 수 있어요.'
-                  }
+                  title="아직 만든 경매방이 없어요"
+                  description="경매방을 만들면 여기에서 다시 찾을 수 있어요."
                 />
-              ) : rooms.length === 0 ? (
+              ) : (
                 <EmptyState
                   icon="0"
                   title="아직 참여한 경매방이 없어요"
                   description="초대 링크로 참여하거나 직접 경매방을 만들어 보세요."
                   hint="상단의 ‘링크로 참여’ 또는 ‘경매방 만들기’를 이용할 수 있어요."
-                />
-              ) : (
-                <EmptyState
-                  title="조건에 맞는 경매방이 없어요"
-                  description="필터나 검색어를 바꿔보세요."
                 />
               )}
             </div>
@@ -301,20 +283,25 @@ function MyRoomsPage() {
                 </section>
               )}
 
-              {mineOnly && sellerRooms.hasNextPage && (
+              {listQuery.hasNextPage && (
                 <button
                   type="button"
-                  disabled={sellerRooms.isFetchingNextPage}
-                  onClick={() => void sellerRooms.fetchNextPage()}
+                  disabled={listQuery.isFetchingNextPage}
+                  onClick={() => void listQuery.fetchNextPage()}
                   className="ease-soft h-12 w-full rounded-[14px] border bg-card text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-[0.99] disabled:opacity-50"
                 >
-                  {sellerRooms.isFetchingNextPage ? '불러오는 중…' : '더 보기'}
+                  {listQuery.isFetchingNextPage ? '불러오는 중…' : '더 보기'}
                 </button>
               )}
             </div>
           )}
         </>
       )}
+
+      <JoinByLinkModal
+        open={joiningByLink}
+        onClose={() => setJoiningByLink(false)}
+      />
     </AppShell>
   )
 }

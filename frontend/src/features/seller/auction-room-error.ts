@@ -31,9 +31,13 @@ const BY_CODE: Record<number, AuctionRoomErrorMessage> = {
     title: '경매방을 찾을 수 없어요',
     description: '삭제되었거나 접근할 수 없는 경매방이에요.',
   },
+  4003: {
+    title: '경매가 시작돼 고칠 수 없어요',
+    description: '경매방 이름 말고는 시작 전에만 바꿀 수 있어요.',
+  },
   4004: {
     title: '종료된 경매방이에요',
-    description: '종료된 경매방에는 물품을 추가할 수 없어요.',
+    description: '종료된 경매방은 물품 추가도 설정 수정도 할 수 없어요.',
   },
   4005: {
     title: '이미 경매에 올라간 상품이에요',

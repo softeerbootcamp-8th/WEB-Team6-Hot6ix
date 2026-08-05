@@ -5,13 +5,13 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { GuestShell } from '@/components/layout/page-shell'
 import { ProductThumbnail } from '@/components/product-thumbnail'
-import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { StatusBadge } from '@/components/status-badge'
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
 import { useCurrentUser } from '@/lib/session'
 import { useGetRoomByShareCode } from '@/api/generated/경매방/경매방'
+import { useGetSummaries } from '@/api/generated/경매-물품/경매-물품'
 
 /**
  * 링크·QR 진입점.
@@ -20,9 +20,10 @@ import { useGetRoomByShareCode } from '@/api/generated/경매방/경매방'
  * 입장한다. shareCode 로 방을 못 찾거나 이미 종료됐으면 각각 다른 안내를
  * 보여준다.
  *
- * 방 정보는 API 로 받지만 **물품 목록은 아직 목업**이다 — 공개 조회 응답에는
- * 물품 개수만 있고 목록은 별도 엔드포인트라, 그 연동은 다음 이슈로 미뤘다.
- * 참여자 수도 서버가 아직 채우지 않아 화면에서 뺐다.
+ * 방 정보와 물품 목록 모두 서버 값이다. 물품 목록 엔드포인트는 이미
+ * `@GuestAllowed` 라 비로그인도 그대로 부를 수 있다 — 방을 shareCode 로 찾은
+ * 뒤 거기서 나온 `auctionRoomId` 로 한 번 더 부른다.
+ * 참여자 수만 아직 화면에서 뺀 상태다.
  */
 export const Route = createFileRoute('/join/$shareCode')({
   component: JoinRoomPage,
@@ -40,6 +41,12 @@ function JoinRoomPage() {
 
   const { data, isPending, isError, error, refetch } =
     useGetRoomByShareCode(shareCode)
+
+  /*
+   * 물품 목록도 같은 공유 코드로 부른다. 이게 실패해도 방 카드는 그대로 그린다 —
+   * 물품 하나 못 받았다고 링크 전체가 죽은 것처럼 보이면 안 된다.
+   */
+  const itemsQuery = useGetSummaries(shareCode)
 
   if (isPending) return <RoutePending />
 
@@ -97,18 +104,13 @@ function JoinRoomPage() {
 
   const isGuest = user === null
   const roomTitle = room.name ?? '경매방'
-  // TODO: 물품 목록은 별도 엔드포인트라 아직 목업이다.
-  const items =
-    findMockRoom(room.auctionRoomId ?? 0)?.items ?? MOCK_ROOM_DETAIL.items
+  const items = itemsQuery.data?.data ?? []
 
   const enter = () => {
     if (!isGuest && !agreed) return
     setEntering(true)
     // TODO: POST /api/v1/agreements 후 입장 (현재 목업)
-    void navigate({
-      to: '/rooms/$roomId',
-      params: { roomId: String(room.auctionRoomId) },
-    })
+    void navigate({ to: '/rooms/$shareCode', params: { shareCode } })
   }
 
   return (
@@ -126,9 +128,9 @@ function JoinRoomPage() {
          */}
         <div className="border-b px-5 py-5 md:px-7 md:py-6">
           <div className="flex items-center gap-3.5">
+            {/* `coverImageUrl` 을 채울 화면이 아직 없어서(#163) 늘 회색 아이콘이다. */}
             <ProductThumbnail
-              name={roomTitle}
-              size={240}
+              src={room.coverImageUrl}
               className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-fill text-neutral-muted"
             />
 
@@ -156,68 +158,85 @@ function JoinRoomPage() {
           </div>
         </div>
 
-        {/* 무엇이 올라와 있는지. 3개까지 보여주고 나머지는 펼쳐서 본다. */}
-        {items.length > 0 && (
-          <div className="border-b px-5 py-4 md:px-7">
-            <div className="flex items-baseline justify-between">
-              <p className="text-[12px] font-bold text-neutral-tertiary">
-                올라온 물품
-              </p>
+        {/*
+          무엇이 올라와 있는지. 3개까지 보여주고 나머지는 펼쳐서 본다.
+          목업을 걷어낸 뒤로는 "물품이 없는 방"이 실제로 가능해져서, 목록이
+          비었을 때와 못 받았을 때를 각각 말해준다.
+        */}
+        <div className="border-b px-5 py-4 md:px-7">
+          <div className="flex items-baseline justify-between">
+            <p className="text-[12px] font-bold text-neutral-tertiary">
+              올라온 물품
+            </p>
+            {items.length > 0 && (
               <p className="text-[11px] font-medium text-neutral-muted">
                 총 {items.length}개
               </p>
-            </div>
-
-            <ul className="mt-2.5 space-y-2">
-              {(expanded ? items : items.slice(0, 3)).map((item, index) => (
-                <li
-                  key={item.id}
-                  // 펼칠 때 아래로 하나씩 들어오게 한다.
-                  style={
-                    expanded && index >= 3
-                      ? { animationDelay: `${(index - 3) * 40}ms` }
-                      : undefined
-                  }
-                  className={cn(
-                    'flex items-center gap-3',
-                    expanded && index >= 3 && 'animate-rise',
-                  )}
-                >
-                  <ProductThumbnail
-                    name={item.name}
-                    size={160}
-                    iconClassName="size-4"
-                    className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
-                  />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
-                    {item.name}
-                  </span>
-                  <span className="shrink-0 text-[13px] font-bold tabular-nums text-brand-500">
-                    {formatWon(item.currentPrice)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-
-            {items.length > 3 && (
-              <button
-                type="button"
-                onClick={() => setExpanded((prev) => !prev)}
-                aria-expanded={expanded}
-                className="ease-soft mt-3 flex h-9 w-full items-center justify-center gap-1 rounded-xl bg-fill text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:text-brand-500 active:scale-[0.99]"
-              >
-                {expanded ? '접기' : `물품 ${items.length - 3}개 더 보기`}
-                <ChevronDown
-                  aria-hidden
-                  className={cn(
-                    'ease-soft size-3.5 transition-transform duration-150',
-                    expanded && 'rotate-180',
-                  )}
-                />
-              </button>
             )}
           </div>
-        )}
+
+          {items.length === 0 && (
+            <p className="mt-2.5 text-[12px] font-medium text-neutral-muted">
+              {itemsQuery.isPending
+                ? '불러오는 중…'
+                : itemsQuery.isError
+                  ? '물품 목록을 불러오지 못했어요. 입장한 뒤에 확인할 수 있어요.'
+                  : '아직 등록된 물품이 없어요.'}
+            </p>
+          )}
+
+          {items.length > 0 && (
+            <>
+              <ul className="mt-2.5 space-y-2">
+                {(expanded ? items : items.slice(0, 3)).map((item, index) => (
+                  <li
+                    key={item.auctionItemId}
+                    // 펼칠 때 아래로 하나씩 들어오게 한다.
+                    style={
+                      expanded && index >= 3
+                        ? { animationDelay: `${(index - 3) * 40}ms` }
+                        : undefined
+                    }
+                    className={cn(
+                      'flex items-center gap-3',
+                      expanded && index >= 3 && 'animate-rise',
+                    )}
+                  >
+                    <ProductThumbnail
+                      src={item.imageUrl}
+                      iconClassName="size-4"
+                      className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
+                      {item.productName}
+                    </span>
+                    <span className="shrink-0 text-[13px] font-bold tabular-nums text-brand-500">
+                      {formatWon(item.currentPrice ?? 0)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              {items.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((prev) => !prev)}
+                  aria-expanded={expanded}
+                  className="ease-soft mt-3 flex h-9 w-full items-center justify-center gap-1 rounded-xl bg-fill text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:text-brand-500 active:scale-[0.99]"
+                >
+                  {expanded ? '접기' : `물품 ${items.length - 3}개 더 보기`}
+                  <ChevronDown
+                    aria-hidden
+                    className={cn(
+                      'ease-soft size-3.5 transition-transform duration-150',
+                      expanded && 'rotate-180',
+                    )}
+                  />
+                </button>
+              )}
+            </>
+          )}
+        </div>
 
         <div className="px-5 pt-5 pb-6 md:px-7 md:pb-7">
           <p className="text-[13px] leading-[1.6] font-medium text-neutral-secondary">
@@ -232,7 +251,7 @@ function JoinRoomPage() {
                */}
               <Link
                 to="/"
-                search={{ redirect: `/rooms/${room.auctionRoomId}` }}
+                search={{ redirect: `/rooms/${shareCode}` }}
                 className="ease-soft mt-6 flex h-14 w-full items-center justify-center rounded-2xl bg-brand-500 text-card-title font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
               >
                 로그인하고 참여하기

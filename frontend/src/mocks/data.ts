@@ -3,7 +3,6 @@ import type {
   AuctionRoomDetail,
   AuctionRoomSummary,
   Product,
-  RoomEvent,
   TradeSummary,
 } from '@/mocks/types'
 
@@ -145,6 +144,7 @@ const ROOM_1: AuctionRoomDetail = {
         '오프화이트와 레드 컬러 조합의 한정판 조던 스니커즈입니다. 보관 상태가 좋고 실착 횟수가 적어 전체적인 컨디션이 우수합니다. 구성품과 상세 상태는 상품 링크에서 확인할 수 있습니다.',
       productUrl: 'brand.com/limited-jordan',
       status: 'ACTIVE',
+      sold: false,
       startPrice: 50000,
       currentPrice: 85000,
       bidUnit: 1000,
@@ -174,6 +174,7 @@ const ROOM_1: AuctionRoomDetail = {
         '90년대 리바이스 데님 자켓입니다. L 사이즈이고 워싱이 자연스럽게 빠져 있습니다. 소매 끝 마감과 단추 상태는 사진으로 확인해주세요.',
       productUrl: 'brand.com/vintage-denim',
       status: 'ACTIVE',
+      sold: false,
       startPrice: 8000,
       currentPrice: 13000,
       bidUnit: 1000,
@@ -206,6 +207,7 @@ const ROOM_1: AuctionRoomDetail = {
         '미개봉 상태의 포토카드 세트입니다. 슬리브에 넣어 보관했고 스크래치가 없습니다.',
       productUrl: 'brand.com/photocard-set',
       status: 'READY',
+      sold: false,
       startPrice: 5000,
       currentPrice: 5000,
       bidUnit: 500,
@@ -225,6 +227,7 @@ const ROOM_1: AuctionRoomDetail = {
         '한정 수량으로 나온 오토매틱 워치입니다. 정품 보증서와 여분 스트랩이 함께 있습니다.',
       productUrl: 'brand.com/limited-watch',
       status: 'CLOSED',
+      sold: true,
       startPrice: 30000,
       currentPrice: 56000,
       bidUnit: 2000,
@@ -251,6 +254,7 @@ const ROOM_1: AuctionRoomDetail = {
         '90년대 발매된 레트로 피규어입니다. 박스는 없고 본체만 있습니다.',
       productUrl: 'brand.com/retro-figure',
       status: 'CLOSED',
+      sold: true,
       startPrice: 10000,
       currentPrice: 24000,
       bidUnit: 1000,
@@ -275,6 +279,7 @@ const ROOM_1: AuctionRoomDetail = {
         '베지터블 가죽으로 직접 만든 반지갑입니다. 사용할수록 색이 짙어집니다.',
       productUrl: 'brand.com/leather-wallet',
       status: 'CLOSED',
+      sold: true,
       startPrice: 20000,
       currentPrice: 45000,
       bidUnit: 1000,
@@ -318,6 +323,7 @@ const ROOM_2: AuctionRoomDetail = {
         '슬리브에 넣어 보관한 A급 포토카드 세트입니다. 모서리 눌림 없이 깨끗합니다.',
       productUrl: 'https://example.com/photocard',
       status: 'ACTIVE',
+      sold: false,
       startPrice: 5000,
       currentPrice: 22000,
       bidUnit: 1000,
@@ -343,6 +349,7 @@ const ROOM_2: AuctionRoomDetail = {
       description: '초동 특전으로 나온 미개봉 포토카드입니다.',
       productUrl: 'https://example.com/mini-album',
       status: 'ACTIVE',
+      sold: false,
       startPrice: 3000,
       currentPrice: 9000,
       bidUnit: 500,
@@ -366,6 +373,7 @@ const ROOM_2: AuctionRoomDetail = {
       description: '럭키드로우 당첨분입니다. 홀로그램 상태가 선명합니다.',
       productUrl: 'https://example.com/hologram',
       status: 'READY',
+      sold: false,
       startPrice: 4000,
       currentPrice: 4000,
       bidUnit: 500,
@@ -400,6 +408,7 @@ const ROOM_3: AuctionRoomDetail = {
         '작동 확인을 마친 필름 카메라입니다. 케이스가 함께 있습니다.',
       productUrl: 'https://example.com/film-camera',
       status: 'CLOSED',
+      sold: false,
       startPrice: 40000,
       currentPrice: 40000,
       bidUnit: 2000,
@@ -418,6 +427,7 @@ const ROOM_3: AuctionRoomDetail = {
       description: '곰팡이 없이 깨끗하고 헬리코이드가 부드럽습니다.',
       productUrl: 'https://example.com/film-lens',
       status: 'CLOSED',
+      sold: true,
       startPrice: 20000,
       currentPrice: 38000,
       bidUnit: 1000,
@@ -462,6 +472,7 @@ const ROOM_4: AuctionRoomDetail = {
       description: '270mm · 박스 포함 · 실착 2회',
       productUrl: 'brand.com/jordan-1-retro',
       status: 'CLOSED',
+      sold: true,
       startPrice: 90000,
       currentPrice: 132000,
       bidUnit: 2000,
@@ -491,6 +502,7 @@ const ROOM_4: AuctionRoomDetail = {
       description: '260mm · 미착용 · 정품 확인서 포함',
       productUrl: 'brand.com/air-force-1',
       status: 'CLOSED',
+      sold: true,
       startPrice: 50000,
       currentPrice: 78000,
       bidUnit: 1000,
@@ -515,6 +527,7 @@ const ROOM_4: AuctionRoomDetail = {
       description: '275mm · 2회 착용 · 박스 포함',
       productUrl: 'brand.com/dunk-low-panda',
       status: 'CLOSED',
+      sold: true,
       startPrice: 100000,
       currentPrice: 145000,
       bidUnit: 5000,
@@ -543,6 +556,7 @@ const ROOM_4: AuctionRoomDetail = {
       description: '265mm · 정품 확인서 · 밑창 마모 적음',
       productUrl: 'brand.com/new-balance-992',
       status: 'CLOSED',
+      sold: false,
       startPrice: 120000,
       currentPrice: 120000,
       bidUnit: 5000,
@@ -561,6 +575,7 @@ const ROOM_4: AuctionRoomDetail = {
       description: '280mm · 박스 없음 · 세탁 완료',
       productUrl: 'brand.com/chuck-taylor-70',
       status: 'CLOSED',
+      sold: true,
       startPrice: 35000,
       currentPrice: 52000,
       bidUnit: 1000,
@@ -604,6 +619,7 @@ const ROOM_5: AuctionRoomDetail = {
       description: '넘버링이 찍힌 한정판 아트토이입니다. 박스 포함.',
       productUrl: 'brand.com/art-toy',
       status: 'CLOSED',
+      sold: true,
       startPrice: 40000,
       currentPrice: 67000,
       bidUnit: 1000,
@@ -633,6 +649,7 @@ const ROOM_5: AuctionRoomDetail = {
       description: '5종 풀세트입니다. 전부 미개봉 상태입니다.',
       productUrl: 'brand.com/figure-set',
       status: 'CLOSED',
+      sold: false,
       startPrice: 18000,
       currentPrice: 31000,
       bidUnit: 1000,
@@ -656,6 +673,7 @@ const ROOM_5: AuctionRoomDetail = {
       description: '튜브에 넣어 보관해 접힘이 없습니다.',
       productUrl: 'brand.com/poster-set',
       status: 'CLOSED',
+      sold: false,
       startPrice: 15000,
       currentPrice: 15000,
       bidUnit: 1000,
@@ -689,6 +707,7 @@ const ROOM_6: AuctionRoomDetail = {
       description: '95 사이즈 · 드라이 완료 · 벨트 포함',
       productUrl: 'https://example.com/trench-coat',
       status: 'CLOSED',
+      sold: true,
       startPrice: 25000,
       currentPrice: 45000,
       bidUnit: 1000,
@@ -718,6 +737,7 @@ const ROOM_6: AuctionRoomDetail = {
       description: '오버핏 · 보풀 없음 · 단추 여분 있음',
       productUrl: 'https://example.com/knit-cardigan',
       status: 'CLOSED',
+      sold: true,
       startPrice: 12000,
       currentPrice: 23000,
       bidUnit: 1000,
@@ -746,6 +766,7 @@ const ROOM_6: AuctionRoomDetail = {
       description: '스크래치가 적고 스트랩 길이 조절이 됩니다.',
       productUrl: 'https://example.com/leather-bag',
       status: 'CLOSED',
+      sold: false,
       startPrice: 30000,
       currentPrice: 30000,
       bidUnit: 1000,
@@ -764,6 +785,7 @@ const ROOM_6: AuctionRoomDetail = {
       description: '250mm · 세탁 완료 · 끈 여분 포함',
       productUrl: 'https://example.com/canvas-sneakers',
       status: 'CLOSED',
+      sold: true,
       startPrice: 18000,
       currentPrice: 31000,
       bidUnit: 1000,
@@ -843,92 +865,6 @@ const ALL_ITEMS: AuctionItemDetail[] = Object.values(MOCK_ROOM_DETAILS).flatMap(
 export function findMockItem(itemId: number): AuctionItemDetail | undefined {
   return ALL_ITEMS.find((item) => item.id === itemId)
 }
-
-/** 라이브 방에 들어갔을 때 이미 쌓여 있는 이벤트. 방마다 자기 물품 이름을 쓴다. */
-const ROOM_EVENTS: Record<number, RoomEvent[]> = {
-  1: [
-    {
-      id: 6,
-      at: before(1),
-      kind: 'BID',
-      message: '스니커홀릭님이 85,000원 입찰',
-      subtitle: '한정판 조던 스니커즈',
-      emphasized: true,
-    },
-    {
-      id: 5,
-      at: before(2),
-      kind: 'EXTEND',
-      message: '마감 1분 전 입찰 발생 · 마감 +30초 자동 연장',
-      subtitle: '빈티지 데님 자켓',
-      emphasized: true,
-    },
-    {
-      id: 4,
-      at: before(3),
-      kind: 'BID',
-      message: '데님러버님이 13,000원 입찰',
-      subtitle: '빈티지 데님 자켓',
-    },
-    {
-      id: 3,
-      at: before(4),
-      kind: 'CLOSE',
-      message: '빈티지 데님 자켓 마감 1분 전',
-    },
-    {
-      id: 2,
-      at: before(7),
-      kind: 'CLOSE',
-      message: '핸드메이드 가죽지갑 낙찰 확정',
-      subtitle: '45,000원 · 가죽공방님',
-      emphasized: true,
-    },
-    {
-      id: 1,
-      at: before(10),
-      kind: 'START',
-      message: '한정판 조던 스니커즈 경매가 시작됐어요',
-    },
-  ],
-  2: [
-    {
-      id: 4,
-      at: before(2),
-      kind: 'BID',
-      message: '피규어덕후님이 22,000원 입찰',
-      subtitle: '희귀 포토카드 세트',
-      emphasized: true,
-    },
-    {
-      id: 3,
-      at: before(3),
-      kind: 'BID',
-      message: '앨범수집가님이 9,000원 입찰',
-      subtitle: '미니앨범 한정 포토카드',
-    },
-    {
-      id: 2,
-      at: before(6),
-      kind: 'START',
-      message: '미니앨범 한정 포토카드 경매가 시작됐어요',
-    },
-    {
-      id: 1,
-      at: before(9),
-      kind: 'START',
-      message: '희귀 포토카드 세트 경매가 시작됐어요',
-    },
-  ],
-}
-
-/** 라이브 방 이벤트 피드의 초기값. 실시간 이벤트가 이 위에 쌓인다. */
-export function mockRoomEvents(roomId: number): RoomEvent[] {
-  return ROOM_EVENTS[roomId] ?? []
-}
-
-/** 라이브 방(1번) 이벤트. 방을 지정하지 않는 화면이 쓴다. */
-export const MOCK_ROOM_EVENTS = ROOM_EVENTS[1]
 
 /**
  * 내 상품.

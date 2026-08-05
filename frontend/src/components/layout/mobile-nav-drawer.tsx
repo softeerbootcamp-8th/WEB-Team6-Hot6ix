@@ -144,7 +144,7 @@ export function MobileNavDrawer() {
 
               <div className="mt-4 flex items-center gap-3">
                 <ProfilePhoto
-                  seed={user.nickname}
+                  src={user.profileImageUrl}
                   className="size-12 shrink-0 rounded-full border border-brand-300 bg-card"
                 />
 

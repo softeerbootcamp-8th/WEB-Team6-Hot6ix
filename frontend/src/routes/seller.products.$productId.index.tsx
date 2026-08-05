@@ -100,9 +100,7 @@ function SellerProductDetailPage() {
         <section className="rounded-[20px] border bg-card p-6">
           <div className="relative">
             <ProductThumbnail
-              name={product.name ?? ''}
               src={product.imageUrl}
-              size={720}
               iconClassName="size-10"
               className="flex aspect-square w-full items-center justify-center rounded-2xl bg-fill text-neutral-muted"
             />
