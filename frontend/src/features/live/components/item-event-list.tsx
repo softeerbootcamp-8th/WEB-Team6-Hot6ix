@@ -5,7 +5,7 @@ import {
   StartIcon,
   WinIcon,
 } from '@/features/live/components/event-icons'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useEventEntrance } from '@/features/live/use-event-entrance'
 import { formatTime } from '@/lib/format'
@@ -16,7 +16,7 @@ import type { RoomEvent } from '@/mocks/types'
  * 물품 상세의 `이 물품의 경매방 이벤트` 카드 (Figma 476×260).
  *
  * 방 전체 피드와 달리 카드 안에 담기고, 행 간격이 66px 로 넓다.
- * 최신 이벤트가 위에 온다.
+ * 이벤트는 시간 오름차순으로 정렬되어 최신 이벤트가 아래에 쌓인다.
  */
 function resolveStyle(event: RoomEvent) {
   switch (event.kind) {
@@ -67,16 +67,42 @@ function byTimeAsc(events: RoomEvent[]) {
   )
 }
 
+const BOTTOM_THRESHOLD = 10 // px
+
 export function ItemEventList({ events }: { events: RoomEvent[] }) {
   const entranceOf = useEventEntrance()
   const scrollRef = useRef<HTMLDivElement>(null)
+  const isAtBottomRef = useRef(true)
+  const [hasNewEvents, setHasNewEvents] = useState(false)
 
-  // 새 이벤트가 오면 맨 아래로 부드럽게 따라간다.
-  useEffect(() => {
+  // 사용자가 스크롤할 때 맨 아래 여부를 추적한다.
+  function handleScroll() {
+    const node = scrollRef.current
+    if (!node) return
+    const atBottom =
+      node.scrollTop + node.clientHeight >= node.scrollHeight - BOTTOM_THRESHOLD
+    isAtBottomRef.current = atBottom
+    if (atBottom) setHasNewEvents(false)
+  }
+
+  function scrollToBottom() {
     const node = scrollRef.current
     if (!node) return
     node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' })
-  }, [events])
+    setHasNewEvents(false)
+  }
+
+  // 새 이벤트가 오면(length 증가): 맨 아래를 보고 있을 때만 따라가고,
+  // 위로 올려둔 상태면 위치를 유지하고 배지를 표시한다.
+  // events 참조가 바뀌어도 length 가 같으면 실행하지 않는다.
+  useEffect(() => {
+    if (isAtBottomRef.current) {
+      scrollToBottom()
+    } else {
+      setHasNewEvents(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events.length])
 
   return (
     <section className="flex min-h-0 flex-col rounded-2xl border p-5 lg:flex-1">
@@ -92,10 +118,12 @@ export function ItemEventList({ events }: { events: RoomEvent[] }) {
           </p>
         </div>
       ) : (
-        <div
-          ref={scrollRef}
-          className="mt-3 min-h-0 flex-1 overflow-y-auto border-t pt-2"
-        >
+        <div className="relative mt-3 min-h-0 flex-1">
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="h-full overflow-y-auto border-t pt-2"
+          >
           {/* 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다 */}
           <ul className="flex min-h-full flex-col justify-end gap-4">
             {byTimeAsc(events).map((event, index) => {
@@ -145,6 +173,15 @@ export function ItemEventList({ events }: { events: RoomEvent[] }) {
               )
             })}
           </ul>
+          </div>
+          {hasNewEvents && (
+            <button
+              onClick={scrollToBottom}
+              className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-full bg-foreground px-3 py-1 text-[11px] font-semibold text-background shadow-md"
+            >
+              새 이벤트 ↓
+            </button>
+          )}
         </div>
       )}
     </section>
