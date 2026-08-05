@@ -30,7 +30,7 @@ const PRESETS = [1, 5] as const
  */
 export function ItemDetailPanel({
   item,
-  roomId,
+  shareCode,
   itemId,
   events,
   isGuest,
@@ -46,7 +46,7 @@ export function ItemDetailPanel({
   action,
 }: {
   item: AuctionItemDetail
-  roomId: string
+  shareCode: string
   itemId: string
   events: RoomEvent[]
   isGuest: boolean
@@ -176,7 +176,7 @@ export function ItemDetailPanel({
             ) : isGuest ? (
               <Link
                 to="/"
-                search={{ redirect: `/rooms/${roomId}/items/${itemId}` }}
+                search={{ redirect: `/rooms/${shareCode}/items/${itemId}` }}
                 className="ease-soft flex h-11 items-center justify-center rounded-xl bg-brand-500 text-[14px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
               >
                 로그인하고 입찰하기

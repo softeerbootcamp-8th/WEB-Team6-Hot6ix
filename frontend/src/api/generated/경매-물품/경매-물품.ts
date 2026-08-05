@@ -47,99 +47,6 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * 경매방의 물품을 진행중 → 대기 → 낙찰 → 유찰 순으로 조회한다. 페이지네이션이 없으며 한 응답에 최대 100건까지 담긴다. 물품마다 `leaderboard`에 상위 입찰자 3명이 순위·닉네임·금액으로 담긴다. 한 사람이 여러 번 입찰해도 그 사람의 최고가로 한 줄만 나오고, 탈퇴한 회원은 순위에서 빠진다. 입찰이 없으면 빈 배열이다. 비로그인으로 조회할 수 있다.
- * @summary 경매방 물품 목록 조회
- */
-export const getSummaries = (
-    auctionRoomId: number,
- options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
-) => {
-      
-      
-      return customInstance<CommonResponseListAuctionItemSummaryResponseDto>(
-      {url: `/api/v1/auction-rooms/${auctionRoomId}/auction-items`, method: 'GET', signal
-    },
-      options);
-    }
-  
-
-
-
-export const getGetSummariesQueryKey = (auctionRoomId?: number,) => {
-    return [
-    `/api/v1/auction-rooms/${auctionRoomId}/auction-items`
-    ] as const;
-    }
-
-    
-export const getGetSummariesQueryOptions = <TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(auctionRoomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getGetSummariesQueryKey(auctionRoomId);
-
-  
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSummaries>>> = ({ signal }) => getSummaries(auctionRoomId, requestOptions, signal);
-
-      
-
-      
-
-   return  { queryKey, queryFn, enabled: !!(auctionRoomId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type GetSummariesQueryResult = NonNullable<Awaited<ReturnType<typeof getSummaries>>>
-export type GetSummariesQueryError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>
-
-
-export function useGetSummaries<TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(
- auctionRoomId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getSummaries>>,
-          TError,
-          Awaited<ReturnType<typeof getSummaries>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetSummaries<TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(
- auctionRoomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof getSummaries>>,
-          TError,
-          Awaited<ReturnType<typeof getSummaries>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetSummaries<TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(
- auctionRoomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary 경매방 물품 목록 조회
- */
-
-export function useGetSummaries<TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(
- auctionRoomId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient 
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getGetSummariesQueryOptions(auctionRoomId,options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  query.queryKey = queryOptions.queryKey ;
-
-  return query;
-}
-
-
-
-
-/**
  * 소유자가 자기 상품을 경매방에 대기(READY) 물품으로 올린다. 입찰 단위는 요청으로 받지 않고 경매방 값을 그대로 복사해, 한 방의 모든 물품이 같은 단위를 갖는다. 한 상품은 한 번에 한 경매방에만 올릴 수 있어 이미 어딘가에 올라가 있으면 상태와 무관하게 거절한다(시작 전이라면 그 방에서 빼고 다시 올릴 수 있다). 종료된 경매방에는 올릴 수 없고, 방송 중(OPEN)인 방에는 올릴 수 있다. 경매방이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다(상품도 동일). 응답의 `leaderboard`는 항상 빈 배열이다 — 방금 추가한 물품에는 입찰이 없다.
  * @summary 경매방 물품 추가
  */
@@ -338,17 +245,19 @@ export const useStart = <TError = ErrorType<CommonResponseAuctionItemDetailRespo
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 물품 상세를 조회한다. 낙찰·유찰된 물품도 조회된다. `leaderboard`에 상위 입찰자 3명이 담긴다. 규칙은 목록 조회와 같다. 비로그인으로 조회할 수 있다.
- * @summary 경매 물품 상세 조회
+ * 경매방의 물품을 진행중 → 대기 → 낙찰 → 유찰 순으로 조회한다. 페이지네이션이 없으며 한 응답에 최대 100건까지 담긴다. 물품마다 `leaderboard`에 상위 입찰자 3명이 순위·닉네임·금액으로 담긴다. 한 사람이 여러 번 입찰해도 그 사람의 최고가로 한 줄만 나오고, 탈퇴한 회원은 순위에서 빠진다. 입찰이 없으면 빈 배열이다. 비로그인으로 조회할 수 있다.
+
+인증이 필요 없는 공개 경로라 경매방을 숫자 ID가 아닌 공유 코드로 지목한다.
+ * @summary 경매방 물품 목록 조회
  */
-export const getDetail1 = (
-    auctionItemId: number,
+export const getSummaries = (
+    shareCode: string,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
       
-      return customInstance<CommonResponseAuctionItemDetailResponseDto>(
-      {url: `/api/v1/auction-items/${auctionItemId}`, method: 'GET', signal
+      return customInstance<CommonResponseListAuctionItemSummaryResponseDto>(
+      {url: `/api/v1/auction-rooms/share/${shareCode}/auction-items`, method: 'GET', signal
     },
       options);
     }
@@ -356,29 +265,127 @@ export const getDetail1 = (
 
 
 
-export const getGetDetail1QueryKey = (auctionItemId?: number,) => {
+export const getGetSummariesQueryKey = (shareCode?: string,) => {
     return [
-    `/api/v1/auction-items/${auctionItemId}`
+    `/api/v1/auction-rooms/share/${shareCode}/auction-items`
     ] as const;
     }
 
     
-export const getGetDetail1QueryOptions = <TData = Awaited<ReturnType<typeof getDetail1>>, TError = ErrorType<CommonResponseAuctionItemDetailResponseDto>>(auctionItemId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export const getGetSummariesQueryOptions = <TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetDetail1QueryKey(auctionItemId);
+  const queryKey =  queryOptions?.queryKey ?? getGetSummariesQueryKey(shareCode);
 
   
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDetail1>>> = ({ signal }) => getDetail1(auctionItemId, requestOptions, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSummaries>>> = ({ signal }) => getSummaries(shareCode, requestOptions, signal);
 
       
 
       
 
-   return  { queryKey, queryFn, enabled: !!(auctionItemId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+   return  { queryKey, queryFn, enabled: !!(shareCode), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSummariesQueryResult = NonNullable<Awaited<ReturnType<typeof getSummaries>>>
+export type GetSummariesQueryError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>
+
+
+export function useGetSummaries<TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(
+ shareCode: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSummaries>>,
+          TError,
+          Awaited<ReturnType<typeof getSummaries>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSummaries<TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSummaries>>,
+          TError,
+          Awaited<ReturnType<typeof getSummaries>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSummaries<TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 경매방 물품 목록 조회
+ */
+
+export function useGetSummaries<TData = Awaited<ReturnType<typeof getSummaries>>, TError = ErrorType<CommonResponseListAuctionItemSummaryResponseDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSummaries>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSummariesQueryOptions(shareCode,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
+ * 물품 상세를 조회한다. 낙찰·유찰된 물품도 조회된다. `leaderboard`에 상위 입찰자 3명이 담긴다. 규칙은 목록 조회와 같다. 비로그인으로 조회할 수 있다.
+
+**물품이 그 경매방 소속인지 확인한다.** 방만 공유 코드로 가리고 물품을 숫자 ID로 열어 두면 열거할 수 있는 지점이 물품으로 옮겨갈 뿐이다 — 이 응답의 auctionRoomId가 방을 다시 알려주기 때문에 더 그렇다. 남의 방 물품을 지목하면 물품이 없을 때와 똑같이 404다.
+ * @summary 경매 물품 상세 조회
+ */
+export const getDetail1 = (
+    shareCode: string,
+    auctionItemId: number,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseAuctionItemDetailResponseDto>(
+      {url: `/api/v1/auction-rooms/share/${shareCode}/auction-items/${auctionItemId}`, method: 'GET', signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetDetail1QueryKey = (shareCode?: string,
+    auctionItemId?: number,) => {
+    return [
+    `/api/v1/auction-rooms/share/${shareCode}/auction-items/${auctionItemId}`
+    ] as const;
+    }
+
+    
+export const getGetDetail1QueryOptions = <TData = Awaited<ReturnType<typeof getDetail1>>, TError = ErrorType<CommonResponseAuctionItemDetailResponseDto>>(shareCode: string,
+    auctionItemId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDetail1QueryKey(shareCode,auctionItemId);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDetail1>>> = ({ signal }) => getDetail1(shareCode,auctionItemId, requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(shareCode && auctionItemId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
 export type GetDetail1QueryResult = NonNullable<Awaited<ReturnType<typeof getDetail1>>>
@@ -386,7 +393,8 @@ export type GetDetail1QueryError = ErrorType<CommonResponseAuctionItemDetailResp
 
 
 export function useGetDetail1<TData = Awaited<ReturnType<typeof getDetail1>>, TError = ErrorType<CommonResponseAuctionItemDetailResponseDto>>(
- auctionItemId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>> & Pick<
+ shareCode: string,
+    auctionItemId: number, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDetail1>>,
           TError,
@@ -396,7 +404,8 @@ export function useGetDetail1<TData = Awaited<ReturnType<typeof getDetail1>>, TE
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetDetail1<TData = Awaited<ReturnType<typeof getDetail1>>, TError = ErrorType<CommonResponseAuctionItemDetailResponseDto>>(
- auctionItemId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>> & Pick<
+ shareCode: string,
+    auctionItemId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getDetail1>>,
           TError,
@@ -406,7 +415,8 @@ export function useGetDetail1<TData = Awaited<ReturnType<typeof getDetail1>>, TE
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useGetDetail1<TData = Awaited<ReturnType<typeof getDetail1>>, TError = ErrorType<CommonResponseAuctionItemDetailResponseDto>>(
- auctionItemId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ shareCode: string,
+    auctionItemId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -414,11 +424,12 @@ export function useGetDetail1<TData = Awaited<ReturnType<typeof getDetail1>>, TE
  */
 
 export function useGetDetail1<TData = Awaited<ReturnType<typeof getDetail1>>, TError = ErrorType<CommonResponseAuctionItemDetailResponseDto>>(
- auctionItemId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ shareCode: string,
+    auctionItemId: number, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getDetail1>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getGetDetail1QueryOptions(auctionItemId,options)
+  const queryOptions = getGetDetail1QueryOptions(shareCode,auctionItemId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

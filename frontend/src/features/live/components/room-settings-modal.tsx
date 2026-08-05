@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/modal'
 import { NumberField, TextAreaField, TextField } from '@/components/ui/field'
 import {
   getGetMyRoomsQueryKey,
-  getGetRoomQueryKey,
+  getGetRoomByShareCodeQueryKey,
   useUpdate2,
 } from '@/api/generated/경매방/경매방'
 import { toAuctionRoomErrorMessage } from '@/features/seller/auction-room-error'
@@ -26,13 +26,15 @@ import type {
  *
  * 서버가 정한 수정 가능 범위를 그대로 비춘다.
  *
- * | 요청           | 시작 전 | 진행 중 | 종료 |
- * | -------------- | ------- | ------- | ---- |
- * | 이름만         | O       | **O**   | X    |
- * | 이름 + 나머지  | O       | X (409) | X    |
+ * | 요청                    | 시작 전 | 진행 중 | 종료 |
+ * | ----------------------- | ------- | ------- | ---- |
+ * | 이름 · 방송 링크        | O       | **O**   | X    |
+ * | 소개 · Soft Close 설정  | O       | X (409) | X    |
  *
- * 진행 중에 이름만 열어 둔 건 방송 중에 드러난 오타를 고칠 길이 하나는 있어야
- * 해서다. 나머지는 참여자가 이미 보고 판단한 조건이라 바뀌면 안 된다.
+ * 진행 중에 이름과 방송 링크를 열어 둔 건 **둘 다 방송을 켠 뒤에야 잘못이
+ * 드러나는 값**이라서다 — 이름은 오타, 방송 링크는 "안 열려요"라는 말을 듣고서야
+ * 안다. 그때 잠그면 정작 고쳐야 할 순간에 못 고친다. 나머지는 참여자가 이미
+ * 보고 입찰을 판단한 조건이라 바뀌면 안 된다.
  *
  * 화면 잠금은 편의일 뿐이고 **판단 근거는 서버 응답이다** — 폼을 열어 둔 사이
  * 물품이 시작되는 경합에서는 409 를 받아 안내한다.
@@ -105,7 +107,11 @@ function RoomSettingsForm({
 
   const queryClient = useQueryClient()
 
-  // 이름 밖의 필드는 경매가 시작되면 서버가 거절한다.
+  /*
+   * 경매가 시작되면 서버가 거절하는 필드들. 이름과 방송 링크는 여기서 빠진다 —
+   * 둘 다 방송을 켠 뒤에야 잘못이 드러나는 값이라(이름은 오타, 방송 링크는 "안 열려요"),
+   * 그때 잠그면 정작 고쳐야 할 순간에 못 고친다.
+   */
   const locked = room.status !== 'BEFORE'
 
   const patch = buildPatch({
@@ -126,15 +132,6 @@ function RoomSettingsForm({
       setError('경매방 이름을 2자 이상 입력해주세요.')
       return
     }
-    /*
-     * 서버가 라이브 URL 에 `.*\S.*` 를 걸어 두어 빈 문자열이 400 이고, 생략하면
-     * 기존 값이 남는다. 즉 **한 번 넣은 주소를 지우는 수단이 없다.** 400 을 맞고
-     * "형식이 올바르지 않다"는 엉뚱한 안내를 받느니 여기서 먼저 말해준다.
-     */
-    if (room.liveUrl && !liveUrl.trim()) {
-      setError('라이브 방송 URL은 지울 수 없어요. 다른 주소로 바꿔주세요.')
-      return
-    }
     if (!changed) {
       onClose()
       return
@@ -144,7 +141,7 @@ function RoomSettingsForm({
       await updateRoom.mutateAsync({ roomId: auctionRoomId, data: patch })
 
       void queryClient.invalidateQueries({
-        queryKey: getGetRoomQueryKey(auctionRoomId),
+        queryKey: getGetRoomByShareCodeQueryKey(room.shareCode ?? ''),
       })
       void queryClient.invalidateQueries({ queryKey: getGetMyRoomsQueryKey() })
 
@@ -166,8 +163,8 @@ function RoomSettingsForm({
       </h2>
       <p className="mt-2 text-[13px] font-medium text-neutral-tertiary">
         {locked
-          ? '경매가 시작돼 이름만 고칠 수 있어요.'
-          : '참여자에게 보이는 정보예요. 경매가 시작되면 이름 말고는 고칠 수 없어요.'}
+          ? '경매가 시작돼 이름과 방송 링크만 고칠 수 있어요.'
+          : '참여자에게 보이는 정보예요. 경매가 시작되면 이름과 방송 링크 말고는 고칠 수 없어요.'}
       </p>
 
       <form onSubmit={(event) => void handleSubmit(event)} className="mt-6">
@@ -183,12 +180,24 @@ function RoomSettingsForm({
           }}
         />
 
+        {/* 방송 중에도 고칠 수 있으므로 잠금 안내 위에 둔다. 안내문이 "아래 설정"을 가리킨다. */}
+        <div className="mt-5">
+          <TextField
+            label="라이브 방송 URL"
+            type="url"
+            value={liveUrl}
+            placeholder="https://..."
+            hint="비우고 저장하면 방송 링크가 지워집니다."
+            onChange={(event) => setLiveUrl(event.target.value)}
+          />
+        </div>
+
         {locked && (
           <p className="mt-5 flex items-start gap-2 rounded-[14px] bg-fill px-4 py-3.5 text-[12px] leading-[1.6] font-medium text-neutral-tertiary">
             <Lock aria-hidden className="mt-0.5 size-3.5 shrink-0" />
             <span>
-              아래 설정은 참여자가 이미 보고 판단한 조건이라 경매가 시작된
-              뒤에는 바꿀 수 없어요.
+              아래 설정은 참여자가 이미 보고 입찰을 판단한 조건이라 경매가
+              시작된 뒤에는 바꿀 수 없어요.
             </span>
           </p>
         )}
@@ -200,17 +209,6 @@ function RoomSettingsForm({
             disabled={locked}
             placeholder="경매방을 간단히 소개해 주세요."
             onChange={(event) => setDescription(event.target.value)}
-          />
-        </div>
-
-        <div className="mt-5">
-          <TextField
-            label="라이브 방송 URL"
-            type="url"
-            value={liveUrl}
-            disabled={locked}
-            placeholder="https://..."
-            onChange={(event) => setLiveUrl(event.target.value)}
           />
         </div>
 
@@ -311,14 +309,22 @@ function buildPatch({
   const patch: AuctionRoomUpdateRequestDto = {}
 
   if (name.trim() !== (room.name ?? '')) patch.name = name.trim()
+
+  /*
+   * 방송 링크는 잠금 위에 있다 — 경매가 시작된 뒤에도 보낼 수 있다.
+   *
+   * 빈 문자열도 그대로 보낸다. 서버가 "지운다"는 뜻으로 받아 null 로 저장한다.
+   * 예전에는 빈 값이 400 이라 여기서 걸렀고, 그래서 한 번 넣은 방송 링크를 지울
+   * 수단이 아예 없었다(#162).
+   */
+  if (liveUrl.trim() !== (room.liveUrl ?? '')) {
+    patch.liveUrl = liveUrl.trim()
+  }
+
   if (locked) return patch
 
   if (description.trim() !== (room.description ?? '')) {
     patch.description = description.trim()
-  }
-  // 빈 값은 서버가 거절한다. 지우려는 시도는 handleSubmit 이 먼저 막는다.
-  if (liveUrl.trim() && liveUrl.trim() !== (room.liveUrl ?? '')) {
-    patch.liveUrl = liveUrl.trim()
   }
   if (triggerMinutes !== toMinutes(room.softCloseTriggerSeconds)) {
     patch.softCloseTriggerSeconds = triggerMinutes * 60

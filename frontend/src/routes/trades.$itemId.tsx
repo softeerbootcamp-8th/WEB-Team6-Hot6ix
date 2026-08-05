@@ -147,7 +147,6 @@ function TradeDetailPage() {
     // 페이지를 넘길 때 표가 빈 상태로 깜빡이지 않게 이전 페이지를 잡아 둔다.
     { query: { placeholderData: keepPreviousData } },
   )
-  const itemQuery = useGetDetail1(auctionItemId)
   /*
    * 물품 하나의 거래 요약을 주는 endpoint 가 없어 목록을 다시 쓴다. 쿼리 키가
    * 거래 내역 화면과 같아서, 목록에서 들어오면 캐시를 그대로 쓰고 요청이 없다.
@@ -158,7 +157,6 @@ function TradeDetailPage() {
     () => toCandidatePage(candidatesQuery.data?.data),
     [candidatesQuery.data],
   )
-  const item = itemQuery.data?.data
   const deal = useMemo(
     () =>
       toDeals(dealsQuery.data?.data).find(
@@ -166,6 +164,16 @@ function TradeDetailPage() {
       ) ?? null,
     [dealsQuery.data, auctionItemId],
   )
+
+  /*
+   * 물품 상세는 공개 경로라 방을 공유 코드로 지목한다. 이 화면 주소에는 방이 없어서
+   * 거래 정보에서 코드를 얻어 부른다 — 그래서 거래 목록보다 한 박자 늦게 나간다.
+   * 목록에서 눌러 들어오면 거래 목록이 캐시에 있어 실제로는 곧바로 나간다.
+   */
+  const itemQuery = useGetDetail1(deal?.shareCode ?? '', auctionItemId, {
+    query: { enabled: Boolean(deal?.shareCode) },
+  })
+  const item = itemQuery.data?.data
 
   /*
    * 구매 건에서만 판매자 연락처를 조회한다. 판매 건의 sellerProfileId 는 내
@@ -269,7 +277,15 @@ function TradeDetailPage() {
     else failMutation.mutate(variables)
   }
 
-  if (candidatesQuery.isPending || itemQuery.isPending) return <RoutePending />
+  /*
+   * 물품 상세는 거래를 찾은 뒤에야 나간다. 그래서 `itemQuery.isPending` 하나로는
+   * "기다리는 중"과 "아직 안 보냈음"이 구분되지 않는다 — 거래 목록이 다 왔는데도
+   * 이 물품 줄이 없으면 요청은 영영 나가지 않으므로, 그때는 기다리지 말고 아래에서
+   * "거래를 찾을 수 없어요"로 보낸다.
+   */
+  const loadingItem =
+    dealsQuery.isPending || (deal !== null && itemQuery.isPending)
+  if (candidatesQuery.isPending || loadingItem) return <RoutePending />
 
   const notice = toAccessNotice(candidatesQuery.error?.response?.status)
   if (notice) {
