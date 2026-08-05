@@ -10,6 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -19,12 +20,16 @@ class SessionManagerTest {
 
     private static final Duration LOGIN_TIMEOUT = Duration.ofHours(2);
 
+    private static final String COOKIE_NAME = "SESSION";
+
     private final SessionManager sessionManager = new SessionManager();
     private final MockHttpServletRequest request = new MockHttpServletRequest();
+    private final MockHttpServletResponse response = new MockHttpServletResponse();
 
     @BeforeEach
-    void 로그인_세션_수명을_주입한다() {
+    void 세션_설정을_주입한다() {
         ReflectionTestUtils.setField(sessionManager, "loginTimeout", LOGIN_TIMEOUT);
+        ReflectionTestUtils.setField(sessionManager, "cookieName", COOKIE_NAME);
     }
 
     @Nested
@@ -126,7 +131,7 @@ class SessionManagerTest {
             MockHttpSession session = (MockHttpSession) request.getSession(true);
             session.setAttribute(SessionKeys.USER_ID, USER_ID);
 
-            sessionManager.invalidate(request);
+            sessionManager.invalidate(request, response);
 
             assertThat(session.isInvalid()).isTrue();
         }
@@ -137,7 +142,7 @@ class SessionManagerTest {
 
             request.getSession(true).setAttribute(SessionKeys.USER_ID, USER_ID);
 
-            sessionManager.invalidate(request);
+            sessionManager.invalidate(request, response);
 
             assertThat(sessionManager.findUserId(request)).isEmpty();
         }
@@ -146,7 +151,7 @@ class SessionManagerTest {
         @DisplayName("세션이 없어도 예외 없이 통과한다")
         void doesNothingWhenNoSession() {
 
-            assertThatCode(() -> sessionManager.invalidate(request)).doesNotThrowAnyException();
+            assertThatCode(() -> sessionManager.invalidate(request, response)).doesNotThrowAnyException();
             assertThat(request.getSession(false)).isNull();
         }
 
@@ -156,9 +161,33 @@ class SessionManagerTest {
 
             request.getSession(true).setAttribute(SessionKeys.USER_ID, USER_ID);
 
-            sessionManager.invalidate(request);
+            sessionManager.invalidate(request, response);
 
-            assertThatCode(() -> sessionManager.invalidate(request)).doesNotThrowAnyException();
+            assertThatCode(() -> sessionManager.invalidate(request, response)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("세션 쿠키를 즉시 만료시키는 Set-Cookie 헤더를 내려준다")
+        void expiresSessionCookie() {
+
+            request.getSession(true).setAttribute(SessionKeys.USER_ID, USER_ID);
+
+            sessionManager.invalidate(request, response);
+
+            String setCookie = response.getHeader("Set-Cookie");
+            assertThat(setCookie).contains(COOKIE_NAME + "=");
+            assertThat(setCookie).containsIgnoringCase("Max-Age=0");
+        }
+
+        @Test
+        @DisplayName("세션이 없어도 세션 쿠키를 만료시키는 Set-Cookie 헤더를 내려준다")
+        void expiresSessionCookieEvenWithoutSession() {
+
+            sessionManager.invalidate(request, response);
+
+            String setCookie = response.getHeader("Set-Cookie");
+            assertThat(setCookie).contains(COOKIE_NAME + "=");
+            assertThat(setCookie).containsIgnoringCase("Max-Age=0");
         }
     }
 }

@@ -13,6 +13,7 @@ import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -86,7 +87,7 @@ class AuthControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("로그아웃되었습니다."));
 
-        verify(sessionManager).invalidate(any(HttpServletRequest.class));
+        verify(sessionManager).invalidate(any(HttpServletRequest.class), any(HttpServletResponse.class));
     }
 
     @Test
