@@ -10,7 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.hot6ix.upbid.domain.upload.exception.UploadErrorType;
 import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
-import com.hot6ix.upbid.domain.user.dto.response.UserMeResponseDto;
+import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
 import com.hot6ix.upbid.domain.user.service.UserService;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -34,7 +34,7 @@ class UserControllerTest extends AbstractControllerTest {
     @DisplayName("로그인된 사용자가 /me를 호출하면 200과 내 정보를 반환한다")
     void getMe() throws Exception {
 
-        UserMeResponseDto response = new UserMeResponseDto(
+        UserResponseDto response = new UserResponseDto(
                 LOGIN_USER_ID, "테스트유저", "test@hot6ix.com", "https://cdn.hot6ix.com/profile.png"
         );
         when(userService.getMe(LOGIN_USER_ID)).thenReturn(response);
@@ -79,7 +79,7 @@ class UserControllerTest extends AbstractControllerTest {
 
         UserUpdateRequestDto request = new UserUpdateRequestDto(
                 "새닉네임", "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/user-profiles/1/abc.jpg");
-        UserMeResponseDto response = new UserMeResponseDto(
+        UserResponseDto response = new UserResponseDto(
                 LOGIN_USER_ID, "새닉네임", "test@hot6ix.com",
                 "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/user-profiles/1/abc.jpg");
         when(userService.updateMe(eq(LOGIN_USER_ID), any(UserUpdateRequestDto.class))).thenReturn(response);
@@ -99,7 +99,7 @@ class UserControllerTest extends AbstractControllerTest {
     void updateMe_nullImage() throws Exception {
 
         UserUpdateRequestDto request = new UserUpdateRequestDto("새닉네임", null);
-        UserMeResponseDto response = new UserMeResponseDto(LOGIN_USER_ID, "새닉네임", "test@hot6ix.com", null);
+        UserResponseDto response = new UserResponseDto(LOGIN_USER_ID, "새닉네임", "test@hot6ix.com", null);
         when(userService.updateMe(eq(LOGIN_USER_ID), any(UserUpdateRequestDto.class))).thenReturn(response);
 
         mockMvc.perform(put("/api/v1/users/me")

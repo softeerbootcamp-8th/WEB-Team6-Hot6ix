@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.upload.exception.UploadErrorType;
 import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
-import com.hot6ix.upbid.domain.user.dto.response.UserMeResponseDto;
+import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
@@ -52,7 +52,7 @@ class UserServiceTest {
         User user = newUser();
         when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
 
-        UserMeResponseDto response = userService.getMe(1L);
+        UserResponseDto response = userService.getMe(1L);
 
         assertThat(response.nickname()).isEqualTo("테스트유저");
         assertThat(response.email()).isEqualTo("test@hot6ix.com");
@@ -84,7 +84,7 @@ class UserServiceTest {
         String newImageUrl = "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/user-profiles/1/new.jpg";
         UserUpdateRequestDto request = new UserUpdateRequestDto(newNickname, newImageUrl);
 
-        UserMeResponseDto response = userService.updateMe(1L, request);
+        UserResponseDto response = userService.updateMe(1L, request);
 
         assertThat(response.nickname()).isEqualTo(newNickname);
         assertThat(response.profileImageUrl()).isEqualTo(newImageUrl);
@@ -99,7 +99,7 @@ class UserServiceTest {
 
         UserUpdateRequestDto request = new UserUpdateRequestDto("새닉네임", null);
 
-        UserMeResponseDto response = userService.updateMe(1L, request);
+        UserResponseDto response = userService.updateMe(1L, request);
 
         assertThat(response.profileImageUrl()).isNull();
     }

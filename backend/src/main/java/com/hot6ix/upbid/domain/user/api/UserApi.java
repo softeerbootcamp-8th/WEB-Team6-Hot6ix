@@ -1,7 +1,7 @@
 package com.hot6ix.upbid.domain.user.api;
 
 import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
-import com.hot6ix.upbid.domain.user.dto.response.UserMeResponseDto;
+import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -23,7 +23,7 @@ public interface UserApi {
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "존재하지 않는 회원 (code 9001)")
     })
-    ResponseEntity<CommonResponse<UserMeResponseDto>> getMe(
+    ResponseEntity<CommonResponse<UserResponseDto>> getMe(
             @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
@@ -38,7 +38,7 @@ public interface UserApi {
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "존재하지 않는 회원 (code 9001)")
     })
-    ResponseEntity<CommonResponse<UserMeResponseDto>> updateMe(
+    ResponseEntity<CommonResponse<UserResponseDto>> updateMe(
             @Parameter(hidden = true) @LoginUserId Long userId,
             UserUpdateRequestDto request);
 }

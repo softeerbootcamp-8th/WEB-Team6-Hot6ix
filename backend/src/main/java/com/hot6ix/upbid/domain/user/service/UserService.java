@@ -5,7 +5,7 @@ import com.hot6ix.upbid.domain.auth.dto.OAuthUserInfo;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.dto.UserOAuthLoginDto;
 import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
-import com.hot6ix.upbid.domain.user.dto.response.UserMeResponseDto;
+import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
@@ -47,16 +47,16 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public UserMeResponseDto getMe(Long userId) {
+    public UserResponseDto getMe(Long userId) {
 
         User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new ApplicationException(UserErrorType.USER_NOT_FOUND));
 
-        return UserMeResponseDto.from(user);
+        return UserResponseDto.from(user);
     }
 
     @Transactional
-    public UserMeResponseDto updateMe(Long userId, UserUpdateRequestDto request) {
+    public UserResponseDto updateMe(Long userId, UserUpdateRequestDto request) {
 
         imageUrlValidator.validate(request.profileImageUrl());
 
@@ -65,7 +65,7 @@ public class UserService {
 
         user.updateProfile(request.nickname(), request.profileImageUrl());
 
-        return UserMeResponseDto.from(user);
+        return UserResponseDto.from(user);
     }
 
     private User verifyNotWithdrawn(User user) {
