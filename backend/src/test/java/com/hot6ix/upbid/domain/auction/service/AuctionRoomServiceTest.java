@@ -304,7 +304,7 @@ class AuctionRoomServiceTest {
     }
 
     @Test
-    @DisplayName("물품 중 하나라도 시작된 적 있으면 이름 밖의 설정 수정 시 예외가 발생한다")
+    @DisplayName("물품 중 하나라도 시작된 적 있으면 이름·방송 링크 밖의 설정 수정 시 예외가 발생한다")
     void update_throwsWhenItemAlreadyStarted() {
 
         SellerProfile sellerProfile = newSellerProfile();
@@ -324,6 +324,34 @@ class AuctionRoomServiceTest {
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_ALREADY_STARTED);
 
         assertThat(auctionRoom.getName()).isEqualTo("승민의 경매방");
+    }
+
+    /**
+     * 방송 링크는 방송을 켜고 "안 열려요"라는 말을 듣고서야 잘못이 드러난다. 시작과 함께
+     * 잠그면 정작 고쳐야 할 순간에 못 고치므로, 이름과 함께 진행 중에도 열어 둔다.
+     */
+    @Test
+    @DisplayName("방송 링크는 물품이 시작된 뒤에도 바꾸거나 지울 수 있다")
+    void update_liveUrlSucceedsAfterStart() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoom auctionRoom = newUpdatableRoom(sellerProfile, AuctionRoomStatus.OPEN);
+
+        stubOwnedRoom(sellerProfile, auctionRoom);
+
+        auctionRoomService.update(1L, 10L, AuctionRoomUpdateRequestDto.builder()
+                .liveUrl("https://youtube.com/@fixed")
+                .build());
+        assertThat(auctionRoom.getLiveUrl()).isEqualTo("https://youtube.com/@fixed");
+
+        auctionRoomService.update(1L, 10L, AuctionRoomUpdateRequestDto.builder()
+                .liveUrl("")
+                .build());
+        assertThat(auctionRoom.getLiveUrl()).isNull();
+
+        // 시작 여부를 아예 묻지 않는다 — 방송 링크는 진행 중에도 열려 있어서다.
+        verify(auctionItemRepository, never())
+                .existsByAuctionRoom_AuctionRoomIdAndStatusNot(any(), any());
     }
 
     @Test

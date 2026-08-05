@@ -168,12 +168,16 @@ public interface AuctionRoomApi {
             summary = "경매방 설정 수정",
             description = "소유자가 경매방 설정을 부분 수정한다. 요청에서 생략된 필드는 기존 값을 유지한다. "
                     + "로그인 세션의 회원을 소유자로 확인한다.\n\n"
+                    + "description과 liveUrl은 **빈 문자열을 보내면 지워진다**(null로 저장). 생략은 "
+                    + "\"유지\", 빈 문자열은 \"삭제\"로 갈린다. 나머지 필드는 빈 값을 받지 않는다.\n\n"
                     + "수정 가능 범위는 요청에 담긴 필드에 따라 다르다.\n"
-                    + "- **name만 보낸 요청**: 경매가 진행 중이어도 통과한다. 방송 중에 드러난 오타를 "
-                    + "고칠 길을 하나 열어 둔 것이다.\n"
-                    + "- **name 밖의 필드를 하나라도 보낸 요청**: 이 방의 물품 중 하나라도 READY가 아닌 "
-                    + "상태로 경매에 올라간 적 있으면(=경매가 시작된 적 있으면) 이후로도 계속 거절된다. "
-                    + "참여자가 이미 보고 판단한 조건이라 진행 중에 바뀌면 안 된다.\n"
+                    + "- **name·liveUrl만 보낸 요청**: 경매가 진행 중이어도 통과한다. 둘 다 방송을 켠 "
+                    + "뒤에야 잘못이 드러나는 값이라(이름은 오타, 방송 링크는 \"안 열려요\"라는 말), "
+                    + "그때 못 고치면 고칠 방법이 아예 없다.\n"
+                    + "- **그 밖의 필드(coverImageUrl·description·softClose\\*)를 하나라도 보낸 요청**: "
+                    + "이 방의 물품 중 하나라도 READY가 아닌 상태로 경매에 올라간 적 있으면"
+                    + "(=경매가 시작된 적 있으면) 이후로도 계속 거절된다. 참여자가 이미 보고 입찰을 "
+                    + "판단한 조건이라 진행 중에 바뀌면 안 된다.\n"
                     + "- **종료된 방**: 어떤 필드도 바꿀 수 없다. 참여자에게는 결과 기록이라 나중에 "
                     + "제목이 바뀌면 자기가 참여했던 방을 알아볼 수 없게 된다.\n\n"
                     + "bidIncrement는 애초에 수정 대상이 아니다 — 물품이 방의 값을 복사해 갖고 있어서 "
@@ -185,8 +189,8 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
                     + "경매방이 없거나 본인 소유가 아님 (code 4002)"),
-            @ApiResponse(responseCode = "409", description = "name 밖의 필드를 경매가 시작된 뒤에 "
-                    + "바꾸려 함 (code 4003) 또는 종료된 경매방 (code 4004)")
+            @ApiResponse(responseCode = "409", description = "name·liveUrl 밖의 필드를 경매가 시작된 "
+                    + "뒤에 바꾸려 함 (code 4003) 또는 종료된 경매방 (code 4004)")
     })
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> update(
             @Parameter(hidden = true) @LoginUserId Long userId,
