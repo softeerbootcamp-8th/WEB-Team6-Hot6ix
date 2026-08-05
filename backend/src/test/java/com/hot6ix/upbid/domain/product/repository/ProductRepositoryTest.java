@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
+import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
@@ -83,14 +85,42 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
                 .build());
     }
 
-    private void newAuctionItem(AuctionRoom auctionRoom, Product product, AuctionItemStatus status) {
-        entityManager.persist(AuctionItem.builder()
+    private AuctionItem newAuctionItem(AuctionRoom auctionRoom, Product product, AuctionItemStatus status) {
+        return entityManager.persist(AuctionItem.builder()
                 .auctionRoom(auctionRoom)
                 .product(product)
                 .startingPrice(10_000L)
                 .bidIncrement(1_000L)
                 .status(status)
                 .build());
+    }
+
+    private DealCandidate newCandidate(
+            AuctionItem item, String bidderEmail, int candidateRank, DealCandidateStatus status) {
+
+        User bidder = userRepository.saveAndFlush(User.builder()
+                .email(bidderEmail)
+                .password("password")
+                .nickname("입찰자" + candidateRank)
+                .phoneNumber("010-1234-5678")
+                .build());
+
+        return entityManager.persist(DealCandidate.builder()
+                .auctionItem(item)
+                .bidder(bidder)
+                .candidateRank(candidateRank)
+                .bidAmount(10_000L)
+                .status(status)
+                .build());
+    }
+
+    /** 후보가 된 뒤에 탈퇴한 회원. 후보 생성 시점에 걸러지는 경우와는 다른 경로다. */
+    private DealCandidate withdrawnCandidate(
+            AuctionItem item, String bidderEmail, int candidateRank, DealCandidateStatus status) {
+
+        DealCandidate candidate = newCandidate(item, bidderEmail, candidateRank, status);
+        candidate.getBidder().softDelete(LocalDateTime.of(2026, 7, 30, 9, 0));
+        return candidate;
     }
 
     @Test
@@ -189,7 +219,8 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         newAuctionItem(room, inProgress, AuctionItemStatus.IN_PROGRESS);
 
         Product sold = newProduct(sellerProfile, "낙찰상품");
-        newAuctionItem(room, sold, AuctionItemStatus.SOLD);
+        AuctionItem soldItem = newAuctionItem(room, sold, AuctionItemStatus.SOLD);
+        newCandidate(soldItem, "bidder7-1@hot6ix.com", 1, DealCandidateStatus.WAITING);
 
         Product failed = newProduct(sellerProfile, "유찰상품");
         newAuctionItem(room, failed, AuctionItemStatus.FAILED);
@@ -210,10 +241,140 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
                 .filteredOn(r -> r.productId().equals(sold.getProductId()))
                 .extracting(ProductSummaryResponseDto::status)
                 .containsExactly(ProductListingStatus.ENDED);
+        // 유찰은 판매자가 다시 팔 수 있어야 하므로 ENDED가 아니라 UNREGISTERED로 되돌아간다.
         assertThat(results)
                 .filteredOn(r -> r.productId().equals(failed.getProductId()))
                 .extracting(ProductSummaryResponseDto::status)
+                .containsExactly(ProductListingStatus.UNREGISTERED);
+    }
+
+    @Test
+    @DisplayName("낙찰 후보 전원이 실패하면 ENDED가 아니라 UNREGISTERED로 되돌아간다 — 다시 팔 수 있어야 한다")
+    void search_soldWithAllFailedCandidates_isUnregistered() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller13@hot6ix.com");
+        AuctionRoom room = newAuctionRoom(sellerProfile);
+
+        Product allFailed = newProduct(sellerProfile, "전원실패상품");
+        AuctionItem item = newAuctionItem(room, allFailed, AuctionItemStatus.SOLD);
+        newCandidate(item, "bidder13-1@hot6ix.com", 1, DealCandidateStatus.FAILED);
+        newCandidate(item, "bidder13-2@hot6ix.com", 2, DealCandidateStatus.FAILED);
+        entityManager.flush();
+
+        List<ProductSummaryResponseDto> results =
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+
+        assertThat(results).extracting(ProductSummaryResponseDto::status)
+                .containsExactly(ProductListingStatus.UNREGISTERED);
+    }
+
+    @Test
+    @DisplayName("낙찰됐지만 아직 후보가 없으면(마감 직후 창) UNREGISTERED로 본다")
+    void search_soldWithNoCandidatesYet_isUnregistered() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller15@hot6ix.com");
+        AuctionRoom room = newAuctionRoom(sellerProfile);
+
+        Product sold = newProduct(sellerProfile, "후보없음상품");
+        newAuctionItem(room, sold, AuctionItemStatus.SOLD);
+        entityManager.flush();
+
+        List<ProductSummaryResponseDto> results =
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+
+        assertThat(results).extracting(ProductSummaryResponseDto::status)
+                .containsExactly(ProductListingStatus.UNREGISTERED);
+    }
+
+    @Test
+    @DisplayName("WAITING 후보의 입찰자가 탈퇴하면 판매자 화면(거래 현황)과 같이 UNREGISTERED로 본다")
+    void search_soldWithWithdrawnWaitingBidder_isUnregistered() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller16@hot6ix.com");
+        AuctionRoom room = newAuctionRoom(sellerProfile);
+
+        Product product = newProduct(sellerProfile, "탈퇴후보상품");
+        AuctionItem item = newAuctionItem(room, product, AuctionItemStatus.SOLD);
+        withdrawnCandidate(item, "bidder16-1@hot6ix.com", 1, DealCandidateStatus.WAITING);
+        entityManager.flush();
+
+        List<ProductSummaryResponseDto> results =
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+
+        assertThat(results).extracting(ProductSummaryResponseDto::status)
+                .containsExactly(ProductListingStatus.UNREGISTERED);
+    }
+
+    @Test
+    @DisplayName("COMPLETED 후보는 낙찰자가 탈퇴했어도 이미 끝난 거래라 ENDED로 본다")
+    void search_soldWithWithdrawnCompletedBidder_isEnded() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller17@hot6ix.com");
+        AuctionRoom room = newAuctionRoom(sellerProfile);
+
+        Product product = newProduct(sellerProfile, "완료후탈퇴상품");
+        AuctionItem item = newAuctionItem(room, product, AuctionItemStatus.SOLD);
+        withdrawnCandidate(item, "bidder17-1@hot6ix.com", 1, DealCandidateStatus.COMPLETED);
+        entityManager.flush();
+
+        List<ProductSummaryResponseDto> results =
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+
+        assertThat(results).extracting(ProductSummaryResponseDto::status)
                 .containsExactly(ProductListingStatus.ENDED);
+    }
+
+    @Test
+    @DisplayName("UNREGISTERED 필터는 이력 없음·유찰·전원실패 상품을 모두 포함한다 (3VL 회귀)")
+    void search_filtersByUnregistered_includesFailedAndAllFailed() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller18@hot6ix.com");
+        AuctionRoom room = newAuctionRoom(sellerProfile);
+
+        Product neverListed = newProduct(sellerProfile, "이력없음상품");
+
+        Product failed = newProduct(sellerProfile, "유찰상품2");
+        newAuctionItem(room, failed, AuctionItemStatus.FAILED);
+
+        Product allFailed = newProduct(sellerProfile, "전원실패상품2");
+        AuctionItem allFailedItem = newAuctionItem(room, allFailed, AuctionItemStatus.SOLD);
+        newCandidate(allFailedItem, "bidder18-1@hot6ix.com", 1, DealCandidateStatus.FAILED);
+
+        Product ready = newProduct(sellerProfile, "대기상품2");
+        newAuctionItem(room, ready, AuctionItemStatus.READY);
+
+        Product ended = newProduct(sellerProfile, "종료상품2");
+        AuctionItem endedItem = newAuctionItem(room, ended, AuctionItemStatus.SOLD);
+        newCandidate(endedItem, "bidder18-2@hot6ix.com", 1, DealCandidateStatus.WAITING);
+        entityManager.flush();
+
+        List<ProductSummaryResponseDto> results = productRepository.search(
+                sellerProfile.getSellerProfileId(), null, ProductListingStatus.UNREGISTERED, null, null);
+
+        assertThat(results).extracting(ProductSummaryResponseDto::productId)
+                .containsExactlyInAnyOrder(
+                        neverListed.getProductId(), failed.getProductId(), allFailed.getProductId());
+    }
+
+    @Test
+    @DisplayName("ENDED 필터에는 살아 있는 거래가 붙은 SOLD 물품만 나온다 (물품 없는 상품이 섞이지 않는다)")
+    void search_filtersByEnded_excludesUnregistered() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller19@hot6ix.com");
+        AuctionRoom room = newAuctionRoom(sellerProfile);
+
+        newProduct(sellerProfile, "이력없음상품2");
+
+        Product ended = newProduct(sellerProfile, "종료상품3");
+        AuctionItem endedItem = newAuctionItem(room, ended, AuctionItemStatus.SOLD);
+        newCandidate(endedItem, "bidder19-1@hot6ix.com", 1, DealCandidateStatus.WAITING);
+        entityManager.flush();
+
+        List<ProductSummaryResponseDto> results = productRepository.search(
+                sellerProfile.getSellerProfileId(), null, ProductListingStatus.ENDED, null, null);
+
+        assertThat(results).extracting(ProductSummaryResponseDto::productId)
+                .containsExactly(ended.getProductId());
     }
 
     @Test
@@ -226,13 +387,20 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         Product unregistered = newProduct(sellerProfile, "미등록상품");
 
         Product sold = newProduct(sellerProfile, "낙찰상품");
-        newAuctionItem(room, sold, AuctionItemStatus.SOLD);
+        AuctionItem soldItem = newAuctionItem(room, sold, AuctionItemStatus.SOLD);
+        newCandidate(soldItem, "bidder12-1@hot6ix.com", 1, DealCandidateStatus.WAITING);
+
+        Product failedProduct = newProduct(sellerProfile, "유찰상품3");
+        newAuctionItem(room, failedProduct, AuctionItemStatus.FAILED);
         entityManager.flush();
 
         assertThat(productRepository.findListingStatus(unregistered.getProductId()))
                 .contains(ProductListingStatus.UNREGISTERED);
         assertThat(productRepository.findListingStatus(sold.getProductId()))
                 .contains(ProductListingStatus.ENDED);
+        // 유찰도 findListingStatus(상세·수정 응답)와 search(목록)가 같은 값을 줘야 한다.
+        assertThat(productRepository.findListingStatus(failedProduct.getProductId()))
+                .contains(ProductListingStatus.UNREGISTERED);
     }
 
     @Test

@@ -14,7 +14,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> {
+public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>, AuctionItemRepositoryCustom {
 
     /**
      * 이 상품이 어느 경매방엔가 물품으로 올라가 있는지 확인한다. 상태를 따지지 않는 이유는
