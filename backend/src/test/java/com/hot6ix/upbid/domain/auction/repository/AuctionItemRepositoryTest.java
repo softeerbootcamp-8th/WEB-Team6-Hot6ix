@@ -1,7 +1,6 @@
 package com.hot6ix.upbid.domain.auction.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
@@ -15,9 +14,9 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.Query;
 import java.time.LocalDateTime;
 import java.util.List;
-import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -360,25 +359,48 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     /**
-     * 서비스의 존재 검사는 읽고-검사하고-쓰는 흐름이라 동시 요청 두 건이 함께 통과할 수 있다.
-     * 최후 방어선인 unique 제약이 실제 스키마에 붙었는지는 mock으로 확인할 수 없어 여기서 본다.
-     *
-     * <p>ID 전략이 IDENTITY라 {@code persist()} 시점에 INSERT가 바로 나가므로, 제약 위반도
-     * 뒤따르는 {@code flush()}가 아니라 그 자리에서 터진다.
+     * 유찰·거래 전원 실패 상품 재등록을 지원하면서 {@code product_id} unique 제약을 없앴다
+     * ({@code AuctionItem} javadoc 참고). 예전엔 이 제약이 동시 등록 두 건이 함께 통과하는
+     * 것을 막는 최후 방어선이었지만, 이제 그 역할은 상품 행 비관적 락(Service 계층)이 한다.
+     * 여기서는 <b>DB가 더 이상 막지 않는다</b>는 것만 확인한다.
      */
     @Test
-    @DisplayName("같은 상품을 두 물품으로 올리면 unique 제약에 걸린다")
-    void productIdIsUnique() {
+    @DisplayName("같은 상품을 두 물품으로 올릴 수 있다 (재등록 지원으로 unique 제약을 없앴다)")
+    void productIdIsNoLongerUnique() {
 
-        Product product = newProduct("중복상품");
-        newAuctionItem(newAuctionRoom("첫 번째 방"), product, AuctionItemStatus.READY);
+        Product product = newProduct("재등록상품2");
+        AuctionItem first = newAuctionItem(newAuctionRoom("첫 번째 방"), product, AuctionItemStatus.FAILED);
         entityManager.flush();
 
         AuctionRoom secondRoom = newAuctionRoom("두 번째 방");
+        AuctionItem second = newAuctionItem(secondRoom, product, AuctionItemStatus.READY);
+        entityManager.flush();
 
-        assertThatThrownBy(() -> newAuctionItem(secondRoom, product, AuctionItemStatus.READY))
-                .isInstanceOf(ConstraintViolationException.class)
-                .hasMessageContaining("uk_auction_items_product_id");
+        assertThat(second.getAuctionItemId()).isNotEqualTo(first.getAuctionItemId());
+        assertThat(auctionItemRepository.findAll())
+                .filteredOn(ai -> ai.getProduct().getProductId().equals(product.getProductId()))
+                .hasSize(2);
+    }
+
+    /**
+     * unique 제약을 없애면서 {@code product_id}의 유일한 인덱스도 함께 사라진다 — 재등록
+     * 판정({@code findBlockedProductIdsIn})과 "최신 물품" 상관 서브쿼리가 이 인덱스에
+     * 의존하므로 명시적으로 다시 걸어 뒀다({@code AuctionItem}의 {@code @Table(indexes=...)}).
+     * InnoDB가 FK 때문에 자동으로 인덱스를 만들어 주더라도 이름이 자동 생성이라 의존할 수
+     * 없으므로, 우리가 붙인 이름의 인덱스가 실제로 있는지 확인한다.
+     */
+    @Test
+    @DisplayName("product_id에 명시적 인덱스가 남아 있다")
+    void productIdIndexExists() {
+
+        Query query = entityManager.getEntityManager().createNativeQuery(
+                "select count(*) from information_schema.statistics "
+                        + "where table_schema = database() "
+                        + "  and table_name = 'auction_items' "
+                        + "  and index_name = 'idx_auction_items_product_id'");
+
+        Number count = (Number) query.getSingleResult();
+        assertThat(count.longValue()).isGreaterThan(0);
     }
 
     @Test

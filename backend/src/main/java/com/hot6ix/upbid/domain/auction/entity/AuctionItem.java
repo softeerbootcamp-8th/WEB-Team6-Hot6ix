@@ -13,10 +13,10 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -27,7 +27,7 @@ import lombok.NoArgsConstructor;
 @Entity
 @Table(
         name = "auction_items",
-        uniqueConstraints = @UniqueConstraint(name = "uk_auction_items_product_id", columnNames = "product_id")
+        indexes = @Index(name = "idx_auction_items_product_id", columnList = "product_id")
 )
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class AuctionItem extends BaseTimeEntity {
