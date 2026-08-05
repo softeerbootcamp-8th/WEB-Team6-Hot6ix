@@ -36,6 +36,7 @@ function MyProfileEditPage() {
 
   const [nickname, setNickname] = useState(user?.nickname ?? '')
   const [profileFile, setProfileFile] = useState<File | null>(null)
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(user?.profileImageUrl ?? null)
   const [nicknameError, setNicknameError] = useState<string | undefined>()
 
   const { uploadImage, uploading } = useImageUpload(
@@ -60,11 +61,11 @@ function MyProfileEditPage() {
       return
     }
 
-    let profileImageUrl: string | null | undefined = undefined
+    let finalImageUrl: string | null = profileImageUrl
 
     if (profileFile) {
       try {
-        profileImageUrl = await uploadImage(profileFile)
+        finalImageUrl = await uploadImage(profileFile)
       } catch (err) {
         if (err instanceof ImageUploadError) {
           toast.error(err.message)
@@ -76,7 +77,7 @@ function MyProfileEditPage() {
     }
 
     updateMe.mutate(
-      { data: { nickname: trimmed, profileImageUrl } },
+      { data: { nickname: trimmed, profileImageUrl: finalImageUrl } },
       {
         onSuccess(response) {
           const updated = response.data
@@ -118,7 +119,9 @@ function MyProfileEditPage() {
           label="프로필 사진"
           uploadText="사진 변경"
           maxWidth={280}
+          initialUrl={user.profileImageUrl ?? undefined}
           onFileChange={setProfileFile}
+          onRemove={() => setProfileImageUrl(null)}
         />
 
         <div className="flex flex-col">
