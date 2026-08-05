@@ -1,5 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
+import { axiosInstance } from '@/api/mutator/custom-instance'
+
 /**
  * 로그인 세션 스토어.
  *
@@ -98,4 +100,48 @@ export function useSession(): Session {
 export function useCurrentUser(): SessionUser | null {
   const session = useSession()
   return session.status === 'member' ? session.user : null
+}
+
+/** `GET /api/v1/users/me` 응답 DTO. 서버 `UserResponseDto` 와 필드를 맞춘다. */
+interface MeResponseData {
+  userId: number
+  nickname: string
+  email: string
+  profileImageUrl: string | null
+}
+
+interface MeResponse {
+  success: boolean
+  data: MeResponseData
+}
+
+/**
+ * `GET /api/v1/users/me` 를 호출해 세션을 채운다. 로그인 세션(쿠키)이 있어야
+ * 성공한다 — 앱 초기화(`__root.tsx`)와 카카오 회원가입 직후(온보딩 완료) 양쪽에서 쓴다.
+ *
+ * `phone` 은 이 응답에 없다. 알고 있으면 인자로 넘기고, 모르면 기존 세션값을
+ * 유지한다 (백엔드가 `/me` 에 phone 을 추가하면 이 인자를 없앤다).
+ *
+ * TanStack Query 의 `queryFn` 으로도 쓰이므로 값을 반환해야 한다 — `undefined` 를
+ * 반환하면 "Query data cannot be undefined" 로 fetchQuery 가 실패 처리되고,
+ * 방금 채운 세션이 `__root.tsx` 의 catch(`sessionStore.signOut()`)로 되돌아간다.
+ */
+export async function hydrateSession(
+  phone?: string | null,
+): Promise<SessionUser> {
+  const prev = sessionStore.getState()
+  const prevPhone = prev.status === 'member' ? prev.user.phone : null
+
+  const { data } = await axiosInstance.get<MeResponse>('/api/v1/users/me')
+
+  const user: SessionUser = {
+    id: data.data.userId,
+    nickname: data.data.nickname,
+    kakaoEmail: data.data.email,
+    phone: phone ?? prevPhone,
+    profileImageUrl: data.data.profileImageUrl ?? null,
+  }
+
+  sessionStore.signIn(user)
+  return user
 }
