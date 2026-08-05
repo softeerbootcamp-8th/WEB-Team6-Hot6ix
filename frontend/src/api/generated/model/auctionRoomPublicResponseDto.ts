@@ -29,4 +29,5 @@ export interface AuctionRoomPublicResponseDto {
   itemCount?: number;
   participantCount?: number;
   isOwner?: boolean;
+  agreedToTerms?: boolean | null;
 }
