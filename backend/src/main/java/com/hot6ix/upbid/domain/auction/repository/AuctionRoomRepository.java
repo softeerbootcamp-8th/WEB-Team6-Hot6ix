@@ -28,6 +28,10 @@ public interface AuctionRoomRepository extends JpaRepository<AuctionRoom, Long> 
     boolean existsByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
             Long auctionRoomId, Long sellerProfileId);
 
+    /** 판매자 프로필 삭제를 막을지 판정하는 데 쓴다({@code SellerProfileService.delete}). */
+    boolean existsBySellerProfile_SellerProfileIdAndStatusAndDeletedAtIsNull(
+            Long sellerProfileId, AuctionRoomStatus status);
+
     /**
      * 경매방 행에 쓰기 락을 걸고 조회한다. 이름은 짧지만 <b>soft delete된 방은 걸러진다</b>.
      * 트랜잭션 안에서만 호출해야 한다.

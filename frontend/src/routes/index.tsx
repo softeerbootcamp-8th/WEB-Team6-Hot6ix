@@ -50,7 +50,9 @@ function LandingPage() {
 
   return (
     <GuestShell
-      state="로그인"
+      // 우측 상단 pill 을 안 그린다. 로그인 화면에서 "로그인"이라고 적힌 pill 이
+      // 누를 수 있는 버튼처럼 보였다. 실제 로그인은 아래 카카오 버튼 하나뿐이다.
+      // `requireMember` 가 돌려보내는 redirect 화면도 이 컴포넌트다.
       // 상단바(64)를 뺀 높이를 채우고, 그 안에서 카드를 세로 가운데로 모은다.
       className="flex min-h-[calc(100svh-4rem)] max-w-[1216px] flex-col justify-center px-5 py-6 md:px-8 md:py-10"
     >

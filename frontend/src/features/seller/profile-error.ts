@@ -1,7 +1,7 @@
 import { isAxiosError } from 'axios'
 
 /**
- * 판매자 프로필 등록·수정이 거절된 이유를 사용자 문구로 바꾼다.
+ * 판매자 프로필 등록·수정·삭제가 거절된 이유를 사용자 문구로 바꾼다.
  *
  * 서버 `message` 를 그대로 띄우지 않는다 (`API-INTEGRATION.md` 3장).
  * `deal-error.ts` · `bid-error.ts` 와 같은 모양이다.
@@ -34,6 +34,10 @@ const BY_CODE: Record<number, ProfileErrorMessage> = {
   3002: {
     title: '등록된 프로필이 없어요',
     description: '먼저 판매자 프로필을 등록해 주세요.',
+  },
+  3003: {
+    title: '진행 중인 경매방이 있어요',
+    description: '먼저 경매방을 종료한 뒤에 삭제할 수 있어요.',
   },
   10002: {
     title: '이미지를 다시 올려주세요',
