@@ -75,8 +75,7 @@ export function ItemDetailPanel({
         <div className="min-w-0 overflow-y-auto">
           <div className="relative">
             <ProductThumbnail
-              name={item.name}
-              size={640}
+              src={item.imageUrl}
               iconClassName="size-8"
               className="flex h-[220px] items-center justify-center rounded-xl bg-fill text-neutral-muted"
             />

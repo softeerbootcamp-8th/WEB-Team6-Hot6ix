@@ -135,10 +135,9 @@ function JoinRoomPage() {
          */}
         <div className="border-b px-5 py-5 md:px-7 md:py-6">
           <div className="flex items-center gap-3.5">
+            {/* `coverImageUrl` 을 채울 화면이 아직 없어서(#163) 늘 회색 아이콘이다. */}
             <ProductThumbnail
-              name={roomTitle}
               src={room.coverImageUrl}
-              size={240}
               className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-fill text-neutral-muted"
             />
 
@@ -211,9 +210,7 @@ function JoinRoomPage() {
                     )}
                   >
                     <ProductThumbnail
-                      name={item.productName ?? ''}
                       src={item.imageUrl}
-                      size={160}
                       iconClassName="size-4"
                       className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
                     />

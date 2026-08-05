@@ -43,6 +43,13 @@ export interface AuctionItemDetail {
   id: number
   roomId: number
   name: string
+  /**
+   * 서버가 준 상품 사진 주소. 판매자가 올리지 않았으면 null 이다.
+   *
+   * 목업 물품(`mocks/data.ts`)에는 없다. 사진은 목업으로 채우지 않고
+   * 서버 값만 쓰므로(`adapt-item.ts`) 값이 없으면 회색 아이콘이다.
+   */
+  imageUrl?: string | null
   category: string
   /** 판매자가 작성한 상품 설명 */
   description: string

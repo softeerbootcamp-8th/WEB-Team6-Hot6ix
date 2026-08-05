@@ -85,8 +85,7 @@ export function LiveItemCard({
         className={cn('flex w-full gap-3 p-3 text-left', ready && 'pb-1.5')}
       >
         <ProductThumbnail
-          name={item.name}
-          size={200}
+          src={item.imageUrl}
           className="flex size-[72px] shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
         />
 

@@ -354,8 +354,7 @@ function TradeDetailPage() {
            */}
           {/* 모바일에서도 어떤 물건인지 보여야 한다. 높이만 낮춘다. */}
           <ProductThumbnail
-            name={productName}
-            size={640}
+            src={item.imageUrl}
             iconClassName="size-7"
             className={cn(
               'mt-4 flex shrink-0 items-center justify-center rounded-[18px] border border-brand-300 bg-brand-50 text-brand-500',

@@ -81,11 +81,9 @@ function SellerHomePage() {
             판매자 프로필
           </h2>
 
-          {/* Figma 아바타 자리(160). 서버에 사진이 없으면 목업 사진을 넣는다. */}
+          {/* Figma 아바타 자리(160). 서버에 사진이 없으면 사람 아이콘이 뜬다. */}
           <ProfilePhoto
-            seed={profile.storeName ?? ''}
             src={profile.storeImageUrl}
-            size={400}
             className="mt-5 size-40 shrink-0 self-center rounded-full border border-brand-300 bg-brand-50"
           />
 
@@ -212,9 +210,7 @@ function SellerHomePage() {
                         className="ease-soft flex items-center gap-4 rounded-2xl border bg-card p-3.5 transition-all duration-150 active:scale-[0.99]"
                       >
                         <ProductThumbnail
-                          name={product.name ?? ''}
                           src={product.imageUrl}
-                          size={200}
                           iconClassName="size-6"
                           className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
                         />
@@ -276,9 +272,7 @@ function SellerHomePage() {
                           )}
                         >
                           <ProductThumbnail
-                            name={product.name ?? ''}
                             src={product.imageUrl}
-                            size={200}
                             iconClassName="size-6"
                             className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
                           />

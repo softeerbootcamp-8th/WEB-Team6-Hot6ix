@@ -313,9 +313,7 @@ export function ClosedRoomView({
                           )}
                         >
                           <ProductThumbnail
-                            name={item.productName}
                             src={item.imageUrl}
-                            size={200}
                             iconClassName="size-5"
                             className="flex h-[84px] w-[72px] shrink-0 flex-col items-center justify-center gap-1 rounded-xl bg-fill text-neutral-muted"
                           />
