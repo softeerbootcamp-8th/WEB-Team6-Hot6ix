@@ -42,24 +42,21 @@ import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
 /** 데모 이벤트 id 시작값. 목업 이벤트와 겹치지 않게 띄운다. */
 const DEMO_EVENT_BASE = 80_000
 
-export const Route = createFileRoute('/rooms/$roomId/items/$itemId')({
+export const Route = createFileRoute('/rooms/$shareCode/items/$itemId')({
   component: AuctionItemPage,
 })
 
 function AuctionItemPage() {
-  const { roomId, itemId } = Route.useParams()
+  const { shareCode, itemId } = Route.useParams()
   const navigate = useNavigate()
   const user = useCurrentUser()
   const isDesktop = useIsDesktop()
   const showDevTools = useDevTools()
 
-  const auctionRoomId = Number(roomId)
   const auctionItemId = Number(itemId)
 
-  const summaries = useGetSummaries(auctionRoomId, {
-    query: { enabled: Number.isInteger(auctionRoomId) },
-  })
-  const detailQuery = useGetDetail1(auctionItemId, {
+  const summaries = useGetSummaries(shareCode)
+  const detailQuery = useGetDetail1(shareCode, auctionItemId, {
     query: { enabled: Number.isInteger(auctionItemId) },
   })
   const placeBid = usePlace()
@@ -76,7 +73,8 @@ function AuctionItemPage() {
    * 방 제목·판매자명은 아직 목업이다. 물품 배열은 서버 값만 쓴다 —
    * 목업으로 채우면 실제 입찰과 무관한 현재가·리더보드가 그대로 보인다.
    */
-  const mockRoom = findMockRoom(auctionRoomId) ?? MOCK_ROOM_DETAIL
+  const mockRoom =
+    findMockRoom(detailQuery.data?.data?.auctionRoomId ?? 0) ?? MOCK_ROOM_DETAIL
   const room = {
     ...mockRoom,
     items: serverItems,
@@ -253,7 +251,7 @@ function AuctionItemPage() {
     [item, myNickname],
   )
 
-  const { status } = useRealtimeStatus(roomId, handleSseEvent)
+  const { status } = useRealtimeStatus(shareCode, handleSseEvent)
 
   const disconnectNotifiedRef = useRef(false)
   useEffect(() => {
@@ -367,7 +365,7 @@ function AuctionItemPage() {
   /*
    * 여기부터는 화면을 통째로 갈아끼운다. 훅은 위에서 전부 부른 뒤다.
    *
-   * 라이브 경매방(`/rooms/$roomId`)과 달리 이 라우트는 링크로 바로 들어오는
+   * 라이브 경매방(`/rooms/$shareCode`)과 달리 이 라우트는 링크로 바로 들어오는
    * 단독 페이지라, 상세를 못 받으면 보여줄 게 없다. 실시간 연결을 지킬 이유도
    * 없으므로 전역 상태 화면을 그대로 쓴다.
    */
@@ -402,7 +400,7 @@ function AuctionItemPage() {
         bidBlocked={bidBlocked || isGuest}
         feedback={feedback}
         onBack={() =>
-          void navigate({ to: '/rooms/$roomId', params: { roomId } })
+          void navigate({ to: '/rooms/$shareCode', params: { shareCode } })
         }
         onBid={submitBid}
       />
@@ -457,8 +455,8 @@ function AuctionItemPage() {
             isSelected={(candidate) => candidate.id === item.id}
             onSelect={(candidate) =>
               void navigate({
-                to: '/rooms/$roomId/items/$itemId',
-                params: { roomId, itemId: String(candidate.id) },
+                to: '/rooms/$shareCode/items/$itemId',
+                params: { shareCode, itemId: String(candidate.id) },
               })
             }
           />
@@ -468,8 +466,8 @@ function AuctionItemPage() {
         <>
           <span>선택한 물품 상세 · 라이브</span>
           <Link
-            to="/rooms/$roomId"
-            params={{ roomId }}
+            to="/rooms/$shareCode"
+            params={{ shareCode }}
             aria-label="상세 닫고 라이브로 돌아가기"
             className="ease-soft ml-auto flex size-7 items-center justify-center rounded-full border border-[#c2c9d6] bg-card text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
           >
@@ -480,12 +478,12 @@ function AuctionItemPage() {
       center={
         <>
           {isGuest && (
-            <GuestNotice redirectTo={`/rooms/${roomId}/items/${itemId}`} />
+            <GuestNotice redirectTo={`/rooms/${shareCode}/items/${itemId}`} />
           )}
 
           <ItemDetailPanel
             item={item}
-            roomId={roomId}
+            shareCode={shareCode}
             itemId={itemId}
             events={itemEvents}
             isGuest={isGuest}

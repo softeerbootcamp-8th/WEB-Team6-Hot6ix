@@ -23,6 +23,11 @@ function AuctionRoomCreatedPage() {
   // 공유 링크는 서버가 조립해서 준다(share_code + 프론트 베이스 URL).
   const { data, isError } = useGetShareInfo(Number(roomId))
   const shareUrl = data?.data?.shareUrl
+  /*
+   * 방 화면은 숫자 ID 로 열 수 없다. 이 화면의 주소는 방을 막 만든 판매자만 오는
+   * 소유자 경로라 숫자 ID 그대로지만, 이동할 곳은 공개 경로라 코드가 필요하다.
+   */
+  const shareCode = data?.data?.shareCode
 
   const copy = async () => {
     if (!shareUrl) return
@@ -73,13 +78,19 @@ function AuctionRoomCreatedPage() {
           />
         </div>
 
-        <Link
-          to="/rooms/$roomId"
-          params={{ roomId }}
-          className="ease-soft mt-11 flex h-14 w-full items-center justify-center rounded-[14px] bg-brand-500 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
-        >
-          경매방으로 이동
-        </Link>
+        {shareCode ? (
+          <Link
+            to="/rooms/$shareCode"
+            params={{ shareCode }}
+            className="ease-soft mt-11 flex h-14 w-full items-center justify-center rounded-[14px] bg-brand-500 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99]"
+          >
+            경매방으로 이동
+          </Link>
+        ) : (
+          <p className="mt-11 flex h-14 w-full items-center justify-center rounded-[14px] bg-fill text-[15px] font-bold text-neutral-muted">
+            {isError ? '경매방 주소를 불러오지 못했어요' : '불러오는 중…'}
+          </p>
+        )}
       </section>
     </AppShell>
   )

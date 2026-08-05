@@ -44,6 +44,23 @@ public class AuctionRoomShareService {
     }
 
     /**
+     * 공유 코드를 내부 식별자로 바꾼다. 공개 API는 숫자 PK를 받지 않으므로, 물품 조회·SSE
+     * 구독처럼 방 ID가 필요한 곳은 모두 이 메서드를 지나 방을 지목한다.
+     *
+     * <p>없는 코드와 삭제된 방을 구분하지 않고 모두 404다. 구분하면 코드를 넣어보는 것만으로
+     * 그 방이 있었는지 알아낼 수 있다.
+     *
+     * @param shareCode 공개 URL로 들어온 공유 코드
+     * @return 그 방의 내부 식별자
+     * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 삭제되었을 때(AUCTION_ROOM_NOT_FOUND)
+     */
+    @Transactional(readOnly = true)
+    public Long resolveRoomId(String shareCode) {
+        return auctionRoomRepository.findIdByShareCode(shareCode)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+    }
+
+    /**
      * 경매방 공유 코드 후보를 하나 생성한다. QR 스캔·링크 복사로만 쓰이므로 사람이 직접
      * 읽거나 타이핑할 일이 없어, 문자 혼동 방지를 위한 별도 문자셋 제한은 두지 않는다.
      * 유일성은 호출 측(방 저장 시 유니크 제약 위반 재시도)에서 보장한다.
@@ -80,7 +97,8 @@ public class AuctionRoomShareService {
                         auctionRoomId, sellerProfile.getSellerProfileId())
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
-        return new AuctionRoomShareResponseDto(buildShareUrl(auctionRoom.getShareCode()));
+        return new AuctionRoomShareResponseDto(
+                buildShareUrl(auctionRoom.getShareCode()), auctionRoom.getShareCode());
     }
 
     private String buildShareUrl(String shareCode) {

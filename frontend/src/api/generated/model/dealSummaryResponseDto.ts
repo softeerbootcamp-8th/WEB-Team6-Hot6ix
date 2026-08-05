@@ -15,6 +15,7 @@ import type { DealSummaryResponseDtoStatus } from './dealSummaryResponseDtoStatu
 export interface DealSummaryResponseDto {
   auctionItemId?: number;
   auctionRoomId?: number;
+  shareCode?: string;
   productId?: number;
   productName?: string;
   auctionRoomName?: string;

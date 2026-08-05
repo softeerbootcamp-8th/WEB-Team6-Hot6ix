@@ -8,11 +8,11 @@
 | 화면                                          | 쓰는 API                                                                            |
 | --------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `/seller/rooms/$roomId/created` 공유 링크·QR  | `GET /api/v1/auction-rooms/{roomId}/share`                                          |
-| 라이브 경매방 공유 패널(`SharePanel`)         | 〃                                                                                  |
+| 라이브 경매방 공유 패널(`SharePanel`)         | 없음 — 주소의 shareCode 로 링크를 화면에서 조립한다                                 |
 | `/join/$shareCode` 방 정보 (물품 목록은 목업) | `GET /api/v1/auction-rooms/share/{shareCode}`                                       |
 | `/trades` 거래 내역                           | `GET /api/v1/deals`                                                                 |
-| `/trades/$itemId` 낙찰 후보·최종 순위         | `GET /api/v1/auction-items/{id}/deal-candidates` + `GET /api/v1/auction-items/{id}` |
-| `/rooms/$roomId/result`, 종료된 경매방(`ClosedRoomView`) | `GET /api/v1/auction-rooms/{roomId}/results`                              |
+| `/trades/$itemId` 낙찰 후보·최종 순위         | `GET /api/v1/auction-items/{id}/deal-candidates` + `GET /api/v1/auction-rooms/share/{shareCode}/auction-items/{id}` |
+| `/rooms/$shareCode/result`, 종료된 경매방(`ClosedRoomView`) | `GET /api/v1/auction-rooms/share/{shareCode}/results`                  |
 | 종료된 경매방의 판매자 전용 거래 현황(`RoomDealStatus`)   | `GET /api/v1/auction-rooms/{roomId}/deals`                                |
 
 QR 은 서버가 이미지를 만들지 않습니다. 서버는 `shareUrl` 문자열만 주고,
@@ -66,8 +66,8 @@ const rooms = data ?? []
 
 | 목업                | 쓰는 화면                                                    | 성격                        |
 | ------------------- | ------------------------------------------------------------ | --------------------------- |
-| `MOCK_ROOMS`        | `/rooms`, `/rooms/$roomId`(요약)                             | 경매방 목록                 |
-| `MOCK_ROOM_DETAIL`  | `/rooms/$roomId`, 물품 상세, `/join/$shareCode`(물품 목록만) | 방 상세 + 물품 배열         |
+| `MOCK_ROOMS`        | `/rooms`, `/rooms/$shareCode`(요약)                          | 경매방 목록                 |
+| `MOCK_ROOM_DETAIL`  | `/rooms/$shareCode`, 물품 상세                               | 방 상세 + 물품 배열         |
 | `MOCK_EMPTY_ROOM`   | `/rooms/7`                                                   | 물품 0개인 방(빈 상태 확인) |
 | `MOCK_ROOM_EVENTS`  | 라이브 이벤트 피드                                           | 실시간으로 대체될 값        |
 | `MOCK_PRODUCTS`     | `/seller`, `/seller/products`, 물품 추가 모달                | 판매자 상품                 |

@@ -27,24 +27,24 @@ public class AuctionItemController implements AuctionItemApi {
 
     private final AuctionItemService auctionItemService;
 
-    @GetMapping("/auction-rooms/{auctionRoomId}/auction-items")
+    @GetMapping("/auction-rooms/share/{shareCode}/auction-items")
     @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<List<AuctionItemSummaryResponseDto>>> getSummaries(
-            Long auctionRoomId) {
+            String shareCode) {
 
-        List<AuctionItemSummaryResponseDto> response = auctionItemService.getSummaries(auctionRoomId);
+        List<AuctionItemSummaryResponseDto> response = auctionItemService.getSummaries(shareCode);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매 물품 목록 조회에 성공했습니다."));
     }
 
-    @GetMapping("/auction-items/{auctionItemId}")
+    @GetMapping("/auction-rooms/share/{shareCode}/auction-items/{auctionItemId}")
     @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<AuctionItemDetailResponseDto>> getDetail(
-            Long auctionItemId) {
+            String shareCode, Long auctionItemId) {
 
-        AuctionItemDetailResponseDto response = auctionItemService.getDetail(auctionItemId);
+        AuctionItemDetailResponseDto response = auctionItemService.getDetail(shareCode, auctionItemId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매 물품 상세 조회에 성공했습니다."));
     }

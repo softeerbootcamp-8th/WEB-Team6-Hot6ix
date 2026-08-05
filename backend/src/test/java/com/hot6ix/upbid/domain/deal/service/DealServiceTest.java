@@ -101,6 +101,10 @@ class DealServiceTest {
                 return 1L;
             }
 
+            public String getShareCode() {
+                return "aBcD1234aBcD1234";
+            }
+
             public Long getProductId() {
                 return sellerRow == 1 ? 3L : null;
             }

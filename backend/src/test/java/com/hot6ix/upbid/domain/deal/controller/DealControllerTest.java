@@ -34,7 +34,7 @@ class DealControllerTest extends AbstractControllerTest {
     void getDeals() throws Exception {
 
         DealSummaryResponseDto deal = new DealSummaryResponseDto(
-                2L, 1L, 3L, "포토카드", "승민상점 경매방",
+                2L, 1L, "aBcD1234aBcD1234", 3L, "포토카드", "승민상점 경매방",
                 DealRole.SELLER, DealItemStatus.IN_PROGRESS, 15_000L, "원기", 4L,
                 LocalDateTime.of(2026, 7, 29, 21, 0));
         when(dealService.getDeals(LOGIN_USER_ID)).thenReturn(List.of(deal));
@@ -45,7 +45,9 @@ class DealControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.data[0].role").value("SELLER"))
                 .andExpect(jsonPath("$.data[0].status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.data[0].sellerProfileId").value(4))
-                .andExpect(jsonPath("$.data[0].partnerNickname").value("원기"));
+                .andExpect(jsonPath("$.data[0].partnerNickname").value("원기"))
+                // 거래 상세 화면이 이 코드로 물품 상세를 부른다. 숫자 PK로는 못 부른다.
+                .andExpect(jsonPath("$.data[0].shareCode").value("aBcD1234aBcD1234"));
 
         verify(dealService).getDeals(LOGIN_USER_ID);
     }
@@ -56,7 +58,7 @@ class DealControllerTest extends AbstractControllerTest {
     void getDealsOmitsContact() throws Exception {
 
         DealSummaryResponseDto deal = new DealSummaryResponseDto(
-                2L, 1L, null, "포토카드", "승민상점 경매방",
+                2L, 1L, "aBcD1234aBcD1234", null, "포토카드", "승민상점 경매방",
                 DealRole.BUYER, DealItemStatus.COMPLETED, 13_000L, "승민", 4L,
                 LocalDateTime.of(2026, 7, 29, 21, 0));
         when(dealService.getDeals(LOGIN_USER_ID)).thenReturn(List.of(deal));

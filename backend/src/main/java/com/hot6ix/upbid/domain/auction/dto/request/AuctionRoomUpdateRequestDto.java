@@ -26,7 +26,7 @@ public record AuctionRoomUpdateRequestDto(
         )
         String description,
 
-        @Pattern(regexp = ".*\\S.*", message = "라이브 방송 URL은 빈 값일 수 없습니다.")
+        /** 빈 문자열은 "지운다"는 뜻이라 통과시킨다({@code @URL}도 빈 값은 검사하지 않는다). */
         @URL(message = "라이브 방송 URL 형식이 올바르지 않습니다.")
         String liveUrl,
 
@@ -40,14 +40,21 @@ public record AuctionRoomUpdateRequestDto(
 ) {
 
     /**
-     * 경매가 시작된 뒤에는 못 바꾸는 필드를 이 요청이 건드리는지 본다. 이름은 여기 없다 —
-     * 방송 중에 드러난 오타를 고칠 길이 하나는 있어야 해서 이름만 예외로 열어 두었다.
-     * 나머지는 참여자가 이미 보고 판단한 조건이라 진행 중에 바뀌면 안 된다.
+     * 경매가 시작된 뒤에는 못 바꾸는 필드를 이 요청이 건드리는지 본다. 잠그는 기준은
+     * <b>참여자가 그 값을 보고 입찰을 판단했는가</b>이다. 시작가 규칙을 좌우하는 Soft Close
+     * 설정, 물건을 고르는 근거가 되는 커버 이미지·소개가 여기 해당한다.
+     *
+     * <p>{@code name}과 {@code liveUrl}은 그 부류가 아니라 열어 둔다.
+     * <ul>
+     *   <li>이름은 방송 중에 드러난 오타를 고칠 길이 하나는 있어야 한다</li>
+     *   <li>방송 링크는 입찰 조건이 아니라 "지금 어디서 보고 있나"에 가깝다. 오히려 링크가
+     *       잘못됐다는 것은 방송을 켜고 구매자가 못 들어온 뒤에야 드러나므로, 방송 중에
+     *       잠그면 <b>정작 고쳐야 할 순간에 못 고친다</b></li>
+     * </ul>
      */
     public boolean touchesStartLockedFields() {
         return coverImageUrl != null
                 || description != null
-                || liveUrl != null
                 || softCloseTriggerSeconds != null
                 || softCloseExtendSeconds != null;
     }

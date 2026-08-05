@@ -58,6 +58,8 @@ public class AuctionItemService {
 
     private final AuctionItemRepository auctionItemRepository;
     private final AuctionRoomRepository auctionRoomRepository;
+    /** 공개 조회는 숫자 PK를 받지 않는다. 공유 코드를 방 ID로 바꾸는 통로가 이것 하나다. */
+    private final AuctionRoomShareService auctionRoomShareService;
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final DomainEventPublisher domainEventPublisher;
@@ -70,14 +72,12 @@ public class AuctionItemService {
      * <p>리더보드는 쿼리 한 번으로 물품 전체를 가져와 ID로 묶는다. 물품마다 따로 조회하면
      * 물품 수만큼 쿼리가 늘어난다. 물품이 없으면 조회 자체를 건너뛴다.
      *
-     * @param auctionRoomId 조회할 경매방의 ID
+     * @param shareCode 조회할 경매방의 공유 코드
      * @return 물품 요약 목록. 물품이 없으면 빈 목록
-     * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
+     * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    public List<AuctionItemSummaryResponseDto> getSummaries(Long auctionRoomId) {
-        if (!auctionRoomRepository.existsByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)) {
-            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
-        }
+    public List<AuctionItemSummaryResponseDto> getSummaries(String shareCode) {
+        Long auctionRoomId = auctionRoomShareService.resolveRoomId(shareCode);
 
         List<AuctionItemSummaryResponseDto> summaries =
                 auctionItemRepository.findSummaries(auctionRoomId);
@@ -96,13 +96,26 @@ public class AuctionItemService {
      *
      * <p>리더보드는 쿼리를 따로 돌려 붙인다. JPQL 생성자 표현식으로는 List 필드를 채울 수 없다.
      *
+     * <p><b>물품이 그 방 소속인지 확인한다.</b> 방만 공유 코드로 가리고 물품을 숫자 ID로 열어
+     * 두면 열거할 수 있는 지점이 물품으로 옮겨갈 뿐이다 — 이 응답의 {@code auctionRoomId}가
+     * 방을 다시 알려주기 때문에 더 그렇다. 남의 방 물품이면 물품이 없을 때와 똑같이 응답해
+     * 그 물품의 존재 자체를 숨긴다.
+     *
+     * @param shareCode     물품이 속한 경매방의 공유 코드
      * @param auctionItemId 조회할 물품의 ID
      * @return 물품 상세. 입찰이 없으면 리더보드는 빈 목록
-     * @throws ApplicationException 물품이 없을 때(AUCTION_ITEM_NOT_FOUND)
+     * @throws ApplicationException 해당 공유 코드의 경매방이 없을 때(AUCTION_ROOM_NOT_FOUND),
+     *                               물품이 없거나 그 방 소속이 아닐 때(AUCTION_ITEM_NOT_FOUND)
      */
-    public AuctionItemDetailResponseDto getDetail(Long auctionItemId) {
+    public AuctionItemDetailResponseDto getDetail(String shareCode, Long auctionItemId) {
+        Long auctionRoomId = auctionRoomShareService.resolveRoomId(shareCode);
+
         AuctionItemDetailResponseDto detail = auctionItemRepository.findDetail(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        if (!auctionRoomId.equals(detail.auctionRoomId())) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
+        }
 
         return detail.withLeaderboard(
                 findLeaderboards(List.of(auctionItemId))

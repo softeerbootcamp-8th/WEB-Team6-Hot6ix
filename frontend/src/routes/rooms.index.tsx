@@ -68,6 +68,7 @@ function MyRoomsPage() {
 
   const rooms: RoomCardData[] = listQuery.rooms.map((room) => ({
     id: room.auctionRoomId ?? 0,
+    shareCode: room.shareCode ?? '',
     title: room.name ?? '',
     sellerName: room.storeName ?? '',
     status: CARD_STATUS[room.status ?? 'BEFORE'] ?? 'READY',

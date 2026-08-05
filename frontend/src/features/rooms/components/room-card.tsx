@@ -15,6 +15,8 @@ import type { RoomRole, RoomStatus } from '@/mocks/types'
  */
 export interface RoomCardData {
   id: number
+  /** 방 화면으로 들어가는 공개 식별자. 숫자 ID 로는 방을 열 수 없다. */
+  shareCode: string
   title: string
   sellerName: string
   status: RoomStatus
@@ -99,8 +101,8 @@ export function RoomCard({ room }: { room: RoomCardData }) {
 
             {isLive ? (
               <Link
-                to="/rooms/$roomId"
-                params={{ roomId: String(room.id) }}
+                to="/rooms/$shareCode"
+                params={{ shareCode: room.shareCode }}
                 className="ml-auto flex h-9 items-center rounded-[10px] bg-brand-500 px-5 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
               >
                 입장하기
@@ -108,8 +110,8 @@ export function RoomCard({ room }: { room: RoomCardData }) {
             ) : (
               // 어느 상태든 같은 경로로 들어간다. 방 상태를 보고 화면을 나눈다.
               <Link
-                to="/rooms/$roomId"
-                params={{ roomId: String(room.id) }}
+                to="/rooms/$shareCode"
+                params={{ shareCode: room.shareCode }}
                 className="ease-soft ml-auto flex h-9 items-center rounded-[10px] border px-4 text-[13px] font-semibold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95"
               >
                 {isClosed

@@ -45,17 +45,6 @@ public class AuctionRoomController implements AuctionRoomApi {
         return ResponseEntity.status(HttpStatus.CREATED).body(CommonResponse.ok(response, "경매방이 생성되었습니다."));
     }
 
-    @GetMapping("/{roomId}")
-    @GuestAllowed
-    @Override
-    public ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoom(
-            Long userId, @PathVariable Long roomId) {
-
-        AuctionRoomPublicResponseDto response = auctionRoomService.getRoom(roomId, userId);
-
-        return ResponseEntity.ok(CommonResponse.ok(response, "경매방 정보 조회에 성공했습니다."));
-    }
-
     @GetMapping("/me")
     @Override
     public ResponseEntity<CommonResponse<CursorPageResponse<AuctionRoomListItemResponseDto>>> getMyRooms(
@@ -78,13 +67,13 @@ public class AuctionRoomController implements AuctionRoomApi {
         return ResponseEntity.ok(CommonResponse.ok(response, "내 경매방 상태별 개수 조회에 성공했습니다."));
     }
 
-    @GetMapping("/{roomId}/results")
+    @GetMapping("/share/{shareCode}/results")
     @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<AuctionRoomResultResponseDto>> getResults(
-            @PathVariable Long roomId, Long userId) {
+            @PathVariable String shareCode, Long userId) {
 
-        AuctionRoomResultResponseDto response = auctionRoomService.getResults(roomId, userId);
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(shareCode, userId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매방 낙찰 결과 조회에 성공했습니다."));
     }

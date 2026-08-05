@@ -8,7 +8,7 @@ import { toRoomResult } from '@/features/live/adapt-result'
 import { StatusBadge } from '@/components/status-badge'
 import { formatWon } from '@/lib/format'
 
-export const Route = createFileRoute('/rooms/$roomId/result')({
+export const Route = createFileRoute('/rooms/$shareCode/result')({
   component: RoomResultPage,
 })
 
@@ -20,13 +20,10 @@ const ROOM_BADGE_LABEL = {
 } as const
 
 function RoomResultPage() {
-  const { roomId } = Route.useParams()
-  const auctionRoomId = Number(roomId)
+  const { shareCode } = Route.useParams()
 
-  // `/rooms/abc/result` 처럼 숫자가 아닌 주소로 들어오면 서버를 부르지 않는다.
-  const resultsQuery = useGetResults(auctionRoomId, {
-    query: { enabled: Number.isInteger(auctionRoomId) },
-  })
+  // 없는 공유 코드는 서버가 404 로 답하고 아래 에러 화면이 받는다.
+  const resultsQuery = useGetResults(shareCode)
 
   if (resultsQuery.isPending) return <RoutePending />
   if (resultsQuery.isError) {
@@ -144,8 +141,8 @@ function RoomResultPage() {
               )}
 
               <Link
-                to="/rooms/$roomId/items/$itemId"
-                params={{ roomId, itemId: String(item.auctionItemId) }}
+                to="/rooms/$shareCode/items/$itemId"
+                params={{ shareCode, itemId: String(item.auctionItemId) }}
                 className="mt-4 block rounded-lg border py-2 text-center text-label font-semibold text-neutral-secondary transition-colors hover:border-border-strong"
               >
                 상세 결과 보기
