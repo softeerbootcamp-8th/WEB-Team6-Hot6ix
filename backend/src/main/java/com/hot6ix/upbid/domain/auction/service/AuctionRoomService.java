@@ -14,6 +14,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection;
+import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
@@ -45,6 +46,7 @@ public class AuctionRoomService {
 
     private final AuctionRoomRepository auctionRoomRepository;
     private final AuctionItemRepository auctionItemRepository;
+    private final AuctionParticipantRepository auctionParticipantRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final AuctionRoomShareService auctionRoomShareService;
     private final RoomSseManager roomSseManager;
@@ -78,7 +80,7 @@ public class AuctionRoomService {
 
         // 물품 추가는 이미 만들어진 방에만 할 수 있어서, 생성 직후엔 itemCount가 항상 0이다
         // — 조회 없이 바로 0을 넣는다.
-        return AuctionRoomPublicResponseDto.from(auctionRoom, 0L, true);
+        return AuctionRoomPublicResponseDto.from(auctionRoom, 0L, true, null);
     }
 
     /**
@@ -100,11 +102,17 @@ public class AuctionRoomService {
     public AuctionRoomPublicResponseDto getRoomByShareCode(String shareCode, Long viewerUserId) {
 
         AuctionRoom auctionRoom = findRoomByShareCode(shareCode);
+        Long roomId = auctionRoom.getAuctionRoomId();
+
+        Boolean agreedToTerms = viewerUserId == null ? null
+                : auctionParticipantRepository
+                        .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(roomId, viewerUserId);
 
         return AuctionRoomPublicResponseDto.from(
                 auctionRoom,
-                countItems(auctionRoom.getAuctionRoomId()),
-                isOwnedBy(auctionRoom, viewerUserId));
+                countItems(roomId),
+                isOwnedBy(auctionRoom, viewerUserId),
+                agreedToTerms);
     }
 
     /**
@@ -268,7 +276,7 @@ public class AuctionRoomService {
         domainEventPublisher.publish(RoomUpdated.of(auctionRoomId, LocalDateTime.now()));
 
         // findOwnedRoom을 통과했으므로 요청자가 곧 소유자다.
-        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId), true);
+        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId), true, null);
     }
 
     /**

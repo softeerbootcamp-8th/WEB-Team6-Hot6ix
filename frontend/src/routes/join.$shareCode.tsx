@@ -1,6 +1,7 @@
 import { AlertTriangle, ChevronDown } from 'lucide-react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
 import { GuestShell } from '@/components/layout/page-shell'
@@ -10,8 +11,9 @@ import { StatusBadge } from '@/components/status-badge'
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
 import { useCurrentUser } from '@/lib/session'
-import { useGetRoomByShareCode } from '@/api/generated/경매방/경매방'
+import { getGetRoomByShareCodeQueryKey, useGetRoomByShareCode } from '@/api/generated/경매방/경매방'
 import { useGetSummaries } from '@/api/generated/경매-물품/경매-물품'
+import { axiosInstance } from '@/api/mutator/custom-instance'
 
 /**
  * 링크·QR 진입점.
@@ -36,6 +38,8 @@ function JoinRoomPage() {
 
   const [agreed, setAgreed] = useState(false)
   const [entering, setEntering] = useState(false)
+  const [agreeError, setAgreeError] = useState(false)
+  const queryClient = useQueryClient()
   /** 물품 목록을 다 펼쳤는지 */
   const [expanded, setExpanded] = useState(false)
 
@@ -103,13 +107,31 @@ function JoinRoomPage() {
   }
 
   const isGuest = user === null
+  const alreadyAgreed = room.agreedToTerms === true
   const roomTitle = room.name ?? '경매방'
   const items = itemsQuery.data?.data ?? []
 
-  const enter = () => {
-    if (!isGuest && !agreed) return
+  const enter = async () => {
     setEntering(true)
-    // TODO: POST /api/v1/agreements 후 입장 (현재 목업)
+    setAgreeError(false)
+    try {
+      await axiosInstance.post(
+        `/api/v1/auction-rooms/share/${shareCode}/agreement`,
+      )
+    } catch {
+      setAgreeError(true)
+      setEntering(false)
+      return
+    }
+    // 동의 후 캐시를 무효화해 rooms 페이지가 agreedToTerms: true 를 받도록 한다.
+    await queryClient.invalidateQueries({
+      queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+    })
+    void navigate({ to: '/rooms/$shareCode', params: { shareCode } })
+  }
+
+  // 이미 동의했거나 게스트는 동의 API 없이 바로 입장
+  const enterDirectly = () => {
     void navigate({ to: '/rooms/$shareCode', params: { shareCode } })
   }
 
@@ -263,12 +285,22 @@ function JoinRoomPage() {
 
               <button
                 type="button"
-                onClick={enter}
+                onClick={enterDirectly}
                 className="mt-3 block w-full text-center text-[13px] font-bold text-neutral-tertiary hover:underline"
               >
                 로그인 없이 둘러보기
               </button>
             </>
+          ) : alreadyAgreed ? (
+            // 이미 동의한 방: 체크박스 없이 바로 입장
+            <Button
+              size="cta"
+              variant="brand"
+              className="mt-6"
+              onClick={enterDirectly}
+            >
+              입장하기
+            </Button>
           ) : (
             <>
               <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-2xl border bg-surface-subtle p-4 transition-colors duration-150 hover:border-border-strong">
@@ -296,12 +328,18 @@ function JoinRoomPage() {
                 </span>
               </label>
 
+              {agreeError && (
+                <p className="mt-2 text-center text-[12px] font-medium text-red-500">
+                  동의 처리 중 오류가 발생했어요. 다시 시도해 주세요.
+                </p>
+              )}
+
               <Button
                 size="cta"
                 variant="brand"
                 className="mt-4"
                 disabled={!agreed || entering}
-                onClick={enter}
+                onClick={() => void enter()}
               >
                 {entering ? '입장하는 중…' : '동의하고 입장하기'}
               </Button>

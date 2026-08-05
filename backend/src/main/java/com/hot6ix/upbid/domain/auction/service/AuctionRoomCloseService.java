@@ -100,7 +100,7 @@ public class AuctionRoomCloseService {
         return AuctionRoomPublicResponseDto.from(
                 auctionRoom,
                 auctionItemRepository.countByAuctionRoom_AuctionRoomId(auctionRoomId),
-                true);
+                true, null);
     }
 
     /**

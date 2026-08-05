@@ -9,24 +9,30 @@ import org.springframework.data.repository.query.Param;
 public interface AuctionParticipantRepository extends JpaRepository<AuctionParticipant, Long> {
 
     /**
-     * 참여 행을 한 문장으로 넣는다. 이미 있으면 아무것도 안 하고, 없는 방이면 안 넣는다.
+     * 해당 방에서 유저가 약관에 동의한 기록이 있는지 확인한다.
+     * {@code agreed_at}이 존재해야 동의한 것으로 본다.
+     */
+    boolean existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(
+            Long auctionRoomId, Long userId);
+
+    /**
+     * 약관 동의를 기록한다. 참여 행이 없으면 동의 정보와 함께 새로 만들고, 이미 있으면 아무것도 안 한다.
      *
-     * <p>{@code exists}로 읽고 없으면 {@code save}하면 탭 두 개가 동시에 붙을 때 둘 다
-     * "없음"을 읽고 둘 다 INSERT한다. 한 문장이면 읽기와 쓰기 사이가 벌어지지 않아,
-     * MySQL이 유니크 인덱스 {@code uk_auction_participants_room_user}에서 두 요청을
-     * 한 줄로 세운다. 늦은 쪽은 {@code on duplicate key update}가 no-op으로 끝낸다.
+     * <p>{@code insertIfAbsent}와 같은 이유로 {@code select}로 방 존재를 확인한다.
+     * 방이 없으면 select 결과가 0행이라 insert가 일어나지 않는다.
      *
-     * <p>{@code values} 대신 {@code select}를 쓰는 이유는 방 존재와 soft delete를 같은
-     * 문장에서 거르기 위해서다. 없는 방이면 select가 0행이라 FK 위반 예외 대신 0행이 된다.
+     * <p>같은 방에 대해 동의는 최초 한 번만 유효하다. 이미 동의한 행이 있으면 no-op으로 끝내
+     * 원래 동의 시각과 버전을 보존한다.
      *
      * @return 새로 넣었으면 1, 이미 있거나 방이 없으면 0
      */
     @Modifying
     @Query(value = """
-            insert into auction_participants (auction_room_id, user_id)
-            select :roomId, :userId from auction_rooms ar
+            insert into auction_participants (auction_room_id, user_id, agreed_at, terms_version)
+            select :roomId, :userId, now(), :termsVersion from auction_rooms ar
              where ar.auction_room_id = :roomId and ar.deleted_at is null
                 on duplicate key update auction_participant_id = auction_participant_id
             """, nativeQuery = true)
-    int insertIfAbsent(@Param("roomId") Long roomId, @Param("userId") Long userId);
+    int recordAgreement(@Param("roomId") Long roomId, @Param("userId") Long userId,
+                        @Param("termsVersion") String termsVersion);
 }

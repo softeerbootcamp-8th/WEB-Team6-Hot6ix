@@ -209,4 +209,19 @@ public interface AuctionRoomApi {
             @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "종료할 경매방 ID", required = true)
             @PathVariable Long roomId);
+
+    @Operation(
+            summary = "경매방 입장 약관 동의",
+            description = "경매방에 입장하기 전 이용 약관에 동의한다. 동의 시각과 약관 버전을 기록한다. "
+                    + "이미 동의한 적 있으면 동의 시각과 버전을 갱신한다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "동의 완료"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
+            @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
+    })
+    ResponseEntity<CommonResponse<Void>> agree(
+            @Parameter(hidden = true) @LoginUserId Long userId,
+            @Parameter(description = "동의할 경매방의 공유 코드", required = true)
+            @PathVariable String shareCode);
 }
