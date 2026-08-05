@@ -1,5 +1,6 @@
 import { Clock, Loader2, Pencil, Share2 } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 
 import { ItemEventList } from '@/features/live/components/item-event-list'
 import { LeaderboardRows } from '@/features/live/components/leaderboard-rows'
@@ -67,6 +68,13 @@ export function ItemDetailPanel({
   const setAmount = (next: number | ((prev: number) => number)) =>
     onAmountChange(typeof next === 'function' ? next(amount) : next)
   const bidBlocked = closed || ready || amount < minimum
+
+  const [confirming, setConfirming] = useState(false)
+
+  // 입찰 요청이 끝나면(성공·실패 모두) 확인 화면을 닫는다.
+  useEffect(() => {
+    if (!pending) setConfirming(false)
+  }, [pending])
 
   return (
     <div className="animate-rise rounded-[20px] border bg-card p-5 lg:min-h-0 lg:flex-1 lg:overflow-hidden">
@@ -178,6 +186,38 @@ export function ItemDetailPanel({
               <p className="flex h-11 items-center justify-center rounded-xl bg-fill text-[13px] font-medium text-neutral-tertiary">
                 {closed ? '마감된 물품이에요' : '아직 시작하지 않은 물품이에요'}
               </p>
+            ) : confirming ? (
+              /* 입찰 확인 행 — 금액을 한 번 더 보여주고 확정/취소를 고른다 */
+              <div className="flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-bold tabular-nums text-brand-600">
+                    {formatWon(amount)}
+                  </p>
+                  <p className="text-[11px] font-medium tabular-nums text-brand-400">
+                    현재가보다 +
+                    {(amount - item.currentPrice).toLocaleString('ko-KR')}원
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setConfirming(false)}
+                  className="ease-soft flex h-9 shrink-0 items-center justify-center rounded-xl border bg-card px-3 text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95 disabled:opacity-50"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={onBid}
+                  className="ease-soft flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100"
+                >
+                  {pending && (
+                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                  )}
+                  {pending ? '처리 중…' : '입찰 확정'}
+                </button>
+              </div>
             ) : (
               <div className="flex items-center gap-2 rounded-2xl border bg-surface-subtle px-3 py-2.5">
                 {/* 칩 버튼 */}
@@ -240,14 +280,11 @@ export function ItemDetailPanel({
                  */}
                 <button
                   type="button"
-                  disabled={bidBlocked || pending}
-                  onClick={onBid}
+                  disabled={bidBlocked}
+                  onClick={() => setConfirming(true)}
                   className="ease-soft flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
                 >
-                  {pending && (
-                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
-                  )}
-                  {pending ? '처리 중…' : '입찰'}
+                  입찰
                 </button>
               </div>
             )}

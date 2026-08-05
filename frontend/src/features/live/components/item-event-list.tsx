@@ -124,55 +124,55 @@ export function ItemEventList({ events }: { events: RoomEvent[] }) {
             onScroll={handleScroll}
             className="h-full overflow-y-auto border-t pt-2"
           >
-          {/* 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다 */}
-          <ul className="flex min-h-full flex-col justify-end gap-4">
-            {byTimeAsc(events).map((event, index) => {
-              const style = resolveStyle(event)
-              return (
-                <li
-                  key={event.id}
-                  className={cn(
-                    /*
-                     * 음수 마진을 쓰면 스크롤 컨테이너가 좌우로 삐져나온
-                     * 부분을 잘라내서, 둥근 모서리가 깎여 직사각형으로 보인다.
-                     * 안쪽 여백만으로 배경을 만든다.
-                     */
-                    'flex items-start gap-3 rounded-2xl px-3 py-2',
-                    entranceOf(event.id) === 'incoming'
-                      ? 'animate-event'
-                      : 'animate-rise',
-                  )}
-                  style={
-                    entranceOf(event.id) === 'incoming'
-                      ? undefined
-                      : { animationDelay: `${index * 40}ms` }
-                  }
-                >
-                  <span
+            {/* 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다 */}
+            <ul className="flex min-h-full flex-col justify-end gap-4">
+              {byTimeAsc(events).map((event, index) => {
+                const style = resolveStyle(event)
+                return (
+                  <li
+                    key={event.id}
                     className={cn(
-                      'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
-                      style.chip,
-                      entranceOf(event.id) === 'incoming' &&
-                        'animate-event-chip',
+                      /*
+                       * 음수 마진을 쓰면 스크롤 컨테이너가 좌우로 삐져나온
+                       * 부분을 잘라내서, 둥근 모서리가 깎여 직사각형으로 보인다.
+                       * 안쪽 여백만으로 배경을 만든다.
+                       */
+                      'flex items-start gap-3 rounded-2xl px-3 py-2',
+                      entranceOf(event.id) === 'incoming'
+                        ? 'animate-event'
+                        : 'animate-rise',
                     )}
+                    style={
+                      entranceOf(event.id) === 'incoming'
+                        ? undefined
+                        : { animationDelay: `${index * 40}ms` }
+                    }
                   >
-                    {style.icon}
-                  </span>
+                    <span
+                      className={cn(
+                        'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
+                        style.chip,
+                        entranceOf(event.id) === 'incoming' &&
+                          'animate-event-chip',
+                      )}
+                    >
+                      {style.icon}
+                    </span>
 
-                  {/* 한 물품만 보는 화면이라 물품명은 다시 적지 않는다. */}
-                  <div className="min-w-0 flex-1">
-                    <p className={cn('text-[13px]', style.text)}>
-                      {event.message}
-                    </p>
-                  </div>
+                    {/* 한 물품만 보는 화면이라 물품명은 다시 적지 않는다. */}
+                    <div className="min-w-0 flex-1">
+                      <p className={cn('text-[13px]', style.text)}>
+                        {event.message}
+                      </p>
+                    </div>
 
-                  <time className="shrink-0 text-[11px] font-normal tabular-nums text-neutral-muted">
-                    {formatTime(event.at)}
-                  </time>
-                </li>
-              )
-            })}
-          </ul>
+                    <time className="shrink-0 text-[11px] font-normal tabular-nums text-neutral-muted">
+                      {formatTime(event.at)}
+                    </time>
+                  </li>
+                )
+              })}
+            </ul>
           </div>
           {hasNewEvents && (
             <button
