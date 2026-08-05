@@ -1053,7 +1053,7 @@ function LiveRoomPage() {
           itemsPlaceholder={itemsPlaceholder}
           liveItems={liveItems}
           rankedItems={rankedItems}
-          onShare={() => setPanel('share')}
+          onShare={isOwner ? () => setPanel('share') : undefined}
           onOpenSettings={openSettings}
           onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
           onBack={() => void navigate({ to: '/rooms' })}
@@ -1202,7 +1202,11 @@ function LiveRoomPage() {
         room={room}
         isGuest={isGuest}
         participantCount={participantCount}
-        onShare={() => setPanel(panel === 'share' ? 'leaderboard' : 'share')}
+        onShare={
+          isOwner
+            ? () => setPanel(panel === 'share' ? 'leaderboard' : 'share')
+            : undefined
+        }
         onOpenSettings={openSettings}
         onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
         overlay={

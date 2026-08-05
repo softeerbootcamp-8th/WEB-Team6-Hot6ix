@@ -37,7 +37,10 @@ export function LiveShell({
    * SSE 로 받은 실시간 참여자 수. 아직 못 받았으면 방 정보의 값을 쓴다.
    */
   participantCount?: number | null
-  /** 방 헤더의 공유 버튼. 오른쪽 열에 공유 패널을 띄운다. */
+  /**
+   * 판매자만 받는다. 방 헤더의 공유 버튼으로 오른쪽 열에 공유 패널을 띄운다.
+   * 사람을 불러 모으는 건 방을 만든 사람이 할 일이라 참여자에게는 안 보인다.
+   */
   onShare?: () => void
   /** 공유 버튼 왼쪽에 들어가는 보조 조작(개발용 시점 전환 등) */
   headerActions?: ReactNode
@@ -101,14 +104,17 @@ export function LiveShell({
           <div className="ml-auto flex items-center gap-2">
             {headerActions}
 
-            <button
-              type="button"
-              onClick={onShare}
-              className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-border-strong bg-card px-3 text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
-            >
-              <Share2 aria-hidden className="size-[15px]" />
-              공유
-            </button>
+            {/* 방을 만든 사람만 보인다. */}
+            {onShare && (
+              <button
+                type="button"
+                onClick={onShare}
+                className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-border-strong bg-card px-3 text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
+              >
+                <Share2 aria-hidden className="size-[15px]" />
+                공유
+              </button>
+            )}
 
             {/* 방을 만든 사람만 보인다. */}
             {onOpenSettings && (

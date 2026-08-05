@@ -81,7 +81,11 @@ export function MobileLiveView({
     onSellerViewChange: (next: boolean) => void
     onDemoBid: (shuffle: boolean) => void
   }
-  onShare: () => void
+  /**
+   * 판매자만 받는다. 앱바의 공유 버튼으로 공유 모달을 띄운다.
+   * 사람을 불러 모으는 건 방을 만든 사람이 할 일이라 참여자에게는 안 보인다.
+   */
+  onShare?: () => void
   /** 판매자만 받는다. 방 설정 수정 모달을 연다. */
   onOpenSettings?: () => void
   /** 판매자만 받는다. 방 전체를 끝낸다. */
@@ -148,14 +152,17 @@ export function MobileLiveView({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onShare}
-            aria-label="경매방 공유"
-            className="ease-soft flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground transition-all duration-150 hover:bg-fill active:scale-90"
-          >
-            <Share2 aria-hidden className="size-5" />
-          </button>
+          {/* 방을 만든 사람만 보인다. */}
+          {onShare && (
+            <button
+              type="button"
+              onClick={onShare}
+              aria-label="경매방 공유"
+              className="ease-soft flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground transition-all duration-150 hover:bg-fill active:scale-90"
+            >
+              <Share2 aria-hidden className="size-5" />
+            </button>
+          )}
 
           {/* 방을 만든 사람만 보인다. */}
           {onOpenSettings && (
