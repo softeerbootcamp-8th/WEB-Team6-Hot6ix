@@ -14,7 +14,10 @@ import {
   ImageUploadError,
   useImageUpload,
 } from '@/features/seller/use-image-upload'
-import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
+import {
+  PresignedUrlRequestDtoDomain,
+  type UserUpdateRequestDto,
+} from '@/api/generated/model'
 
 /**
  * 내 프로필 수정.
@@ -79,7 +82,14 @@ function MyProfileEditPage() {
     }
 
     updateMe.mutate(
-      { data: { nickname: trimmed, profileImageUrl: finalImageUrl } },
+      {
+        // 스펙은 profileImageUrl 을 string 으로만 선언하지만, 서버는 null 을
+        // "이미지 제거"로 읽는다(문서 참고). 생성 타입이 null 을 허용하지 않아 캐스팅한다.
+        data: {
+          nickname: trimmed,
+          profileImageUrl: finalImageUrl,
+        } as unknown as UserUpdateRequestDto,
+      },
       {
         onSuccess(response) {
           const updated = response.data

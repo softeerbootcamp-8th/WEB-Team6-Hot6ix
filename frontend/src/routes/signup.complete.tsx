@@ -3,23 +3,27 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router'
 
 import { Button } from '@/components/ui/button'
 import { GuestShell } from '@/components/layout/page-shell'
-import { MOCK_MEMBER, sessionStore } from '@/lib/session'
+import { requireMember } from '@/lib/route-guards'
+import { useCurrentUser } from '@/lib/session'
 
 export const Route = createFileRoute('/signup/complete')({
   validateSearch: (search: Record<string, unknown>): { redirect?: string } =>
     typeof search.redirect === 'string' ? { redirect: search.redirect } : {},
+  // 회원가입(세션 발급)까지 끝나야 들어올 수 있는 화면이다.
+  beforeLoad: requireMember,
   component: SignupCompletePage,
 })
 
 function SignupCompletePage() {
   const navigate = useNavigate()
   const { redirect } = Route.useSearch()
+  const user = useCurrentUser()
 
   const handleStart = () => {
-    // TODO: 실제로는 가입 응답으로 세션이 만들어진다 (현재 목업)
-    sessionStore.signIn(MOCK_MEMBER)
     void navigate({ href: redirect ?? '/rooms' })
   }
+
+  if (!user) return null
 
   return (
     <GuestShell
@@ -49,7 +53,7 @@ function SignupCompletePage() {
               카카오 계정
             </dt>
             <dd className="text-body font-medium text-foreground">
-              {MOCK_MEMBER.kakaoEmail}
+              {user.kakaoEmail}
             </dd>
           </div>
           <div className="flex items-center justify-between px-5 py-4">
@@ -57,7 +61,7 @@ function SignupCompletePage() {
               전화번호
             </dt>
             <dd className="text-body font-medium text-foreground">
-              {MOCK_MEMBER.phone}
+              {user.phone}
             </dd>
           </div>
         </dl>

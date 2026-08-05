@@ -11,6 +11,10 @@
  */
 
 export interface UserUpdateRequestDto {
+  /**
+   * @minLength 0
+   * @maxLength 10
+   */
   nickname: string;
-  profileImageUrl?: string | null;
+  profileImageUrl?: string;
 }
