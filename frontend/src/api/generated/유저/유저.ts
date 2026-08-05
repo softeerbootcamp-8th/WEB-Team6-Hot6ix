@@ -34,7 +34,7 @@ import type {
 } from '.././model';
 
 import { customInstance } from '../../mutator/custom-instance';
-import type { ErrorType, BodyType } from '../../mutator/custom-instance';
+import type { ErrorType , BodyType } from '../../mutator/custom-instance';
 
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
@@ -119,7 +119,7 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = Err
 
 export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = ErrorType<CommonResponseUserResponseDto>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getMe>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
- , queryClient?: QueryClient
+ , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getGetMeQueryOptions(options)
@@ -135,14 +135,14 @@ export function useGetMe<TData = Awaited<ReturnType<typeof getMe>>, TError = Err
 
 
 /**
- * 닉네임과 프로필 이미지를 수정한다.
+ * 닉네임과 프로필 이미지를 수정한다. 모든 필드를 함께 보내야 하며, profileImageUrl을 null로 보내면 이미지가 제거된다. 이미지를 바꾸려면 먼저 /api/v1/uploads/presigned-url로 업로드 URL을 발급받아 S3에 올린 뒤 반환된 fileUrl을 넣는다.
  * @summary 내 프로필 수정
  */
 export const updateMe = (
     userUpdateRequestDto: BodyType<UserUpdateRequestDto>,
  options?: SecondParameter<typeof customInstance>,) => {
-
-
+      
+      
       return customInstance<CommonResponseUserResponseDto>(
       {url: `/api/v1/users/me`, method: 'PUT',
       headers: {'Content-Type': 'application/json', },
@@ -150,7 +150,7 @@ export const updateMe = (
     },
       options);
     }
-
+  
 
 
 export const getUpdateMeMutationOptions = <TError = ErrorType<CommonResponseUserResponseDto>,
@@ -164,7 +164,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMe>>, {data: BodyType<UserUpdateRequestDto>}> = (props) => {
@@ -173,7 +173,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
           return  updateMe(data,requestOptions)
         }
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -198,4 +198,4 @@ export const useUpdateMe = <TError = ErrorType<CommonResponseUserResponseDto>,
 
       return useMutation(mutationOptions, queryClient);
     }
-
+    
