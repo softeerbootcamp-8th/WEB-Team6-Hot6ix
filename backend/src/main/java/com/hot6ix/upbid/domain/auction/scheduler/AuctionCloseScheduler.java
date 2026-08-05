@@ -94,7 +94,8 @@ public class AuctionCloseScheduler {
      *
      * <p>예외를 삼키는 것도 같은 이유다. 여기서 던지면 입찰은 이미 저장됐는데 요청은 실패로
      * 보인다. 예약을 못 바꾸면 옛 시각에 마감이 돌지만, 그때 {@code closeIfDue}가 밀린
-     * {@code end_at}을 보고 닫지 않고 다시 예약하므로 물품이 일찍 닫히지는 않는다.
+     * {@code end_at}을 보고 닫지 않고 새 시각을 돌려주므로 여기서 다시 걸린다. 물품이 연장
+     * 전 시각에 닫히지는 않는다.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(SoftCloseExtended event) {
@@ -166,7 +167,7 @@ public class AuctionCloseScheduler {
             logDelay(auctionItemId, scheduledFor);
 
             auctionItemCloseService.closeIfDue(auctionItemId)
-                    .ifPresent(endAt -> schedule(auctionItemId, endAt));
+                    .ifPresent(rescheduleAt -> schedule(auctionItemId, rescheduleAt));
         } catch (Exception e) {
             log.error("물품 마감 실패: itemId={}", auctionItemId, e);
         }
