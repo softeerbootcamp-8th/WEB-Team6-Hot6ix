@@ -9,13 +9,13 @@
 **그 외 환경**: 카카오 로그인 후 발급된 SESSION 쿠키가 자동으로 포함됩니다.
  * OpenAPI spec version: v1
  */
+import type { UserResponseDto } from './userResponseDto';
+import type { ValidationError } from './validationError';
 
-export type PresignedUrlRequestDtoDomain = typeof PresignedUrlRequestDtoDomain[keyof typeof PresignedUrlRequestDtoDomain];
-
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const PresignedUrlRequestDtoDomain = {
-  SELLER_PROFILE: 'SELLER_PROFILE',
-  PRODUCT: 'PRODUCT',
-  USER_PROFILE: 'USER_PROFILE',
-} as const;
+export interface CommonResponseUserResponseDto {
+  success?: boolean;
+  data?: UserResponseDto;
+  code?: number;
+  message?: string;
+  errors?: ValidationError[];
+}

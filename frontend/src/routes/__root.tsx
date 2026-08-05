@@ -13,8 +13,8 @@ interface RouterContext {
   queryClient: QueryClient
 }
 
-/** GET /api/v1/users/me 응답 DTO. 서버 UserMeResponseDto 와 필드를 맞춘다. */
-interface UserMeResponseDto {
+/** GET /api/v1/users/me 응답 DTO. 서버 UserResponseDto 와 필드를 맞춘다. */
+interface UserResponseDto {
   userId: number
   nickname: string
   email: string
@@ -23,7 +23,7 @@ interface UserMeResponseDto {
 
 interface MeResponse {
   success: boolean
-  data: UserMeResponseDto
+  data: UserResponseDto
 }
 
 // devtools 는 프로덕션 번들에서 제외되도록 lazy 로딩한다.
@@ -56,7 +56,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         nickname: data.nickname,
         kakaoEmail: data.email,
         phone: prevUser?.phone ?? null,
-        profileImageUrl: data.profileImageUrl,
+        profileImageUrl: data.profileImageUrl ?? null,
       })
     } catch {
       // 401 등 인증 실패 → 게스트 유지. 앱 로드를 막지 않는다.

@@ -10,9 +10,7 @@
  * OpenAPI spec version: v1
  */
 
-export interface UserMeResponseDto {
-  userId?: number;
-  nickname?: string;
-  email?: string;
-  profileImageUrl?: string;
+export interface UserUpdateRequestDto {
+  nickname: string;
+  profileImageUrl?: string | null;
 }

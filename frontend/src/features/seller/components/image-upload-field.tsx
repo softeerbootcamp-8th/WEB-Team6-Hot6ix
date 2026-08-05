@@ -25,6 +25,7 @@ export function ImageUploadField({
   maxWidth,
   initialUrl,
   onFileChange,
+  onRemove,
 }: {
   label: string
   /** 비어 있을 때 박스 가운데에 뜨는 문구. 수정 화면은 "상품 이미지 변경". */
@@ -35,9 +36,12 @@ export function ImageUploadField({
   initialUrl?: string
   /** 고른 파일. 지우면 `null`. 넘기지 않으면 미리보기만 한다. */
   onFileChange?: (file: File | null) => void
+  /** 기존 이미지를 삭제할 때 호출된다. `onRemove`가 있을 때만 삭제 버튼이 표시된다. */
+  onRemove?: () => void
 }) {
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [removed, setRemoved] = useState(false)
 
   const select = (next: File | null) => {
     if (next) {
@@ -52,6 +56,11 @@ export function ImageUploadField({
     onFileChange?.(next)
   }
 
+  const handleRemove = () => {
+    setRemoved(true)
+    onRemove?.()
+  }
+
   useEffect(() => {
     if (!file) {
       setPreviewUrl(null)
@@ -61,6 +70,8 @@ export function ImageUploadField({
     setPreviewUrl(url)
     return () => URL.revokeObjectURL(url)
   }, [file])
+
+  const displayUrl = previewUrl ?? (removed ? null : initialUrl)
 
   return (
     <div>
@@ -72,9 +83,9 @@ export function ImageUploadField({
           maxWidth === 280 ? 'max-w-[280px]' : 'max-w-[360px]',
         )}
       >
-        {(previewUrl ?? initialUrl) ? (
+        {displayUrl ? (
           <img
-            src={previewUrl ?? initialUrl}
+            src={displayUrl}
             alt="선택한 이미지 미리보기"
             className="size-full object-cover"
           />
@@ -100,6 +111,16 @@ export function ImageUploadField({
           className="mt-3 text-[13px] font-bold text-neutral-tertiary hover:underline"
         >
           이미지 지우기
+        </button>
+      )}
+
+      {onRemove && initialUrl && !file && !removed && (
+        <button
+          type="button"
+          onClick={handleRemove}
+          className="mt-3 text-[13px] font-bold text-neutral-tertiary hover:underline"
+        >
+          이미지 삭제
         </button>
       )}
     </div>

@@ -72,4 +72,9 @@ public class User extends BaseEntity {
                 .phoneNumber(userInfo.phoneNumber())
                 .build();
     }
+
+    public void updateProfile(String nickname, String profileImageUrl) {
+        this.nickname = nickname;
+        this.profileImageUrl = profileImageUrl;
+    }
 }
