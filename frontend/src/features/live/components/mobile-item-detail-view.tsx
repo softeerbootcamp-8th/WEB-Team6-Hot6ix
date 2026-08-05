@@ -269,7 +269,7 @@ export function MobileItemDetailView({
                       )
                     }
                     className={cn(
-                      'min-w-0 flex-1 bg-transparent text-right text-[22px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
+                      'min-w-0 flex-1 bg-transparent text-right text-[18px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
                       belowMinimum ? 'text-live' : 'text-brand-600',
                     )}
                   />
