@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.controller;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -21,6 +22,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
+import com.hot6ix.upbid.domain.auction.service.AuctionParticipantService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomCloseService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
@@ -51,6 +53,9 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     @MockitoBean
     private AuctionRoomCloseService auctionRoomCloseService;
 
+    @MockitoBean
+    private AuctionParticipantService auctionParticipantService;
+
     /** 공개 조회는 숫자 PK를 받지 않는다. 방을 지목하는 값은 항상 이 공유 코드다. */
     private static final String SHARE_CODE = "aBcD1234aBcD1234";
 
@@ -67,6 +72,14 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     }
 
     private AuctionRoomPublicResponseDto sampleResponse() {
+        return sampleResponse(null);
+    }
+
+    /**
+     * @param agreedToTerms 약관 동의 여부. 공개 조회에서만 채워지고, 게스트이거나
+     *                      판매자 조작 응답(생성·수정·종료)이면 null이다.
+     */
+    private AuctionRoomPublicResponseDto sampleResponse(Boolean agreedToTerms) {
         return AuctionRoomPublicResponseDto.builder()
                 .auctionRoomId(1L)
                 .shareCode(SHARE_CODE)
@@ -76,6 +89,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .softCloseExtendSeconds(60)
                 .sellerStoreName("승민상점")
                 .isOwner(true)
+                .agreedToTerms(agreedToTerms)
                 .build();
     }
 
@@ -367,7 +381,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     @DisplayName("공유 코드로 경매방을 조회하면 200과 공개 정보를 반환한다")
     void getRoomByShareCode() throws Exception {
 
-        when(auctionRoomService.getRoomByShareCode(SHARE_CODE, 1L)).thenReturn(sampleResponse());
+        when(auctionRoomService.getRoomByShareCode(SHARE_CODE, 1L)).thenReturn(sampleResponse(true));
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}", SHARE_CODE))
                 .andExpect(status().isOk())
@@ -376,13 +390,16 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.data.status").value("BEFORE"))
                 // 화면이 판매자 조작 UI를 이 이름으로 읽는다. owner로 줄어들면 안 된다.
                 .andExpect(jsonPath("$.data.isOwner").value(true))
+                // 화면이 약관 동의 모달을 띄울지 정하는 값이다. 이름이 바뀌면 이미 동의한 사람에게
+                // 모달이 다시 뜬다.
+                .andExpect(jsonPath("$.data.agreedToTerms").value(true))
                 // 소유자 전용 API는 여전히 숫자 ID를 받는다. 화면이 둘 다 들고 있어야 한다.
                 .andExpect(jsonPath("$.data.auctionRoomId").value(1))
                 .andExpect(jsonPath("$.data.shareCode").value(SHARE_CODE));
     }
 
     @Test
-    @DisplayName("비로그인 사용자도 공유 코드로 경매방을 조회할 수 있다")
+    @DisplayName("비로그인 사용자도 공유 코드로 경매방을 조회할 수 있고 agreedToTerms는 null이다")
     void getRoomByShareCode_allowsGuest() throws Exception {
 
         비로그인_상태로_바꾼다();
@@ -390,7 +407,9 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/aBcD1234aBcD1234"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
+                .andExpect(jsonPath("$.success").value(true))
+                // 게스트에게 false를 주면 화면이 로그인 없이 동의 절차를 밟게 된다.
+                .andExpect(jsonPath("$.data.agreedToTerms").value(nullValue()));
     }
 
     @Test
