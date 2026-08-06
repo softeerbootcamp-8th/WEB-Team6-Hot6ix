@@ -97,16 +97,34 @@ type GroupKey = (typeof DEAL_STATUS_GROUP)[number]['key']
 type Filter = 'ALL' | 'BUYER' | 'SELLER' | GroupKey
 
 /** 모바일 필터 바에 들어가는 4개. */
-const MOBILE_FILTERS: Filter[] = ['ALL', 'BUYER', 'SELLER', 'progress', 'failed']
+const MOBILE_FILTERS: Filter[] = [
+  'ALL',
+  'BUYER',
+  'SELLER',
+  'progress',
+  'failed',
+]
 
 /** 보드 미니 카드용 스타일 (묶음 단위) */
 const GROUP_STYLE: Record<
   GroupKey,
   { label: string; mini: string; value: string }
 > = {
-  progress: { label: '진행 중', mini: 'bg-[#fff8e9]', value: DEAL_STATUS_TONE.IN_PROGRESS.text },
-  completed: { label: '거래 완료', mini: DEAL_STATUS_TONE.COMPLETED.chip, value: DEAL_STATUS_TONE.COMPLETED.text },
-  failed: { label: '거래 불성립', mini: DEAL_STATUS_TONE.ALL_FAILED.chip, value: DEAL_STATUS_TONE.ALL_FAILED.text },
+  progress: {
+    label: '진행 중',
+    mini: 'bg-[#fff8e9]',
+    value: DEAL_STATUS_TONE.IN_PROGRESS.text,
+  },
+  completed: {
+    label: '거래 완료',
+    mini: DEAL_STATUS_TONE.COMPLETED.chip,
+    value: DEAL_STATUS_TONE.COMPLETED.text,
+  },
+  failed: {
+    label: '거래 불성립',
+    mini: DEAL_STATUS_TONE.ALL_FAILED.chip,
+    value: DEAL_STATUS_TONE.ALL_FAILED.text,
+  },
 }
 
 function TradesPage() {
@@ -122,7 +140,8 @@ function TradesPage() {
     if (filter === 'BUYER' || filter === 'SELLER') {
       return trades.filter((trade) => trade.role === filter)
     }
-    const statuses = DEAL_STATUS_GROUP.find((g) => g.key === filter)?.statuses || []
+    const statuses =
+      DEAL_STATUS_GROUP.find((g) => g.key === filter)?.statuses || []
     return trades.filter((trade) => statuses.includes(trade.status))
   }, [trades, filter])
 
@@ -132,7 +151,8 @@ function TradesPage() {
   }
 
   const countByGroup = (key: GroupKey) => {
-    const statuses = DEAL_STATUS_GROUP.find((g) => g.key === key)?.statuses || []
+    const statuses =
+      DEAL_STATUS_GROUP.find((g) => g.key === key)?.statuses || []
     return trades.filter((trade) => statuses.includes(trade.status)).length
   }
 

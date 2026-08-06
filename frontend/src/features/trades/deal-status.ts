@@ -39,5 +39,8 @@ export const DEAL_STATUS_TONE: Record<
 export const DEAL_STATUS_GROUP = [
   { key: 'progress', statuses: ['IN_PROGRESS', 'WAITING'] as DealItemStatus[] },
   { key: 'completed', statuses: ['COMPLETED'] as DealItemStatus[] },
-  { key: 'failed', statuses: ['UNSOLD', 'ALL_FAILED', 'FAILED'] as DealItemStatus[] },
+  {
+    key: 'failed',
+    statuses: ['UNSOLD', 'ALL_FAILED', 'FAILED'] as DealItemStatus[],
+  },
 ] as const

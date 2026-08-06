@@ -587,7 +587,11 @@ function TradeDetailPage() {
                 {list.rows.map((candidate, index) => {
                   const active = candidate.dealStatus === 'IN_PROGRESS'
                   const mine = !isSeller && candidate.isMe
-                  const result = toResultBadge(candidate, settled, deal?.status === 'FAILED')
+                  const result = toResultBadge(
+                    candidate,
+                    settled,
+                    deal?.status === 'FAILED',
+                  )
                   const tone: Tone = mine ? 'mine' : result.tone
 
                   return (
@@ -694,7 +698,11 @@ function TradeDetailPage() {
                       const mine = !isSeller && candidate.isMe
 
                       // 구매자 화면은 "결과", 판매자 화면은 "거래 상태" 열이다.
-                      const result = toResultBadge(candidate, settled, deal?.status === 'FAILED')
+                      const result = toResultBadge(
+                        candidate,
+                        settled,
+                        deal?.status === 'FAILED',
+                      )
                       const resultTone: Tone = mine ? 'mine' : result.tone
 
                       return (
