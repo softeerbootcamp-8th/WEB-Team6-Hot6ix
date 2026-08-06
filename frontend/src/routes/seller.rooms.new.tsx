@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { ImagePlus, Minus, Store } from 'lucide-react'
+import { Minus, Store } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { EmptyState, PageHeader } from '@/components/page-header'
+import { ProductThumbnail } from '@/components/product-thumbnail'
 import {
   ItemPickerModal,
   type PickedItem,
@@ -334,12 +335,11 @@ function AuctionRoomNewPage() {
                   key={item.productId}
                   className="flex flex-wrap items-center gap-4"
                 >
-                  <span
-                    aria-hidden
+                  <ProductThumbnail
+                    src={item.imageUrl}
+                    iconClassName="size-5"
                     className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
-                  >
-                    <ImagePlus className="size-5" />
-                  </span>
+                  />
 
                   <p className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
                     {item.name}

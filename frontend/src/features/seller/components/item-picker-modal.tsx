@@ -16,12 +16,16 @@ import { useProductList } from '@/features/seller/use-product-list'
 
 /**
  * 경매방에 넣을 물품 하나. 시작가는 서버에서 필수라 여기서 반드시 받아야 한다.
- * `name` 은 요청에 안 들어가지만, 고른 물품을 화면에 보여주려면 필요하다 —
- * 호출부가 상품 목록을 따로 들고 있지 않기 때문이다.
+ * `name` 과 `imageUrl` 은 요청에 안 들어가지만, 고른 물품을 화면에 보여주려면
+ * 필요하다 — 호출부가 상품 목록을 따로 들고 있지 않기 때문이다.
+ *
+ * `imageUrl` 이 없어서 경매방 만들기 화면이 사진을 못 그리고 아이콘만 보여줬다(#213).
  */
 export interface PickedItem {
   productId: number
   name: string
+  /** 상품에 사진이 없으면 없다. `ProductThumbnail` 이 아이콘으로 떨어뜨린다. */
+  imageUrl?: string
   startingPrice: number
 }
 
@@ -64,7 +68,12 @@ export function ItemPickerModal({
 
   // 시작가는 입력 중 빈 문자열일 수 있어 문자열로 들고 있다가 확정할 때 숫자로 바꾼다.
   const [selected, setSelected] = useState<
-    { productId: number; name: string; startingPrice: string }[]
+    {
+      productId: number
+      name: string
+      imageUrl?: string
+      startingPrice: string
+    }[]
   >([])
 
   // 열 때마다 바깥 목록으로 초기화한다. 열려 있는 동안 바깥이 바뀌어도
@@ -88,6 +97,7 @@ export function ItemPickerModal({
       initialItemsRef.current.map((item) => ({
         productId: item.productId,
         name: item.name,
+        imageUrl: item.imageUrl,
         startingPrice: String(item.startingPrice),
       })),
     )
@@ -115,11 +125,11 @@ export function ItemPickerModal({
   // 사라지는 게 보인다.
   const close = () => onClose()
 
-  const toggle = (productId: number, name: string) =>
+  const toggle = (productId: number, name: string, imageUrl?: string) =>
     setSelected((prev) =>
       prev.some((item) => item.productId === productId)
         ? prev.filter((item) => item.productId !== productId)
-        : [...prev, { productId, name, startingPrice: '' }],
+        : [...prev, { productId, name, imageUrl, startingPrice: '' }],
     )
 
   const setStartingPrice = (productId: number, raw: string) =>
@@ -291,7 +301,9 @@ export function ItemPickerModal({
                           type="button"
                           role="checkbox"
                           aria-checked={checked}
-                          onClick={() => toggle(productId, name)}
+                          onClick={() =>
+                            toggle(productId, name, product.imageUrl)
+                          }
                           className="flex min-w-[220px] flex-1 items-center gap-3 text-left"
                         >
                           <span
@@ -393,6 +405,7 @@ export function ItemPickerModal({
                     selected.map((item) => ({
                       productId: item.productId,
                       name: item.name,
+                      imageUrl: item.imageUrl,
                       startingPrice: Number(item.startingPrice),
                     })),
                   )
