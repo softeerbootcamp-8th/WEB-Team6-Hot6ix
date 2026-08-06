@@ -21,6 +21,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final ImageUrlValidator imageUrlValidator;
+    private final SellerProfileService sellerProfileService;
 
     @Transactional(readOnly = true)
     public Optional<Long> findByOAuth(OauthProvider provider, String providerId) {
@@ -57,5 +58,23 @@ public class UserService {
         user.updateProfile(request.nickname(), request.profileImageUrl());
 
         return UserResponseDto.from(user);
+    }
+
+    /**
+     * 회원탈퇴 처리. User 익명화·soft delete와 SellerProfile 정리를 한 트랜잭션에서
+     * 원자적으로 커밋한다 — 하나만 성공하면 "탈퇴는 됐는데 SellerProfile은 살아있다"는
+     * 두 갈래 상태가 생기기 때문이다.
+     *
+     * @throws ApplicationException 존재하지 않거나 이미 탈퇴한 회원일 때(USER_NOT_FOUND),
+     *                               진행 중인 경매방이 있을 때(SELLER_PROFILE_IN_USE)
+     */
+    @Transactional
+    public void withdraw(Long userId) {
+
+        User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new ApplicationException(UserErrorType.USER_NOT_FOUND));
+
+        user.withdraw();
+        sellerProfileService.withdraw(userId);
     }
 }
