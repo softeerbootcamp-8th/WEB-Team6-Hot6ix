@@ -19,12 +19,12 @@ export interface AuctionRoomUpdateRequestDto {
   description?: string;
   liveUrl?: string;
   /**
-   * @minimum 1
+   * @minimum 60
    * @maximum 3600
    */
   softCloseTriggerSeconds?: number;
   /**
-   * @minimum 1
+   * @minimum 60
    * @maximum 3600
    */
   softCloseExtendSeconds?: number;

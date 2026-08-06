@@ -139,7 +139,7 @@ export function useGetDetail<TData = Awaited<ReturnType<typeof getDetail>>, TErr
 
 
 /**
- * 로그인한 판매자 본인 소유의 상품을 요청 값으로 전체 교체한다. 경매방이 한 번이라도 시작된 적 있는 상품(READY가 아닌 AuctionItem이 하나라도 있으면)은 이후로도 계속 수정할 수 없다.
+ * 로그인한 판매자 본인 소유의 상품을 요청 값으로 전체 교체한다. 파생 상태가 UNREGISTERED(이력 없음·유찰·전원 실패) 또는 READY일 때만 수정할 수 있다 — 진행 중이거나 낙찰돼 거래가 살아 있는 상품은 수정할 수 없다.
  * @summary 상품 수정
  */
 export const update1 = (
@@ -204,7 +204,7 @@ export const useUpdate1 = <TError = ErrorType<CommonResponseProductResponseDto>,
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 로그인한 판매자 본인 소유의 상품을 soft delete 한다. 경매방에 물품으로 올라가 있으면 아직 시작 전(READY)이더라도 삭제할 수 없다 — 상품만 지우면 물품이 남아 삭제된 상품이 경매방에 계속 노출되기 때문이다. 시작 전이라면 경매방에서 물품을 먼저 빼면 삭제할 수 있다.
+ * 로그인한 판매자 본인 소유의 상품을 soft delete 한다. 파생 상태가 UNREGISTERED(이력 없음·유찰·전원 실패)일 때만 삭제할 수 있다. READY 물품이 걸려 있으면 아직 시작 전이더라도 삭제할 수 없다 — 상품만 지우면 물품이 남아 삭제된 상품이 경매방에 계속 노출되기 때문이다. 경매방에서 물품을 먼저 빼면 삭제할 수 있다. 유찰·전원 실패 물품(재등록 가능)은 막지 않는다 — 그 물품 행은 노출이 아니라 기록이라 삭제해도 결과·거래 내역에서 사라지지 않는다.
  * @summary 상품 삭제
  */
 export const delete1 = (
