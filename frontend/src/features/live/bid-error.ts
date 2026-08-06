@@ -78,6 +78,11 @@ const BY_CODE: Record<number, BidErrorMessage> = {
     description: '본인이 올린 물품이에요.',
     retryable: false,
   },
+  7008: {
+    title: '경매방에 입장해야 입찰할 수 있어요',
+    description: '공유받은 링크로 입장해 약관에 동의해 주세요.',
+    retryable: false,
+  },
 }
 
 const UNKNOWN: BidErrorMessage = {

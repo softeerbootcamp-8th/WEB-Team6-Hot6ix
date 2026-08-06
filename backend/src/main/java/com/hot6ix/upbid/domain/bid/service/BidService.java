@@ -41,6 +41,9 @@ public class BidService {
      * 자기 차례에 최신 현재가를 읽기 때문에, 경합에 밀렸어도 금액이 여전히 유효하면 그대로
      * 통과한다. 락을 잡기 전에 끝낼 수 있는 입찰자 조회는 먼저 해서 락 유지 시간을 줄인다.
      *
+     * <p>판매자 본인인지와 이 방의 참여자인지는 물품 상태와 무관해 락 없이 판정할 수 있다.
+     * 락 앞에서 걸러 자격 없는 요청이 물품 행 락을 잡지 않게 한다({@link #validateEntitled}).
+     *
      * <p>마감이 임박한 입찰이면 <b>같은 락 안에서</b> Soft Close 연장까지 마친다. 연장을 커밋
      * 뒤로 미루면 입찰은 이미 저장됐는데 마감 시각은 아직 그대로인 구간이 생기고, 하필 그때
      * 마감 예약이 깨면 방금 받은 입찰을 두고 물품이 닫힌다.
@@ -65,7 +68,8 @@ public class BidService {
      * @param amount        입찰 금액
      * @return 접수된 입찰
      * @throws ApplicationException 입찰자가 없거나(RESOURCE_NOT_FOUND), 물품이 없거나
-     *                              (AUCTION_ITEM_NOT_FOUND), 거절 조건에 걸렸을 때(7xxx)
+     *                              (AUCTION_ITEM_NOT_FOUND), 자격이 없거나 거절 조건에
+     *                              걸렸을 때(7xxx)
      */
     @Transactional
     public BidCreateResponseDto place(Long auctionItemId, Long bidderUserId, Long amount) {
@@ -78,13 +82,15 @@ public class BidService {
         Long sellerUserId = auctionItemRepository.findSellerUserId(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
+        validateEntitled(auctionItemId, bidder, sellerUserId);
+
         // 락 시작
         AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         LocalDateTime now = LocalDateTime.now(clock);
 
-        validateBiddable(auctionItem, bidder, sellerUserId, arrivedAt);
+        validateBiddable(auctionItem, bidder, arrivedAt);
         validateAmount(auctionItem, amount);
 
         Bid bid = saveBid(auctionItem, bidder, amount);
@@ -131,18 +137,41 @@ public class BidService {
     }
 
     /**
-     * 입찰을 받을 수 없는 요청을 거른다.
+     * 락을 잡기 전에 판정할 수 있는 자격을 검사한다. 물품 상태와 무관해서 락이 필요 없다.
+     *
+     * <p>여기서 거른 요청은 {@code findByIdForUpdate}에 도달하지 않는다. 물품 ID를 훑으며
+     * 던지는 요청이 물품 행 락을 잡으면 같은 물품에 몰린 정상 입찰이 그만큼 뒤로 밀린다.
+     *
+     * <p>참여 여부는 {@code auction_participants}에 {@code agreed_at}이 채워진 행이 있는지로
+     * 본다. 그 행은 공유 코드를 알고 로그인한 사용자가 약관 동의 API를 부를 때만 생긴다.
+     *
+     * <p><b>판매자 검사를 참여 검사보다 먼저 한다.</b> 판매자는 자기 방에 약관 동의를 하지
+     * 않아 참여 행이 없다. 순서가 반대면 판매자가 {@code TERMS_NOT_AGREED}를 받고, 화면은
+     * 약관에 동의하라고 안내하는데, 동의해도 그다음엔 {@code SELLER_CANNOT_BID}로 다시
+     * 거절된다.
+     */
+    private void validateEntitled(Long auctionItemId, User bidder, Long sellerUserId) {
+
+        if (Objects.equals(sellerUserId, bidder.getUserId())) {
+            throw new ApplicationException(BidErrorType.SELLER_CANNOT_BID);
+        }
+
+        if (!auctionItemRepository.existsParticipant(auctionItemId, bidder.getUserId())) {
+            throw new ApplicationException(BidErrorType.TERMS_NOT_AGREED);
+        }
+    }
+
+    /**
+     * 락을 잡고 다시 읽은 물품으로 입찰을 받을 수 없는 요청을 거른다.
+     *
+     * <p>여기 남은 셋은 모두 락 안에서 봐야 하는 값이다. 락 앞에서 읽으면 그 사이에 상태가
+     * 바뀔 수 있다. 락이 필요 없는 자격 검사는 {@link #validateEntitled}가 먼저 끝낸다.
      *
      * <p>상태와 마감 시각을 모두 보는 이유는 물품을 진행중으로 바꾸는 코드가 아직 없어
      * {@code endAt}이 지났는데도 진행중으로 남아 있는 물품이 생길 수 있기 때문이다.
      * {@code endAt}이 비어 있으면 마감 판정을 할 수 없으므로 받지 않는다.
      */
-    private void validateBiddable(AuctionItem auctionItem, User bidder, Long sellerUserId,
-                                  LocalDateTime arrivedAt) {
-
-        if (Objects.equals(sellerUserId, bidder.getUserId())) {
-            throw new ApplicationException(BidErrorType.SELLER_CANNOT_BID);
-        }
+    private void validateBiddable(AuctionItem auctionItem, User bidder, LocalDateTime arrivedAt) {
 
         if (auctionItem.getStatus() != AuctionItemStatus.IN_PROGRESS) {
             throw new ApplicationException(BidErrorType.ITEM_NOT_IN_PROGRESS);

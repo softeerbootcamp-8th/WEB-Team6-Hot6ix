@@ -162,18 +162,16 @@ class BidServiceTest {
         when(userRepository.findByUserIdAndDeletedAtIsNull(BIDDER_ID)).thenReturn(Optional.of(bidder));
     }
 
-    /** 판매자는 입찰자와 다른 사람이라 판매자 검사를 통과한다. */
-    private void givenItem(AuctionItem auctionItem) {
-        givenItemSoldBy(auctionItem, SELLER_ID);
+    /** 판매자 검사는 락 앞에서 하므로 판매자 조회 하나면 된다. */
+    private void givenSeller(Long sellerUserId) {
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(sellerUserId));
     }
 
-    /**
-     * 판매자 조회는 락을 잡기 전에 일어나 물품 조회와 별개 쿼리지만, 검사 자체는 락 안에서
-     * 하므로 두 스텁이 항상 함께 필요하다.
-     */
-    private void givenItemSoldBy(AuctionItem auctionItem, Long sellerUserId) {
+    /** 정상 경로 — 판매자가 남이고, 참여 기록이 있고, 물품을 락으로 읽는다. */
+    private void givenItem(AuctionItem auctionItem) {
+        givenSeller(SELLER_ID);
+        when(auctionItemRepository.existsParticipant(ITEM_ID, BIDDER_ID)).thenReturn(true);
         when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
-        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(sellerUserId));
     }
 
     /**
@@ -315,33 +313,53 @@ class BidServiceTest {
     }
 
     @Test
-    @DisplayName("판매자는 자기 물품에 입찰할 수 없다")
+    @DisplayName("판매자는 자기 물품에 입찰할 수 없고 물품 락도 잡지 않는다")
     void rejectsSellerBiddingOnOwnItem() {
 
         givenBidder();
-        givenItemSoldBy(inProgressItem(), BIDDER_ID);
+        givenSeller(BIDDER_ID);
 
         assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, STARTING_PRICE))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(BidErrorType.SELLER_CANNOT_BID);
 
+        verify(auctionItemRepository, never()).findByIdForUpdate(any());
         verify(bidRepository, never()).saveAndFlush(any(Bid.class));
     }
-    
+
     @Test
-    @DisplayName("판매자가 아직 시작 안 한 자기 물품에 입찰하면 상태가 아니라 판매자 사유로 거절한다")
-    void rejectsSellerBeforeItemStatus() {
+    @DisplayName("판매자 본인은 참여 기록을 보기 전에 판매자 사유로 거절한다")
+    void rejectsSellerBeforeParticipantCheck() {
 
         givenBidder();
-        givenItemSoldBy(
-                auctionItem(AuctionItemStatus.READY, LocalDateTime.now().plusHours(1), null),
-                BIDDER_ID);
+        givenSeller(BIDDER_ID);
 
         assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, STARTING_PRICE))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(BidErrorType.SELLER_CANNOT_BID);
+
+        // 판매자는 자기 방에 약관 동의를 하지 않아 참여 행이 없다. 순서가 반대면
+        // 통과할 수 없는 "약관에 동의하라"는 안내를 받는다.
+        verify(auctionItemRepository, never()).existsParticipant(any(), any());
+    }
+
+    @Test
+    @DisplayName("참여 기록이 없으면 입찰할 수 없고 물품 락도 잡지 않는다")
+    void rejectsBidderWithoutParticipation() {
+
+        givenBidder();
+        givenSeller(SELLER_ID);
+        when(auctionItemRepository.existsParticipant(ITEM_ID, BIDDER_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, STARTING_PRICE))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(BidErrorType.TERMS_NOT_AGREED);
+
+        verify(auctionItemRepository, never()).findByIdForUpdate(any());
+        verify(bidRepository, never()).saveAndFlush(any(Bid.class));
     }
 
     @Test

@@ -130,6 +130,21 @@ class BidControllerTest extends AbstractControllerTest {
     }
 
     @Test
+    @DisplayName("약관에 동의하지 않은 회원의 입찰은 403과 코드 7008을 반환한다")
+    void returnsForbiddenWhenTermsNotAgreed() throws Exception {
+
+        when(bidService.place(anyLong(), anyLong(), anyLong()))
+                .thenThrow(new ApplicationException(BidErrorType.TERMS_NOT_AGREED));
+
+        mockMvc.perform(post(URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": 15000}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(7008));
+    }
+
+    @Test
     @DisplayName("경로 변수가 숫자가 아니면 400과 코드 2002를 반환한다")
     void returnsBadRequestWhenPathVariableNotNumeric() throws Exception {
 
