@@ -96,8 +96,9 @@ public class AuctionRoomService {
      * {@code 1, 2, 3...}을 순서대로 불러 공유 링크 없이 남의 방을 전부 훑을 수 있다.
      * 공유 코드는 16자 랜덤이라 추측으로 도달할 수 없다.
      *
-     * <p>{@code isOwner}만 보는 사람에 따라 달라진다. 화면이 판매자 조작 UI를 띄울지 정하는 값이고,
-     * 실제 권한은 조작 API가 다시 검증한다.
+     * <p>{@code isOwner}와 {@code agreedToTerms}만 보는 사람에 따라 달라진다. {@code isOwner}는 화면이
+     * 판매자 조작 UI를 띄울지 정하는 값이고, 실제 권한은 조작 API가 다시 검증한다.
+     * {@code agreedToTerms}는 참여자에게만 의미가 있어서 게스트와 방 주인에게는 null이다.
      *
      * @param shareCode    조회할 경매방의 공유 코드
      * @param viewerUserId 조회한 회원의 ID. 로그인하지 않았으면 null
@@ -108,15 +109,18 @@ public class AuctionRoomService {
 
         AuctionRoom auctionRoom = findRoomByShareCode(shareCode);
         Long roomId = auctionRoom.getAuctionRoomId();
+        boolean isOwner = isOwnedBy(auctionRoom, viewerUserId);
 
-        Boolean agreedToTerms = viewerUserId == null ? null
+        // 방 주인은 참여자가 아니라 진행자다. 동의 여부를 묻는 대상이 아니므로 게스트와 같이 null이고,
+        // 참여 기록도 읽지 않는다. false를 주면 판매자가 자기 방에 들어갈 때마다 동의 화면을 만난다.
+        Boolean agreedToTerms = (viewerUserId == null || isOwner) ? null
                 : auctionParticipantRepository
                         .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(roomId, viewerUserId);
 
         return AuctionRoomPublicResponseDto.from(
                 auctionRoom,
                 countItems(roomId),
-                isOwnedBy(auctionRoom, viewerUserId),
+                isOwner,
                 agreedToTerms);
     }
 

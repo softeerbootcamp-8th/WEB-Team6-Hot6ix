@@ -238,9 +238,6 @@ class AuctionRoomServiceTest {
         when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("aBcD1234aBcD1234"))
                 .thenReturn(Optional.of(auctionRoom));
         when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(10L)).thenReturn(3L);
-        when(auctionParticipantRepository
-                .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(10L, SELLER_USER_ID))
-                .thenReturn(true);
 
         AuctionRoomPublicResponseDto response =
                 auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", SELLER_USER_ID);
@@ -253,7 +250,62 @@ class AuctionRoomServiceTest {
         assertThat(response.sellerStoreName()).isEqualTo("승민상점");
         assertThat(response.itemCount()).isEqualTo(3L);
         assertThat(response.isOwner()).isTrue();
-        assertThat(response.agreedToTerms()).isTrue();
+    }
+
+    @Test
+    @DisplayName("참여자가 이미 동의했으면 agreedToTerms가 true다")
+    void getRoomByShareCode_alreadyAgreed() {
+
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .shareCode(SHARE_CODE)
+                .status(AuctionRoomStatus.BEFORE)
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+        ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
+                .thenReturn(Optional.of(auctionRoom));
+        when(auctionParticipantRepository
+                .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(10L, SELLER_USER_ID + 1))
+                .thenReturn(true);
+
+        assertThat(auctionRoomService.getRoomByShareCode(SHARE_CODE, SELLER_USER_ID + 1)
+                .agreedToTerms()).isTrue();
+    }
+
+    /**
+     * 방 주인은 참여자가 아니라 진행자다. false를 주면 화면이 판매자를 동의 화면으로 되돌려 보내
+     * 자기 방에 들어갈 수 없다.
+     */
+    @Test
+    @DisplayName("방 주인 조회는 agreedToTerms가 null이고 참여 기록을 읽지 않는다")
+    void getRoomByShareCode_ownerHasNullAgreedToTerms() {
+
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .shareCode(SHARE_CODE)
+                .status(AuctionRoomStatus.BEFORE)
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+        ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
+                .thenReturn(Optional.of(auctionRoom));
+
+        AuctionRoomPublicResponseDto response =
+                auctionRoomService.getRoomByShareCode(SHARE_CODE, SELLER_USER_ID);
+
+        assertThat(response.isOwner()).isTrue();
+        assertThat(response.agreedToTerms()).isNull();
+
+        verifyNoInteractions(auctionParticipantRepository);
     }
 
     @Test

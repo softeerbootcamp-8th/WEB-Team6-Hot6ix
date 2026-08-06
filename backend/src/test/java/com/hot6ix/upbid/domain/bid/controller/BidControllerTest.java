@@ -79,7 +79,25 @@ class BidControllerTest extends AbstractControllerTest {
                         .content("{\"amount\": 0}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(2002))
-                .andExpect(jsonPath("$.errors[0].field").value("amount"));
+                .andExpect(jsonPath("$.errors[0].field").value("amount"))
+                .andExpect(jsonPath("$.errors[0].message")
+                        .value("입찰 금액은 0보다 커야 합니다."));
+
+        verify(bidService, never()).place(anyLong(), anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("입찰 금액이 상한을 넘으면 400과 구분된 검증 오류를 반환한다")
+    void rejectsAmountOverLimit() throws Exception {
+
+        mockMvc.perform(post(URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": 5000000000001}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("amount"))
+                .andExpect(jsonPath("$.errors[0].message")
+                        .value("입찰 가능한 금액 범위를 초과했어요"));
 
         verify(bidService, never()).place(anyLong(), anyLong(), anyLong());
     }
@@ -127,6 +145,21 @@ class BidControllerTest extends AbstractControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(7007));
+    }
+
+    @Test
+    @DisplayName("약관에 동의하지 않은 회원의 입찰은 403과 코드 7008을 반환한다")
+    void returnsForbiddenWhenTermsNotAgreed() throws Exception {
+
+        when(bidService.place(anyLong(), anyLong(), anyLong()))
+                .thenThrow(new ApplicationException(BidErrorType.TERMS_NOT_AGREED));
+
+        mockMvc.perform(post(URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": 15000}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(7008));
     }
 
     @Test

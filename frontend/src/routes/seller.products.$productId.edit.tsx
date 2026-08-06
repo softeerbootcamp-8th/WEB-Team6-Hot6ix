@@ -31,12 +31,22 @@ function SellerProductEditPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data, isPending, isError, error, refetch } = useGetDetail(
-    Number(productId),
-  )
+  const { data, isPending, isStale, isFetching, isError, error, refetch } =
+    useGetDetail(Number(productId))
   const updateProduct = useUpdate1()
 
-  if (isPending) return <RoutePending />
+  /*
+   * 폼은 **갓 받아온 값으로만 만든다.**
+   *
+   * `ProductForm` 은 `initial` 을 첫 렌더에서 한 번만 읽어 폼 상태로 옮긴다.
+   * 캐시에 남아 있던 예전 정보로 그려지면, 뒤늦게 도착한 새 값은 화면에
+   * 반영되지 않는다 — 판매자가 방금 저장한 내용이 아니라 수정 전 정보를 보게 된다.
+   * 그래서 낡은 값을 다시 받아오는 중에는 폼을 그리지 않고 기다린다.
+   *
+   * 창 복귀 refetch 는 꺼져 있어서(`lib/query-client.ts`) 입력 중에 이 조건이
+   * 켜지지는 않는다. 마운트 직후의 재조회만 여기 걸린다.
+   */
+  if (isPending || (isStale && isFetching)) return <RoutePending />
 
   // 404 는 "없는 상품"이라 장애 화면 대신 안내로 보낸다.
   if (error?.response?.status === 404) {
@@ -105,9 +115,15 @@ function SellerProductEditPage() {
               updateProduct.mutate(
                 {
                   productId: Number(productId),
-                  // PUT 은 전체 교체다. 조회로 받은 이미지를 그대로 되돌려 보내지
-                  // 않으면 저장할 때마다 서버의 이미지가 지워진다.
-                  data: { ...body, imageUrl: product.imageUrl },
+                  /*
+                   * 폼이 만든 값을 그대로 보낸다. 여기서 `imageUrl` 을 조회 값으로 덮으면
+                   * 방금 올린 주소가 지워져서, 저장은 성공하는데 사진만 안 바뀐다(#213).
+                   *
+                   * PUT 전체 교체라 값을 빼면 서버가 지우는 건 맞다. 그건 폼이 막는다 —
+                   * 파일을 새로 안 고르면 조회로 받은 주소를 그대로 되돌려 넣는다
+                   * (`product-form.tsx:168`).
+                   */
+                  data: body,
                 },
                 {
                   // 서버가 저장한 뒤에만 성공으로 알린다.
@@ -115,8 +131,19 @@ function SellerProductEditPage() {
                     void queryClient.invalidateQueries({
                       queryKey: getGetListQueryKey(),
                     })
+                    /*
+                     * 상세는 **stale 표시만** 하고 여기서 다시 받아오지 않는다.
+                     *
+                     * 이 화면이 상세 쿼리를 보고 있어서 그냥 무효화하면 곧바로
+                     * refetch 가 시작되는데, 응답이 오기 전에 아래 `navigate` 로
+                     * 화면이 사라진다. 그러면 TanStack Query 가 그 요청을
+                     * `revert: true` 로 취소해 **캐시를 수정 전 값으로 되돌린다**
+                     * (Orval queryFn 이 `signal` 을 쓰므로 취소 대상이 된다).
+                     * 다음에 이 화면으로 들어올 때 받아오면 충분하다.
+                     */
                     void queryClient.invalidateQueries({
                       queryKey: getGetDetailQueryKey(Number(productId)),
+                      refetchType: 'none',
                     })
                     toast.success('상품 정보를 수정했어요')
                     void navigate({ to: '/seller' })

@@ -81,7 +81,9 @@ public class DomainEventSseListener {
             case ItemAdded e -> new ItemAddedDto(e.addedCount());
             case ItemRemoved e -> new ItemRemovedDto(e.itemId());
             case ItemStarted e -> new ItemStartedDto(e.itemId(), e.itemName(), e.endAt());
-            case ItemClosingSoon e -> new ItemClosingSoonDto(e.itemId(), e.itemName());
+            // remainingSeconds는 방마다 다른 트리거 값이라 화면이 이 값으로 문구를 만든다.
+            case ItemClosingSoon e ->
+                    new ItemClosingSoonDto(e.itemId(), e.itemName(), e.remainingSeconds());
             case BidPlaced e -> new BidPlacedDto(e.itemId(), e.itemName(), e.bidPrice(), e.bidderNickname());
             // endAt은 연장이 반영된 마감 시각이라 화면이 이 값으로 카운트다운을 다시 맞춘다.
             case SoftCloseExtended e ->

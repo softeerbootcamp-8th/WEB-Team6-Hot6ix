@@ -51,10 +51,21 @@ class EventMessagesTest {
     }
 
     @Test
-    @DisplayName("ItemClosingSoon은 마감 임박 문구를 만든다")
+    @DisplayName("ItemClosingSoon은 분으로 떨어지는 남은 시간을 분으로 적는다")
     void itemClosingSoon() {
-        assertThat(EventMessages.of(ItemClosingSoon.of(1L, 2L, "한정판 조던", OCCURRED_AT)))
+        assertThat(EventMessages.of(ItemClosingSoon.of(1L, 2L, "한정판 조던", 60, OCCURRED_AT)))
                 .contains("한정판 조던 마감 1분 전");
+
+        assertThat(EventMessages.of(ItemClosingSoon.of(1L, 2L, "한정판 조던", 300, OCCURRED_AT)))
+                .as("방마다 트리거가 달라 1분으로 고정된 문구가 아니다")
+                .contains("한정판 조던 마감 5분 전");
+    }
+
+    @Test
+    @DisplayName("ItemClosingSoon은 분으로 떨어지지 않는 남은 시간을 초로 적는다")
+    void itemClosingSoonSeconds() {
+        assertThat(EventMessages.of(ItemClosingSoon.of(1L, 2L, "한정판 조던", 90, OCCURRED_AT)))
+                .contains("한정판 조던 마감 90초 전");
     }
 
     @Test

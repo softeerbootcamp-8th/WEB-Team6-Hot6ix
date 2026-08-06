@@ -36,11 +36,14 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
         QProduct product = QProduct.product;
         QAuctionItem ai = QAuctionItem.auctionItem;
         StringExpression derivedStatusName = derivedStatusName(ai);
+        BooleanExpression isUnsoldExpr = ai.auctionItemId.isNotNull().and(
+                AuctionItemPredicates.blockedForReregistration(ai).not()
+        );
         Predicate[] conditions = conditions(product, ai, sellerProfileId, keyword, status);
 
         List<Tuple> rows = queryFactory
                 .select(product.productId, product.name, product.imageUrl,
-                        derivedStatusName, product.createdAt)
+                        derivedStatusName, isUnsoldExpr, product.createdAt)
                 .from(product)
                 .leftJoin(ai).on(latestAuctionItem(product, ai))
                 .where(conditions)
@@ -52,7 +55,7 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
         List<ProductSummaryResponseDto> content = rows.stream()
                 .map(row -> new ProductSummaryResponseDto(
                         row.get(product.productId), row.get(product.name), row.get(product.imageUrl),
-                        ProductListingStatus.valueOf(row.get(derivedStatusName)), row.get(product.createdAt)))
+                        ProductListingStatus.valueOf(row.get(derivedStatusName)), row.get(isUnsoldExpr), row.get(product.createdAt)))
                 .toList();
 
         // 상태 필터가 조인한 ai를 참조하므로 개수 쿼리에도 같은 조인이 필요하다.

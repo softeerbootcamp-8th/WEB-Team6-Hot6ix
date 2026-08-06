@@ -43,10 +43,11 @@ public class TestEventController {
     public void fireItemClosingSoon(
             @PathVariable Long roomId,
             @RequestParam(defaultValue = "1") Long itemId,
-            @RequestParam(defaultValue = "한정판 조던 스니커즈") String itemName
+            @RequestParam(defaultValue = "한정판 조던 스니커즈") String itemName,
+            @RequestParam(defaultValue = "60") int remainingSeconds
     ) {
         eventPublisher.publishEvent(
-                ItemClosingSoon.of(roomId, itemId, itemName, LocalDateTime.now())
+                ItemClosingSoon.of(roomId, itemId, itemName, remainingSeconds, LocalDateTime.now())
         );
     }
 

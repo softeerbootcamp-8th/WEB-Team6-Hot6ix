@@ -370,8 +370,12 @@
   0% {
     opacity: 0;
   }
-  12%,
-  72% {
+  /*
+   * 덮개는 마감 APNG 가 끝날 때까지(2.83s) 버텨야 한다. 예전 값(72%) 으로 두면
+   * 마지막 타격과 낙찰 도장이 나오는 동안 덮개가 먼저 걷힌다.
+   */
+  8%,
+  92% {
     opacity: 1;
   }
   100% {
@@ -400,11 +404,67 @@
 @utility animate-closed-stamp {
   background-color: color-mix(in srgb, var(--neutral-strong) 82%, transparent);
   backdrop-filter: blur(1px);
-  animation: closed-stamp 2200ms var(--ease-in-out-soft) both;
+  /* APNG 재생 시간(2.83s)보다 길어야 연출이 중간에 잘리지 않는다. */
+  animation: closed-stamp 3050ms var(--ease-in-out-soft) both;
+}
+
+/*
+ * 소프트클로즈 연장 덮개.
+ *
+ * 마감 덮개와 같은 keyframe 을 쓰고 길이만 다르다. 연장 APNG 가 1.45s 로
+ * 마감(2.83s)보다 훨씬 짧아서, 같은 값을 쓰면 끝난 뒤 빈 화면이 남는다.
+ * 마감과 달리 어둡게 덮지 않는다. 경매가 계속되는 중이라 남은 시간과
+ * 현재가가 계속 읽혀야 한다.
+ */
+@utility animate-extend-stamp {
+  background-color: color-mix(in srgb, var(--brand-50) 88%, transparent);
+  animation: closed-stamp 1750ms var(--ease-in-out-soft) both;
+}
+
+/*
+ * 경매 시작 덮개.
+ *
+ * 연장 덮개와 같은 keyframe, 같은 규칙이다. 시작 APNG 가 1.5s 라 그보다
+ * 조금 길게 잡는다(`AUCTION_START_FLASH_MS` 와 같은 값이어야 한다).
+ * 이제부터 입찰할 수 있는 물품이라 어둡게 덮지 않는다.
+ *
+ * **빨강(`--live`)을 쓰지 않는다.** 마감·경고와 같은 색이라 시작을 알리는
+ * 자리에 쓰면 막힌 것처럼 읽힌다. 카드와 같은 흰 바탕에 글씨만 파랑
+ * (`text-brand-500`)으로 둔다. 연장 덮개(`--brand-50` 바탕)와도 갈린다.
+ */
+@utility animate-start-stamp {
+  background-color: color-mix(in srgb, var(--card) 92%, transparent);
+  animation: closed-stamp 1700ms var(--ease-in-out-soft) both;
 }
 
 @utility animate-closed-label {
   animation: closed-label 2200ms var(--ease-out-soft) both;
+}
+
+/*
+ * 유찰 그림의 등장.
+ *
+ * 유찰은 움직이는 APNG 를 넣지 않아서 정지 이미지 하나뿐이다. 그대로 두면
+ * 덮개가 3초 동안 멎은 것처럼 보여서, 찍히듯 들어오는 동작만 붙인다.
+ * 파일을 새로 받지 않으므로 용량은 그대로다.
+ */
+@keyframes unsold-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@utility animate-unsold-in {
+  animation: unsold-in 620ms var(--ease-out-soft) both;
 }
 
 /* 열을 덮는 층 — 오른쪽에서 살짝 미끄러져 덮는다 */

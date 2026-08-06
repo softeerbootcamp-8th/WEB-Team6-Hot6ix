@@ -18,6 +18,7 @@ export interface DealSummaryResponseDto {
   shareCode?: string;
   productId?: number;
   productName?: string;
+  imageUrl?: string;
   auctionRoomName?: string;
   role?: DealSummaryResponseDtoRole;
   status?: DealSummaryResponseDtoStatus;

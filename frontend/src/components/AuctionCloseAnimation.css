@@ -1,0 +1,17 @@
+.auction-close-animation {
+  --auction-close-size: 320px;
+  display: inline-block;
+  width: min(var(--auction-close-size), 100%);
+  aspect-ratio: 1;
+  background: transparent;
+  line-height: 1;
+  user-select: none;
+}
+
+.auction-close-animation__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}

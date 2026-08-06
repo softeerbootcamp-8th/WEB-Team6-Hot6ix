@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
  * 거래 내역 한 줄.
  *
  * @param productId       판매 건만 값이 있다. 내가 산 물건은 내 상품이 아니다
+ * @param imageUrl        상품 사진 주소. 판매자가 안 올렸으면 {@code null}
  * @param partnerNickname 판매 건이면 거래 상대 후보, 구매 건이면 판매자.
  *                        유찰이거나 후보가 전원 실패해 상대가 없으면 {@code null}
  * @param sellerProfileId 구매자가 판매자에게 연락할 때 쓰는 프로필 조회 키. 연락처를 목록에
@@ -22,6 +23,7 @@ public record DealSummaryResponseDto(
         String shareCode,
         Long productId,
         String productName,
+        String imageUrl,
         String auctionRoomName,
         DealRole role,
         DealItemStatus status,

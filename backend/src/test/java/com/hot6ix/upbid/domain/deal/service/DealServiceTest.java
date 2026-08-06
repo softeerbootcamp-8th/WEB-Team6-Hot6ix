@@ -20,6 +20,7 @@ import com.hot6ix.upbid.domain.deal.dto.response.AuctionItemDealStatusResponseDt
 import com.hot6ix.upbid.domain.deal.dto.response.AuctionRoomDealStatusResponseDto;
 import com.hot6ix.upbid.domain.deal.dto.response.DealSummaryResponseDto;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
+import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
 import com.hot6ix.upbid.domain.deal.entity.DealItemStatus;
 import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
@@ -113,6 +114,10 @@ class DealServiceTest {
                 return "포토카드";
             }
 
+            public String getImageUrl() {
+                return "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/products/1/photocard.png";
+            }
+
             public String getAuctionRoomName() {
                 return "승민상점 경매방";
             }
@@ -144,6 +149,36 @@ class DealServiceTest {
             public LocalDateTime getClosedAt() {
                 return CLOSED_AT;
             }
+
+            public String getMyCandidateStatus() {
+                return sellerRow == 1 ? null : DealCandidateStatus.WAITING.name();
+            }
+
+            public Integer getMyTurn() {
+                return 0;
+            }
+        };
+    }
+
+    private DealSummaryProjection buyerDeal(DealCandidateStatus myCandidateStatus, int myTurn, int dealCompleted) {
+        return new DealSummaryProjection() {
+            public Integer getSellerRow() { return 0; }
+            public Long getAuctionItemId() { return 2L; }
+            public Long getAuctionRoomId() { return 1L; }
+            public String getShareCode() { return "aBcD1234aBcD1234"; }
+            public Long getProductId() { return null; }
+            public String getProductName() { return "포토카드"; }
+            public String getImageUrl() { return "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/products/1/photocard.png"; }
+            public String getAuctionRoomName() { return "승민상점 경매방"; }
+            public String getItemStatus() { return AuctionItemStatus.SOLD.name(); }
+            public Integer getDealCompleted() { return dealCompleted; }
+            public Integer getHasWaitingCandidate() { return 1; }
+            public Long getAmount() { return 15_000L; }
+            public String getPartnerNickname() { return "승민"; }
+            public Long getSellerProfileId() { return 4L; }
+            public LocalDateTime getClosedAt() { return CLOSED_AT; }
+            public String getMyCandidateStatus() { return myCandidateStatus.name(); }
+            public Integer getMyTurn() { return myTurn; }
         };
     }
 
@@ -207,6 +242,46 @@ class DealServiceTest {
         assertThat(getDeals(deal(1, AuctionItemStatus.SOLD, 0, 0)))
                 .extracting(DealSummaryResponseDto::status)
                 .containsExactly(DealItemStatus.ALL_FAILED);
+    }
+
+    @Test
+    @DisplayName("구매 건: 내 후보가 성사(COMPLETED)면 COMPLETED다")
+    void getDealsBuyerCompleted() {
+        assertThat(getDeals(buyerDeal(DealCandidateStatus.COMPLETED, 0, 1)))
+                .extracting(DealSummaryResponseDto::status)
+                .containsExactly(DealItemStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("구매 건: 내 후보가 WAITING이고 거래가 성사됐으면 FAILED다")
+    void getDealsBuyerWaitingButDealCompleted() {
+        assertThat(getDeals(buyerDeal(DealCandidateStatus.WAITING, 0, 1)))
+                .extracting(DealSummaryResponseDto::status)
+                .containsExactly(DealItemStatus.FAILED);
+    }
+
+    @Test
+    @DisplayName("구매 건: 내 후보가 WAITING이고 내 차례면 IN_PROGRESS다")
+    void getDealsBuyerWaitingAndMyTurn() {
+        assertThat(getDeals(buyerDeal(DealCandidateStatus.WAITING, 1, 0)))
+                .extracting(DealSummaryResponseDto::status)
+                .containsExactly(DealItemStatus.IN_PROGRESS);
+    }
+
+    @Test
+    @DisplayName("구매 건: 내 후보가 WAITING이고 내 차례가 아니면 WAITING이다")
+    void getDealsBuyerWaitingNotMyTurn() {
+        assertThat(getDeals(buyerDeal(DealCandidateStatus.WAITING, 0, 0)))
+                .extracting(DealSummaryResponseDto::status)
+                .containsExactly(DealItemStatus.WAITING);
+    }
+
+    @Test
+    @DisplayName("구매 건: 내 후보가 이미 FAILED면 FAILED다")
+    void getDealsBuyerFailed() {
+        assertThat(getDeals(buyerDeal(DealCandidateStatus.FAILED, 0, 0)))
+                .extracting(DealSummaryResponseDto::status)
+                .containsExactly(DealItemStatus.FAILED);
     }
 
     @Test

@@ -1,5 +1,5 @@
 import { User } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -17,11 +17,19 @@ export function ProfilePhoto({
   src,
   className,
   iconClassName = 'size-1/2',
+  fallback,
 }: {
   /** 서버가 준 이미지 주소. 없으면 사람 아이콘을 그린다. */
   src?: string | null
   className?: string
   iconClassName?: string
+  /**
+   * 주소가 없거나 실패했을 때 아이콘 대신 그릴 것.
+   *
+   * 상단바는 예전부터 닉네임 첫 글자를 보여줬다. 사진을 붙이면서 아이콘으로
+   * 바꾸면 사진을 안 올린 사람의 화면이 지금보다 나빠져서 열어 뒀다(#213).
+   */
+  fallback?: ReactNode
 }) {
   const [failed, setFailed] = useState(false)
 
@@ -34,7 +42,7 @@ export function ProfilePhoto({
       )}
     >
       {!src || failed ? (
-        <User className={iconClassName} />
+        (fallback ?? <User className={iconClassName} />)
       ) : (
         <img
           src={src}

@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Gavel,
   LogOut,
-  Menu,
   Receipt,
   Store,
   User,
@@ -98,14 +97,32 @@ export function MobileNavDrawer() {
 
   return (
     <>
+      {/*
+       * 햄버거 대신 프로필 사진을 보여준다(#213). 앱바는 높이 56 에 제목이 가운데
+       * 절대 배치라(`mobile-app-bar.tsx:54-58`) 아바타를 하나 더 붙이면 긴 제목과
+       * 겹친다. 자리를 안 늘리려고 아이콘 자리를 그대로 쓴다.
+       *
+       * 이 트리거는 로그인한 사람에게만 그려지므로(위 `session.status` 가드)
+       * 게스트에게 남의 아바타가 뜨는 일은 없다.
+       *
+       * `aria-label` 은 그대로 둔다 — 스크린리더에는 지금과 똑같이 읽힌다.
+       */}
       <button
         type="button"
         onClick={() => setOpen(true)}
         aria-label="메뉴 열기"
         aria-expanded={open}
-        className="ease-soft flex size-9 items-center justify-center rounded-lg text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-90"
+        className="ease-soft flex size-9 items-center justify-center rounded-full transition-all duration-150 hover:bg-fill active:scale-90"
       >
-        <Menu aria-hidden className="size-5" />
+        <ProfilePhoto
+          src={user.profileImageUrl}
+          className="size-8 rounded-full border border-brand-300 bg-card"
+          fallback={
+            <span className="text-[12px] font-bold text-brand-600">
+              {user.nickname.slice(0, 1)}
+            </span>
+          }
+        />
       </button>
 
       {open && (

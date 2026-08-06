@@ -49,6 +49,7 @@ class UserServiceTest {
                 .providerId("kakao-123")
                 .nickname("테스트유저")
                 .email("test@hot6ix.com")
+                .phoneNumber("01012345678")
                 .profileImageUrl("https://cdn.hot6ix.com/profile.png")
                 .build();
     }
@@ -121,7 +122,7 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("내 정보를 조회하면 userId·nickname·email·profileImageUrl을 반환한다")
+    @DisplayName("내 정보를 조회하면 userId·nickname·email·profileImageUrl·phoneNumber를 반환한다")
     void getMe() {
 
         User user = newUser();
@@ -132,6 +133,23 @@ class UserServiceTest {
         assertThat(response.nickname()).isEqualTo("테스트유저");
         assertThat(response.email()).isEqualTo("test@hot6ix.com");
         assertThat(response.profileImageUrl()).isEqualTo("https://cdn.hot6ix.com/profile.png");
+        // 프론트는 이 값이 없으면 인증을 마친 회원도 "미인증"으로 그린다.
+        assertThat(response.phoneNumber()).isEqualTo("01012345678");
+    }
+
+    @Test
+    @DisplayName("전화번호 인증을 마치지 않은 회원은 phoneNumber가 null이다")
+    void getMe_notVerified() {
+
+        User user = User.builder()
+                .provider(OauthProvider.KAKAO)
+                .providerId("kakao-456")
+                .nickname("테스트유저")
+                .email("test@hot6ix.com")
+                .build();
+        when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+
+        assertThat(userService.getMe(1L).phoneNumber()).isNull();
     }
 
     @Test
