@@ -370,8 +370,12 @@
   0% {
     opacity: 0;
   }
-  12%,
-  72% {
+  /*
+   * 덮개는 마감 APNG 가 끝날 때까지(2.83s) 버텨야 한다. 예전 값(72%) 으로 두면
+   * 마지막 타격과 낙찰 도장이 나오는 동안 덮개가 먼저 걷힌다.
+   */
+  8%,
+  92% {
     opacity: 1;
   }
   100% {
@@ -400,11 +404,38 @@
 @utility animate-closed-stamp {
   background-color: color-mix(in srgb, var(--neutral-strong) 82%, transparent);
   backdrop-filter: blur(1px);
-  animation: closed-stamp 2200ms var(--ease-in-out-soft) both;
+  /* APNG 재생 시간(2.83s)보다 길어야 연출이 중간에 잘리지 않는다. */
+  animation: closed-stamp 3050ms var(--ease-in-out-soft) both;
 }
 
 @utility animate-closed-label {
   animation: closed-label 2200ms var(--ease-out-soft) both;
+}
+
+/*
+ * 유찰 그림의 등장.
+ *
+ * 유찰은 움직이는 APNG 를 넣지 않아서 정지 이미지 하나뿐이다. 그대로 두면
+ * 덮개가 3초 동안 멎은 것처럼 보여서, 찍히듯 들어오는 동작만 붙인다.
+ * 파일을 새로 받지 않으므로 용량은 그대로다.
+ */
+@keyframes unsold-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@utility animate-unsold-in {
+  animation: unsold-in 620ms var(--ease-out-soft) both;
 }
 
 /* 열을 덮는 층 — 오른쪽에서 살짝 미끄러져 덮는다 */

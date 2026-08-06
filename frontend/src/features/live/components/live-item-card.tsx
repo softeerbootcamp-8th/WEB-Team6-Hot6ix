@@ -2,6 +2,7 @@ import { Clock, Minus, Play, Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { ProductThumbnail } from '@/components/product-thumbnail'
+import { AuctionCloseFlashOverlay } from '@/features/live/components/auction-close-flash-overlay'
 
 import { formatRemaining, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -148,16 +149,7 @@ export function LiveItemCard({
       </button>
 
       {/* 마감된 직후에만 도장이 덮였다가 사라진다. */}
-      {justClosed && (
-        <span
-          aria-hidden
-          className="animate-closed-stamp absolute inset-0 z-10 flex items-center justify-center rounded-2xl"
-        >
-          <span className="animate-closed-label rounded-xl border-2 border-white bg-live px-4 py-1.5 text-[15px] font-extrabold tracking-wide text-white shadow-lg">
-            경매 종료
-          </span>
-        </span>
-      )}
+      {justClosed && <AuctionCloseFlashOverlay item={item} />}
 
       {/* 시작 전 물품은 방 주인이 진행 시간을 정해 바로 시작할 수 있다. */}
       {ready && canStart && onStart && (

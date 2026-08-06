@@ -1,5 +1,6 @@
 import { Clock } from 'lucide-react'
 
+import { AuctionCloseFlashOverlay } from '@/features/live/components/auction-close-flash-overlay'
 import { LeaderboardRows } from '@/features/live/components/leaderboard-rows'
 import { formatRemaining, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -32,16 +33,8 @@ export function ItemLeaderboard({
       ref={rowRef}
       className="relative overflow-hidden rounded-2xl border bg-card p-4"
     >
-      {justClosed && (
-        <span
-          aria-hidden
-          className="animate-closed-stamp absolute inset-0 z-10 flex items-center justify-center rounded-2xl"
-        >
-          <span className="animate-closed-label rounded-xl border-2 border-white bg-live px-4 py-1.5 text-[15px] font-extrabold tracking-wide text-white shadow-lg">
-            경매 종료
-          </span>
-        </span>
-      )}
+      {/* 물품 카드와 같은 도장을 찍는다. */}
+      {justClosed && <AuctionCloseFlashOverlay item={item} />}
 
       <div className="flex items-center">
         {closed ? (

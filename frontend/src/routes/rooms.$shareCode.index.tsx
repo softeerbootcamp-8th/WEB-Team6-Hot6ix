@@ -819,10 +819,16 @@ function LiveRoomPage() {
     }
   }
 
-  // 도장은 한 번만 보여주고 지운다.
+  /*
+   * 도장은 한 번만 보여주고 지운다.
+   *
+   * 마감 APNG 가 2.83초짜리라 그보다 짧게 잡으면 마지막 타격과 낙찰 도장이
+   * 나오기 전에 사라진다. 마감 판정 자체는 서버 이벤트가 하고, 이 값은
+   * 연출을 얼마나 띄워둘지만 정한다.
+   */
   useEffect(() => {
     if (justClosedId === null) return
-    const timer = window.setTimeout(() => setJustClosedId(null), 2200)
+    const timer = window.setTimeout(() => setJustClosedId(null), 3050)
     return () => window.clearTimeout(timer)
   }, [justClosedId])
 
