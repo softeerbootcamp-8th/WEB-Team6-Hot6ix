@@ -16,14 +16,17 @@ public interface SseApi {
     @Operation(
             summary = "경매방 SSE 구독",
             description = "경매방 입장 시 SSE 커넥션을 맺는다. 구독 즉시 현재 리더보드 데이터를 초기 이벤트로 받고, "
-                    + "이후 입찰·낙찰·참여자 수 변경 등의 이벤트를 실시간으로 수신한다."
+                    + "이후 입찰·낙찰·참여자 수 변경 등의 이벤트를 실시간으로 수신한다.\n\n"
+                    + "인증이 필요 없는 공개 경로라 경매방을 숫자 ID가 아닌 공유 코드로 지목한다. "
+                    + "숫자 PK를 받으면 공유 링크 없이도 남의 방 실시간 이벤트를 순회 구독할 수 있다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "구독 성공, text/event-stream 연결 유지")
+            @ApiResponse(responseCode = "200", description = "구독 성공, text/event-stream 연결 유지"),
+            @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
     })
     SseEmitter subscribe(
             @Parameter(hidden = true) @LoginUserId Long userId,
-            @Parameter(description = "구독할 경매방 ID", required = true)
-            @PathVariable Long roomId,
+            @Parameter(description = "구독할 경매방의 공유 코드", required = true)
+            @PathVariable String shareCode,
             @Parameter(hidden = true) HttpServletResponse response);
 }

@@ -22,6 +22,8 @@ import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.event.payload.ItemAdded;
+import com.hot6ix.upbid.global.event.payload.ItemRemoved;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -56,6 +58,8 @@ public class AuctionItemService {
 
     private final AuctionItemRepository auctionItemRepository;
     private final AuctionRoomRepository auctionRoomRepository;
+    /** 공개 조회는 숫자 PK를 받지 않는다. 공유 코드를 방 ID로 바꾸는 통로가 이것 하나다. */
+    private final AuctionRoomShareService auctionRoomShareService;
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final DomainEventPublisher domainEventPublisher;
@@ -68,14 +72,12 @@ public class AuctionItemService {
      * <p>리더보드는 쿼리 한 번으로 물품 전체를 가져와 ID로 묶는다. 물품마다 따로 조회하면
      * 물품 수만큼 쿼리가 늘어난다. 물품이 없으면 조회 자체를 건너뛴다.
      *
-     * @param auctionRoomId 조회할 경매방의 ID
+     * @param shareCode 조회할 경매방의 공유 코드
      * @return 물품 요약 목록. 물품이 없으면 빈 목록
-     * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
+     * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    public List<AuctionItemSummaryResponseDto> getSummaries(Long auctionRoomId) {
-        if (!auctionRoomRepository.existsByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)) {
-            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
-        }
+    public List<AuctionItemSummaryResponseDto> getSummaries(String shareCode) {
+        Long auctionRoomId = auctionRoomShareService.resolveRoomId(shareCode);
 
         List<AuctionItemSummaryResponseDto> summaries =
                 auctionItemRepository.findSummaries(auctionRoomId);
@@ -94,13 +96,26 @@ public class AuctionItemService {
      *
      * <p>리더보드는 쿼리를 따로 돌려 붙인다. JPQL 생성자 표현식으로는 List 필드를 채울 수 없다.
      *
+     * <p><b>물품이 그 방 소속인지 확인한다.</b> 방만 공유 코드로 가리고 물품을 숫자 ID로 열어
+     * 두면 열거할 수 있는 지점이 물품으로 옮겨갈 뿐이다 — 이 응답의 {@code auctionRoomId}가
+     * 방을 다시 알려주기 때문에 더 그렇다. 남의 방 물품이면 물품이 없을 때와 똑같이 응답해
+     * 그 물품의 존재 자체를 숨긴다.
+     *
+     * @param shareCode     물품이 속한 경매방의 공유 코드
      * @param auctionItemId 조회할 물품의 ID
      * @return 물품 상세. 입찰이 없으면 리더보드는 빈 목록
-     * @throws ApplicationException 물품이 없을 때(AUCTION_ITEM_NOT_FOUND)
+     * @throws ApplicationException 해당 공유 코드의 경매방이 없을 때(AUCTION_ROOM_NOT_FOUND),
+     *                               물품이 없거나 그 방 소속이 아닐 때(AUCTION_ITEM_NOT_FOUND)
      */
-    public AuctionItemDetailResponseDto getDetail(Long auctionItemId) {
+    public AuctionItemDetailResponseDto getDetail(String shareCode, Long auctionItemId) {
+        Long auctionRoomId = auctionRoomShareService.resolveRoomId(shareCode);
+
         AuctionItemDetailResponseDto detail = auctionItemRepository.findDetail(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        if (!auctionRoomId.equals(detail.auctionRoomId())) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
+        }
 
         return detail.withLeaderboard(
                 findLeaderboards(List.of(auctionItemId))
@@ -126,6 +141,9 @@ public class AuctionItemService {
      *
      * <p>한 상품은 한 번에 한 경매방에만 올릴 수 있다. 이미 어딘가에 올라가 있으면 상태와 무관하게
      * 거절하며, 물품을 빼면 행이 사라지므로 그 상품은 다시 올릴 수 있다.
+     *
+     * <p>저장이 커밋되면 {@code ItemAdded}를 발행해 구독자가 목록을 다시 읽게 한다. 이게 없으면
+     * 라이브 중에 추가한 물품이 구매자 화면에 새로고침 전까지 나타나지 않는다.
      *
      * @param userId        추가를 요청한 회원의 ID
      * @param auctionRoomId 물품을 추가할 경매방의 ID
@@ -154,8 +172,11 @@ public class AuctionItemService {
         assertWithinLimit(auctionRoomId, 1);
 
         AuctionItem auctionItem = AuctionItem.from(auctionRoom, product, request);
+        AuctionItem saved = save(auctionItem);
 
-        return AuctionItemDetailResponseDto.from(save(auctionItem));
+        domainEventPublisher.publish(ItemAdded.of(auctionRoomId, LocalDateTime.now(), 1));
+
+        return AuctionItemDetailResponseDto.from(saved);
     }
 
     /**
@@ -166,6 +187,9 @@ public class AuctionItemService {
      *
      * <p>같은 판매자 프로필·경매방을 상품 수만큼 다시 조회하지 않는 것이 이 메서드의 이유다.
      * 상품 조회와 중복 검사도 {@code IN} 절로 한 번에 끝내, 물품이 몇 개든 쿼리 수가 늘지 않는다.
+     *
+     * <p>저장이 커밋되면 {@code ItemAdded}를 <b>한 번만</b> 발행한다. 물품마다 보내면 구독자가
+     * 추가한 수만큼 목록을 다시 읽는다.
      *
      * <p><b>부분 성공이 한 트랜잭션 안에서 성립하는 이유</b>는 거절 판정이 전부 저장 <i>전에</i>
      * 끝나기 때문이다. 거절된 상품은 애초에 INSERT를 시도하지 않으므로 롤백할 것이 없다.
@@ -236,6 +260,9 @@ public class AuctionItemService {
                 .map(AuctionItemDetailResponseDto::from)
                 .toList();
 
+        // 물품마다 보내지 않는다. 구독자가 추가한 수만큼 목록을 다시 읽게 된다.
+        domainEventPublisher.publish(ItemAdded.of(auctionRoomId, LocalDateTime.now(), added.size()));
+
         return new AuctionItemBulkAddResponseDto(added, failed);
     }
 
@@ -245,6 +272,9 @@ public class AuctionItemService {
      * 올릴 수 있게 되고, 상품 목록의 파생 상태도 저절로 "미등록"으로 돌아간다.
      *
      * <p>경매방 상태는 보지 않는다. 시작한 적 없는 물품을 빼는 건 방이 어떤 상태든 안전하다.
+     *
+     * <p>삭제가 커밋되면 {@code ItemRemoved}를 발행해 구독자가 목록을 다시 읽게 한다. 이게
+     * 없으면 구매자 화면에 빠진 물품이 새로고침 전까지 계속 남는다.
      *
      * <p>물품 행에 쓰기 락을 걸고 읽는다. 상태를 검사한 뒤 지우는 흐름이라, 락이 없으면 검사와
      * 삭제 사이에 그 물품이 시작돼 <b>진행 중인 경매가 통째로 사라질</b> 수 있다. 다만 이 배제가
@@ -276,6 +306,8 @@ public class AuctionItemService {
         }
 
         auctionItemRepository.delete(auctionItem);
+
+        domainEventPublisher.publish(ItemRemoved.of(auctionRoomId, auctionItemId, LocalDateTime.now()));
     }
 
     /**

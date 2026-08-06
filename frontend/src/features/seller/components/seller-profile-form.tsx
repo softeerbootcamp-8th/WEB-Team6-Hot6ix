@@ -9,7 +9,6 @@ import {
 } from '@/features/seller/use-image-upload'
 import { formatPhoneNumber } from '@/lib/format'
 import { toast } from '@/lib/toast'
-import { mockAvatarImage } from '@/mocks/images'
 import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
 import type {
   SellerProfileCreateRequestDto,
@@ -233,13 +232,9 @@ export function SellerProfileForm({
         maxWidth={280}
         onFileChange={setImageFile}
         // 등록된 프로필을 고칠 때는 지금 사진이 보여야 한다.
-        // 서버에 사진이 없으면 가게 이름으로 만든 목업 사진을 대신 보여준다.
-        initialUrl={
-          initial
-            ? (initial.storeImageUrl ??
-              mockAvatarImage(initial.storeName ?? '', 560))
-            : undefined
-        }
+        // 올린 사진이 없으면 비운다. 목업 사진을 대신 넣으면 판매자가 올린 적
+        // 없는 사진을 "지금 사진"으로 보게 된다.
+        initialUrl={initial?.storeImageUrl ?? undefined}
       />
 
       {/* 입력 열 — 824 */}

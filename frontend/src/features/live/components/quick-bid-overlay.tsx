@@ -111,7 +111,7 @@ function QuickBidCard({
               setAmount(Number(event.target.value.replace(/\D/g, '')) || 0)
             }
             className={cn(
-              'min-w-0 flex-1 cursor-text bg-transparent text-right text-[20px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
+              'min-w-0 flex-1 cursor-text bg-transparent text-right text-[16px] leading-none font-extrabold tabular-nums caret-brand-500 outline-none',
               error ? 'text-live' : 'text-brand-600',
             )}
           />

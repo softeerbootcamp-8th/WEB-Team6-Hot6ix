@@ -10,7 +10,7 @@
  * OpenAPI spec version: v1
  */
 
-export interface UserMeResponseDto {
+export interface UserResponseDto {
   userId?: number;
   nickname?: string;
   email?: string;

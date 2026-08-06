@@ -22,10 +22,10 @@ import {
 import { getGetListQueryKey } from '@/api/generated/상품/상품'
 import type { AuctionItemAddRequestDto } from '@/api/generated/model'
 import {
-  getGetRoomQueryKey,
+  getGetRoomByShareCodeQueryKey,
   useClose,
   useGetResults,
-  useGetRoom,
+  useGetRoomByShareCode,
 } from '@/api/generated/경매방/경매방'
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { mergeItemDetail, toAuctionItems } from '@/features/live/adapt-item'
@@ -48,6 +48,7 @@ import { ItemDetailPanel } from '@/features/live/components/item-detail-panel'
 import { LiveItemList } from '@/features/live/components/live-item-list'
 import { useListFlip } from '@/features/live/use-list-flip'
 import { ItemPickerModal } from '@/features/seller/components/item-picker-modal'
+import { RoomSettingsModal } from '@/features/live/components/room-settings-modal'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
 import { Button } from '@/components/ui/button'
@@ -77,7 +78,7 @@ import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
  * 왼쪽 물품 목록, 가운데 실시간 이벤트 + 입찰 CTA, 오른쪽 열.
  * 오른쪽 열은 상황에 따라 리더보드 / 빠른 입찰 / 입찰 확인 / 공유로 바뀐다.
  */
-export const Route = createFileRoute('/rooms/$roomId/')({
+export const Route = createFileRoute('/rooms/$shareCode/')({
   component: LiveRoomPage,
 })
 
@@ -102,7 +103,7 @@ const PANEL_LABEL: Record<RightPanel, string> = {
 }
 
 function LiveRoomPage() {
-  const { roomId } = Route.useParams()
+  const { shareCode } = Route.useParams()
   const navigate = useNavigate()
   const user = useCurrentUser()
   const isDesktop = useIsDesktop()
@@ -141,17 +142,17 @@ function LiveRoomPage() {
    */
   const [participantCount, setParticipantCount] = useState<number | null>(null)
 
-  const auctionRoomId = Number(roomId)
-  // `/rooms/abc` 처럼 숫자가 아닌 주소로 들어오면 서버를 부르지 않는다.
-  const validRoomId = Number.isInteger(auctionRoomId)
+  const roomQuery = useGetRoomByShareCode(shareCode)
 
-  const roomQuery = useGetRoom(auctionRoomId, {
-    query: { enabled: validRoomId },
-  })
+  // 로그인 유저가 약관 동의 없이 직접 접근하면 입장 페이지로 보낸다.
+  useEffect(() => {
+    if (!isGuest && roomQuery.data?.data?.agreedToTerms === false) {
+      void navigate({ to: '/join/$shareCode', params: { shareCode } })
+    }
+  }, [isGuest, roomQuery.data, shareCode, navigate])
+
   const queryClient = useQueryClient()
-  const summaries = useGetSummaries(auctionRoomId, {
-    query: { enabled: validRoomId },
-  })
+  const summaries = useGetSummaries(shareCode)
   const serverItems = useMemo(
     () => toAuctionItems(summaries.data?.data ?? [], myNickname),
     [summaries.data, myNickname],
@@ -177,9 +178,17 @@ function LiveRoomPage() {
   )
   const roomClosed = room.status === 'CLOSED'
 
+  /*
+   * 판매자 조작(방 종료·물품 추가/제외·설정 수정)은 여전히 숫자 ID 를 받는다. 인증과 소유
+   * 검증이 있어 열거 위험이 없고, 이번 식별자 교체는 익명으로 열리는 공개 경로만 대상이라서다.
+   * 그래서 이 화면은 URL 의 shareCode 와 응답의 숫자 ID 를 함께 들고 있는다.
+   * 방을 아직 못 읽었으면 0 이지만, 판매자 조작 UI 자체가 방을 읽은 뒤에야 나타난다.
+   */
+  const auctionRoomId = room.id
+
   // 진행 중인 방에서는 결과를 볼 일이 없다. 방이 닫혔을 때만 요청한다.
-  const resultsQuery = useGetResults(auctionRoomId, {
-    query: { enabled: roomClosed && Number.isInteger(auctionRoomId) },
+  const resultsQuery = useGetResults(shareCode, {
+    query: { enabled: roomClosed },
   })
 
   /**
@@ -220,6 +229,13 @@ function LiveRoomPage() {
                 : item,
             ),
           )
+          /*
+           * 첫 물품이 시작되면 방도 BEFORE → OPEN 이 된다. 이 창이 시작을 요청한
+           * 당사자가 아니어도 상태 표시(LIVE 배지)와 설정 잠금이 따라와야 한다.
+           */
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+          })
           break
 
         case 'ItemClosingSoon':
@@ -286,21 +302,17 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'EXTEND',
               itemId: payload.itemId,
-              message: `마감 1분 전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
+              message: `마감 직전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
               subtitle: payload.itemName,
               emphasized: true,
             },
           ])
+          // 서버가 준 마감 시각을 그대로 쓴다. 직접 더하면 이벤트가 두 번 오거나
+          // 유실됐을 때 화면 카운트다운만 서버와 어긋난 채로 남는다.
           setItems((prev) =>
             (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
-                ? {
-                    ...item,
-                    endsAt: new Date(
-                      new Date(item.endsAt).getTime() +
-                        payload.extendSeconds * 1000,
-                    ).toISOString(),
-                  }
+                ? { ...item, endsAt: payload.endedTime }
                 : item,
             ),
           )
@@ -358,10 +370,10 @@ function LiveRoomPage() {
            */
           setItems(null)
           void queryClient.invalidateQueries({
-            queryKey: getGetRoomQueryKey(auctionRoomId),
+            queryKey: getGetRoomByShareCodeQueryKey(shareCode),
           })
           void queryClient.invalidateQueries({
-            queryKey: getGetSummariesQueryKey(auctionRoomId),
+            queryKey: getGetSummariesQueryKey(shareCode),
           })
           break
 
@@ -374,12 +386,40 @@ function LiveRoomPage() {
         case 'ParticipantCount':
           setParticipantCount(payload.participantCount)
           break
+
+        /*
+         * 판매자가 물품을 넣거나 뺐다. 목록만 다시 읽고 이벤트 피드에는 쌓지 않는다
+         * — 편성 변경은 입찰·마감 같은 경매 진행 사건이 아니고, 벌크로 20개를 넣으면
+         * 피드가 그것만으로 가득 찬다.
+         *
+         * 판매자 본인 화면도 `handleAdd`·`handleRemove` 에서 같은 방식으로 목록을
+         * 다시 읽는다. 양쪽이 같은 경로라 이벤트와 응답이 겹쳐도 물품이 두 번
+         * 들어가지 않는다 — `setItems(null)` 이 화면 편성분을 버리고 서버 목록으로
+         * 되돌리기 때문이다.
+         */
+        case 'ItemAdded':
+        case 'ItemRemoved':
+          setItems(null)
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(shareCode),
+          })
+          break
+
+        /*
+         * 판매자가 방 설정을 바꿨다. 제목·소개는 방 정보에서 나오므로 그것만 다시
+         * 읽는다. 이게 없으면 이미 들어와 있던 사람은 새로고침 전까지 옛 이름을 본다.
+         */
+        case 'RoomUpdated':
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+          })
+          break
       }
     },
-    [roomItems, myNickname, auctionRoomId, queryClient],
+    [roomItems, myNickname, shareCode, queryClient],
   )
 
-  const { status } = useRealtimeStatus(roomId, handleSseEvent)
+  const { status } = useRealtimeStatus(shareCode, handleSseEvent)
 
   const disconnectNotifiedRef = useRef(false)
   useEffect(() => {
@@ -469,6 +509,8 @@ function LiveRoomPage() {
   const [startingItemId, setStartingItemId] = useState<number | null>(null)
   /** 판매자가 방 전체를 끝낼 때 한 번 더 확인받는다. */
   const [closingRoom, setClosingRoom] = useState(false)
+  /** 판매자가 방 설정을 고치는 중. 라우트를 옮기지 않아 실시간 연결이 유지된다. */
+  const [editingSettings, setEditingSettings] = useState(false)
   /** 화면 위에 얹어 보여줄 물품 상세 */
   const [detailItemId, setDetailItemId] = useState<number | null>(null)
   const [detailAmount, setDetailAmount] = useState(0)
@@ -492,7 +534,7 @@ function LiveRoomPage() {
    * 그 값으로 덮는다.
    */
   const listItem = roomItems.find((item) => item.id === detailItemId) ?? null
-  const detailQuery = useGetDetail1(detailItemId ?? 0, {
+  const detailQuery = useGetDetail1(shareCode, detailItemId ?? 0, {
     query: { enabled: detailItemId !== null },
   })
   const detailItem = useMemo(() => {
@@ -550,11 +592,11 @@ function LiveRoomPage() {
   const refreshItems = (auctionItemId?: number) => {
     setItems(null)
     void queryClient.invalidateQueries({
-      queryKey: getGetSummariesQueryKey(auctionRoomId),
+      queryKey: getGetSummariesQueryKey(shareCode),
     })
     if (auctionItemId !== undefined) {
       void queryClient.invalidateQueries({
-        queryKey: getGetDetail1QueryKey(auctionItemId),
+        queryKey: getGetDetail1QueryKey(shareCode, auctionItemId),
       })
     }
   }
@@ -589,6 +631,14 @@ function LiveRoomPage() {
         description: `${item.name} · ${minutes}분 진행`,
       })
       refreshItems(item.id)
+      /*
+       * 첫 물품이 시작되면 서버가 방을 BEFORE → OPEN 으로 바꾼다. 방 정보를 다시
+       * 읽지 않으면 화면의 `status` 가 BEFORE 로 남아, 설정 수정 모달이 이미 잠겨야
+       * 할 필드를 계속 열어 둔다.
+       */
+      void queryClient.invalidateQueries({
+        queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+      })
     } catch (error) {
       const { title, description } = toSellerActionErrorMessage(error, 'start')
       toast.error(title, { description })
@@ -614,7 +664,7 @@ function LiveRoomPage() {
       toast.success('경매방을 종료했어요')
       refreshItems()
       void queryClient.invalidateQueries({
-        queryKey: getGetRoomQueryKey(auctionRoomId),
+        queryKey: getGetRoomByShareCodeQueryKey(shareCode),
       })
     } catch (error) {
       const { title, description } = toSellerActionErrorMessage(
@@ -912,13 +962,12 @@ function LiveRoomPage() {
 
   /*
    * 방 정보를 못 받으면 화면을 그릴 수 없다 — 제목도, 판매자 조작을 띄울
-   * 근거(`isOwner`)도 여기서 나온다. 숫자가 아닌 주소(`/rooms/abc`)는 애초에
-   * 부르지 않으므로 같은 자리에서 함께 거른다.
+   * 근거(`isOwner`)도 여기서 나온다. 없는 공유 코드도 404 로 여기에 걸린다.
    */
-  if (!validRoomId || roomQuery.isError) {
+  if (roomQuery.isError) {
     return (
       <RouteError
-        error={roomQuery.error ?? new Error(`잘못된 경매방 주소: ${roomId}`)}
+        error={roomQuery.error}
         reset={() => void roomQuery.refetch()}
       />
     )
@@ -978,6 +1027,24 @@ function LiveRoomPage() {
     />
   )
 
+  /*
+   * 방 설정 수정. 종료 확인과 같은 이유로 한 번 만들어 양쪽 분기에서 쓴다.
+   *
+   * 어댑터(`toAuctionRoomDetail`)가 `liveUrl`·`softCloseTriggerSeconds` 를
+   * 떨구기 때문에 **가공한 `room` 이 아니라 서버 응답을 그대로 넘긴다.**
+   */
+  const roomDto = roomQuery.data?.data
+  const settingsModal = roomDto ? (
+    <RoomSettingsModal
+      open={editingSettings}
+      onClose={() => setEditingSettings(false)}
+      room={roomDto}
+    />
+  ) : null
+
+  /** 판매자에게만 설정 버튼을 띄운다. 실제 권한은 PATCH 가 다시 본다. */
+  const openSettings = isOwner ? () => setEditingSettings(true) : undefined
+
   if (!isDesktop) {
     return (
       <>
@@ -991,6 +1058,7 @@ function LiveRoomPage() {
           liveItems={liveItems}
           rankedItems={rankedItems}
           onShare={() => setPanel('share')}
+          onOpenSettings={openSettings}
           onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
           onBack={() => void navigate({ to: '/rooms' })}
           onOpenItem={openItem}
@@ -1096,7 +1164,7 @@ function LiveRoomPage() {
 
           {panel === 'share' && (
             <SharePanel
-              roomId={room.id}
+              shareCode={shareCode}
               roomTitle={room.title}
               onClose={() => setPanel('leaderboard')}
             />
@@ -1104,6 +1172,7 @@ function LiveRoomPage() {
         </Modal>
 
         {closeRoomDialog}
+        {settingsModal}
 
         {/*
          * 데스크톱과 같은 모달을 쓴다. 트리를 갈라 그리므로 한 번에 한 벌만
@@ -1138,6 +1207,7 @@ function LiveRoomPage() {
         isGuest={isGuest}
         participantCount={participantCount}
         onShare={() => setPanel(panel === 'share' ? 'leaderboard' : 'share')}
+        onOpenSettings={openSettings}
         onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
         overlay={
           detailItem ? (
@@ -1159,7 +1229,7 @@ function LiveRoomPage() {
               <div className="flex min-h-0 flex-1 flex-col">
                 <ItemDetailPanel
                   item={detailItem}
-                  roomId={roomId}
+                  shareCode={shareCode}
                   itemId={String(detailItem.id)}
                   events={roomEvents.filter(
                     (event) => event.itemId === detailItem.id,
@@ -1351,7 +1421,7 @@ function LiveRoomPage() {
         }
         center={
           <>
-            {isGuest && <GuestNotice redirectTo={`/rooms/${roomId}`} />}
+            {isGuest && <GuestNotice redirectTo={`/rooms/${shareCode}`} />}
 
             <EventFeed events={roomEvents} />
 
@@ -1445,7 +1515,7 @@ function LiveRoomPage() {
 
             <RightSlot active={panel === 'share'}>
               <SharePanel
-                roomId={room.id}
+                shareCode={shareCode}
                 roomTitle={room.title}
                 onClose={() => setPanel('leaderboard')}
               />
@@ -1455,6 +1525,7 @@ function LiveRoomPage() {
       />
 
       {closeRoomDialog}
+      {settingsModal}
 
       <ItemManagement
         picking={picking}

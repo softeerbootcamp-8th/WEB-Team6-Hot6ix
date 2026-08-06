@@ -4,7 +4,7 @@ import type {
 } from '@/api/generated/model'
 
 /**
- * `GET /auction-rooms/{roomId}/results` 응답을 화면(`rooms.$roomId.result.tsx`,
+ * `GET /auction-rooms/share/{shareCode}/results` 응답을 화면(`rooms.$shareCode.result.tsx`,
  * `ClosedRoomView`)이 바로 쓸 모양으로 좁힌다. 두 화면이 같은 응답을 쓰므로
  * 변환·집계를 여기 한 곳에 모은다.
  *

@@ -27,11 +27,20 @@ export type SseEventPayload =
       bidPrice: number
       bidderNickname: string
     }
+  /**
+   * 마감 직전 입찰이 들어와 마감이 뒤로 밀렸다.
+   *
+   * `endedTime` 은 **연장이 반영된 마감 시각**이다. `extendSeconds` 를 직접
+   * 더하지 않고 이 값을 그대로 쓴다. 이벤트가 유실되거나 두 번 오면 더하기는
+   * 그만큼 어긋나는데, 절대값은 몇 번을 받아도 같은 시각에 도달한다.
+   * `extendSeconds` 는 이벤트 피드 문구("+30초 연장")에만 쓴다.
+   */
   | {
       kind: 'SoftCloseExtended'
       itemId: number
       itemName: string
       extendSeconds: number
+      endedTime: string
     }
   // 유찰도 이 이벤트로 온다. 입찰이 없었으면 낙찰가·낙찰자가 둘 다 null 이다.
   | {
@@ -54,16 +63,37 @@ export type SseEventPayload =
    * 끊긴 연결을 걷어낸 뒤에 다시 보낸다.
    */
   | { kind: 'ParticipantCount'; participantCount: number }
+  /*
+   * 판매자가 방 편성을 바꿨다 — 물품을 넣었거나 뺐다.
+   *
+   * 둘 다 **목록을 다시 읽으라는 신호**이고 물품 자체를 담지 않는다. 그래서
+   * 이벤트 피드에도 쌓지 않는다(편성 변경은 경매 진행 사건이 아니고, 벌크로
+   * 20개를 넣으면 실제 사건이 묻힌다).
+   *
+   * `addedCount`·`itemId` 는 어떤 변경이었는지 알려줄 뿐, 화면은 이 값으로
+   * 목록을 직접 고치지 않는다.
+   */
+  | { kind: 'ItemAdded'; addedCount: number }
+  | { kind: 'ItemRemoved'; itemId: number }
+  /*
+   * 판매자가 방 설정(이름·소개·라이브 URL·Soft Close)을 바꿨다. 이것도 신호라
+   * payload 가 비어 있고, 화면은 방 정보를 통째로 다시 읽는다.
+   */
+  | { kind: 'RoomUpdated' }
 
 /**
  * 실시간 SSE 연결과 상태.
  *
- * roomId 가 바뀌거나 retry() 를 호출하면 EventSource 를 닫고 다시 연다.
+ * 구독 경로는 인증이 필요 없는 공개 경로라 방을 숫자 ID 가 아닌 공유 코드로 지목한다.
+ * 숫자 ID 를 받던 시절에는 링크를 못 받은 사람도 1, 2, 3... 을 훑어 남의 방 이벤트를
+ * 구독할 수 있었다.
+ *
+ * shareCode 가 바뀌거나 retry() 를 호출하면 EventSource 를 닫고 다시 연다.
  * onEvent 는 매 렌더에서 ref 로 최신값을 유지하므로 바뀌어도 재연결하지 않는다.
  * 언마운트 시 EventSource 를 닫아 구독을 정리한다.
  */
 export function useRealtimeStatus(
-  roomId: string,
+  shareCode: string,
   onEvent: (payload: SseEventPayload) => void,
 ) {
   const [status, setStatus] = useState<RealtimeStatus>('connecting')
@@ -79,7 +109,7 @@ export function useRealtimeStatus(
     setStatus('connecting')
 
     const es = new EventSource(
-      `${API_BASE_URL}/api/v1/auction-rooms/${roomId}/subscribe`,
+      `${API_BASE_URL}/api/v1/auction-rooms/share/${shareCode}/subscribe`,
       { withCredentials: true },
     )
 
@@ -110,13 +140,16 @@ export function useRealtimeStatus(
     es.addEventListener('SOFT_CLOSE_EXTENDED', makeHandler('SoftCloseExtended'))
     es.addEventListener('ITEM_ENDED', makeHandler('ItemEnded'))
     es.addEventListener('ROOM_CLOSED', makeHandler('RoomClosed'))
+    es.addEventListener('ITEM_ADDED', makeHandler('ItemAdded'))
+    es.addEventListener('ITEM_REMOVED', makeHandler('ItemRemoved'))
+    es.addEventListener('ROOM_UPDATED', makeHandler('RoomUpdated'))
     es.addEventListener(
       'PARTICIPANT_COUNT_UPDATED',
       makeHandler('ParticipantCount'),
     )
 
     return () => es.close()
-  }, [roomId, retryKey])
+  }, [shareCode, retryKey])
 
   const retry = useCallback(() => {
     setStatus('reconnecting')

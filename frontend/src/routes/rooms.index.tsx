@@ -5,6 +5,7 @@ import { Search } from 'lucide-react'
 import { AppShell } from '@/components/layout/page-shell'
 import { EmptyState } from '@/components/page-header'
 import { Input } from '@/components/ui/input'
+import { JoinByLinkModal } from '@/features/rooms/components/join-by-link-modal'
 import {
   RoomCard,
   type RoomCardData,
@@ -44,6 +45,7 @@ function MyRoomsPage() {
   // 상태(전체/LIVE/종료)와 직교하는 축이라 탭이 아니라 별도 토글이다.
   // 같은 줄에 4번째 탭으로 넣으면 "내가 만든 방 중 LIVE"를 고를 수 없다.
   const [mineOnly, setMineOnly] = useState(false)
+  const [joiningByLink, setJoiningByLink] = useState(false)
 
   const debouncedKeyword = useDebouncedValue(keyword.trim())
 
@@ -66,6 +68,7 @@ function MyRoomsPage() {
 
   const rooms: RoomCardData[] = listQuery.rooms.map((room) => ({
     id: room.auctionRoomId ?? 0,
+    shareCode: room.shareCode ?? '',
     title: room.name ?? '',
     sellerName: room.storeName ?? '',
     status: CARD_STATUS[room.status ?? 'BEFORE'] ?? 'READY',
@@ -103,13 +106,13 @@ function MyRoomsPage() {
         </div>
 
         <div className="flex w-full gap-2 md:w-auto">
-          <Link
-            to="/join/$shareCode"
-            params={{ shareCode: 'abc123' }}
+          <button
+            type="button"
+            onClick={() => setJoiningByLink(true)}
             className="ease-soft flex h-10 flex-1 items-center justify-center rounded-[10px] border bg-card px-4 text-[13px] font-semibold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95 md:h-9 md:flex-none"
           >
             링크로 참여
-          </Link>
+          </button>
           <Link
             to="/seller/rooms/new"
             className="ease-soft flex h-10 flex-1 items-center justify-center rounded-[10px] bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95 md:h-9 md:flex-none"
@@ -294,6 +297,11 @@ function MyRoomsPage() {
           )}
         </>
       )}
+
+      <JoinByLinkModal
+        open={joiningByLink}
+        onClose={() => setJoiningByLink(false)}
+      />
     </AppShell>
   )
 }

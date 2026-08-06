@@ -20,6 +20,12 @@ import {
   toFailureReason,
 } from '@/features/seller/auction-room-error'
 import { toast } from '@/lib/toast'
+import { ImageUploadField } from '@/features/seller/components/image-upload-field'
+import {
+  ImageUploadError,
+  useImageUpload,
+} from '@/features/seller/use-image-upload'
+import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
 import { NumberField, TextAreaField, TextField } from '@/components/ui/field'
 import { requireMember } from '@/lib/route-guards'
 import { RoutePending } from '@/components/route-states'
@@ -54,6 +60,13 @@ function AuctionRoomNewPage() {
   const [items, setItems] = useState<PickedItem[]>([])
   const [picking, setPicking] = useState(false)
   const [titleError, setTitleError] = useState<string | null>(null)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
+
+  // 방을 만들 때 한 번만 올린다. 물품 추가가 실패해 다시 시도하는 경로에서는
+  // 방이 이미 있어 create 를 건너뛰므로 여기도 안 지나간다.
+  const { uploadImage, uploading } = useImageUpload(
+    PresignedUrlRequestDtoDomain.AUCTION_ROOM_COVER,
+  )
 
   // 방을 만든 뒤 물품 추가가 실패하면 방은 그대로 남는다. 그 번호를 들고 있다가
   // 재시도할 때 재사용한다 — 없으면 다시 누를 때마다 빈 방이 하나씩 쌓인다.
@@ -62,7 +75,9 @@ function AuctionRoomNewPage() {
   const queryClient = useQueryClient()
   const createRoom = useCreate2()
   const addItems = useAddAll()
-  const creating = createRoom.isPending || addItems.isPending
+  // 커버를 S3 에 올리는 동안도 "만드는 중"이다. 빼면 그 사이 버튼이 살아 있어
+  // 두 번 누를 수 있고, 그러면 업로드가 두 번 나간다.
+  const creating = uploading || createRoom.isPending || addItems.isPending
 
   if (profilePending) return <RoutePending />
 
@@ -110,9 +125,30 @@ function AuctionRoomNewPage() {
       // 방이 이미 있으면(= 직전 시도에서 물품만 실패) 다시 만들지 않는다.
       let targetRoomId = roomId
       if (targetRoomId === null) {
+        /*
+         * 커버를 먼저 올리고 그 주소를 방과 함께 보낸다. 올리다 실패하면 방을
+         * 만들지 않고 멈춘다 — 커버 없이 만들어 버리면 판매자는 사진을 올렸다고
+         * 생각하는데 방에는 없는 상태가 된다.
+         */
+        let coverImageUrl: string | undefined
+        if (coverFile) {
+          try {
+            coverImageUrl = await uploadImage(coverFile)
+          } catch (error) {
+            toast.error(
+              error instanceof ImageUploadError
+                ? error.message
+                : '커버 이미지를 올리지 못했어요.',
+              { description: '잠시 뒤에 다시 시도해 주세요.' },
+            )
+            return
+          }
+        }
+
         const created = await createRoom.mutateAsync({
           data: {
             name: title.trim(),
+            coverImageUrl,
             description: intro.trim() || undefined,
             bidIncrement: bidUnit,
             // 화면은 분, 서버는 초로 받는다.
@@ -205,22 +241,17 @@ function AuctionRoomNewPage() {
             </div>
 
             <div className="mt-6 grid gap-6 sm:grid-cols-[240px_minmax(0,1fr)]">
-              <div>
-                <span className="block text-[14px] font-bold text-foreground">
-                  대표 이미지
-                </span>
-                {/*
-                  이미지 업로드 수단이 아직 없어 서버로 보내지 않는다(별도 작업).
-                  누를 수 있게 두면 눌러도 아무 일이 없어서 고장으로 보인다.
-                */}
-                <div className="mt-2.5 flex h-[184px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed bg-surface-subtle text-neutral-muted">
-                  <ImagePlus aria-hidden className="size-6" />
-                  <span className="text-[14px] font-bold">준비 중이에요</span>
-                  <span className="text-[12px] font-medium">
-                    커버 이미지는 곧 추가할 수 있어요
-                  </span>
-                </div>
-              </div>
+              {/*
+                지우기는 넘기지 않는다(`onRemove` 없음). 방 수정 요청은 값이 없으면
+                기존 값을 유지해서 "커버를 없앰"을 표현할 방법이 없다. 삭제 버튼만
+                띄우면 눌러도 안 지워진다.
+              */}
+              <ImageUploadField
+                label="대표 이미지"
+                uploadText="커버 이미지 등록"
+                maxWidth={240}
+                onFileChange={setCoverFile}
+              />
 
               <div>
                 <TextAreaField

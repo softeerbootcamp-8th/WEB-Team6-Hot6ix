@@ -20,6 +20,14 @@ public interface AuctionRoomRepository extends JpaRepository<AuctionRoom, Long> 
 
     Optional<AuctionRoom> findByShareCodeAndDeletedAtIsNull(String shareCode);
 
+    /**
+     * 공유 코드로 내부 식별자만 읽는다. 공개 경로가 방을 지목하는 유일한 통로라 호출이 잦은데,
+     * 물품 목록·SSE 구독은 방 자체가 아니라 ID만 있으면 되므로 엔티티를 통째로 싣지 않는다.
+     */
+    @Query("select ar.auctionRoomId from AuctionRoom ar "
+            + "where ar.shareCode = :shareCode and ar.deletedAt is null")
+    Optional<Long> findIdByShareCode(@Param("shareCode") String shareCode);
+
     Optional<AuctionRoom> findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
             Long auctionRoomId, Long sellerProfileId);
 
@@ -27,6 +35,10 @@ public interface AuctionRoomRepository extends JpaRepository<AuctionRoom, Long> 
 
     boolean existsByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
             Long auctionRoomId, Long sellerProfileId);
+
+    /** 판매자 프로필 삭제를 막을지 판정하는 데 쓴다({@code SellerProfileService.delete}). */
+    boolean existsBySellerProfile_SellerProfileIdAndStatusAndDeletedAtIsNull(
+            Long sellerProfileId, AuctionRoomStatus status);
 
     /**
      * 경매방 행에 쓰기 락을 걸고 조회한다. 이름은 짧지만 <b>soft delete된 방은 걸러진다</b>.
@@ -81,7 +93,7 @@ public interface AuctionRoomRepository extends JpaRepository<AuctionRoom, Long> 
      * {@code RoomSseManager}가 알고 있어 Service가 뒤에 채운다.
      */
     @Query("select new com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto("
-            + "  ar.auctionRoomId, ar.name, ar.coverImageUrl, ar.status, "
+            + "  ar.auctionRoomId, ar.shareCode, ar.name, ar.coverImageUrl, ar.status, "
             + "  case when ar.sellerProfile.user.userId = :userId then 'SELLER' else 'BUYER' end, "
             + "  ar.sellerProfile.storeName, ar.createdAt, ar.closedAt, count(ai)) "
             + "from AuctionRoom ar "
@@ -95,7 +107,7 @@ public interface AuctionRoomRepository extends JpaRepository<AuctionRoom, Long> 
             + "       or (:role = 'SELLER' and ar.sellerProfile.user.userId = :userId) "
             + "       or (:role = 'BUYER' and ar.sellerProfile.user.userId <> :userId)) "
             + "  and (:cursor is null or ar.auctionRoomId < :cursor) "
-            + "group by ar.auctionRoomId, ar.name, ar.coverImageUrl, ar.status, "
+            + "group by ar.auctionRoomId, ar.shareCode, ar.name, ar.coverImageUrl, ar.status, "
             + "         ar.sellerProfile.user.userId, ar.sellerProfile.storeName, "
             + "         ar.createdAt, ar.closedAt "
             + "order by ar.auctionRoomId desc")

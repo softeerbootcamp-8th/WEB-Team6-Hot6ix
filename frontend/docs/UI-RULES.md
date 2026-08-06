@@ -70,7 +70,7 @@
 라우트를 옮기면 경매방이 언마운트되면서 실시간 연결·타이머·쌓아둔 이벤트가
 끊깁니다. 데스크톱은 `LiveShell` 의 `overlay` 슬롯(가운데+오른쪽 열만 덮음),
 모바일은 `fixed inset-0` 층으로 띄웁니다.
-`/rooms/$roomId/items/$itemId` 라우트는 링크로 바로 들어오는 경우를 위해
+`/rooms/$shareCode/items/$itemId` 라우트는 링크로 바로 들어오는 경우를 위해
 남겨둔 것이고, 같은 `ItemDetailPanel` 을 씁니다.
 
 ### 모바일 화면에는 스크롤 여유가 있다

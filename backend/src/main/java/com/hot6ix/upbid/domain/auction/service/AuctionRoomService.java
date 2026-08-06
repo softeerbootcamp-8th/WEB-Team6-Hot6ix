@@ -14,16 +14,21 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection;
+import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.event.payload.RoomUpdated;
+import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
 import com.hot6ix.upbid.global.response.CursorPageResponse;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -42,6 +47,7 @@ public class AuctionRoomService {
 
     private final AuctionRoomRepository auctionRoomRepository;
     private final AuctionItemRepository auctionItemRepository;
+    private final AuctionParticipantRepository auctionParticipantRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final AuctionRoomShareService auctionRoomShareService;
     private final RoomSseManager roomSseManager;
@@ -50,10 +56,13 @@ public class AuctionRoomService {
      * 낙찰 후보에 있어 한쪽은 반드시 경계를 넘어야 한다. 읽기만 하고 상태를 바꾸지 않는다.
      */
     private final DealCandidateRepository dealCandidateRepository;
+    private final DomainEventPublisher domainEventPublisher;
+    /** 커버 주소는 클라이언트가 문자열로 보낸다. 우리 버킷에서 온 것인지 본다. */
+    private final ImageUrlValidator imageUrlValidator;
 
     /**
-     * 판매자의 경매방을 생성한다. share_code는 서버가 내부적으로 발급하며(충돌 시 재시도),
-     * 이를 노출하는 API는 이 서비스가 아닌 별도 PR 소관이다.
+     * 판매자의 경매방을 생성한다. share_code는 서버가 발급해(충돌 시 재시도) 응답에 담는다 —
+     * 공개 화면이 이 방을 지목하는 유일한 식별자다.
      * <p>이 메서드 자체는 트랜잭션으로 감싸지 않는다({@code NOT_SUPPORTED}) — {@link #saveWithUniqueShareCode}가
      * 시도마다 {@code saveAndFlush()}를 호출하는데, 감싸는 트랜잭션이 있으면 모든 시도가 같은
      * Hibernate 세션을 공유하게 되고, 첫 충돌 이후에는 세션이 오염돼 재시도가 항상 깨진다
@@ -69,39 +78,26 @@ public class AuctionRoomService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AuctionRoomPublicResponseDto create(Long userId, AuctionRoomCreateRequestDto request) {
 
+        imageUrlValidator.validate(request.coverImageUrl());
+
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = saveWithUniqueShareCode(sellerProfile, request);
 
         // 물품 추가는 이미 만들어진 방에만 할 수 있어서, 생성 직후엔 itemCount가 항상 0이다
         // — 조회 없이 바로 0을 넣는다.
-        return AuctionRoomPublicResponseDto.from(auctionRoom, 0L, true);
+        return AuctionRoomPublicResponseDto.from(auctionRoom, 0L, true, null);
     }
 
     /**
-     * 경매방 공개 정보를 조회한다. 인증이 필요 없으며, BEFORE를 포함한 모든 상태에서
+     * 공유 코드로 경매방 공개 정보를 조회한다. 인증이 필요 없으며, BEFORE를 포함한 모든 상태에서
      * 동일하게 노출한다(상태별 분기 없음).
+     *
+     * <p>숫자 PK로 들어오는 문은 두지 않는다. auto_increment PK를 공개 URL에 노출하면
+     * {@code 1, 2, 3...}을 순서대로 불러 공유 링크 없이 남의 방을 전부 훑을 수 있다.
+     * 공유 코드는 16자 랜덤이라 추측으로 도달할 수 없다.
      *
      * <p>{@code isOwner}만 보는 사람에 따라 달라진다. 화면이 판매자 조작 UI를 띄울지 정하는 값이고,
      * 실제 권한은 조작 API가 다시 검증한다.
-     *
-     * @param auctionRoomId 조회할 경매방의 ID
-     * @param viewerUserId  조회한 회원의 ID. 로그인하지 않았으면 null
-     * @return 조회된 경매방
-     * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
-     */
-    public AuctionRoomPublicResponseDto getRoom(Long auctionRoomId, Long viewerUserId) {
-
-        AuctionRoom auctionRoom = auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
-
-        return AuctionRoomPublicResponseDto.from(
-                auctionRoom, countItems(auctionRoomId), isOwnedBy(auctionRoom, viewerUserId));
-    }
-
-    /**
-     * 공유 코드로 경매방 공개 정보를 조회한다. 공유 링크를 받은 사람이 방에 진입할 때 쓰며,
-     * {@link #getRoom(Long, Long)}과 응답이 동일하다. roomId 대신 share_code로 진입점을 두는 이유는
-     * 순차 증가하는 숫자 PK를 공개 URL에 노출하면 남의 방을 추측해 순회 조회할 수 있기 때문이다.
      *
      * @param shareCode    조회할 경매방의 공유 코드
      * @param viewerUserId 조회한 회원의 ID. 로그인하지 않았으면 null
@@ -110,13 +106,18 @@ public class AuctionRoomService {
      */
     public AuctionRoomPublicResponseDto getRoomByShareCode(String shareCode, Long viewerUserId) {
 
-        AuctionRoom auctionRoom = auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(shareCode)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+        AuctionRoom auctionRoom = findRoomByShareCode(shareCode);
+        Long roomId = auctionRoom.getAuctionRoomId();
+
+        Boolean agreedToTerms = viewerUserId == null ? null
+                : auctionParticipantRepository
+                        .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(roomId, viewerUserId);
 
         return AuctionRoomPublicResponseDto.from(
                 auctionRoom,
-                countItems(auctionRoom.getAuctionRoomId()),
-                isOwnedBy(auctionRoom, viewerUserId));
+                countItems(roomId),
+                isOwnedBy(auctionRoom, viewerUserId),
+                agreedToTerms);
     }
 
     /**
@@ -187,14 +188,14 @@ public class AuctionRoomService {
      * <p>쿼리는 두 번이다 — 물품과 낙찰자를 한 번, 요청자의 순위를 한 번. 물품마다 후보를
      * 조회하면 물품 수만큼 쿼리가 나간다.
      *
-     * @param auctionRoomId 조회할 경매방의 ID
-     * @param userId        요청자의 회원 ID. 비로그인이면 {@code null}
-     * @throws ApplicationException 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
+     * @param shareCode 조회할 경매방의 공유 코드
+     * @param userId    요청자의 회원 ID. 비로그인이면 {@code null}
+     * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    public AuctionRoomResultResponseDto getResults(Long auctionRoomId, Long userId) {
+    public AuctionRoomResultResponseDto getResults(String shareCode, Long userId) {
 
-        AuctionRoom auctionRoom = auctionRoomRepository.findByAuctionRoomIdAndDeletedAtIsNull(auctionRoomId)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+        AuctionRoom auctionRoom = findRoomByShareCode(shareCode);
+        Long auctionRoomId = auctionRoom.getAuctionRoomId();
 
         Map<Long, MyCandidateRankProjection> myRanks = findMyRanks(auctionRoomId, userId);
 
@@ -237,8 +238,18 @@ public class AuctionRoomService {
 
     /**
      * 소유자 본인의 경매방 설정을 부분 수정한다. 요청에서 생략된(null) 필드는 기존 값을 유지한다.
-     * 이 방의 물품 중 하나라도 READY가 아닌 상태로 경매에 올라간 적이 있으면(=경매가 시작된
-     * 적 있으면) 이후로도 계속 수정할 수 없다.
+     *
+     * <p>수정 가능 범위는 <b>무엇을 바꾸려 하는지</b>에 따라 다르다.
+     * <ul>
+     *   <li>이름과 방송 링크만 바꾸는 요청은 경매가 진행 중이어도 통과한다. 둘 다 방송을 켠
+     *       뒤에야 잘못이 드러나는 값이라, 그때 못 고치면 고칠 방법이 아예 없다 — 이름은
+     *       오타, 방송 링크는 "안 열려요"라는 말을 듣고서야 안다</li>
+     *   <li>그 밖의 필드(커버 이미지·소개·Soft Close 설정)를 하나라도 건드리면, 이 방의 물품
+     *       중 하나라도 READY가 아닌 상태로 경매에 올라간 적이 있는 순간부터 거절된다.
+     *       참여자가 이미 보고 입찰을 판단한 조건이라 진행 중에 바뀌면 안 된다</li>
+     *   <li>종료된 방은 이름조차 바꿀 수 없다 — 참여자에게는 결과 기록이라, 나중에 제목이
+     *       바뀌면 자기가 참여했던 방을 알아볼 수 없게 된다</li>
+     * </ul>
      *
      * @param userId        수정을 요청한 회원의 ID
      * @param auctionRoomId 수정할 경매방의 ID
@@ -246,19 +257,34 @@ public class AuctionRoomService {
      * @return 수정된 경매방
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
      *                               경매방이 없거나 본인 소유가 아닐 때(AUCTION_ROOM_NOT_FOUND),
-     *                               경매가 시작된 적 있을 때(AUCTION_ROOM_ALREADY_STARTED)
+     *                               경매방이 종료됐을 때(AUCTION_ROOM_CLOSED),
+     *                               이름·방송 링크 밖의 필드를 경매가 시작된 뒤에 바꾸려 할 때
+     *                               (AUCTION_ROOM_ALREADY_STARTED)
      */
     @Transactional
     public AuctionRoomPublicResponseDto update(Long userId, Long auctionRoomId, AuctionRoomUpdateRequestDto request) {
 
+        // 등록만 막으면 검증이 없는 것과 같다. 수정으로도 URL이 통째로 들어온다.
+        imageUrlValidator.validate(request.coverImageUrl());
+
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
-        assertNotStarted(auctionRoomId);
+
+        assertNotClosed(auctionRoom);
+        if (request.touchesStartLockedFields()) {
+            assertNotStarted(auctionRoomId);
+        }
 
         auctionRoom.update(request);
 
+        /*
+         * 이미 방에 들어와 있는 사람들에게 방 정보를 다시 읽으라고 알린다. 이게 없으면
+         * 고친 본인 화면만 바뀌고 구매자 화면은 새로고침 전까지 옛 이름을 계속 보여준다.
+         */
+        domainEventPublisher.publish(RoomUpdated.of(auctionRoomId, LocalDateTime.now()));
+
         // findOwnedRoom을 통과했으므로 요청자가 곧 소유자다.
-        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId), true);
+        return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId), true, null);
     }
 
     /**
@@ -272,11 +298,22 @@ public class AuctionRoomService {
                 && viewerUserId.equals(auctionRoom.getSellerProfile().getUser().getUserId());
     }
 
+    private AuctionRoom findRoomByShareCode(String shareCode) {
+        return auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(shareCode)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+    }
+
     private AuctionRoom findOwnedRoom(SellerProfile sellerProfile, Long auctionRoomId) {
         return auctionRoomRepository
                 .findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
                         auctionRoomId, sellerProfile.getSellerProfileId())
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+    }
+
+    private void assertNotClosed(AuctionRoom auctionRoom) {
+        if (auctionRoom.getStatus() == AuctionRoomStatus.CLOSED) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED);
+        }
     }
 
     private void assertNotStarted(Long auctionRoomId) {

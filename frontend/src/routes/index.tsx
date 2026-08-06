@@ -38,19 +38,27 @@ const VALUE_POINTS = [
 ] as const
 
 function LandingPage() {
+  const { redirect: redirectTo } = Route.useSearch()
+
   /**
    * 카카오 OAuth 인증 페이지로 이동한다.
    * 백엔드 콜백(`/api/v1/oauth/kakao/callback`)이 code 를 받아 로그인을 처리하고
-   * 프론트 홈 화면으로 리다이렉트한다.
+   * 프론트로 리다이렉트한다.
+   *
+   * redirect 파라미터가 있으면 OAuth state 에 담아 보낸다. 카카오가 콜백 때
+   * state 를 그대로 돌려주면 백엔드가 이를 파싱해 로그인 후 해당 경로로 이동시킨다.
    */
   const handleKakaoLogin = () => {
-    const url = `https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=${KAKAO_CLIENT_ID}&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}`
+    const state = redirectTo ? `&state=${encodeURIComponent(redirectTo)}` : ''
+    const url = `https://kauth.kakao.com/oauth/authorize?response_type=code&client_id=${KAKAO_CLIENT_ID}&redirect_uri=${encodeURIComponent(KAKAO_REDIRECT_URI)}${state}`
     location.href = url
   }
 
   return (
     <GuestShell
-      state="로그인"
+      // 우측 상단 pill 을 안 그린다. 로그인 화면에서 "로그인"이라고 적힌 pill 이
+      // 누를 수 있는 버튼처럼 보였다. 실제 로그인은 아래 카카오 버튼 하나뿐이다.
+      // `requireMember` 가 돌려보내는 redirect 화면도 이 컴포넌트다.
       // 상단바(64)를 뺀 높이를 채우고, 그 안에서 카드를 세로 가운데로 모은다.
       className="flex min-h-[calc(100svh-4rem)] max-w-[1216px] flex-col justify-center px-5 py-6 md:px-8 md:py-10"
     >

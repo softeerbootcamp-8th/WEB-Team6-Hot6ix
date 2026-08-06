@@ -21,6 +21,8 @@ export type DealItemStatus = DealSummaryResponseDtoStatus
 export interface Deal {
   auctionItemId: number
   auctionRoomId: number | null
+  /** 물품 상세를 부를 때 방을 지목하는 공개 식별자. 숫자 ID 로는 못 부른다. */
+  shareCode: string | null
   auctionRoomName: string
   productName: string
   role: DealRole
@@ -53,6 +55,7 @@ export function toDeals(dtos: DealSummaryResponseDto[] | undefined): Deal[] {
       {
         auctionItemId: dto.auctionItemId,
         auctionRoomId: dto.auctionRoomId ?? null,
+        shareCode: dto.shareCode ?? null,
         auctionRoomName: dto.auctionRoomName ?? '',
         productName: dto.productName ?? '이름 없는 물품',
         role: dto.role,

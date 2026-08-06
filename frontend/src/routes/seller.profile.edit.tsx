@@ -1,7 +1,10 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
+import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState, PageHeader } from '@/components/page-header'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { SellerProfileForm } from '@/features/seller/components/seller-profile-form'
@@ -11,6 +14,7 @@ import { toast } from '@/lib/toast'
 import { useMySellerProfile } from '@/features/seller/use-my-seller-profile'
 import {
   getGetMyProfileQueryKey,
+  useDelete,
   useUpdate,
 } from '@/api/generated/판매자-프로필/판매자-프로필'
 
@@ -92,6 +96,77 @@ function SellerProfileEditPage() {
           }}
         />
       </div>
+
+      <DeleteProfileSection />
     </AppShell>
+  )
+}
+
+/**
+ * 판매자 프로필 삭제 (이슈 #141).
+ *
+ * 판매자 홈이 아니라 수정 화면 아래에만 둔다 — 홈은 매번 지나는 자리라 실수로 누르기 쉽다.
+ *
+ * 삭제한 뒤 따로 "미등록" 분기를 만들지 않는다. `useMySellerProfile()` 이 404 를 이미
+ * "아직 등록하지 않았다" 로 갈라 주므로, 쿼리를 무효화하고 `/seller` 로 보내면 미등록
+ * 화면이 저절로 나온다.
+ *
+ * 진행 중인 경매방이 있으면 서버가 409(3003)로 거절한다. 그 상태를 화면에서 미리 알 수
+ * 없어(방 목록을 여기서 받지 않는다) 버튼을 잠그지 않고 응답으로 안내한다.
+ */
+function DeleteProfileSection() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
+  const deleteProfile = useDelete()
+
+  return (
+    <section className="mt-8 rounded-[20px] border border-live/40 bg-card p-6">
+      <h2 className="text-[15px] font-bold text-foreground">
+        판매자 프로필 삭제
+      </h2>
+      <p className="mt-2 text-[13px] leading-[1.6] font-medium text-neutral-tertiary">
+        삭제하면 구매자에게 가게 정보가 보이지 않아요. 등록한 상품과 경매방은
+        남아 있고, 다시 등록하면 그대로 돌아와요.
+      </p>
+
+      <Button
+        type="button"
+        variant="dangerOutline"
+        className="mt-4 h-11 w-full rounded-xl text-[13px] font-bold md:w-[148px]"
+        onClick={() => setConfirming(true)}
+      >
+        프로필 삭제
+      </Button>
+
+      <ConfirmDialog
+        open={confirming}
+        title="판매자 프로필을 삭제할까요?"
+        description="구매자에게 가게 이름·연락처가 더 이상 보이지 않아요. 진행 중인 경매방이 있으면 삭제할 수 없어요."
+        confirmLabel="삭제"
+        tone="danger"
+        pending={deleteProfile.isPending}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          deleteProfile.mutate(undefined, {
+            // 서버가 지운 뒤에만 성공으로 알린다.
+            onSuccess: () => {
+              void queryClient.invalidateQueries({
+                queryKey: getGetMyProfileQueryKey(),
+              })
+              setConfirming(false)
+              toast.success('판매자 프로필을 삭제했어요')
+              void navigate({ to: '/seller' })
+            },
+            onError: (mutationError) => {
+              const { title, description } =
+                toProfileErrorMessage(mutationError)
+              setConfirming(false)
+              toast.error(title, { description })
+            },
+          })
+        }}
+      />
+    </section>
   )
 }

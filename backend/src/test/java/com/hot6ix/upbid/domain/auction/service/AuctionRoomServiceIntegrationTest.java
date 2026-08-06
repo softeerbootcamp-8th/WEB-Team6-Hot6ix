@@ -13,8 +13,10 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.config.JpaConfig;
+import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -60,6 +62,16 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
     @MockitoBean
     private RoomSseManager roomSseManager;
 
+    // 이벤트 발행 빈도 슬라이스에 없다. 이 테스트가 보는 건 share_code 재시도라
+    // 발행 내용은 검증하지 않고, 컨텍스트만 뜨게 목으로 채운다.
+    @MockitoBean
+    private DomainEventPublisher domainEventPublisher;
+
+    // 커버 주소 검증도 슬라이스 밖이다. 실제 빈은 AwsProperties를 받는데 그것도 안 올라온다.
+    // 검증 내용은 ImageUrlValidatorTest에서 본다.
+    @MockitoBean
+    private ImageUrlValidator imageUrlValidator;
+
     private SellerProfile newSellerProfile() {
         User user = userRepository.saveAndFlush(User.builder()
                 .email("regression-" + System.nanoTime() + "@hot6ix.com")
@@ -85,7 +97,7 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
                 .sellerProfile(sellerProfile)
                 .name("이미 있는 방")
                 .shareCode("REGRESSIONDUPLICATE")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
         auctionRoomRepository.saveAndFlush(existing);
@@ -97,7 +109,7 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
                 .bidIncrement(1_000L)
                 .name("회귀 테스트 경매방")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 

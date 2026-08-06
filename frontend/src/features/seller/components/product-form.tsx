@@ -9,7 +9,6 @@ import {
 } from '@/features/seller/use-image-upload'
 import { cn } from '@/lib/utils'
 import { toast } from '@/lib/toast'
-import { mockProductImage } from '@/mocks/images'
 import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
 import type {
   ProductCreateRequestDto,
@@ -199,12 +198,9 @@ export function ProductForm({
         maxWidth={360}
         onFileChange={setImageFile}
         // 등록된 상품을 고칠 때는 지금 사진이 보여야 한다.
-        // 서버에 사진이 없으면 상품 이름으로 만든 목업 사진을 대신 보여준다.
-        initialUrl={
-          initial
-            ? (initial.imageUrl ?? mockProductImage(initial.name ?? '', 720))
-            : undefined
-        }
+        // 올린 사진이 없으면 비운다. 목업 사진을 대신 넣으면 판매자가 올린 적
+        // 없는 사진을 "지금 사진"으로 보게 된다.
+        initialUrl={initial?.imageUrl ?? undefined}
       />
 
       <div className="flex flex-col">

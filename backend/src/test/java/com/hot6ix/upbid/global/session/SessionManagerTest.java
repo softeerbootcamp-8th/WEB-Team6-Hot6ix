@@ -3,19 +3,34 @@ package com.hot6ix.upbid.global.session;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+import java.time.Duration;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class SessionManagerTest {
 
     private static final Long USER_ID = 1L;
 
+    private static final Duration LOGIN_TIMEOUT = Duration.ofHours(2);
+
+    private static final String COOKIE_NAME = "SESSION";
+
     private final SessionManager sessionManager = new SessionManager();
     private final MockHttpServletRequest request = new MockHttpServletRequest();
+    private final MockHttpServletResponse response = new MockHttpServletResponse();
+
+    @BeforeEach
+    void 세션_설정을_주입한다() {
+        ReflectionTestUtils.setField(sessionManager, "loginTimeout", LOGIN_TIMEOUT);
+        ReflectionTestUtils.setField(sessionManager, "cookieName", COOKIE_NAME);
+    }
 
     @Nested
     @DisplayName("create")
@@ -29,6 +44,18 @@ class SessionManagerTest {
 
             assertThat(request.getSession(false)).isNotNull();
             assertThat(request.getSession(false).getAttribute(SessionKeys.USER_ID)).isEqualTo(USER_ID);
+        }
+
+        @Test
+        @DisplayName("온보딩 중 짧게 조정된 세션 수명을 로그인용으로 되돌린다")
+        void restoresLoginTimeout() {
+
+            request.getSession(true).setMaxInactiveInterval(600);
+
+            sessionManager.create(request, USER_ID);
+
+            assertThat(request.getSession(false).getMaxInactiveInterval())
+                    .isEqualTo((int) LOGIN_TIMEOUT.toSeconds());
         }
 
         @Test
@@ -104,7 +131,7 @@ class SessionManagerTest {
             MockHttpSession session = (MockHttpSession) request.getSession(true);
             session.setAttribute(SessionKeys.USER_ID, USER_ID);
 
-            sessionManager.invalidate(request);
+            sessionManager.invalidate(request, response);
 
             assertThat(session.isInvalid()).isTrue();
         }
@@ -115,7 +142,7 @@ class SessionManagerTest {
 
             request.getSession(true).setAttribute(SessionKeys.USER_ID, USER_ID);
 
-            sessionManager.invalidate(request);
+            sessionManager.invalidate(request, response);
 
             assertThat(sessionManager.findUserId(request)).isEmpty();
         }
@@ -124,7 +151,7 @@ class SessionManagerTest {
         @DisplayName("세션이 없어도 예외 없이 통과한다")
         void doesNothingWhenNoSession() {
 
-            assertThatCode(() -> sessionManager.invalidate(request)).doesNotThrowAnyException();
+            assertThatCode(() -> sessionManager.invalidate(request, response)).doesNotThrowAnyException();
             assertThat(request.getSession(false)).isNull();
         }
 
@@ -134,9 +161,33 @@ class SessionManagerTest {
 
             request.getSession(true).setAttribute(SessionKeys.USER_ID, USER_ID);
 
-            sessionManager.invalidate(request);
+            sessionManager.invalidate(request, response);
 
-            assertThatCode(() -> sessionManager.invalidate(request)).doesNotThrowAnyException();
+            assertThatCode(() -> sessionManager.invalidate(request, response)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("세션 쿠키를 즉시 만료시키는 Set-Cookie 헤더를 내려준다")
+        void expiresSessionCookie() {
+
+            request.getSession(true).setAttribute(SessionKeys.USER_ID, USER_ID);
+
+            sessionManager.invalidate(request, response);
+
+            String setCookie = response.getHeader("Set-Cookie");
+            assertThat(setCookie).contains(COOKIE_NAME + "=");
+            assertThat(setCookie).containsIgnoringCase("Max-Age=0");
+        }
+
+        @Test
+        @DisplayName("세션이 없어도 세션 쿠키를 만료시키는 Set-Cookie 헤더를 내려준다")
+        void expiresSessionCookieEvenWithoutSession() {
+
+            sessionManager.invalidate(request, response);
+
+            String setCookie = response.getHeader("Set-Cookie");
+            assertThat(setCookie).contains(COOKIE_NAME + "=");
+            assertThat(setCookie).containsIgnoringCase("Max-Age=0");
         }
     }
 }

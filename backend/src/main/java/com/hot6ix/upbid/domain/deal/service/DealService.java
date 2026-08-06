@@ -149,6 +149,7 @@ public class DealService {
         return new DealSummaryResponseDto(
                 deal.getAuctionItemId(),
                 deal.getAuctionRoomId(),
+                deal.getShareCode(),
                 deal.getProductId(),
                 deal.getProductName(),
                 deal.getAuctionRoomName(),

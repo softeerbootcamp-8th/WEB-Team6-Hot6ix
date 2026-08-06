@@ -108,14 +108,19 @@ export function AppShell({
   )
 }
 
-/** 비로그인으로 볼 수 있는 화면(랜딩·링크 입장·약관)의 골격. */
+/**
+ * 비로그인으로 볼 수 있는 화면(랜딩·링크 입장·약관)의 골격.
+ *
+ * `state` 는 우측 상단 pill 문구다. **주지 않으면 pill 자체를 안 그린다** — 로그인
+ * 화면처럼 누를 게 없는 자리에 버튼처럼 보이는 걸 두지 않으려는 것이다.
+ */
 export function GuestShell({
   children,
   title,
   back,
   fullWidth,
   className,
-  state = '비로그인',
+  state,
 }: ShellProps & { state?: string }) {
   return (
     <div className="min-h-svh bg-background">

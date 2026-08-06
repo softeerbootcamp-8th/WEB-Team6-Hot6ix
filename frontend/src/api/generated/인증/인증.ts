@@ -32,6 +32,69 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
+ * 카카오 인증과 전화번호 인증을 마친 가입 대기 상태를 정식 회원으로 저장하고 로그인 세션을 발급한다. 
+ * @summary 회원가입
+ */
+export const signup = (
+    
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseVoid>(
+      {url: `/api/v1/auth/signup`, method: 'POST', signal
+    },
+      options);
+    }
+  
+
+
+export const getSignupMutationOptions = <TError = ErrorType<CommonResponseVoid>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof signup>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof signup>>, TError,void, TContext> => {
+
+const mutationKey = ['signup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof signup>>, void> = () => {
+          
+
+          return  signup(requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SignupMutationResult = NonNullable<Awaited<ReturnType<typeof signup>>>
+    
+    export type SignupMutationError = ErrorType<CommonResponseVoid>
+
+    /**
+ * @summary 회원가입
+ */
+export const useSignup = <TError = ErrorType<CommonResponseVoid>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof signup>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof signup>>,
+        TError,
+        void,
+        TContext
+      > => {
+
+      const mutationOptions = getSignupMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
  * 현재 세션을 무효화한다. 세션 쿠키(SESSION)도 함께 만료되므로 이후 요청은 인증되지 않은 요청으로 처리된다. 세션이 이미 없거나 만료된 상태로 호출해도 성공으로 응답한다(멱등) — 로그아웃의 목적이 이미 달성된 상태이며, 만료된 세션으로 로그아웃을 시도하는 것이 정상적인 흐름이기 때문이다.
  * @summary 로그아웃
  */

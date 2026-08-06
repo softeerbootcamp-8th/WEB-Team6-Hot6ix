@@ -17,4 +17,6 @@ export type PresignedUrlRequestDtoDomain = typeof PresignedUrlRequestDtoDomain[k
 export const PresignedUrlRequestDtoDomain = {
   SELLER_PROFILE: 'SELLER_PROFILE',
   PRODUCT: 'PRODUCT',
+  USER_PROFILE: 'USER_PROFILE',
+  AUCTION_ROOM_COVER: 'AUCTION_ROOM_COVER',
 } as const;

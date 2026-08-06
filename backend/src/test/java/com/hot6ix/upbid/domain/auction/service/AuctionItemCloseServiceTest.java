@@ -18,6 +18,7 @@ import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -117,6 +118,50 @@ class AuctionItemCloseServiceTest {
         verify(domainEventPublisher, never()).publish(any());
     }
 
+    @Test
+    @DisplayName("마감 시각이 아직 남았으면 닫지 않고 그 시각을 돌려준다")
+    void deferWhenNotDueYet() {
+
+        LocalDateTime endAt = LocalDateTime.now().plusSeconds(30);
+        AuctionItem auctionItem = givenLockedItem(AuctionItemStatus.IN_PROGRESS, endAt);
+
+        Optional<LocalDateTime> rescheduleAt = auctionItemCloseService.closeIfDue(ITEM_ID);
+
+        assertThat(rescheduleAt)
+                .as("락을 기다리는 사이 Soft Close 연장이 커밋된 경우다. 여기서 닫으면 연장이 무시된다")
+                .contains(endAt);
+        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
+        verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("마감 시각이 지났으면 닫고 다시 예약할 시각을 남기지 않는다")
+    void closeWhenDue() {
+
+        AuctionItem auctionItem =
+                givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().minusSeconds(1));
+
+        Optional<LocalDateTime> rescheduleAt = auctionItemCloseService.closeIfDue(ITEM_ID);
+
+        assertThat(rescheduleAt).isEmpty();
+        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.FAILED);
+        assertThat(publishedEvent()).isInstanceOf(ItemPassed.class);
+    }
+
+    @Test
+    @DisplayName("판매자가 방을 종료할 때는 마감 시각이 남아 있어도 닫는다")
+    void closeIgnoresRemainingTime() {
+
+        AuctionItem auctionItem =
+                givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().plusMinutes(10));
+
+        auctionItemCloseService.close(ITEM_ID);
+
+        assertThat(auctionItem.getStatus())
+                .as("방송이 끝났는데 물품만 계속 열려 있으면 안 된다")
+                .isEqualTo(AuctionItemStatus.FAILED);
+    }
+
     private DomainEvent publishedEvent() {
         ArgumentCaptor<DomainEvent> captor = ArgumentCaptor.forClass(DomainEvent.class);
         verify(domainEventPublisher).publish(captor.capture());
@@ -124,12 +169,16 @@ class AuctionItemCloseServiceTest {
     }
 
     private AuctionItem givenLockedItem(AuctionItemStatus status) {
-        AuctionItem auctionItem = newItem(status);
+        return givenLockedItem(status, null);
+    }
+
+    private AuctionItem givenLockedItem(AuctionItemStatus status, LocalDateTime endAt) {
+        AuctionItem auctionItem = newItem(status, endAt);
         when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
         return auctionItem;
     }
 
-    private AuctionItem newItem(AuctionItemStatus status) {
+    private AuctionItem newItem(AuctionItemStatus status, LocalDateTime endAt) {
         SellerProfile sellerProfile = newSellerProfile();
         AuctionItem auctionItem = AuctionItem.builder()
                 .auctionRoom(newRoom(sellerProfile))
@@ -137,6 +186,7 @@ class AuctionItemCloseServiceTest {
                 .startingPrice(10_000L)
                 .bidIncrement(1_000L)
                 .status(status)
+                .endAt(endAt)
                 .build();
         ReflectionTestUtils.setField(auctionItem, "auctionItemId", ITEM_ID);
         return auctionItem;

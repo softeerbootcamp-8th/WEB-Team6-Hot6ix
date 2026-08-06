@@ -20,11 +20,13 @@ public interface SellerProfileApi {
 
     @Operation(
             summary = "판매자 프로필 등록",
-            description = "회원의 판매자 프로필을 등록한다. 회원당 하나만 허용하며, 이미 등록된 프로필이 있으면 거절한다. "
-                    + "로그인 세션의 회원으로 등록한다."
+            description = "회원의 판매자 프로필을 등록한다. 회원당 하나만 허용하며, 살아 있는 프로필이 있으면 거절한다. "
+                    + "로그인 세션의 회원으로 등록한다.\n\n"
+                    + "이전에 삭제한 프로필이 있으면 새로 만들지 않고 그 프로필을 되살려 요청 값으로 갱신한다. "
+                    + "sellerProfileId가 그대로 유지되므로, 그 값을 가리키던 경매방·상품·거래가 재등록 뒤에도 그대로 붙는다."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "201", description = "등록 성공"),
+            @ApiResponse(responseCode = "201", description = "등록 성공 (되살린 경우 포함)"),
             @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002)"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "존재하지 않는 회원 (code 2003)"),
@@ -79,12 +81,16 @@ public interface SellerProfileApi {
 
     @Operation(
             summary = "판매자 프로필 삭제",
-            description = "로그인한 회원의 판매자 프로필을 soft delete 한다. 경매 이력 보존을 위해 실제 row는 남긴다."
+            description = "로그인한 회원의 판매자 프로필을 soft delete 한다. 경매 이력 보존을 위해 실제 row는 남긴다.\n\n"
+                    + "진행 중인(OPEN) 경매방이 하나라도 있으면 거절한다. 판매자 API는 모두 살아 있는 프로필을 "
+                    + "전제로 하므로, 방송 중에 프로필이 사라지면 물품을 시작할 사람도 방을 종료할 사람도 없어진다. "
+                    + "시작 전(BEFORE)·종료된(CLOSED) 방만 있으면 삭제할 수 있고, 다시 등록하면 같은 프로필이 되살아난다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "삭제 성공"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
-            @ApiResponse(responseCode = "404", description = "판매자 프로필을 찾을 수 없음 (code 3002)")
+            @ApiResponse(responseCode = "404", description = "판매자 프로필을 찾을 수 없음 (code 3002)"),
+            @ApiResponse(responseCode = "409", description = "진행 중인 경매방이 있어 삭제할 수 없음 (code 3003)")
     })
     ResponseEntity<CommonResponse<Void>> delete(
             @Parameter(hidden = true) @LoginUserId Long userId);

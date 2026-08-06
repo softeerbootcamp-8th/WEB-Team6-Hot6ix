@@ -6,10 +6,23 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.ResponseEntity;
 
 @Tag(name = "인증", description = "세션 기반 인증 API")
 public interface AuthApi {
+
+    @Operation(
+            summary = "회원가입",
+            description = "카카오 인증과 전화번호 인증을 마친 가입 대기 상태를 정식 회원으로 저장하고 로그인 세션을 발급한다. "
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "회원가입 및 로그인 성공"),
+            @ApiResponse(responseCode = "400", description = "전화번호 인증 미완료 (code 1010)"),
+            @ApiResponse(responseCode = "401", description = "가입 진행 정보 없음 또는 만료 (code 1009)"),
+            @ApiResponse(responseCode = "502", description = "사용자 정보가 정책에 위배됨 (code 1008)")
+    })
+    ResponseEntity<CommonResponse<Void>> signup(HttpServletRequest request);
 
     @Operation(
             summary = "로그아웃",
@@ -20,5 +33,5 @@ public interface AuthApi {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "로그아웃 성공 (세션이 없던 경우 포함)")
     })
-    ResponseEntity<CommonResponse<Void>> logout(HttpServletRequest request);
+    ResponseEntity<CommonResponse<Void>> logout(HttpServletRequest request, HttpServletResponse response);
 }

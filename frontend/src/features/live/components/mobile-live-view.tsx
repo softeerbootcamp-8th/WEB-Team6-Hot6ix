@@ -1,4 +1,11 @@
-import { ChevronLeft, Minus, Plus, Share2, Square } from 'lucide-react'
+import {
+  ChevronLeft,
+  Minus,
+  Plus,
+  Settings,
+  Share2,
+  Square,
+} from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
@@ -36,6 +43,7 @@ export function MobileLiveView({
   startingItemId = null,
   devTools,
   onShare,
+  onOpenSettings,
   onCloseRoom,
   onBack,
   onOpenItem,
@@ -74,6 +82,8 @@ export function MobileLiveView({
     onDemoBid: (shuffle: boolean) => void
   }
   onShare: () => void
+  /** 판매자만 받는다. 방 설정 수정 모달을 연다. */
+  onOpenSettings?: () => void
   /** 판매자만 받는다. 방 전체를 끝낸다. */
   onCloseRoom?: () => void
   onBack: () => void
@@ -146,6 +156,18 @@ export function MobileLiveView({
           >
             <Share2 aria-hidden className="size-5" />
           </button>
+
+          {/* 방을 만든 사람만 보인다. */}
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              aria-label="경매방 설정"
+              className="ease-soft flex size-9 shrink-0 items-center justify-center rounded-lg text-foreground transition-all duration-150 hover:bg-fill active:scale-90"
+            >
+              <Settings aria-hidden className="size-5" />
+            </button>
+          )}
 
           {/* 방을 만든 사람만 보인다. */}
           {onCloseRoom && (

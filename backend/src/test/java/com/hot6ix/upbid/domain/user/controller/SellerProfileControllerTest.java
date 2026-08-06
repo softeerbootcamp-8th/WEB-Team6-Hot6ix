@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.user.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -255,5 +256,18 @@ class SellerProfileControllerTest extends AbstractControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("진행 중인 경매방이 있으면 삭제 시 409와 3003을 반환한다")
+    void deleteMyProfile_inUse() throws Exception {
+
+        doThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_IN_USE))
+                .when(sellerProfileService).delete(anyLong());
+
+        mockMvc.perform(delete("/api/v1/seller-profiles/me"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(3003));
     }
 }

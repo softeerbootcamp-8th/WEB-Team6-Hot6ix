@@ -32,7 +32,13 @@ const SECTIONS = [
 
 function TermsOfServicePage() {
   return (
-    <GuestShell title="이용약관" back className="max-w-[720px]">
+    // state 는 원래 GuestShell 기본값으로 붙던 값이다. 기본값을 없애면서 여기만 명시해 둔다.
+    <GuestShell
+      title="이용약관"
+      back
+      state="비로그인"
+      className="max-w-[720px]"
+    >
       <LegalDocument
         title="이용약관"
         updatedAt="2026-07-01"

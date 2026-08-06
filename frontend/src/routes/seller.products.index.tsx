@@ -172,9 +172,7 @@ function SellerProductsPage() {
                         className="animate-rise ease-soft flex items-center gap-4 rounded-2xl border bg-card p-3.5 transition-all duration-150 active:scale-[0.99]"
                       >
                         <ProductThumbnail
-                          name={product.name ?? ''}
                           src={product.imageUrl}
-                          size={200}
                           iconClassName="size-6"
                           className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
                         />
@@ -242,9 +240,7 @@ function SellerProductsPage() {
                           )}
                         >
                           <ProductThumbnail
-                            name={product.name ?? ''}
                             src={product.imageUrl}
-                            size={200}
                             iconClassName="size-6"
                             className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
                           />

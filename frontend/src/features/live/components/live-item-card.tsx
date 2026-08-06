@@ -85,8 +85,7 @@ export function LiveItemCard({
         className={cn('flex w-full gap-3 p-3 text-left', ready && 'pb-1.5')}
       >
         <ProductThumbnail
-          name={item.name}
-          size={200}
+          src={item.imageUrl}
           className="flex size-[72px] shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
         />
 
@@ -121,8 +120,8 @@ export function LiveItemCard({
           </span>
 
           {/* 시작 전에는 시작가를 보여준다. 구매자도 얼마부터인지 알아야 한다. */}
-          <span className="mt-2 flex items-baseline justify-between">
-            <span className="text-[11px] font-medium text-neutral-tertiary">
+          <span className="mt-2">
+            <span className="block text-[11px] font-medium text-neutral-tertiary">
               {closed
                 ? item.sold
                   ? '낙찰가'
@@ -133,7 +132,7 @@ export function LiveItemCard({
             </span>
             <span
               className={cn(
-                'text-[18px] tabular-nums',
+                'block text-[16px] tabular-nums',
                 ready
                   ? 'font-bold text-neutral-secondary'
                   : cn(
