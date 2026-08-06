@@ -36,6 +36,7 @@ import type {
   CommonResponseAuctionRoomResultResponseDto,
   CommonResponseAuctionRoomShareResponseDto,
   CommonResponseCursorPageResponseAuctionRoomListItemResponseDto,
+  CommonResponseVoid,
   GetMyRoomCountsParams,
   GetMyRoomsParams
 } from '.././model';
@@ -173,6 +174,69 @@ export const useClose = <TError = ErrorType<CommonResponseAuctionRoomPublicRespo
       > => {
 
       const mutationOptions = getCloseMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * 경매방에 입장하기 전 이용 약관에 동의한다. 동의 시각과 약관 버전을 기록한다. 이미 동의한 적 있으면 동의 시각과 버전을 갱신한다.
+ * @summary 경매방 입장 약관 동의
+ */
+export const agree = (
+    shareCode: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseVoid>(
+      {url: `/api/v1/auction-rooms/share/${shareCode}/agreement`, method: 'POST', signal
+    },
+      options);
+    }
+  
+
+
+export const getAgreeMutationOptions = <TError = ErrorType<CommonResponseVoid>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof agree>>, TError,{shareCode: string}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof agree>>, TError,{shareCode: string}, TContext> => {
+
+const mutationKey = ['agree'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof agree>>, {shareCode: string}> = (props) => {
+          const {shareCode} = props ?? {};
+
+          return  agree(shareCode,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AgreeMutationResult = NonNullable<Awaited<ReturnType<typeof agree>>>
+    
+    export type AgreeMutationError = ErrorType<CommonResponseVoid>
+
+    /**
+ * @summary 경매방 입장 약관 동의
+ */
+export const useAgree = <TError = ErrorType<CommonResponseVoid>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof agree>>, TError,{shareCode: string}, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof agree>>,
+        TError,
+        {shareCode: string},
+        TContext
+      > => {
+
+      const mutationOptions = getAgreeMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }
