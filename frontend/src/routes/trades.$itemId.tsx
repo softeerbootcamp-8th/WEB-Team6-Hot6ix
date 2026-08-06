@@ -189,6 +189,9 @@ function TradeDetailPage() {
     query: { enabled: sellerProfileId != null },
   })
   const sellerPhone = sellerProfileQuery.data?.data?.storePhoneNumber ?? null
+  // 판매자가 탈퇴하면 서버가 storePhoneNumber를 이 문구로 채운다. 전화번호가 아니라서
+  // tel: 링크로 만들면 안 된다.
+  const sellerWithdrawn = sellerPhone === '탈퇴한 가게'
 
   /*
    * 내 순위는 목록 바깥으로 온다. 7위가 1페이지를 받아도 값이 있어서, 첫 응답을
@@ -445,14 +448,19 @@ function TradeDetailPage() {
                    * 연락처는 보조 정보다. 프로필 조회가 늦거나 실패해도 순위
                    * 패널은 그대로 보여야 하므로 값이 있을 때만 줄을 채운다.
                    */}
-                  {sellerPhone && (
-                    <a
-                      href={`tel:${sellerPhone}`}
-                      className="shrink-0 text-[14px] font-semibold text-brand-500 hover:underline"
-                    >
-                      {sellerPhone}
-                    </a>
-                  )}
+                  {sellerPhone &&
+                    (sellerWithdrawn ? (
+                      <span className="shrink-0 text-[14px] font-semibold text-neutral-tertiary">
+                        {sellerPhone}
+                      </span>
+                    ) : (
+                      <a
+                        href={`tel:${sellerPhone}`}
+                        className="shrink-0 text-[14px] font-semibold text-brand-500 hover:underline"
+                      >
+                        {sellerPhone}
+                      </a>
+                    ))}
                 </div>
               </>
             )}
