@@ -204,11 +204,6 @@ public class DealService {
     }
 
     private DealItemStatus toBuyerStatus(String itemStatus, boolean dealCompleted, String myCandidateStatus, boolean myTurn) {
-        // 후보가 있으면 유찰일 수 없다. 방어적으로만 먼저 판정한다.
-        if (AuctionItemStatus.valueOf(itemStatus) == AuctionItemStatus.FAILED) {
-            return DealItemStatus.UNSOLD;
-        }
-
         DealCandidateStatus mine = DealCandidateStatus.valueOf(myCandidateStatus);
 
         if (mine == DealCandidateStatus.COMPLETED) {

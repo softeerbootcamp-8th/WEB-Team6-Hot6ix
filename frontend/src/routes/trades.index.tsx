@@ -97,7 +97,7 @@ type GroupKey = (typeof DEAL_STATUS_GROUP)[number]['key']
 type Filter = 'ALL' | 'BUYER' | 'SELLER' | GroupKey
 
 /** 모바일 필터 바에 들어가는 4개. */
-const MOBILE_FILTERS: Filter[] = ['ALL', 'BUYER', 'SELLER', 'progress']
+const MOBILE_FILTERS: Filter[] = ['ALL', 'BUYER', 'SELLER', 'progress', 'failed']
 
 /** 보드 미니 카드용 스타일 (묶음 단위) */
 const GROUP_STYLE: Record<
@@ -148,6 +148,7 @@ function TradesPage() {
     },
     { key: 'progress', label: `진행 중 ${countByGroup('progress')}` },
     { key: 'completed', label: `거래 완료 ${countByGroup('completed')}` },
+    { key: 'failed', label: `거래 불성립 ${countByGroup('failed')}` },
   ]
 
   // 아직 마무리되지 않은 거래 = 사용자가 지금 손대야 하는 거래

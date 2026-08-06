@@ -31,7 +31,7 @@ export const DEAL_STATUS_TONE: Record<
   UNSOLD: { chip: 'bg-result-failed-surface', text: 'text-live' },
   // 색은 유찰과 같게 두고 이름으로 구분한다 — 결과가 같은 갈래이기 때문이다.
   ALL_FAILED: { chip: 'bg-result-failed-surface', text: 'text-live' },
-  WAITING: { chip: 'bg-system-gray-2', text: 'text-system-gray-4' }, // 디자인팀 지정 회색 톤
+  WAITING: { chip: 'bg-result-idle-surface', text: 'text-result-idle' }, // 디자인팀 지정 회색 톤
   FAILED: { chip: 'bg-result-failed-surface', text: 'text-live' },
 }
 
