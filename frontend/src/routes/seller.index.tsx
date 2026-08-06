@@ -208,19 +208,9 @@ function SellerHomePage() {
 
         {/* 상품 현황 — 812×560 */}
         <section className="flex flex-col rounded-[20px] border bg-card p-7 lg:h-[calc(100svh-14rem)] lg:min-h-[560px]">
-          <div className="shrink-0">
-            <h2 className="min-w-0 text-[18px] font-extrabold text-foreground">
-              상품 현황
-            </h2>
-
-            {/*
-              `break-keep` 은 한국어를 어절 단위로 끊어, 줄이 넘어갈 때도 단어가
-              쪼개지지 않게 한다.
-            */}
-            <p className="mt-2.5 text-[13px] font-medium break-keep text-neutral-tertiary">
-              상품은 한 번의 경매에만 사용할 수 있어요.
-            </p>
-          </div>
+          <h2 className="min-w-0 shrink-0 text-[18px] font-extrabold text-foreground">
+            상품 현황
+          </h2>
 
           {/*
             검색·상태 필터. 상품이 아예 없으면 걸 조건도 없어서 숨긴다.
@@ -449,14 +439,13 @@ function SellerHomePage() {
               </div>
 
               {/*
-                결과가 한 쪽뿐이어도 "총 N개"는 보여줘야 해서 pageCount 를 최소 1로 둔다.
                 쪽수는 서버가 필터를 적용한 뒤 세어 준 값이라 화면에서 다시 계산하지 않는다.
+                결과가 한 쪽뿐일 때도 버튼 한 개는 남기므로 최소 1로 둔다.
               */}
               <Pager
                 page={page}
                 pageCount={Math.max(1, products.totalPages)}
                 onChange={setPage}
-                meta={`총 ${products.totalElements}개 · ${PAGE_SIZE}개씩`}
                 className="mt-4 shrink-0"
               />
             </>
