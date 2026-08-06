@@ -66,8 +66,14 @@ export interface AuctionItemDetail {
   startPrice: number
   currentPrice: number
   bidUnit: number
-  /** 서버 기준 마감 시각. 클라이언트 타이머는 표시용일 뿐이다. */
-  endsAt: string
+  /**
+   * 서버 기준 마감 시각. 클라이언트 타이머는 표시용일 뿐이다.
+   *
+   * **시작 전(`READY`) 물품은 `null` 이다.** 마감 시각은 경매를 시작할 때 정해지므로
+   * 그 전에는 존재하지 않는다. 예전에는 목업 시각으로 채웠는데, 아직 시작하지도 않은
+   * 물품의 상세에서 카운트다운이 흐르는 문제가 있었다(이슈 #214).
+   */
+  endsAt: string | null
   bidCount: number
   topBidderNickname: string | null
   leaderboard: LeaderboardEntry[]
