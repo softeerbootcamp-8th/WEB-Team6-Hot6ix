@@ -8,7 +8,7 @@ import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
 import com.hot6ix.upbid.domain.product.service.ProductService;
 import com.hot6ix.upbid.global.response.CommonResponse;
-import com.hot6ix.upbid.global.response.CursorPageResponse;
+import com.hot6ix.upbid.global.response.PageResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -46,10 +46,10 @@ public class ProductController implements ProductApi {
 
     @GetMapping
     @Override
-    public ResponseEntity<CommonResponse<CursorPageResponse<ProductSummaryResponseDto>>> getList(
-            Long userId, String keyword, ProductListingStatus status, Long cursor, Integer size) {
+    public ResponseEntity<CommonResponse<PageResponse<ProductSummaryResponseDto>>> getList(
+            Long userId, String keyword, ProductListingStatus status, Integer page, Integer size) {
 
-        CursorPageResponse<ProductSummaryResponseDto> response = productService.getList(userId, keyword, status, cursor, size);
+        PageResponse<ProductSummaryResponseDto> response = productService.getList(userId, keyword, status, page, size);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "상품 목록 조회에 성공했습니다."));
     }

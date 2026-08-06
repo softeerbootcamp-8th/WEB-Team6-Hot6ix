@@ -119,7 +119,7 @@ function SellerProductEditPage() {
                       queryKey: getGetDetailQueryKey(Number(productId)),
                     })
                     toast.success('상품 정보를 수정했어요')
-                    void navigate({ to: '/seller/products' })
+                    void navigate({ to: '/seller' })
                   },
                   onError: (updateError) => {
                     const { title, description } =

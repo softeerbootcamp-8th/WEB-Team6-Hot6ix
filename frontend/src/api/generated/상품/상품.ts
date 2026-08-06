@@ -29,7 +29,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  CommonResponseCursorPageResponseProductSummaryResponseDto,
+  CommonResponsePageResponseProductSummaryResponseDto,
   CommonResponseProductResponseDto,
   CommonResponseVoid,
   GetListParams,
@@ -275,7 +275,7 @@ export const getList = (
 ) => {
       
       
-      return customInstance<CommonResponseCursorPageResponseProductSummaryResponseDto>(
+      return customInstance<CommonResponsePageResponseProductSummaryResponseDto>(
       {url: `/api/v1/products`, method: 'GET',
         params, signal
     },
@@ -292,7 +292,7 @@ export const getGetListQueryKey = (params?: GetListParams,) => {
     }
 
     
-export const getGetListQueryOptions = <TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponseCursorPageResponseProductSummaryResponseDto>>(params?: GetListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getList>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export const getGetListQueryOptions = <TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponsePageResponseProductSummaryResponseDto>>(params?: GetListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getList>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -311,10 +311,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetListQueryResult = NonNullable<Awaited<ReturnType<typeof getList>>>
-export type GetListQueryError = ErrorType<CommonResponseCursorPageResponseProductSummaryResponseDto>
+export type GetListQueryError = ErrorType<CommonResponsePageResponseProductSummaryResponseDto>
 
 
-export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponseCursorPageResponseProductSummaryResponseDto>>(
+export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponsePageResponseProductSummaryResponseDto>>(
  params: undefined |  GetListParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getList>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getList>>,
@@ -324,7 +324,7 @@ export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError =
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponseCursorPageResponseProductSummaryResponseDto>>(
+export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponsePageResponseProductSummaryResponseDto>>(
  params?: GetListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getList>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getList>>,
@@ -334,7 +334,7 @@ export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError =
       >, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponseCursorPageResponseProductSummaryResponseDto>>(
+export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponsePageResponseProductSummaryResponseDto>>(
  params?: GetListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getList>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -342,7 +342,7 @@ export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError =
  * @summary 내 상품 목록 조회
  */
 
-export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponseCursorPageResponseProductSummaryResponseDto>>(
+export function useGetList<TData = Awaited<ReturnType<typeof getList>>, TError = ErrorType<CommonResponsePageResponseProductSummaryResponseDto>>(
  params?: GetListParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getList>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

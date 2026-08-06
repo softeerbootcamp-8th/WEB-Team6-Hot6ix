@@ -21,13 +21,15 @@ import com.hot6ix.upbid.domain.product.service.ProductService;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
-import com.hot6ix.upbid.global.response.CursorPageResponse;
+import com.hot6ix.upbid.global.response.PageResponse;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -197,7 +199,7 @@ class ProductControllerTest extends AbstractControllerTest {
     }
 
     @Test
-    @DisplayName("상품 목록을 조회하면 200과 목록·다음 커서를 반환한다")
+    @DisplayName("상품 목록을 조회하면 200과 목록·전체 개수·전체 페이지 수를 반환한다")
     void getList() throws Exception {
 
         ProductSummaryResponseDto summary = ProductSummaryResponseDto.builder()
@@ -206,19 +208,31 @@ class ProductControllerTest extends AbstractControllerTest {
                 .status(ProductListingStatus.UNREGISTERED)
                 .build();
 
-        when(productService.getList(eq(1L), eq("노트북"), eq(ProductListingStatus.UNREGISTERED), eq(3L), eq(10)))
-                .thenReturn(CursorPageResponse.of(List.of(summary), 2L));
+        when(productService.getList(eq(1L), eq("노트북"), eq(ProductListingStatus.UNREGISTERED), eq(1), eq(10)))
+                .thenReturn(PageResponse.of(
+                        new PageImpl<>(List.of(summary), PageRequest.of(1, 10), 25)));
 
         mockMvc.perform(get("/api/v1/products")
                         .param("keyword", "노트북")
                         .param("status", "UNREGISTERED")
-                        .param("cursor", "3")
+                        .param("page", "1")
                         .param("size", "10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.content[0].name").value("승민의 노트북"))
-                .andExpect(jsonPath("$.data.nextCursor").value(2))
-                .andExpect(jsonPath("$.data.hasNext").value(true));
+                .andExpect(jsonPath("$.data.page").value(1))
+                .andExpect(jsonPath("$.data.totalElements").value(25))
+                .andExpect(jsonPath("$.data.totalPages").value(3));
+    }
+
+    @Test
+    @DisplayName("page가 음수면 목록 조회 시 400을 반환한다")
+    void getList_pageNegative() throws Exception {
+
+        mockMvc.perform(get("/api/v1/products").param("page", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002));
     }
 
     @Test
@@ -239,16 +253,6 @@ class ProductControllerTest extends AbstractControllerTest {
     void getList_sizeNotPositive() throws Exception {
 
         mockMvc.perform(get("/api/v1/products").param("size", "0"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value(2002));
-    }
-
-    @Test
-    @DisplayName("cursor가 0 이하면 목록 조회 시 400을 반환한다")
-    void getList_cursorNotPositive() throws Exception {
-
-        mockMvc.perform(get("/api/v1/products").param("cursor", "0"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(2002));

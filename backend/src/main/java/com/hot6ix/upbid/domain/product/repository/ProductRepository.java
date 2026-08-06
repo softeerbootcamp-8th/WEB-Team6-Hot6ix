@@ -7,6 +7,8 @@ import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -50,12 +52,16 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
 
     int DEFAULT_PAGE_SIZE = 20;
 
+    int FIRST_PAGE = 0;
+
     /**
-     * 정렬 키를 productId로 고정해 커서를 안정적으로 만든다. 상태는 정렬이 아니라 필터로만 쓴다.
+     * 페이지 번호·크기의 기본값을 채워 {@link #searchByPage}에 넘긴다. 두 값 모두 요청에서
+     * 생략할 수 있어 기본값을 한곳에 모은다.
      */
-    default List<ProductSummaryResponseDto> search(
-            Long sellerProfileId, String keyword, ProductListingStatus status, Long cursor, Integer size) {
-        int limit = (size != null) ? size : DEFAULT_PAGE_SIZE;
-        return searchByLimit(sellerProfileId, keyword, status, cursor, limit + 1);
+    default Page<ProductSummaryResponseDto> search(
+            Long sellerProfileId, String keyword, ProductListingStatus status, Integer page, Integer size) {
+        return searchByPage(sellerProfileId, keyword, status, PageRequest.of(
+                (page != null) ? page : FIRST_PAGE,
+                (size != null) ? size : DEFAULT_PAGE_SIZE));
     }
 }

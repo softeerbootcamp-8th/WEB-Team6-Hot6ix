@@ -7,7 +7,7 @@ import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
-import com.hot6ix.upbid.global.response.CursorPageResponse;
+import com.hot6ix.upbid.global.response.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -15,7 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -58,16 +58,19 @@ public interface ProductApi {
 
     @Operation(
             summary = "내 상품 목록 조회",
-            description = "로그인한 판매자 본인의 상품 목록을 productId 최신순으로 조회한다. 정렬 키를 항상 불변인 "
-                    + "productId로 고정해 커서 페이지네이션이 안정적으로 동작하며, 상태(등록 여부·경매 진행 상태)는 "
-                    + "정렬이 아니라 필터로만 사용한다."
+            description = "로그인한 판매자 본인의 상품 목록을 productId 최신순으로 한 페이지 조회한다. 정렬 키를 항상 "
+                    + "불변인 productId로 고정하며, 상태(등록 여부·경매 진행 상태)는 정렬이 아니라 필터로만 사용한다. "
+                    + "화면이 페이지 번호로 임의 페이지에 바로 가고 전체 개수를 표시하므로 커서가 아니라 offset "
+                    + "페이지네이션이다 — 응답의 totalElements·totalPages가 그 값이다. "
+                    + "전체 페이지 수를 넘는 page는 오류가 아니라 빈 목록으로 응답한다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "400", description = "page·size 형식 위반 (code 2002)"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002)")
     })
-    ResponseEntity<CommonResponse<CursorPageResponse<ProductSummaryResponseDto>>> getList(
+    ResponseEntity<CommonResponse<PageResponse<ProductSummaryResponseDto>>> getList(
             @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "상품명 검색어")
             @RequestParam(required = false) String keyword,
@@ -75,8 +78,8 @@ public interface ProductApi {
                     + "낙찰(SOLD) 후 거래 후보가 전원 실패했으면 UNREGISTERED(다시 등록할 수 있다). "
                     + "그 밖에는 READY/IN_PROGRESS/ENDED(낙찰 후 거래가 살아 있음)")
             @RequestParam(required = false) ProductListingStatus status,
-            @Parameter(description = "이전 페이지 마지막 상품의 productId, 없으면 첫 페이지")
-            @RequestParam(required = false) @Positive(message = "cursor는 양수여야 합니다.") Long cursor,
+            @Parameter(description = "0부터 세는 페이지 번호, 기본값 0")
+            @RequestParam(required = false) @PositiveOrZero(message = "page는 0 이상이어야 합니다.") Integer page,
             @Parameter(description = "페이지 크기, 기본값 20")
             @RequestParam(required = false) @Min(value = 1, message = "size는 1 이상이어야 합니다.") Integer size);
 

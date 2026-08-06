@@ -17,13 +17,14 @@ export type GetListParams = {
  */
 keyword?: string;
 /**
- * 파생 상태 필터 — 연결된 AuctionItem이 없으면 UNREGISTERED, 있으면 그 상태에 따라 READY/IN_PROGRESS/ENDED(낙찰·유찰 병합)
+ * 파생 상태 필터 — 연결된 AuctionItem이 없거나, 유찰(FAILED)이거나, 낙찰(SOLD) 후 거래 후보가 전원 실패했으면 UNREGISTERED(다시 등록할 수 있다). 그 밖에는 READY/IN_PROGRESS/ENDED(낙찰 후 거래가 살아 있음)
  */
 status?: GetListStatus;
 /**
- * 이전 페이지 마지막 상품의 productId, 없으면 첫 페이지
+ * 0부터 세는 페이지 번호, 기본값 0
+ * @minimum 0
  */
-cursor?: number;
+page?: number;
 /**
  * 페이지 크기, 기본값 20
  * @minimum 1
