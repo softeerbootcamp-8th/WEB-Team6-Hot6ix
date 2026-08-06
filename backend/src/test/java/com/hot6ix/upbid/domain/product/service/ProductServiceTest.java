@@ -8,8 +8,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
-import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
@@ -30,6 +28,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -42,9 +42,6 @@ class ProductServiceTest {
 
     @Mock
     private SellerProfileRepository sellerProfileRepository;
-
-    @Mock
-    private AuctionItemRepository auctionItemRepository;
 
     // 이미지 주소 검증은 ImageUrlValidatorTest에서 본다. 여기서는 통과시킨다.
     @Mock
@@ -235,7 +232,7 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("경매방이 시작된 적 없으면 요청 값으로 상품이 전체 교체된다")
+    @DisplayName("READY 상품은 요청 값으로 전체 교체된다")
     void update() {
 
         SellerProfile sellerProfile = newSellerProfile();
@@ -251,8 +248,6 @@ class ProductServiceTest {
                 .thenReturn(Optional.of(sellerProfile));
         when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
                 .thenReturn(Optional.of(product));
-        when(auctionItemRepository.existsByProduct_ProductIdAndStatusNot(any(), eq(AuctionItemStatus.READY)))
-                .thenReturn(false);
         when(productRepository.findListingStatus(10L))
                 .thenReturn(Optional.of(ProductListingStatus.READY));
 
@@ -266,8 +261,8 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("경매방이 시작된 적 있으면 수정 시 예외가 발생한다")
-    void update_auctionAlreadyStarted() {
+    @DisplayName("이력 없음·유찰·전원 실패(파생 상태 UNREGISTERED) 상품도 수정할 수 있다")
+    void update_unregisteredAllowed() {
 
         SellerProfile sellerProfile = newSellerProfile();
         Product product = newProduct(sellerProfile);
@@ -279,8 +274,31 @@ class ProductServiceTest {
                 .thenReturn(Optional.of(sellerProfile));
         when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
                 .thenReturn(Optional.of(product));
-        when(auctionItemRepository.existsByProduct_ProductIdAndStatusNot(any(), eq(AuctionItemStatus.READY)))
-                .thenReturn(true);
+        when(productRepository.findListingStatus(10L))
+                .thenReturn(Optional.of(ProductListingStatus.UNREGISTERED));
+
+        ProductResponseDto response = productService.update(1L, 10L, request);
+
+        assertThat(response.status()).isEqualTo(ProductListingStatus.UNREGISTERED);
+        assertThat(product.getName()).isEqualTo("새 이름");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ProductListingStatus.class, names = {"IN_PROGRESS", "ENDED"})
+    @DisplayName("진행 중이거나 거래가 살아 있으면(ENDED) 수정 시 예외가 발생한다")
+    void update_auctionAlreadyStarted(ProductListingStatus status) {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        Product product = newProduct(sellerProfile);
+        ProductUpdateRequestDto request = ProductUpdateRequestDto.builder()
+                .name("새 이름")
+                .build();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+                .thenReturn(Optional.of(product));
+        when(productRepository.findListingStatus(10L)).thenReturn(Optional.of(status));
 
         assertThatThrownBy(() -> productService.update(1L, 10L, request))
                 .isInstanceOf(ApplicationException.class)
@@ -309,7 +327,7 @@ class ProductServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(ProductErrorType.PRODUCT_NOT_FOUND);
 
-        verify(auctionItemRepository, never()).existsByProduct_ProductIdAndStatusNot(any(), any());
+        verify(productRepository, never()).findListingStatus(any());
     }
 
     @Test
@@ -330,7 +348,7 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("어느 경매방에도 올라가 있지 않으면 상품이 soft delete 된다")
+    @DisplayName("이력 없음·유찰·전원 실패(파생 상태 UNREGISTERED) 상품은 soft delete 된다")
     void delete() {
 
         SellerProfile sellerProfile = newSellerProfile();
@@ -338,27 +356,29 @@ class ProductServiceTest {
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.of(sellerProfile));
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+        when(productRepository.findOwnedForUpdate(eq(10L), any()))
                 .thenReturn(Optional.of(product));
-        when(auctionItemRepository.existsByProduct_ProductId(any())).thenReturn(false);
+        when(productRepository.findListingStatus(10L))
+                .thenReturn(Optional.of(ProductListingStatus.UNREGISTERED));
 
         productService.delete(1L, 10L);
 
         assertThat(product.isDeleted()).isTrue();
     }
 
-    @Test
-    @DisplayName("아직 시작 전(READY)이어도 경매방에 올라가 있으면 삭제 시 예외가 발생한다")
-    void delete_inAuction() {
+    @ParameterizedTest
+    @EnumSource(value = ProductListingStatus.class, names = {"READY", "IN_PROGRESS", "ENDED"})
+    @DisplayName("아직 시작 전(READY)이거나 진행 중·거래가 살아 있으면 삭제 시 예외가 발생한다")
+    void delete_inAuction(ProductListingStatus status) {
 
         SellerProfile sellerProfile = newSellerProfile();
         Product product = newProduct(sellerProfile);
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.of(sellerProfile));
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+        when(productRepository.findOwnedForUpdate(eq(10L), any()))
                 .thenReturn(Optional.of(product));
-        when(auctionItemRepository.existsByProduct_ProductId(any())).thenReturn(true);
+        when(productRepository.findListingStatus(10L)).thenReturn(Optional.of(status));
 
         assertThatThrownBy(() -> productService.delete(1L, 10L))
                 .isInstanceOf(ApplicationException.class)
@@ -376,7 +396,7 @@ class ProductServiceTest {
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.of(sellerProfile));
-        when(productRepository.findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(any(), any()))
+        when(productRepository.findOwnedForUpdate(eq(10L), any()))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> productService.delete(1L, 10L))
