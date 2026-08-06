@@ -105,9 +105,15 @@ function SellerProductEditPage() {
               updateProduct.mutate(
                 {
                   productId: Number(productId),
-                  // PUT 은 전체 교체다. 조회로 받은 이미지를 그대로 되돌려 보내지
-                  // 않으면 저장할 때마다 서버의 이미지가 지워진다.
-                  data: { ...body, imageUrl: product.imageUrl },
+                  /*
+                   * 폼이 만든 값을 그대로 보낸다. 여기서 `imageUrl` 을 조회 값으로 덮으면
+                   * 방금 올린 주소가 지워져서, 저장은 성공하는데 사진만 안 바뀐다(#213).
+                   *
+                   * PUT 전체 교체라 값을 빼면 서버가 지우는 건 맞다. 그건 폼이 막는다 —
+                   * 파일을 새로 안 고르면 조회로 받은 주소를 그대로 되돌려 넣는다
+                   * (`product-form.tsx:168`).
+                   */
+                  data: body,
                 },
                 {
                   // 서버가 저장한 뒤에만 성공으로 알린다.
