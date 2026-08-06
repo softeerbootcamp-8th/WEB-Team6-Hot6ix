@@ -127,6 +127,10 @@ export function TextField({
  * `steps` 를 주면 −/+ 버튼과 **증감 단위 칩**이 붙는다.
  * 칩은 값을 바꾸는 게 아니라 **−/+ 가 한 번에 움직일 폭**을 고른다.
  * (1,000씩 · 5,000씩 · 10,000씩) 라이브 퀵입찰과 같은 조작감이다.
+ *
+ * `max` 는 −/+ 버튼만 가둔다. **직접 입력은 막지 않는다.** 타이핑하는 값을 조용히
+ * 되돌리면 왜 바뀌었는지 알 수 없어서, 넘긴 값은 그대로 두고 부르는 쪽이 `error` 로
+ * 알리게 한다.
  */
 export function NumberField({
   label,
@@ -138,12 +142,13 @@ export function NumberField({
   onValueChange,
   steps,
   min = 0,
+  max = Number.MAX_SAFE_INTEGER,
   disabled,
   ...props
 }: BaseProps &
   Omit<
     React.ComponentProps<'input'>,
-    'id' | 'className' | 'value' | 'onChange' | 'type' | 'step' | 'min'
+    'id' | 'className' | 'value' | 'onChange' | 'type' | 'step' | 'min' | 'max'
   > & {
     unit: string
     value: number
@@ -151,11 +156,13 @@ export function NumberField({
     /** −/+ 가 움직일 폭. 두 개 이상이면 고르는 칩이 붙는다. */
     steps?: number[]
     min?: number
+    max?: number
   }) {
   const [stepIndex, setStepIndex] = useState(0)
   const step = steps?.[stepIndex] ?? steps?.[0]
 
-  const stepBy = (delta: number) => onValueChange(Math.max(min, value + delta))
+  const stepBy = (delta: number) =>
+    onValueChange(Math.min(max, Math.max(min, value + delta)))
 
   return (
     <Field label={label} required={required} hint={hint} error={error}>
@@ -192,7 +199,7 @@ export function NumberField({
               <StepButton
                 sign="plus"
                 label={`${step.toLocaleString('ko-KR')}${unit} 늘리기`}
-                disabled={disabled}
+                disabled={disabled || value + step > max}
                 onClick={() => stepBy(step)}
               />
             )}
