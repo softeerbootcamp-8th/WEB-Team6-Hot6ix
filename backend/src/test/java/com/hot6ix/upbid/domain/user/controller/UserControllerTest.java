@@ -35,7 +35,8 @@ class UserControllerTest extends AbstractControllerTest {
     void getMe() throws Exception {
 
         UserResponseDto response = new UserResponseDto(
-                LOGIN_USER_ID, "테스트유저", "test@hot6ix.com", "https://cdn.hot6ix.com/profile.png"
+                LOGIN_USER_ID, "테스트유저", "test@hot6ix.com", "https://cdn.hot6ix.com/profile.png",
+                "01012345678"
         );
         when(userService.getMe(LOGIN_USER_ID)).thenReturn(response);
 
@@ -45,7 +46,9 @@ class UserControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.data.userId").value(LOGIN_USER_ID))
                 .andExpect(jsonPath("$.data.nickname").value("테스트유저"))
                 .andExpect(jsonPath("$.data.email").value("test@hot6ix.com"))
-                .andExpect(jsonPath("$.data.profileImageUrl").value("https://cdn.hot6ix.com/profile.png"));
+                .andExpect(jsonPath("$.data.profileImageUrl").value("https://cdn.hot6ix.com/profile.png"))
+                // 프론트가 이 값으로 "인증 전화번호"를 그린다. 기기마다 다시 받아야 하는 값이다.
+                .andExpect(jsonPath("$.data.phoneNumber").value("01012345678"));
     }
 
     @Test
@@ -81,7 +84,8 @@ class UserControllerTest extends AbstractControllerTest {
                 "새닉네임", "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/user-profiles/1/abc.jpg");
         UserResponseDto response = new UserResponseDto(
                 LOGIN_USER_ID, "새닉네임", "test@hot6ix.com",
-                "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/user-profiles/1/abc.jpg");
+                "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/user-profiles/1/abc.jpg",
+                "01012345678");
         when(userService.updateMe(eq(LOGIN_USER_ID), any(UserUpdateRequestDto.class))).thenReturn(response);
 
         mockMvc.perform(put("/api/v1/users/me")
@@ -99,7 +103,8 @@ class UserControllerTest extends AbstractControllerTest {
     void updateMe_nullImage() throws Exception {
 
         UserUpdateRequestDto request = new UserUpdateRequestDto("새닉네임", null);
-        UserResponseDto response = new UserResponseDto(LOGIN_USER_ID, "새닉네임", "test@hot6ix.com", null);
+        UserResponseDto response =
+                new UserResponseDto(LOGIN_USER_ID, "새닉네임", "test@hot6ix.com", null, "01012345678");
         when(userService.updateMe(eq(LOGIN_USER_ID), any(UserUpdateRequestDto.class))).thenReturn(response);
 
         mockMvc.perform(put("/api/v1/users/me")

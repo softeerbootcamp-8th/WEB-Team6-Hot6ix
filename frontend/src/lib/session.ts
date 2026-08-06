@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 import { axiosInstance } from '@/api/mutator/custom-instance'
+import { formatPhoneNumber } from '@/lib/format'
 
 /**
  * 로그인 세션 스토어.
@@ -112,6 +113,8 @@ interface MeResponseData {
   nickname: string
   email: string | null
   profileImageUrl: string | null
+  /** 숫자만 온다(01012345678). 전화번호 인증을 마치지 않았으면 null. */
+  phoneNumber: string | null
 }
 
 interface MeResponse {
@@ -123,26 +126,25 @@ interface MeResponse {
  * `GET /api/v1/users/me` 를 호출해 세션을 채운다. 로그인 세션(쿠키)이 있어야
  * 성공한다 — 앱 초기화(`__root.tsx`)와 카카오 회원가입 직후(온보딩 완료) 양쪽에서 쓴다.
  *
- * `phone` 은 이 응답에 없다. 알고 있으면 인자로 넘기고, 모르면 기존 세션값을
- * 유지한다 (백엔드가 `/me` 에 phone 을 추가하면 이 인자를 없앤다).
+ * **모든 필드를 서버 응답에서만 만든다.** 예전에는 `phone` 만 응답에 없어서 인자로
+ * 받거나 이전 세션값을 물려줬는데, 그러면 인증을 한 그 브라우저의 localStorage 에만
+ * 번호가 남아 다른 기기·PWA 에서는 인증을 마친 회원도 "미인증"으로 보였다.
  *
  * TanStack Query 의 `queryFn` 으로도 쓰이므로 값을 반환해야 한다 — `undefined` 를
  * 반환하면 "Query data cannot be undefined" 로 fetchQuery 가 실패 처리되고,
  * 방금 채운 세션이 `__root.tsx` 의 catch(`sessionStore.signOut()`)로 되돌아간다.
  */
-export async function hydrateSession(
-  phone?: string | null,
-): Promise<SessionUser> {
-  const prev = sessionStore.getState()
-  const prevPhone = prev.status === 'member' ? prev.user.phone : null
-
+export async function hydrateSession(): Promise<SessionUser> {
   const { data } = await axiosInstance.get<MeResponse>('/api/v1/users/me')
 
   const user: SessionUser = {
     id: data.data.userId,
     nickname: data.data.nickname,
     kakaoEmail: data.data.email ?? '',
-    phone: phone ?? prevPhone,
+    // 서버는 숫자만 준다. 화면에 그대로 쓰이므로 여기서 한 번만 다듬는다.
+    phone: data.data.phoneNumber
+      ? formatPhoneNumber(data.data.phoneNumber)
+      : null,
     profileImageUrl: data.data.profileImageUrl ?? null,
   }
 
