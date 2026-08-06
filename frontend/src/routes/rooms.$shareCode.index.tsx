@@ -143,6 +143,14 @@ function LiveRoomPage() {
   const [participantCount, setParticipantCount] = useState<number | null>(null)
 
   const roomQuery = useGetRoomByShareCode(shareCode)
+
+  // 로그인 유저가 약관 동의 없이 직접 접근하면 입장 페이지로 보낸다.
+  useEffect(() => {
+    if (!isGuest && roomQuery.data?.data?.agreedToTerms === false) {
+      void navigate({ to: '/join/$shareCode', params: { shareCode } })
+    }
+  }, [isGuest, roomQuery.data, shareCode, navigate])
+
   const queryClient = useQueryClient()
   const summaries = useGetSummaries(shareCode)
   const serverItems = useMemo(

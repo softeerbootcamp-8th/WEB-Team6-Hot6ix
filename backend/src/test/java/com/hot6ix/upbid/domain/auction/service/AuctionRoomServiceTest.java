@@ -22,10 +22,12 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemResultProjection;
+import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -59,6 +61,9 @@ class AuctionRoomServiceTest {
     private AuctionItemRepository auctionItemRepository;
 
     @Mock
+    private AuctionParticipantRepository auctionParticipantRepository;
+
+    @Mock
     private SellerProfileRepository sellerProfileRepository;
 
     @Mock
@@ -72,6 +77,11 @@ class AuctionRoomServiceTest {
 
     @Mock
     private DomainEventPublisher domainEventPublisher;
+
+    // 이미지 주소 검증은 ImageUrlValidatorTest에서 본다. 여기서는 통과시킨다.
+    // 빼면 @InjectMocks가 null을 꽂아서 create·update가 NPE로 죽는다.
+    @Mock
+    private ImageUrlValidator imageUrlValidator;
 
     @InjectMocks
     private AuctionRoomService auctionRoomService;
@@ -228,6 +238,9 @@ class AuctionRoomServiceTest {
         when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("aBcD1234aBcD1234"))
                 .thenReturn(Optional.of(auctionRoom));
         when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(10L)).thenReturn(3L);
+        when(auctionParticipantRepository
+                .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(10L, SELLER_USER_ID))
+                .thenReturn(true);
 
         AuctionRoomPublicResponseDto response =
                 auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", SELLER_USER_ID);
@@ -240,6 +253,60 @@ class AuctionRoomServiceTest {
         assertThat(response.sellerStoreName()).isEqualTo("승민상점");
         assertThat(response.itemCount()).isEqualTo(3L);
         assertThat(response.isOwner()).isTrue();
+        assertThat(response.agreedToTerms()).isTrue();
+    }
+
+    @Test
+    @DisplayName("로그인 사용자가 아직 동의하지 않았으면 agreedToTerms가 false다")
+    void getRoomByShareCode_notAgreedYet() {
+
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .shareCode(SHARE_CODE)
+                .status(AuctionRoomStatus.BEFORE)
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+        ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
+                .thenReturn(Optional.of(auctionRoom));
+        when(auctionParticipantRepository
+                .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(10L, SELLER_USER_ID + 1))
+                .thenReturn(false);
+
+        assertThat(auctionRoomService.getRoomByShareCode(SHARE_CODE, SELLER_USER_ID + 1)
+                .agreedToTerms()).isFalse();
+    }
+
+    /**
+     * 비로그인 사용자에게는 "동의 안 함"(false)이 아니라 "알 수 없음"(null)을 준다. false를 주면
+     * 화면이 로그인 없이 동의 절차를 밟게 만들 수 있다.
+     */
+    @Test
+    @DisplayName("비로그인 조회는 agreedToTerms가 null이고 참여 기록을 읽지 않는다")
+    void getRoomByShareCode_guestHasNullAgreedToTerms() {
+
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .shareCode(SHARE_CODE)
+                .status(AuctionRoomStatus.BEFORE)
+                .softCloseTriggerSeconds(30)
+                .softCloseExtendSeconds(60)
+                .build();
+        ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
+                .thenReturn(Optional.of(auctionRoom));
+
+        assertThat(auctionRoomService.getRoomByShareCode(SHARE_CODE, null)
+                .agreedToTerms()).isNull();
+
+        verifyNoInteractions(auctionParticipantRepository);
     }
 
     @Test
@@ -253,6 +320,41 @@ class AuctionRoomServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("커버 주소가 우리 버킷에서 온 것인지 생성할 때 확인한다")
+    void create_validatesCoverImageUrl() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoomCreateRequestDto request = newCreateRequest();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomShareService.generateCandidateShareCode()).thenReturn("FAKESHARECODE1234");
+        when(auctionRoomRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        auctionRoomService.create(1L, request);
+
+        verify(imageUrlValidator, times(1)).validate("https://cdn.hot6ix.com/cover.png");
+    }
+
+    @Test
+    @DisplayName("커버 주소는 수정할 때도 확인한다 — 생성만 막으면 검증이 없는 것과 같다")
+    void update_validatesCoverImageUrl() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoom auctionRoom = newUpdatableRoom(sellerProfile, AuctionRoomStatus.BEFORE);
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .coverImageUrl("https://cdn.hot6ix.com/new-cover.png")
+                .build();
+
+        stubOwnedRoom(sellerProfile, auctionRoom);
+        when(auctionItemRepository.existsByAuctionRoom_AuctionRoomIdAndStatusNot(10L, AuctionItemStatus.READY))
+                .thenReturn(false);
+
+        auctionRoomService.update(1L, 10L, request);
+
+        verify(imageUrlValidator, times(1)).validate("https://cdn.hot6ix.com/new-cover.png");
     }
 
     @Test

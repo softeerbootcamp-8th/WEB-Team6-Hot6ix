@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
+import com.hot6ix.upbid.domain.auction.service.AuctionParticipantService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomCloseService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomService;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
@@ -34,6 +35,7 @@ public class AuctionRoomController implements AuctionRoomApi {
     private final AuctionRoomService auctionRoomService;
     private final AuctionRoomShareService auctionRoomShareService;
     private final AuctionRoomCloseService auctionRoomCloseService;
+    private final AuctionParticipantService auctionParticipantService;
 
     @PostMapping
     @Override
@@ -117,5 +119,13 @@ public class AuctionRoomController implements AuctionRoomApi {
         AuctionRoomPublicResponseDto response = auctionRoomCloseService.close(userId, roomId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매방이 종료되었습니다."));
+    }
+
+    @PostMapping("/share/{shareCode}/agreement")
+    @Override
+    public ResponseEntity<CommonResponse<Void>> agree(Long userId, @PathVariable String shareCode) {
+        auctionParticipantService.agree(shareCode, userId);
+
+        return ResponseEntity.ok(CommonResponse.ok("약관 동의가 완료되었습니다."));
     }
 }

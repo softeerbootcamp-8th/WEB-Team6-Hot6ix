@@ -11,6 +11,12 @@ import {
   useUpdate2,
 } from '@/api/generated/경매방/경매방'
 import { toAuctionRoomErrorMessage } from '@/features/seller/auction-room-error'
+import { ImageUploadField } from '@/features/seller/components/image-upload-field'
+import {
+  ImageUploadError,
+  useImageUpload,
+} from '@/features/seller/use-image-upload'
+import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
 import { toast } from '@/lib/toast'
 import type {
   AuctionRoomPublicResponseDto,
@@ -53,13 +59,15 @@ export function RoomSettingsModal({
    * mutation 도 여기서 만들어 폼에 내려준다.
    */
   const updateRoom = useUpdate2()
+  // 커버 업로드도 같은 이유로 여기서 만든다. 올리는 동안에도 닫히면 안 된다.
+  const cover = useImageUpload(PresignedUrlRequestDtoDomain.AUCTION_ROOM_COVER)
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       labelledBy="room-settings-title"
-      dismissible={!updateRoom.isPending}
+      dismissible={!updateRoom.isPending && !cover.uploading}
       className="max-w-[520px]"
     >
       {/*
@@ -76,6 +84,7 @@ export function RoomSettingsModal({
           room={room}
           onClose={onClose}
           updateRoom={updateRoom}
+          cover={cover}
         />
       )}
     </Modal>
@@ -86,10 +95,12 @@ function RoomSettingsForm({
   room,
   onClose,
   updateRoom,
+  cover,
 }: {
   room: AuctionRoomPublicResponseDto
   onClose: () => void
   updateRoom: ReturnType<typeof useUpdate2>
+  cover: ReturnType<typeof useImageUpload>
 }) {
   const auctionRoomId = room.auctionRoomId ?? 0
 
@@ -104,6 +115,7 @@ function RoomSettingsForm({
     toMinutes(room.softCloseExtendSeconds),
   )
   const [error, setError] = useState<string | null>(null)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
 
   const queryClient = useQueryClient()
 
@@ -123,7 +135,12 @@ function RoomSettingsForm({
     extendMinutes,
     locked,
   })
-  const changed = Object.keys(patch).length > 0
+  // 커버는 고른 파일이 곧 변경이다. 주소는 저장할 때 올려야 나오므로 patch 에 없다.
+  const changed = Object.keys(patch).length > 0 || coverFile !== null
+
+  // 커버를 S3 에 올리는 동안도 저장 중이다. 빼면 그 사이 버튼이 살아 있어 두 번
+  // 누를 수 있고, 그러면 업로드가 두 번 나간다.
+  const saving = cover.uploading || updateRoom.isPending
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -137,8 +154,30 @@ function RoomSettingsForm({
       return
     }
 
+    /*
+     * 커버를 먼저 올리고 그 주소를 patch 에 얹는다. 올리다 실패하면 저장 자체를
+     * 멈춘다 — 나머지만 저장되면 커버를 바꿨다고 생각하는데 안 바뀐 상태가 된다.
+     *
+     * 잠긴 방에서는 입력이 disabled 라 `coverFile` 이 null 이다. 그래도 한 번 더
+     * 거른다 — 커버가 실려 있으면 서버가 방 전체 수정을 409 로 거절한다.
+     */
+    let body = patch
+    if (coverFile && !locked) {
+      try {
+        body = { ...patch, coverImageUrl: await cover.uploadImage(coverFile) }
+      } catch (caught) {
+        toast.error(
+          caught instanceof ImageUploadError
+            ? caught.message
+            : '커버 이미지를 올리지 못했어요.',
+          { description: '잠시 뒤에 다시 시도해 주세요.' },
+        )
+        return
+      }
+    }
+
     try {
-      await updateRoom.mutateAsync({ roomId: auctionRoomId, data: patch })
+      await updateRoom.mutateAsync({ roomId: auctionRoomId, data: body })
 
       void queryClient.invalidateQueries({
         queryKey: getGetRoomByShareCodeQueryKey(room.shareCode ?? ''),
@@ -202,6 +241,21 @@ function RoomSettingsForm({
           </p>
         )}
 
+        {/*
+          지우기는 넘기지 않는다(`onRemove` 없음). 수정 요청은 값이 없으면 기존
+          값을 유지해서 "커버를 없앰"을 표현할 방법이 없다.
+        */}
+        <div className="mt-5">
+          <ImageUploadField
+            label="대표 이미지"
+            uploadText="커버 이미지 변경"
+            maxWidth={240}
+            initialUrl={room.coverImageUrl}
+            disabled={locked}
+            onFileChange={setCoverFile}
+          />
+        </div>
+
         <div className="mt-5">
           <TextAreaField
             label="소개"
@@ -256,7 +310,7 @@ function RoomSettingsForm({
             variant="outline"
             size="lg"
             className="h-12 flex-1 rounded-xl"
-            disabled={updateRoom.isPending}
+            disabled={saving}
             onClick={onClose}
           >
             취소
@@ -266,9 +320,9 @@ function RoomSettingsForm({
             variant="brand"
             size="lg"
             className="h-12 flex-1 rounded-xl"
-            disabled={updateRoom.isPending}
+            disabled={saving}
           >
-            {updateRoom.isPending ? '저장 중…' : '저장'}
+            {saving ? '저장 중…' : '저장'}
           </Button>
         </div>
       </form>

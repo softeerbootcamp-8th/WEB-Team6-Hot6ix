@@ -6,6 +6,7 @@ import com.hot6ix.upbid.global.interceptor.GuestAllowed;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import com.hot6ix.upbid.global.session.SessionManager;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,9 +34,9 @@ public class AuthController implements AuthApi {
     @Override
     @PostMapping("/logout")
     @GuestAllowed
-    public ResponseEntity<CommonResponse<Void>> logout(HttpServletRequest request) {
+    public ResponseEntity<CommonResponse<Void>> logout(HttpServletRequest request, HttpServletResponse response) {
 
-        sessionManager.invalidate(request);
+        sessionManager.invalidate(request, response);
 
         return ResponseEntity.ok(CommonResponse.ok("로그아웃되었습니다."));
     }
