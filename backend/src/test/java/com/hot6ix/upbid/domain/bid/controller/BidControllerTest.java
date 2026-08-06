@@ -79,7 +79,25 @@ class BidControllerTest extends AbstractControllerTest {
                         .content("{\"amount\": 0}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(2002))
-                .andExpect(jsonPath("$.errors[0].field").value("amount"));
+                .andExpect(jsonPath("$.errors[0].field").value("amount"))
+                .andExpect(jsonPath("$.errors[0].message")
+                        .value("입찰 금액은 0보다 커야 합니다."));
+
+        verify(bidService, never()).place(anyLong(), anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("입찰 금액이 상한을 넘으면 400과 구분된 검증 오류를 반환한다")
+    void rejectsAmountOverLimit() throws Exception {
+
+        mockMvc.perform(post(URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": 5000000000001}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("amount"))
+                .andExpect(jsonPath("$.errors[0].message")
+                        .value("입찰 가능한 금액 범위를 초과했어요"));
 
         verify(bidService, never()).place(anyLong(), anyLong(), anyLong());
     }
