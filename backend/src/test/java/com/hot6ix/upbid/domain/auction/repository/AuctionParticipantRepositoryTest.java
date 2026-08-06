@@ -60,47 +60,50 @@ class AuctionParticipantRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
-    @DisplayName("처음 구독하면 참여 행이 하나 생긴다")
-    void insertIfAbsent_createsRow() {
+    @DisplayName("처음 동의하면 참여 행이 하나 생기고 agreedAt이 기록된다")
+    void recordAgreement_createsRow() {
 
         AuctionRoom room = newAuctionRoom("PARTICIPANT00001");
         User user = newUser("buyer1@hot6ix.com");
 
         int inserted = auctionParticipantRepository
-                .insertIfAbsent(room.getAuctionRoomId(), user.getUserId());
+                .recordAgreement(room.getAuctionRoomId(), user.getUserId(), "v1");
 
         assertThat(inserted).isEqualTo(1);
         assertThat(auctionParticipantRepository.count()).isEqualTo(1L);
+        assertThat(auctionParticipantRepository
+                .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(
+                        room.getAuctionRoomId(), user.getUserId())).isTrue();
     }
 
     @Test
-    @DisplayName("같은 사람이 다시 구독해도 행은 하나다")
-    void insertIfAbsent_isIdempotent() {
+    @DisplayName("같은 사람이 다시 동의해도 행은 하나고 최초 동의 기록이 유지된다")
+    void recordAgreement_isIdempotent() {
 
         AuctionRoom room = newAuctionRoom("PARTICIPANT00002");
         User user = newUser("buyer2@hot6ix.com");
 
-        auctionParticipantRepository.insertIfAbsent(room.getAuctionRoomId(), user.getUserId());
-        auctionParticipantRepository.insertIfAbsent(room.getAuctionRoomId(), user.getUserId());
+        auctionParticipantRepository.recordAgreement(room.getAuctionRoomId(), user.getUserId(), "v1");
+        auctionParticipantRepository.recordAgreement(room.getAuctionRoomId(), user.getUserId(), "v1");
 
         assertThat(auctionParticipantRepository.count()).isEqualTo(1L);
     }
 
     @Test
-    @DisplayName("없는 방으로 구독하면 예외 없이 아무 행도 안 생긴다")
-    void insertIfAbsent_skipsMissingRoom() {
+    @DisplayName("없는 방으로 동의하면 예외 없이 아무 행도 안 생긴다")
+    void recordAgreement_skipsMissingRoom() {
 
         User user = newUser("buyer3@hot6ix.com");
 
-        int inserted = auctionParticipantRepository.insertIfAbsent(999_999L, user.getUserId());
+        int inserted = auctionParticipantRepository.recordAgreement(999_999L, user.getUserId(), "v1");
 
         assertThat(inserted).isZero();
         assertThat(auctionParticipantRepository.count()).isZero();
     }
 
     @Test
-    @DisplayName("삭제된 방으로 구독하면 아무 행도 안 생긴다")
-    void insertIfAbsent_skipsDeletedRoom() {
+    @DisplayName("삭제된 방으로 동의하면 아무 행도 안 생긴다")
+    void recordAgreement_skipsDeletedRoom() {
 
         AuctionRoom room = newAuctionRoom("PARTICIPANT00004");
         room.softDelete(LocalDateTime.now());
@@ -109,7 +112,7 @@ class AuctionParticipantRepositoryTest extends AbstractMySqlContainerTest {
         User user = newUser("buyer4@hot6ix.com");
 
         int inserted = auctionParticipantRepository
-                .insertIfAbsent(room.getAuctionRoomId(), user.getUserId());
+                .recordAgreement(room.getAuctionRoomId(), user.getUserId(), "v1");
 
         assertThat(inserted).isZero();
         assertThat(auctionParticipantRepository.count()).isZero();

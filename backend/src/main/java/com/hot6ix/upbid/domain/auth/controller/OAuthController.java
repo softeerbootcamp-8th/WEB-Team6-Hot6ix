@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Hidden
 @RestController
@@ -34,14 +36,36 @@ public class OAuthController {
     @GetMapping("/kakao/callback")
     public void kakaoLogin(
             @RequestParam String code,
+            @RequestParam(required = false) String state,
             HttpServletRequest request,
             HttpServletResponse response
     ) throws IOException {
 
         OAuthLoginResult result = authService.login(request, code);
 
-        String path = (result == OAuthLoginResult.SIGNUP_REQUIRED) ? SIGNUP_PATH : HOME_PATH;
+        String path;
+        if (result == OAuthLoginResult.SIGNUP_REQUIRED) {
+            // 신규 가입자도 인증 완료 후 원래 페이지로 돌아갈 수 있도록 redirect를 전달한다.
+            path = isValidRedirectPath(state)
+                    ? SIGNUP_PATH + "?redirect=" + URLEncoder.encode(state, StandardCharsets.UTF_8)
+                    : SIGNUP_PATH;
+        } else if (isValidRedirectPath(state)) {
+            path = state;
+        } else {
+            path = HOME_PATH;
+        }
 
         response.sendRedirect(frontendUrl + path);
+    }
+
+    /**
+     * 오픈 리다이렉트 방어. 상대 경로만 허용한다.
+     * 외부 URL(http://, https://, //)은 거부한다.
+     */
+    private boolean isValidRedirectPath(String path) {
+        if (path == null || path.isBlank()) return false;
+        if (!path.startsWith("/")) return false;
+        if (path.startsWith("//")) return false;
+        return !path.contains("://");
     }
 }

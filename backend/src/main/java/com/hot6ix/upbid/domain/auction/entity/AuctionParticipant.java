@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -40,6 +41,12 @@ public class AuctionParticipant {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private User user;
+
+    @Column(name = "agreed_at")
+    private LocalDateTime agreedAt;
+
+    @Column(name = "terms_version", length = 20)
+    private String termsVersion;
 
     @Builder
     private AuctionParticipant(AuctionRoom auctionRoom, User user) {
