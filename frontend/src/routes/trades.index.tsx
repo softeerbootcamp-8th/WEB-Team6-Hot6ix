@@ -322,12 +322,8 @@ function TradesPage() {
                      * 배지 줄 → 상품명 → 상대·안내 → 금액과 상세 보기.
                      */}
                     <div className="flex items-center gap-3 md:gap-4">
-                      {/*
-                       * 사진 없이 회색 아이콘만 뜬다. `GET /deals` 응답
-                       * (`DealSummaryResponseDto`)에 `imageUrl` 이 없어서다.
-                       * 서버에 필드가 생기면 여기에 넘긴다.
-                       */}
                       <ProductThumbnail
+                        src={trade.imageUrl}
                         iconClassName="size-5 md:size-7"
                         className={cn(
                           'flex size-12 shrink-0 items-center justify-center rounded-xl border md:size-28 md:rounded-2xl',

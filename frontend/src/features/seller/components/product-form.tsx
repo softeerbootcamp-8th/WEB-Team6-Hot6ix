@@ -148,6 +148,11 @@ export function ProductForm({
   })
   const [errors, setErrors] = useState<FieldErrors>({})
   const [imageFile, setImageFile] = useState<File | null>(null)
+  /*
+   * 이미지 삭제 버튼을 눌렀는지. 새 파일을 고른 것과 다르다 — 지운 뒤에 파일을
+   * 골랐다가 다시 지우면 여기는 true 로 남아야 "지움"이 유지된다.
+   */
+  const [imageRemoved, setImageRemoved] = useState(false)
 
   const { uploadImage, uploading } = useImageUpload(
     PresignedUrlRequestDtoDomain.PRODUCT,
@@ -164,8 +169,12 @@ export function ProductForm({
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
 
-    // 파일을 새로 고르지 않았으면 지금 사진 주소를 그대로 되돌려 보낸다.
-    let imageUrl = initial?.imageUrl ?? undefined
+    /*
+     * 파일을 새로 고르지 않았으면 지금 사진 주소를 그대로 되돌려 보낸다.
+     * 지우기를 눌렀으면 undefined 로 둔다 — JSON 에서 키가 빠지고 서버가 null 로
+     * 읽어 사진을 지운다.
+     */
+    let imageUrl = imageRemoved ? undefined : (initial?.imageUrl ?? undefined)
 
     if (imageFile) {
       try {
@@ -201,6 +210,7 @@ export function ProductForm({
         // 올린 사진이 없으면 비운다. 목업 사진을 대신 넣으면 판매자가 올린 적
         // 없는 사진을 "지금 사진"으로 보게 된다.
         initialUrl={initial?.imageUrl ?? undefined}
+        onRemove={() => setImageRemoved(true)}
       />
 
       <div className="flex flex-col">

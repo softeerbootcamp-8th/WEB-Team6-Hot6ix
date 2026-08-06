@@ -154,6 +154,7 @@ public class DealService {
                 deal.getShareCode(),
                 deal.getProductId(),
                 deal.getProductName(),
+                deal.getImageUrl(),
                 deal.getAuctionRoomName(),
                 isSeller ? DealRole.SELLER : DealRole.BUYER,
                 isSeller ? toItemStatus(deal.getItemStatus(),

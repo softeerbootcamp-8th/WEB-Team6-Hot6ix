@@ -69,6 +69,7 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    ar.share_code        AS shareCode,
                    p.product_id         AS productId,
                    p.name               AS productName,
+                   p.image_url          AS imageUrl,
                    ar.name              AS auctionRoomName,
                    ai.status            AS itemStatus,
                    EXISTS (SELECT 1 FROM deal_candidates c
@@ -104,6 +105,7 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    ar.share_code        AS shareCode,
                    NULL                 AS productId,
                    p.name               AS productName,
+                   p.image_url          AS imageUrl,
                    ar.name              AS auctionRoomName,
                    ai.status            AS itemStatus,
                    EXISTS (SELECT 1 FROM deal_candidates c

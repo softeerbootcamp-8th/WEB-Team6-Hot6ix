@@ -149,7 +149,8 @@ const FIELDS = [
  * 오른쪽 824 입력 열이다. 두 프레임은 문구와 채워진 값만 다르다.
  * 등록은 POST, 수정은 PUT(전체 교체)이라 필드 집합이 같다.
  *
- * **삭제 버튼은 두 프레임 어디에도 없어서 두지 않았다.**
+ * **대표 이미지 삭제 버튼은 Figma 두 프레임에 없지만 넣었다.** 한 번 올린 사진을
+ * 뺄 방법이 없으면 다른 사진으로 덮는 것 말고는 되돌릴 수가 없다(#213).
  *
  * 폼은 값과 검증을 맡는다. 프로필을 어느 API 로 보낼지는 화면이 정한다.
  *
@@ -182,6 +183,11 @@ export function SellerProfileForm({
   })
   const [errors, setErrors] = useState<FieldErrors>({})
   const [imageFile, setImageFile] = useState<File | null>(null)
+  /*
+   * 이미지 삭제 버튼을 눌렀는지. 새 파일을 고른 것과 다르다 — 지운 뒤에 파일을
+   * 골랐다가 다시 지우면 여기는 true 로 남아야 "지움"이 유지된다.
+   */
+  const [imageRemoved, setImageRemoved] = useState(false)
 
   const { uploadImage, uploading } = useImageUpload(
     PresignedUrlRequestDtoDomain.SELLER_PROFILE,
@@ -200,8 +206,14 @@ export function SellerProfileForm({
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
 
-    // 파일을 새로 고르지 않았으면 지금 사진 주소를 그대로 되돌려 보낸다.
-    let storeImageUrl = initial?.storeImageUrl ?? undefined
+    /*
+     * 파일을 새로 고르지 않았으면 지금 사진 주소를 그대로 되돌려 보낸다.
+     * 지우기를 눌렀으면 undefined 로 둔다 — JSON 에서 키가 빠지고 서버가 null 로
+     * 읽어 사진을 지운다.
+     */
+    let storeImageUrl = imageRemoved
+      ? undefined
+      : (initial?.storeImageUrl ?? undefined)
 
     if (imageFile) {
       try {
@@ -235,6 +247,7 @@ export function SellerProfileForm({
         // 올린 사진이 없으면 비운다. 목업 사진을 대신 넣으면 판매자가 올린 적
         // 없는 사진을 "지금 사진"으로 보게 된다.
         initialUrl={initial?.storeImageUrl ?? undefined}
+        onRemove={() => setImageRemoved(true)}
       />
 
       {/* 입력 열 — 824 */}

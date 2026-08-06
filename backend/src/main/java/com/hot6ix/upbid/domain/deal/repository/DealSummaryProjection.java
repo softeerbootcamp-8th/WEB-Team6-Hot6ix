@@ -27,6 +27,9 @@ public interface DealSummaryProjection {
 
     String getProductName();
 
+    /** 상품 사진 주소. 판매자가 안 올렸으면 {@code null} */
+    String getImageUrl();
+
     String getAuctionRoomName();
 
     /** {@code AuctionItemStatus} 이름. 유찰 판정에 쓴다. */
