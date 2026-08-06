@@ -2,6 +2,8 @@ import { Clock } from 'lucide-react'
 
 import { AuctionCloseFlashOverlay } from '@/features/live/components/auction-close-flash-overlay'
 import { LeaderboardRows } from '@/features/live/components/leaderboard-rows'
+import { SoftCloseFlashOverlay } from '@/features/live/components/soft-close-flash-overlay'
+import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
 import { formatRemaining, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { cn } from '@/lib/utils'
@@ -17,12 +19,15 @@ export function ItemLeaderboard({
   item,
   rowRef,
   justClosed = false,
+  justExtended = null,
 }: {
   item: AuctionItemDetail
   /** 목록에서 자리를 옮길 때 쓰는 FLIP 참조 */
   rowRef?: (element: HTMLLIElement | null) => void
   /** 방금 마감된 물품. 물품 카드와 같은 도장을 찍는다. */
   justClosed?: boolean
+  /** 방금 소프트클로즈로 연장된 물품. `null` 이면 연출하지 않는다. */
+  justExtended?: SoftCloseFlash | null
 }) {
   const remaining = useCountdown(item.endsAt)
   const closed = item.status === 'CLOSED'
@@ -35,6 +40,11 @@ export function ItemLeaderboard({
     >
       {/* 물품 카드와 같은 도장을 찍는다. */}
       {justClosed && <AuctionCloseFlashOverlay item={item} />}
+
+      {/* 소프트클로즈 연장. 물품 카드와 같은 자리, 같은 규칙이다. */}
+      {justExtended && !justClosed && (
+        <SoftCloseFlashOverlay flash={justExtended} />
+      )}
 
       <div className="flex items-center">
         {closed ? (

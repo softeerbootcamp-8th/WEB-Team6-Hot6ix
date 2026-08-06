@@ -32,6 +32,10 @@ import { mergeItemDetail, toAuctionItems } from '@/features/live/adapt-item'
 import { toRoomResult } from '@/features/live/adapt-result'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import { retryOnNetworkError } from '@/features/live/api-error'
+import {
+  SOFT_CLOSE_FLASH_MS,
+  type SoftCloseFlash,
+} from '@/features/live/soft-close-flash'
 import { toBidErrorMessage } from '@/features/live/bid-error'
 import {
   sellerActionMessageByCode,
@@ -316,6 +320,15 @@ function LiveRoomPage() {
                 : item,
             ),
           )
+          /*
+           * 연장 연출. 같은 물품이 또 연장되면 count 가 올라가 APNG 가 처음부터
+           * 다시 재생된다(`replayKey`).
+           */
+          setJustExtended((prev) => ({
+            itemId: payload.itemId,
+            seconds: payload.extendSeconds,
+            count: prev?.itemId === payload.itemId ? prev.count + 1 : 0,
+          }))
           break
 
         case 'ItemEnded':
@@ -505,6 +518,8 @@ function LiveRoomPage() {
   const showDevTools = useDevTools()
   /** 방금 마감돼서 도장이 찍혀 있는 물품 */
   const [justClosedId, setJustClosedId] = useState<number | null>(null)
+  /** 방금 소프트클로즈로 연장돼서 연출이 떠 있는 물품 */
+  const [justExtended, setJustExtended] = useState<SoftCloseFlash | null>(null)
   /** 시작 요청을 서버가 처리 중인 물품. 그 카드의 조작 줄만 잠근다. */
   const [startingItemId, setStartingItemId] = useState<number | null>(null)
   /** 판매자가 방 전체를 끝낼 때 한 번 더 확인받는다. */
@@ -832,6 +847,16 @@ function LiveRoomPage() {
     return () => window.clearTimeout(timer)
   }, [justClosedId])
 
+  // 연장 연출도 한 번만 보여주고 지운다.
+  useEffect(() => {
+    if (justExtended === null) return
+    const timer = window.setTimeout(
+      () => setJustExtended(null),
+      SOFT_CLOSE_FLASH_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [justExtended])
+
   /**
    * 개발용 데모 입찰.
    *
@@ -1077,6 +1102,7 @@ function LiveRoomPage() {
           onStart={isOwner ? handleStart : undefined}
           isOwner={isOwner}
           justClosedId={justClosedId}
+          justExtended={justExtended}
           startingItemId={startingItemId}
           devTools={
             import.meta.env.DEV && showDevTools
@@ -1384,6 +1410,7 @@ function LiveRoomPage() {
                   }
                   isDimmed={(item) => removeMode && item.status !== 'READY'}
                   justClosedId={justClosedId}
+                  justExtended={justExtended}
                   startingItemId={startingItemId}
                   onStart={isOwner ? handleStart : undefined}
                   onSelect={handleSelectItem}
@@ -1481,6 +1508,9 @@ function LiveRoomPage() {
                       key={item.id}
                       item={item}
                       justClosed={justClosedId === item.id}
+                      justExtended={
+                        justExtended?.itemId === item.id ? justExtended : null
+                      }
                       // 마감되면 이 카드가 목록 아래로 미끄러진다.
                       rowRef={(element) => {
                         if (element)

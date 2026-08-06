@@ -1,5 +1,6 @@
 import { LiveItemCard } from '@/features/live/components/live-item-card'
 import { useListFlip } from '@/features/live/use-list-flip'
+import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
 import { cn } from '@/lib/utils'
 import type { AuctionItemDetail, ItemStatus } from '@/mocks/types'
 
@@ -22,6 +23,7 @@ export function LiveItemList({
   isSelected,
   isDimmed,
   justClosedId,
+  justExtended = null,
   startingItemId,
   className,
   onSelect,
@@ -33,6 +35,8 @@ export function LiveItemList({
   isDimmed?: (item: AuctionItemDetail) => boolean
   /** 방금 마감된 물품 id. 도장 애니메이션에 쓴다. */
   justClosedId?: number | null
+  /** 방금 소프트클로즈로 연장된 물품. 연장 애니메이션에 쓴다. */
+  justExtended?: SoftCloseFlash | null
   /** 시작 요청이 서버에서 처리 중인 물품 id */
   startingItemId?: number | null
   /** 바깥 레이아웃에 맞춰 스크롤 영역 크기를 바꿀 때 쓴다. */
@@ -79,6 +83,9 @@ export function LiveItemList({
                     else rows.current.delete(item.id)
                   }}
                   justClosed={justClosedId === item.id}
+                  justExtended={
+                    justExtended?.itemId === item.id ? justExtended : null
+                  }
                   canStart={canStart}
                   starting={startingItemId === item.id}
                   selected={isSelected?.(item) ?? false}

@@ -408,6 +408,19 @@
   animation: closed-stamp 3050ms var(--ease-in-out-soft) both;
 }
 
+/*
+ * 소프트클로즈 연장 덮개.
+ *
+ * 마감 덮개와 같은 keyframe 을 쓰고 길이만 다르다. 연장 APNG 가 1.45s 로
+ * 마감(2.83s)보다 훨씬 짧아서, 같은 값을 쓰면 끝난 뒤 빈 화면이 남는다.
+ * 마감과 달리 어둡게 덮지 않는다. 경매가 계속되는 중이라 남은 시간과
+ * 현재가가 계속 읽혀야 한다.
+ */
+@utility animate-extend-stamp {
+  background-color: color-mix(in srgb, var(--brand-50) 88%, transparent);
+  animation: closed-stamp 1750ms var(--ease-in-out-soft) both;
+}
+
 @utility animate-closed-label {
   animation: closed-label 2200ms var(--ease-out-soft) both;
 }

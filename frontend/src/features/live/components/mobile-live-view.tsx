@@ -13,6 +13,7 @@ import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
 import { GuestNotice } from '@/features/live/components/live-shell'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { LiveItemList } from '@/features/live/components/live-item-list'
+import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
 import { cn } from '@/lib/utils'
 import type {
   AuctionItemDetail,
@@ -40,6 +41,7 @@ export function MobileLiveView({
   liveItems,
   rankedItems,
   justClosedId = null,
+  justExtended = null,
   startingItemId = null,
   devTools,
   onShare,
@@ -73,6 +75,8 @@ export function MobileLiveView({
   rankedItems: AuctionItemDetail[]
   /** 방금 마감된 물품 id. 카드에 "경매 종료" 도장을 찍는다. */
   justClosedId?: number | null
+  /** 방금 소프트클로즈로 연장된 물품. 연장 애니메이션에 쓴다. */
+  justExtended?: SoftCloseFlash | null
   /** 시작 요청이 서버에서 처리 중인 물품 id */
   startingItemId?: number | null
   /** 개발용 조작. 프로덕션에서는 넘기지 않는다. */
@@ -299,6 +303,7 @@ export function MobileLiveView({
                   isSelected={isSelected}
                   isDimmed={isDimmed}
                   justClosedId={justClosedId}
+                  justExtended={justExtended}
                   startingItemId={startingItemId}
                   onSelect={onSelectItem ?? ((item) => onOpenItem(item.id))}
                   onStart={onStart}
@@ -391,6 +396,11 @@ export function MobileLiveView({
                           key={item.id}
                           item={item}
                           justClosed={justClosedId === item.id}
+                          justExtended={
+                            justExtended?.itemId === item.id
+                              ? justExtended
+                              : null
+                          }
                         />
                       ))}
                     </ul>
