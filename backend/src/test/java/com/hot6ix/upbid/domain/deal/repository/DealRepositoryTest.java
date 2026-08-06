@@ -131,6 +131,24 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(deal.getProductId()).as("내가 산 물건은 내 상품이 아니다").isNull();
         // 구매자는 이 ID로 판매자 프로필을 조회해 연락처를 얻는다.
         assertThat(deal.getSellerProfileId()).isEqualTo(sellerProfile.getSellerProfileId());
+        
+        assertThat(deal.getMyCandidateStatus()).isEqualTo(DealCandidateStatus.WAITING.name());
+        assertThat(deal.getMyTurn()).isZero();
+    }
+
+    @Test
+    @DisplayName("구매 건: 앞 순위가 모두 실패하면 내 차례가 된다")
+    void findDealsMyTurnIsTrueWhenPreviousFailed() {
+        AuctionItem item = newItem("포토카드", AuctionItemStatus.SOLD, END_AT);
+        newCandidate(item, newUser("first@hot6ix.com", "일등"), 1, 15_000L)
+                .fail(LocalDateTime.of(2026, 7, 30, 10, 0));
+        
+        User buyer = newUser("buyer@hot6ix.com", "원기");
+        newCandidate(item, buyer, 2, 13_000L);
+        
+        DealSummaryProjection deal = findDeals(buyer).getFirst();
+        assertThat(deal.getMyCandidateStatus()).isEqualTo(DealCandidateStatus.WAITING.name());
+        assertThat(deal.getMyTurn()).isEqualTo(1);
     }
 
     @Test

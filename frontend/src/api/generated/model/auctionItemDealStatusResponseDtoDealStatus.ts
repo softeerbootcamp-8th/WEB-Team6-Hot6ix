@@ -19,4 +19,6 @@ export const AuctionItemDealStatusResponseDtoDealStatus = {
   COMPLETED: 'COMPLETED',
   UNSOLD: 'UNSOLD',
   ALL_FAILED: 'ALL_FAILED',
+  WAITING: 'WAITING',
+  FAILED: 'FAILED',
 } as const;

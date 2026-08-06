@@ -41,6 +41,12 @@ public interface DealSummaryProjection {
      */
     Integer getHasWaitingCandidate();
 
+    /** 구매 건이면 내 후보 상태, 판매 건이면 null */
+    String getMyCandidateStatus();
+
+    /** 구매 건이면 내 차례인지 여부(1 또는 0), 판매 건이면 0 */
+    Integer getMyTurn();
+
     Long getAmount();
 
     /** 판매 건이면 거래 상대 후보, 구매 건이면 판매자. 거래 상대가 없으면 {@code null} */

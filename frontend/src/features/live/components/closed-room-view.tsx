@@ -1,4 +1,4 @@
-import { ChevronLeft, Search, Share2 } from 'lucide-react'
+import { ChevronLeft, Search } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { useMemo, useState, type ReactNode } from 'react'
 
@@ -286,14 +286,6 @@ export function ClosedRoomView({
                 종료 {closedAtLabel}
               </p>
             )}
-
-            <button
-              type="button"
-              className="ease-soft ml-auto flex h-9 items-center gap-1.5 rounded-[10px] border bg-card px-4 text-[13px] font-semibold text-foreground transition-all duration-150 hover:bg-fill active:scale-95"
-            >
-              <Share2 aria-hidden className="size-3.5" />
-              공유
-            </button>
           </div>
         </div>
 

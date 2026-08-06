@@ -119,14 +119,17 @@ const CANDIDATE_META: Record<CandidateStatus, { label: string; tone: Tone }> = {
 function toResultBadge(
   candidate: CandidateRow,
   settled: boolean,
+  dealFailed: boolean,
 ): { label: string; tone: Tone } {
   if (candidate.dealStatus !== 'WAITING') {
     return CANDIDATE_META[candidate.dealStatus]
   }
 
-  return settled
-    ? { label: '기회 없음', tone: 'muted' }
-    : CANDIDATE_META.WAITING
+  if (settled || (dealFailed && candidate.isMe)) {
+    return { label: '기회 없음', tone: 'muted' }
+  }
+
+  return CANDIDATE_META.WAITING
 }
 
 function TradeDetailPage() {
@@ -584,7 +587,11 @@ function TradeDetailPage() {
                 {list.rows.map((candidate, index) => {
                   const active = candidate.dealStatus === 'IN_PROGRESS'
                   const mine = !isSeller && candidate.isMe
-                  const result = toResultBadge(candidate, settled)
+                  const result = toResultBadge(
+                    candidate,
+                    settled,
+                    deal?.status === 'FAILED',
+                  )
                   const tone: Tone = mine ? 'mine' : result.tone
 
                   return (
@@ -691,7 +698,11 @@ function TradeDetailPage() {
                       const mine = !isSeller && candidate.isMe
 
                       // 구매자 화면은 "결과", 판매자 화면은 "거래 상태" 열이다.
-                      const result = toResultBadge(candidate, settled)
+                      const result = toResultBadge(
+                        candidate,
+                        settled,
+                        deal?.status === 'FAILED',
+                      )
                       const resultTone: Tone = mine ? 'mine' : result.tone
 
                       return (

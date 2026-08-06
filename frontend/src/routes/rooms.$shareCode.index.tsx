@@ -383,6 +383,13 @@ function LiveRoomPage() {
           )
           // "경매 종료" 도장. 서버가 마감을 확정했을 때만 띄운다.
           setJustClosedId(payload.itemId)
+          // 유찰이면 이 시점부터 재등록 가능 상품이 된다. 목록을 다시 읽지 않으면
+          // 재등록 모달의 캐시(최대 1분)가 그대로 남아 방금 유찰된 물품이 안 보인다.
+          if (payload.winnerNickname === null) {
+            void queryClient.invalidateQueries({
+              queryKey: getGetListQueryKey(),
+            })
+          }
           break
 
         case 'RoomClosed':
