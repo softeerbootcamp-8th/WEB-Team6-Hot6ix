@@ -314,11 +314,6 @@ export function ItemPickerModal({
 
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[15px] font-bold text-foreground">
-                              {product.isUnsold && (
-                                <span className="mr-1.5 font-bold text-result-failed">
-                                  [유찰]
-                                </span>
-                              )}
                               {name}
                             </span>
                             <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
