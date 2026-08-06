@@ -168,6 +168,7 @@ class DealServiceTest {
             public String getShareCode() { return "aBcD1234aBcD1234"; }
             public Long getProductId() { return null; }
             public String getProductName() { return "포토카드"; }
+            public String getImageUrl() { return "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/products/1/photocard.png"; }
             public String getAuctionRoomName() { return "승민상점 경매방"; }
             public String getItemStatus() { return AuctionItemStatus.SOLD.name(); }
             public Integer getDealCompleted() { return dealCompleted; }
