@@ -358,4 +358,55 @@ class SellerProfileServiceTest {
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
     }
+
+    @Test
+    @DisplayName("판매자 프로필이 없는 회원은 탈퇴 시 조용히 넘어간다")
+    void withdraw_noProfile() {
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.empty());
+
+        sellerProfileService.withdraw(1L);
+
+        verify(auctionRoomRepository, never())
+                .existsBySellerProfile_SellerProfileIdAndStatusAndDeletedAtIsNull(any(), any());
+    }
+
+    @Test
+    @DisplayName("진행 중인 경매방이 있으면 탈퇴 시 예외가 발생하고 프로필은 그대로 남는다")
+    void withdraw_openRoomExists() {
+
+        SellerProfile sellerProfile = newSellerProfile(newUser());
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.existsBySellerProfile_SellerProfileIdAndStatusAndDeletedAtIsNull(
+                any(), eq(AuctionRoomStatus.OPEN))).thenReturn(true);
+
+        assertThatThrownBy(() -> sellerProfileService.withdraw(1L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_IN_USE);
+
+        assertThat(sellerProfile.isDeleted()).isFalse();
+        assertThat(sellerProfile.getStorePhoneNumber()).isEqualTo("02-1234-5678");
+    }
+
+    @Test
+    @DisplayName("진행 중인 경매방이 없으면 탈퇴 시 soft delete되고 연락처가 \"탈퇴한 가게\"로 바뀐다")
+    void withdraw_softDeletesAndReplacesPhoneNumber() {
+
+        SellerProfile sellerProfile = newSellerProfile(newUser());
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomRepository.existsBySellerProfile_SellerProfileIdAndStatusAndDeletedAtIsNull(
+                any(), eq(AuctionRoomStatus.OPEN))).thenReturn(false);
+
+        sellerProfileService.withdraw(1L);
+
+        assertThat(sellerProfile.isDeleted()).isTrue();
+        assertThat(sellerProfile.getStorePhoneNumber()).isEqualTo("탈퇴한 가게");
+        assertThat(sellerProfile.getStoreName()).isEqualTo("승민상점");
+    }
 }
