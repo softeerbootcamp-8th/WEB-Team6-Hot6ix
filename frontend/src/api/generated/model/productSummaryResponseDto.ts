@@ -16,5 +16,6 @@ export interface ProductSummaryResponseDto {
   name?: string;
   imageUrl?: string;
   status?: ProductSummaryResponseDtoStatus;
+  isUnsold?: boolean;
   createdAt?: string;
 }

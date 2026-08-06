@@ -10,6 +10,7 @@ public record ProductSummaryResponseDto(
         String name,
         String imageUrl,
         ProductListingStatus status,
+        Boolean isUnsold,
         LocalDateTime createdAt
 ) {
 }

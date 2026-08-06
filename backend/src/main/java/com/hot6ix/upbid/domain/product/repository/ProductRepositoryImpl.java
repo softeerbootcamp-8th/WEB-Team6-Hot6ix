@@ -28,10 +28,13 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
         QProduct product = QProduct.product;
         QAuctionItem ai = QAuctionItem.auctionItem;
         StringExpression derivedStatusName = derivedStatusName(ai);
+        BooleanExpression isUnsoldExpr = ai.auctionItemId.isNotNull().and(
+                AuctionItemPredicates.blockedForReregistration(ai).not()
+        );
 
         List<Tuple> rows = queryFactory
                 .select(product.productId, product.name, product.imageUrl,
-                        derivedStatusName, product.createdAt)
+                        derivedStatusName, isUnsoldExpr, product.createdAt)
                 .from(product)
                 .leftJoin(ai).on(latestAuctionItem(product, ai))
                 .where(
@@ -47,7 +50,7 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
         return rows.stream()
                 .map(row -> new ProductSummaryResponseDto(
                         row.get(product.productId), row.get(product.name), row.get(product.imageUrl),
-                        ProductListingStatus.valueOf(row.get(derivedStatusName)), row.get(product.createdAt)))
+                        ProductListingStatus.valueOf(row.get(derivedStatusName)), row.get(isUnsoldExpr), row.get(product.createdAt)))
                 .toList();
     }
 
