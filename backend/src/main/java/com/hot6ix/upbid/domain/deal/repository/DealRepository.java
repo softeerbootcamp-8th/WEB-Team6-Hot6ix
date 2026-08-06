@@ -77,6 +77,8 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    EXISTS (SELECT 1 FROM deal_candidates c
                             WHERE c.auction_item_id = ai.auction_item_id
                               AND c.status = :waitingStatus) AS hasWaitingCandidate,
+                   NULL                 AS myCandidateStatus,
+                   0                    AS myTurn,
                    ai.current_price     AS amount,
                    (SELECT bu.nickname
                       FROM deal_candidates c
@@ -110,6 +112,16 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                    EXISTS (SELECT 1 FROM deal_candidates c
                             WHERE c.auction_item_id = ai.auction_item_id
                               AND c.status = :waitingStatus) AS hasWaitingCandidate,
+                   dc.status            AS myCandidateStatus,
+                   NOT EXISTS (
+                       SELECT 1 FROM deal_candidates o
+                         JOIN users ou ON ou.user_id = o.bidder_user_id AND ou.deleted_at IS NULL
+                        WHERE o.auction_item_id = dc.auction_item_id
+                          AND o.status = :waitingStatus
+                          AND (o.candidate_rank < dc.candidate_rank
+                               OR (o.candidate_rank = dc.candidate_rank
+                                   AND o.deal_candidate_id < dc.deal_candidate_id))
+                   )                    AS myTurn,
                    dc.bid_amount        AS amount,
                    su.nickname          AS partnerNickname,
                    sp.seller_profile_id AS sellerProfileId,
