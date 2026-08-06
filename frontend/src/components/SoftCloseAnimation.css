@@ -1,0 +1,58 @@
+.soft-close-animation {
+  --soft-close-size: 320px;
+  display: inline-grid;
+  width: min(var(--soft-close-size), 100%);
+  margin: 0;
+  justify-items: center;
+  color: inherit;
+  background: transparent;
+  line-height: 1;
+  user-select: none;
+}
+
+.soft-close-animation__picture {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.soft-close-animation__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.soft-close-animation__label {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: -0.1rem;
+  padding: 0;
+  font-family: Pretendard, 'Apple SD Gothic Neo', system-ui, sans-serif;
+  text-align: center;
+}
+
+.soft-close-animation__label strong {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: #1f2937;
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.035em;
+}
+
+.soft-close-animation__minutes {
+  color: #9a670f;
+  font-size: 1.65rem;
+}
+
+.soft-close-animation__label span {
+  color: #6b7280;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.025em;
+}

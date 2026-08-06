@@ -32,6 +32,15 @@ import { mergeItemDetail, toAuctionItems } from '@/features/live/adapt-item'
 import { toRoomResult } from '@/features/live/adapt-result'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import { retryOnNetworkError } from '@/features/live/api-error'
+import {
+  AUCTION_START_FLASH_MS,
+  type AuctionStartFlashState,
+} from '@/features/live/components/auction-start-flash'
+import { preloadLiveMotion } from '@/features/live/preload-motion'
+import {
+  SOFT_CLOSE_FLASH_MS,
+  type SoftCloseFlash,
+} from '@/features/live/soft-close-flash'
 import { toBidErrorMessage } from '@/features/live/bid-error'
 import {
   sellerActionMessageByCode,
@@ -230,6 +239,14 @@ function LiveRoomPage() {
             ),
           )
           /*
+           * 시작 알림. 뒤이어 또 시작되면 마지막 것만 남는다. 겹쳐 띄우면
+           * 화면 가운데에서 그림이 서로 가린다.
+           */
+          setJustStarted({
+            itemId: payload.itemId,
+            startedAt: payload.endedTime,
+          })
+          /*
            * 첫 물품이 시작되면 방도 BEFORE → OPEN 이 된다. 이 창이 시작을 요청한
            * 당사자가 아니어도 상태 표시(LIVE 배지)와 설정 잠금이 따라와야 한다.
            */
@@ -316,6 +333,15 @@ function LiveRoomPage() {
                 : item,
             ),
           )
+          /*
+           * 연장 연출. 같은 물품이 또 연장되면 count 가 올라가 APNG 가 처음부터
+           * 다시 재생된다(`replayKey`).
+           */
+          setJustExtended((prev) => ({
+            itemId: payload.itemId,
+            seconds: payload.extendSeconds,
+            count: prev?.itemId === payload.itemId ? prev.count + 1 : 0,
+          }))
           break
 
         case 'ItemEnded':
@@ -505,6 +531,12 @@ function LiveRoomPage() {
   const showDevTools = useDevTools()
   /** 방금 마감돼서 도장이 찍혀 있는 물품 */
   const [justClosedId, setJustClosedId] = useState<number | null>(null)
+  /** 방금 소프트클로즈로 연장돼서 연출이 떠 있는 물품 */
+  const [justExtended, setJustExtended] = useState<SoftCloseFlash | null>(null)
+  /** 방금 시작돼서 화면 가운데에 알림이 떠 있는 물품 */
+  const [justStarted, setJustStarted] = useState<AuctionStartFlashState | null>(
+    null,
+  )
   /** 시작 요청을 서버가 처리 중인 물품. 그 카드의 조작 줄만 잠근다. */
   const [startingItemId, setStartingItemId] = useState<number | null>(null)
   /** 판매자가 방 전체를 끝낼 때 한 번 더 확인받는다. */
@@ -808,6 +840,7 @@ function LiveRoomPage() {
       })
       toast.success('입찰이 등록됐어요', {
         description: `${detailItem.name} · ${formatWon(detailAmount)}`,
+        motion: 'bidAccepted',
       })
       refreshItems(detailItem.id)
     } catch (error) {
@@ -819,12 +852,46 @@ function LiveRoomPage() {
     }
   }
 
-  // 도장은 한 번만 보여주고 지운다.
+  /*
+   * 도장은 한 번만 보여주고 지운다.
+   *
+   * 마감 APNG 가 2.83초짜리라 그보다 짧게 잡으면 마지막 타격과 낙찰 도장이
+   * 나오기 전에 사라진다. 마감 판정 자체는 서버 이벤트가 하고, 이 값은
+   * 연출을 얼마나 띄워둘지만 정한다.
+   */
   useEffect(() => {
     if (justClosedId === null) return
-    const timer = window.setTimeout(() => setJustClosedId(null), 2200)
+    const timer = window.setTimeout(() => setJustClosedId(null), 3050)
     return () => window.clearTimeout(timer)
   }, [justClosedId])
+
+  /*
+   * 마감·연장·입찰 연출 이미지를 미리 받아둔다. 마감은 예고 없이 일어나서
+   * 그때 받기 시작하면 늦는다.
+   */
+  useEffect(() => {
+    preloadLiveMotion()
+  }, [])
+
+  // 시작 알림도 한 번만 보여주고 지운다.
+  useEffect(() => {
+    if (justStarted === null) return
+    const timer = window.setTimeout(
+      () => setJustStarted(null),
+      AUCTION_START_FLASH_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [justStarted])
+
+  // 연장 연출도 한 번만 보여주고 지운다.
+  useEffect(() => {
+    if (justExtended === null) return
+    const timer = window.setTimeout(
+      () => setJustExtended(null),
+      SOFT_CLOSE_FLASH_MS,
+    )
+    return () => window.clearTimeout(timer)
+  }, [justExtended])
 
   /**
    * 개발용 데모 입찰.
@@ -940,6 +1007,7 @@ function LiveRoomPage() {
       // 서버가 확정해 준 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       toast.success('입찰이 등록됐어요', {
         description: `${pendingBid.item.name} · ${formatWon(pendingBid.amount)}`,
+        motion: 'bidAccepted',
       })
       refreshItems(pendingBid.item.id)
       setPendingBid(null)
@@ -1071,6 +1139,8 @@ function LiveRoomPage() {
           onStart={isOwner ? handleStart : undefined}
           isOwner={isOwner}
           justClosedId={justClosedId}
+          justExtended={justExtended}
+          justStarted={justStarted}
           startingItemId={startingItemId}
           devTools={
             import.meta.env.DEV && showDevTools
@@ -1378,6 +1448,8 @@ function LiveRoomPage() {
                   }
                   isDimmed={(item) => removeMode && item.status !== 'READY'}
                   justClosedId={justClosedId}
+                  justExtended={justExtended}
+                  justStarted={justStarted}
                   startingItemId={startingItemId}
                   onStart={isOwner ? handleStart : undefined}
                   onSelect={handleSelectItem}
@@ -1475,6 +1547,12 @@ function LiveRoomPage() {
                       key={item.id}
                       item={item}
                       justClosed={justClosedId === item.id}
+                      justExtended={
+                        justExtended?.itemId === item.id ? justExtended : null
+                      }
+                      justStarted={
+                        justStarted?.itemId === item.id ? justStarted : null
+                      }
                       // 마감되면 이 카드가 목록 아래로 미끄러진다.
                       rowRef={(element) => {
                         if (element)
