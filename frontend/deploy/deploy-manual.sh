@@ -21,7 +21,7 @@ DISTRIBUTION_ID="E17BE3ZTNT6VTF"
 API_BASE_URL="https://api.upbid.store"
 FE_URL="https://www.upbid.store"
 # src/components/motion-sources.ts 의 MOTION_BASE 와 같은 값이어야 한다.
-MOTION_VERSION="v1"
+MOTION_VERSION="v3"
 export AWS_DEFAULT_REGION="ap-northeast-2"
 
 cd "$(dirname "$0")/.."

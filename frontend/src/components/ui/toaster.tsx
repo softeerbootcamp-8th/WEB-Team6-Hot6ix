@@ -77,7 +77,7 @@ function ToastRow({ toast: item }: { toast: Toast }) {
        * 같이 두면 성공 표시가 둘이 된다.
        */}
       {item.motion === 'bidAccepted' ? (
-        <BidAcceptedMotion replayKey={item.id} size={44} />
+        <BidAcceptedMotion size={44} />
       ) : (
         <span
           aria-hidden

@@ -1,6 +1,5 @@
 import { preload } from 'react-dom'
 
-import bidAccepted from '@/assets/bid-accepted-micro-v1/bid-accepted.png'
 import { MOTION_SOURCE } from '@/components/motion-sources'
 
 /**
@@ -16,15 +15,13 @@ import { MOTION_SOURCE } from '@/components/motion-sources'
  * `fetchPriority: 'low'` 를 주는 이유: 방에 들어오자마자 필요한 것은 물품 목록과
  * 실시간 연결이다. 연출용 이미지가 그 요청과 대역폭을 다투면 안 된다.
  *
- * 유찰 연출은 정지 이미지(100KB 이하)라 미리 받을 만큼 무겁지 않아 뺐다.
- * 입찰 접수(232KB)는 번들에 그대로 있어 import 로 가져온다.
+ * 유찰과 입찰 접수는 정지 이미지(100KB 이하)라 미리 받을 만큼 무겁지 않아 뺐다.
  */
 export function preloadLiveMotion() {
   for (const href of [
     MOTION_SOURCE.auctionStart,
     MOTION_SOURCE.auctionSold,
     MOTION_SOURCE.softCloseExtended,
-    bidAccepted,
   ]) {
     preload(href, { as: 'image', fetchPriority: 'low' })
   }
