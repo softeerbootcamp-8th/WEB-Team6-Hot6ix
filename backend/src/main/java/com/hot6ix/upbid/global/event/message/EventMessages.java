@@ -2,6 +2,7 @@ package com.hot6ix.upbid.global.event.message;
 
 import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
@@ -33,6 +34,8 @@ public final class EventMessages {
                     + " 입찰 · " + e.itemName());
             case SoftCloseExtended e -> Optional.of("Soft Close 발동 · " + e.itemName()
                     + " 마감 +" + e.extendSeconds() + "초 연장");
+            case ItemCloseAdvanced e -> Optional.of(e.itemName() + " 마감 앞당김 · "
+                    + remaining(e.remainingSeconds()) + " 뒤 마감");
             /*
              * ITEM_ADDED·ITEM_REMOVED는 빠뜨린 게 아니라 일부러 비워 둔다. 둘은 화면에
              * "목록을 다시 읽어라"라고 알리는 신호이지 사람이 읽을 사건이 아니다. 문구를

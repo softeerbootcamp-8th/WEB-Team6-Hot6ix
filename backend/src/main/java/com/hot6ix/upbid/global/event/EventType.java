@@ -17,6 +17,7 @@ public enum EventType {
     ITEM_CLOSING_SOON,
     BID_PLACED,
     SOFT_CLOSE_EXTENDED,
+    ITEM_CLOSE_ADVANCED,
 
     // 낙찰
     DEAL_RIGHT_ASSIGNED,

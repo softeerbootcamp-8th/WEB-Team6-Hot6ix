@@ -87,6 +87,13 @@ export interface AuctionRoomDetail {
   shareCode: string
   /** 마감 직전 입찰 시 연장되는 시간(초) */
   softCloseSeconds: number
+  /**
+   * 마감 몇 초 전부터 연장 구간인지(초).
+   *
+   * 판매자가 마감을 앞당기면 이 값만큼 남은 시각으로 당겨지므로, 확인
+   * 다이얼로그 문구와 버튼 잠금 판정이 이 값을 쓴다.
+   */
+  softCloseTriggerSeconds: number
   items: AuctionItemDetail[]
 }
 

@@ -45,6 +45,7 @@ export function MobileLiveView({
   justExtended = null,
   justStarted = null,
   startingItemId = null,
+  closingEarlyItemId = null,
   devTools,
   onShare,
   onOpenSettings,
@@ -56,6 +57,7 @@ export function MobileLiveView({
   isDimmed,
   seller,
   onStart,
+  onCloseEarly,
   onBid,
 }: {
   room: AuctionRoomDetail
@@ -83,6 +85,8 @@ export function MobileLiveView({
   justStarted?: AuctionStartFlashState | null
   /** 시작 요청이 서버에서 처리 중인 물품 id */
   startingItemId?: number | null
+  /** 마감 앞당기기 요청이 서버에서 처리 중인 물품 id */
+  closingEarlyItemId?: number | null
   /** 개발용 조작. 프로덕션에서는 넘기지 않는다. */
   devTools?: {
     sellerView: boolean
@@ -117,6 +121,8 @@ export function MobileLiveView({
   }
   /** 진행 시간(분)을 정해 경매를 시작한다. 판매자가 아니면 넘기지 않는다. */
   onStart?: (item: AuctionItemDetail, minutes: number) => void
+  /** 진행 중인 물품의 마감을 앞당긴다. 판매자가 아니면 넘기지 않는다. */
+  onCloseEarly?: (item: AuctionItemDetail) => void
   onBid: () => void
 }) {
   const [tab, setTab] = useState<'events' | 'leaderboard'>('events')
@@ -310,8 +316,11 @@ export function MobileLiveView({
                   justExtended={justExtended}
                   justStarted={justStarted}
                   startingItemId={startingItemId}
+                  closingEarlyItemId={closingEarlyItemId}
+                  softCloseTriggerSeconds={room.softCloseTriggerSeconds}
                   onSelect={onSelectItem ?? ((item) => onOpenItem(item.id))}
                   onStart={onStart}
+                  onCloseEarly={onCloseEarly}
                 />
               ))}
 

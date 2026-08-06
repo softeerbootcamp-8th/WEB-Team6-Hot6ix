@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.service.ItemClosingSoonService;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
@@ -230,6 +231,29 @@ class ItemClosingSoonSchedulerTest {
 
         verify(schedule).cancel(false);
         assertThat(schedules()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("판매자가 마감을 앞당기면 알림 예약을 취소하고 다시 걸지 않는다")
+    void cancelsScheduleOnItemCloseAdvanced() {
+
+        ScheduledFuture<?> schedule = givenScheduledFuture();
+        givenNotifyAt(NOTIFY_AT);
+        itemClosingSoonScheduler.on(itemStarted());
+
+        itemClosingSoonScheduler.on(itemCloseAdvanced());
+
+        verify(schedule).cancel(false);
+        assertThat(schedules())
+                .as("남겨두면 옛 마감 기준 예약이 깨어나 실제 남은 시간과 다른 '곧 마감'을 알린다")
+                .isEmpty();
+        // 앞당긴 순간이 곧 알림 시각이라 새로 걸 예약이 없다.
+        verify(taskScheduler, times(1)).schedule(any(Runnable.class), any(Instant.class));
+    }
+
+    private ItemCloseAdvanced itemCloseAdvanced() {
+        LocalDateTime now = LocalDateTime.now();
+        return ItemCloseAdvanced.of(ROOM_ID, ITEM_ID, ITEM_NAME, 60, now.plusSeconds(60), now);
     }
 
     private ItemStarted itemStarted() {

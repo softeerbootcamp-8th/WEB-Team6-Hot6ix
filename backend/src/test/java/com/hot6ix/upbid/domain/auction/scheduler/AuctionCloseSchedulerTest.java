@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
@@ -41,6 +42,8 @@ class AuctionCloseSchedulerTest {
     private static final LocalDateTime END_AT = LocalDateTime.of(2026, 8, 2, 21, 10);
     /** Soft Close로 30초 밀린 마감 시각. */
     private static final LocalDateTime EXTENDED_END_AT = END_AT.plusSeconds(30);
+    /** 판매자가 앞당겨 9분 앞으로 당겨진 마감 시각. */
+    private static final LocalDateTime ADVANCED_END_AT = END_AT.minusMinutes(9);
 
     @Mock
     private TaskScheduler taskScheduler;
@@ -153,6 +156,30 @@ class AuctionCloseSchedulerTest {
 
         assertThat(captor.getValue())
                 .isEqualTo(EXTENDED_END_AT.atZone(ZoneId.systemDefault()).toInstant());
+    }
+
+    @Test
+    @DisplayName("판매자가 마감을 앞당기면 당겨진 시각으로 예약을 갈아 끼운다")
+    void reschedulesOnItemCloseAdvanced() {
+
+        ScheduledFuture<?> first = mock(ScheduledFuture.class);
+        ScheduledFuture<?> second = mock(ScheduledFuture.class);
+        doReturn(first).doReturn(second)
+                .when(taskScheduler).schedule(any(Runnable.class), any(Instant.class));
+
+        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.on(ItemCloseAdvanced.of(
+                ROOM_ID, ITEM_ID, "한정판 피규어", 60, ADVANCED_END_AT, STARTED_AT));
+
+        // 취소하지 않으면 옛 예약이 살아남아 물품이 앞당기기 전 시각까지 열려 있게 된다.
+        verify(first).cancel(false);
+        assertThat(schedules()).containsEntry(ITEM_ID, second);
+
+        ArgumentCaptor<Instant> captor = ArgumentCaptor.forClass(Instant.class);
+        verify(taskScheduler, times(2)).schedule(any(Runnable.class), captor.capture());
+        assertThat(captor.getAllValues())
+                .last()
+                .isEqualTo(ADVANCED_END_AT.atZone(ZoneId.systemDefault()).toInstant());
     }
 
     @Test

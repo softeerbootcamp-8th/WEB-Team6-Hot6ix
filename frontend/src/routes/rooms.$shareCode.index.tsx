@@ -15,6 +15,7 @@ import {
   getGetSummariesQueryKey,
   useGetDetail1,
   useAddAll,
+  useCloseEarly,
   useGetSummaries,
   useRemove,
   useStart,
@@ -70,7 +71,7 @@ import { RouteError, RoutePending } from '@/components/route-states'
 import { SharePanel } from '@/features/live/components/share-panel'
 import { cn } from '@/lib/utils'
 import { useCountdown } from '@/hooks/use-countdown'
-import { formatClosingLead, formatWon } from '@/lib/format'
+import { formatClosingLead, formatRemaining, formatWon } from '@/lib/format'
 import { toast } from '@/lib/toast'
 import { useDevTools } from '@/lib/dev-tools'
 import { useCurrentUser } from '@/lib/session'
@@ -350,6 +351,35 @@ function LiveRoomPage() {
           }))
           break
 
+        case 'ItemCloseAdvanced':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              kind: 'CLOSE',
+              itemId: payload.itemId,
+              /*
+               * 물품명을 subtitle 이 아니라 본문에 넣는다. 모바일 피드
+               * (`mobile-event-feed.tsx`)가 subtitle 을 그리지 않아 어느 물품인지
+               * 알 수 없고, 무엇보다 CLOSE 이벤트에 subtitle 이 있으면 그걸
+               * 낙찰로 보고 초록 배경에 트로피를 칠한다.
+               */
+              message: `${payload.itemName} 마감 앞당김 · ${formatClosingLead(payload.remainingSeconds)} 뒤 마감`,
+              emphasized: true,
+            },
+          ])
+          // 연장과 같은 이유로 서버가 준 마감 시각을 그대로 쓴다. 직접 빼서 계산하면
+          // 이벤트가 두 번 오거나 유실됐을 때 화면만 서버와 어긋난다.
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
+              item.id === payload.itemId
+                ? { ...item, endsAt: payload.endedTime }
+                : item,
+            ),
+          )
+          break
+
         case 'ItemEnded':
           setExtraEvents((prev) => [
             ...prev,
@@ -552,6 +582,13 @@ function LiveRoomPage() {
   )
   /** 시작 요청을 서버가 처리 중인 물품. 그 카드의 조작 줄만 잠근다. */
   const [startingItemId, setStartingItemId] = useState<number | null>(null)
+  /** 마감을 앞당길지 확인받는 중인 물품. 다이얼로그 문구에 이름이 들어간다. */
+  const [closingEarlyItem, setClosingEarlyItem] =
+    useState<AuctionItemDetail | null>(null)
+  /** 앞당기기 요청을 서버가 처리 중인 물품. 그 카드의 버튼만 잠근다. */
+  const [closingEarlyItemId, setClosingEarlyItemId] = useState<number | null>(
+    null,
+  )
   /** 판매자가 방 전체를 끝낼 때 한 번 더 확인받는다. */
   const [closingRoom, setClosingRoom] = useState(false)
   /** 판매자가 방 설정을 고치는 중. 라우트를 옮기지 않아 실시간 연결이 유지된다. */
@@ -602,6 +639,14 @@ function LiveRoomPage() {
     detailItem?.endsAt ?? new Date().toISOString(),
   )
 
+  /*
+   * 앞당기기 확인 다이얼로그가 "지금 남은 시간 → 앞당긴 뒤 남은 시간"을 보여준다.
+   * 다이얼로그가 닫혀 있을 때 지금 시각을 넣는 것은 상세와 같은 이유다.
+   */
+  const closingEarlyRemaining = useCountdown(
+    closingEarlyItem?.endsAt ?? new Date().toISOString(),
+  )
+
   // 상세를 열 때마다 최소 입찰가로 맞춘다.
   useEffect(() => {
     if (!detailItem) return
@@ -624,6 +669,7 @@ function LiveRoomPage() {
 
   const placeBid = usePlace()
   const startItem = useStart()
+  const closeEarlyItem = useCloseEarly()
   const addItems = useAddAll()
   const removeItem = useRemove()
   const closeRoom = useClose()
@@ -689,6 +735,43 @@ function LiveRoomPage() {
       toast.error(title, { description })
     } finally {
       setStartingItemId(null)
+    }
+  }
+
+  /**
+   * 판매자가 진행 중인 물품의 마감을 연장 구간이 열리는 시각으로 앞당긴다.
+   *
+   * 물품이 바로 닫히지는 않는다. 서버가 마감 시각만 당기고, 그 시각에 서버
+   * 스케줄러가 닫는다. 그래서 여기서 화면을 종료로 바꾸지 않고 목록만 다시 읽는다.
+   *
+   * 새 마감 시각은 SSE(`ItemCloseAdvanced`)로도 오지만, 요청한 당사자에게는
+   * 응답이 먼저 도착할 수 있어 목록을 다시 읽어 카운트다운을 맞춘다.
+   */
+  const handleCloseEarly = async () => {
+    if (!closingEarlyItem) return
+
+    const item = closingEarlyItem
+    setClosingEarlyItemId(item.id)
+
+    try {
+      const response = await closeEarlyItem.mutateAsync({
+        auctionItemId: item.id,
+      })
+
+      setClosingEarlyItem(null)
+      toast.success('마감을 앞당겼어요', {
+        description: `${item.name} · ${formatClosingLead(response.data?.remainingSeconds ?? room.softCloseTriggerSeconds)} 뒤 마감`,
+      })
+      refreshItems(item.id)
+    } catch (error) {
+      const { title, description } = toSellerActionErrorMessage(
+        error,
+        'closeEarly',
+      )
+      toast.error(title, { description })
+      setClosingEarlyItem(null)
+    } finally {
+      setClosingEarlyItemId(null)
     }
   }
 
@@ -1109,10 +1192,47 @@ function LiveRoomPage() {
   )
 
   /*
+   * 마감 앞당기기 확인. 되돌릴 수 없는 조작이라 한 번 더 묻는다.
+   * 종료 확인과 같은 이유로 한 번 만들어 양쪽 분기에서 쓴다.
+   */
+  const closeEarlyDialog = (
+    <ConfirmDialog
+      open={closingEarlyItem !== null}
+      tone="danger"
+      title="마감을 앞당길까요?"
+      description={
+        closingEarlyItem ? (
+          <>
+            <p className="font-semibold text-foreground">
+              {closingEarlyItem.name}
+            </p>
+            <p className="mt-1.5 flex items-baseline gap-2 tabular-nums">
+              남은 시간
+              <span>
+                {formatRemaining(closingEarlyRemaining)} →{' '}
+                <span className="font-bold text-foreground">
+                  {formatRemaining(room.softCloseTriggerSeconds)}
+                </span>
+              </span>
+            </p>
+            <p className="mt-3 text-[13px]">
+              마감 직전 입찰이 들어오면 지금처럼 다시 연장돼요.
+            </p>
+          </>
+        ) : undefined
+      }
+      confirmLabel="앞당기기"
+      pending={closeEarlyItem.isPending}
+      onCancel={() => setClosingEarlyItem(null)}
+      onConfirm={() => void handleCloseEarly()}
+    />
+  )
+
+  /*
    * 방 설정 수정. 종료 확인과 같은 이유로 한 번 만들어 양쪽 분기에서 쓴다.
    *
-   * 어댑터(`toAuctionRoomDetail`)가 `liveUrl`·`softCloseTriggerSeconds` 를
-   * 떨구기 때문에 **가공한 `room` 이 아니라 서버 응답을 그대로 넘긴다.**
+   * 어댑터(`toAuctionRoomDetail`)가 `liveUrl` 을 떨구기 때문에 **가공한 `room` 이
+   * 아니라 서버 응답을 그대로 넘긴다.**
    */
   const roomDto = roomQuery.data?.data
   const settingsModal = roomDto ? (
@@ -1150,6 +1270,8 @@ function LiveRoomPage() {
           isDimmed={(item) => removeMode && item.status !== 'READY'}
           seller={sellerControls}
           onStart={isOwner ? handleStart : undefined}
+          onCloseEarly={isOwner ? setClosingEarlyItem : undefined}
+          closingEarlyItemId={closingEarlyItemId}
           isOwner={isOwner}
           justClosedId={justClosedId}
           justExtended={justExtended}
@@ -1255,6 +1377,7 @@ function LiveRoomPage() {
         </Modal>
 
         {closeRoomDialog}
+        {closeEarlyDialog}
         {settingsModal}
 
         {/*
@@ -1464,7 +1587,10 @@ function LiveRoomPage() {
                   justExtended={justExtended}
                   justStarted={justStarted}
                   startingItemId={startingItemId}
+                  closingEarlyItemId={closingEarlyItemId}
+                  softCloseTriggerSeconds={room.softCloseTriggerSeconds}
                   onStart={isOwner ? handleStart : undefined}
+                  onCloseEarly={isOwner ? setClosingEarlyItem : undefined}
                   onSelect={handleSelectItem}
                 />
               ))}
@@ -1616,6 +1742,7 @@ function LiveRoomPage() {
       />
 
       {closeRoomDialog}
+      {closeEarlyDialog}
       {settingsModal}
 
       <ItemManagement

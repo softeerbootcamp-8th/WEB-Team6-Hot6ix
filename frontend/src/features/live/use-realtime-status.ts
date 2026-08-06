@@ -58,6 +58,23 @@ export type SseEventPayload =
       extendSeconds: number
       endedTime: string
     }
+  /**
+   * 판매자가 마감을 앞당겼다. **이 이벤트가 오는 순간부터가 Soft Close 연장 구간**이라
+   * 마감 임박(`ItemClosingSoon`)과 같은 뜻이고, 대신 마감 시각이 함께 온다.
+   *
+   * `endedTime` 은 앞당겨진 마감 시각이라 화면이 이 값으로 카운트다운을 다시 맞춘다.
+   * `remainingSeconds` 는 그때까지 남은 초로 경매방의 연장 트리거 값과 같다.
+   *
+   * 앞당긴 뒤에도 연장은 그대로 살아 있어서, 이 구간에 입찰이 들어오면
+   * `SoftCloseExtended` 가 이어서 온다.
+   */
+  | {
+      kind: 'ItemCloseAdvanced'
+      itemId: number
+      itemName: string
+      remainingSeconds: number
+      endedTime: string
+    }
   // 유찰도 이 이벤트로 온다. 입찰이 없었으면 낙찰가·낙찰자가 둘 다 null 이다.
   | {
       kind: 'ItemEnded'
@@ -154,6 +171,7 @@ export function useRealtimeStatus(
     es.addEventListener('ITEM_CLOSING_SOON', makeHandler('ItemClosingSoon'))
     es.addEventListener('BID_PLACED', makeHandler('BidPlaced'))
     es.addEventListener('SOFT_CLOSE_EXTENDED', makeHandler('SoftCloseExtended'))
+    es.addEventListener('ITEM_CLOSE_ADVANCED', makeHandler('ItemCloseAdvanced'))
     es.addEventListener('ITEM_ENDED', makeHandler('ItemEnded'))
     es.addEventListener('ROOM_CLOSED', makeHandler('RoomClosed'))
     es.addEventListener('ITEM_ADDED', makeHandler('ItemAdded'))
