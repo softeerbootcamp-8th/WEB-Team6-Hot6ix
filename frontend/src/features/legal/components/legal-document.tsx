@@ -36,10 +36,6 @@ export function LegalDocument({
           </section>
         ))}
       </div>
-
-      <p className="mt-10 rounded-2xl bg-surface-subtle px-5 py-4 text-caption font-normal text-neutral-muted">
-        본 문서는 초안입니다. 확정 전까지 내용이 바뀔 수 있습니다.
-      </p>
     </article>
   )
 }

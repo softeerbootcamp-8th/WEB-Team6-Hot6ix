@@ -16,7 +16,8 @@ public interface UserApi {
 
     @Operation(
             summary = "내 정보 조회",
-            description = "세션의 유저 정보를 반환한다. 앱 초기화 시 호출해 sessionStore를 세팅한다."
+            description = "세션의 유저 정보를 반환한다. 앱 초기화 시 호출해 sessionStore를 세팅한다. "
+                    + "phoneNumber는 인증을 마친 전화번호이며 인증 전이면 null이다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),

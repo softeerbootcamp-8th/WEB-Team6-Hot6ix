@@ -93,9 +93,10 @@ function PhoneVerificationPage() {
         setVerified(true)
         try {
           // 회원가입 응답은 body 가 없다 — 실제 회원 정보는 /me 로 다시 조회한다.
+          // 방금 인증한 번호도 이 응답에 실려 온다(가입 시점에 회원 정보로 저장된다).
           await queryClient.fetchQuery({
             queryKey: ['session', 'me'],
-            queryFn: () => hydrateSession(formatPhoneNumber(phoneDigits)),
+            queryFn: () => hydrateSession(),
             staleTime: Infinity,
           })
         } catch {

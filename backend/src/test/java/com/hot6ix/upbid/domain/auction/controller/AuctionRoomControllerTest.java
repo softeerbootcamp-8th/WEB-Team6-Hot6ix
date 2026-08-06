@@ -76,7 +76,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
     }
 
     /**
-     * @param agreedToTerms 약관 동의 여부. 공개 조회에서만 채워지고, 게스트이거나
+     * @param agreedToTerms 약관 동의 여부. 참여자의 공개 조회에서만 채워지고, 게스트·방 주인이거나
      *                      판매자 조작 응답(생성·수정·종료)이면 null이다.
      */
     private AuctionRoomPublicResponseDto sampleResponse(Boolean agreedToTerms) {
