@@ -1,13 +1,13 @@
 package com.hot6ix.upbid.domain.auction.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import com.hot6ix.upbid.domain.auction.entity.AuctionParticipant;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -15,9 +15,9 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.Query;
 import java.time.LocalDateTime;
 import java.util.List;
-import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +36,9 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
 
     @Autowired
     private AuctionItemRepository auctionItemRepository;
+
+    @Autowired
+    private AuctionParticipantRepository auctionParticipantRepository;
 
     @Autowired
     private TestEntityManager entityManager;
@@ -91,6 +94,16 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 .bidIncrement(1_000L)
                 .status(status)
                 .endAt(LocalDateTime.of(2026, 7, 29, 21, 0))
+                .build());
+    }
+
+    /** 입찰자. 판매자와 달리 SellerProfile이 없다. 전화번호는 unique가 아니라 겹쳐도 된다. */
+    private User newBidder(String email) {
+        return entityManager.persist(User.builder()
+                .email(email)
+                .password("password")
+                .nickname("한기")
+                .phoneNumber("010-1234-5678")
                 .build());
     }
 
@@ -222,49 +235,6 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 .containsExactly(targetItem.getAuctionItemId());
     }
 
-    @Test
-    @DisplayName("READY 상태의 AuctionItem만 있으면 시작된 적 없는 것으로 본다")
-    void existsByProductAndStatusNot_false_whenOnlyReady() {
-
-        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
-        Product product = newProduct("대기상품");
-        newAuctionItem(auctionRoom, product, AuctionItemStatus.READY);
-        entityManager.flush();
-
-        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
-                product.getProductId(), AuctionItemStatus.READY);
-
-        assertThat(started).isFalse();
-    }
-
-    @Test
-    @DisplayName("READY가 아닌 AuctionItem이 하나라도 있으면 시작된 적 있는 것으로 본다")
-    void existsByProductAndStatusNot_true_whenNotReady() {
-
-        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
-        Product product = newProduct("낙찰상품");
-        newAuctionItem(auctionRoom, product, AuctionItemStatus.SOLD);
-        entityManager.flush();
-
-        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
-                product.getProductId(), AuctionItemStatus.READY);
-
-        assertThat(started).isTrue();
-    }
-
-    @Test
-    @DisplayName("연결된 AuctionItem이 없으면 시작된 적 없는 것으로 본다")
-    void existsByProductAndStatusNot_false_whenNoAuctionItem() {
-
-        Product product = newProduct("미등록상품");
-        entityManager.flush();
-
-        boolean started = auctionItemRepository.existsByProduct_ProductIdAndStatusNot(
-                product.getProductId(), AuctionItemStatus.READY);
-
-        assertThat(started).isFalse();
-    }
-
     /**
      * 트랜잭션이 둘 필요해 락의 실제 차단은 볼 수 없어 락 모드만 단정한다. {@code clear()}가
      * 필요한 이유는 같은 트랜잭션에서 INSERT한 엔티티가 이미 쓰기 상태로 표시돼 있기 때문이다.
@@ -334,51 +304,49 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(auctionItemRepository.findSellerUserId(item.getAuctionItemId())).isEmpty();
     }
 
-    @Test
-    @DisplayName("경매방에 올라간 상품이면 상태와 무관하게 존재 검사가 참이다")
-    void existsByProductIdIgnoresStatus() {
-
-        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
-        Product ready = newProduct("대기상품");
-        Product sold = newProduct("낙찰상품");
-        newAuctionItem(auctionRoom, ready, AuctionItemStatus.READY);
-        newAuctionItem(auctionRoom, sold, AuctionItemStatus.SOLD);
-        entityManager.flush();
-
-        assertThat(auctionItemRepository.existsByProduct_ProductId(ready.getProductId())).isTrue();
-        assertThat(auctionItemRepository.existsByProduct_ProductId(sold.getProductId())).isTrue();
-    }
-
-    @Test
-    @DisplayName("어느 경매방에도 없는 상품이면 존재 검사가 거짓이다")
-    void existsByProductIdIsFalseWhenNotListed() {
-
-        Product product = newProduct("미등록상품");
-        entityManager.flush();
-
-        assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isFalse();
-    }
-
     /**
-     * 서비스의 존재 검사는 읽고-검사하고-쓰는 흐름이라 동시 요청 두 건이 함께 통과할 수 있다.
-     * 최후 방어선인 unique 제약이 실제 스키마에 붙었는지는 mock으로 확인할 수 없어 여기서 본다.
-     *
-     * <p>ID 전략이 IDENTITY라 {@code persist()} 시점에 INSERT가 바로 나가므로, 제약 위반도
-     * 뒤따르는 {@code flush()}가 아니라 그 자리에서 터진다.
+     * 유찰·거래 전원 실패 상품 재등록을 지원하면서 {@code product_id} unique 제약을 없앴다
+     * ({@code AuctionItem} javadoc 참고). 예전엔 이 제약이 동시 등록 두 건이 함께 통과하는
+     * 것을 막는 최후 방어선이었지만, 이제 그 역할은 상품 행 비관적 락(Service 계층)이 한다.
+     * 여기서는 <b>DB가 더 이상 막지 않는다</b>는 것만 확인한다.
      */
     @Test
-    @DisplayName("같은 상품을 두 물품으로 올리면 unique 제약에 걸린다")
-    void productIdIsUnique() {
+    @DisplayName("같은 상품을 두 물품으로 올릴 수 있다 (재등록 지원으로 unique 제약을 없앴다)")
+    void productIdIsNoLongerUnique() {
 
-        Product product = newProduct("중복상품");
-        newAuctionItem(newAuctionRoom("첫 번째 방"), product, AuctionItemStatus.READY);
+        Product product = newProduct("재등록상품2");
+        AuctionItem first = newAuctionItem(newAuctionRoom("첫 번째 방"), product, AuctionItemStatus.FAILED);
         entityManager.flush();
 
         AuctionRoom secondRoom = newAuctionRoom("두 번째 방");
+        AuctionItem second = newAuctionItem(secondRoom, product, AuctionItemStatus.READY);
+        entityManager.flush();
 
-        assertThatThrownBy(() -> newAuctionItem(secondRoom, product, AuctionItemStatus.READY))
-                .isInstanceOf(ConstraintViolationException.class)
-                .hasMessageContaining("uk_auction_items_product_id");
+        assertThat(second.getAuctionItemId()).isNotEqualTo(first.getAuctionItemId());
+        assertThat(auctionItemRepository.findAll())
+                .filteredOn(ai -> ai.getProduct().getProductId().equals(product.getProductId()))
+                .hasSize(2);
+    }
+
+    /**
+     * unique 제약을 없애면서 {@code product_id}의 유일한 인덱스도 함께 사라진다 — 재등록
+     * 판정({@code findBlockedProductIdsIn})과 "최신 물품" 상관 서브쿼리가 이 인덱스에
+     * 의존하므로 명시적으로 다시 걸어 뒀다({@code AuctionItem}의 {@code @Table(indexes=...)}).
+     * InnoDB가 FK 때문에 자동으로 인덱스를 만들어 주더라도 이름이 자동 생성이라 의존할 수
+     * 없으므로, 우리가 붙인 이름의 인덱스가 실제로 있는지 확인한다.
+     */
+    @Test
+    @DisplayName("product_id에 명시적 인덱스가 남아 있다")
+    void productIdIndexExists() {
+
+        Query query = entityManager.getEntityManager().createNativeQuery(
+                "select count(*) from information_schema.statistics "
+                        + "where table_schema = database() "
+                        + "  and table_name = 'auction_items' "
+                        + "  and index_name = 'idx_auction_items_product_id'");
+
+        Number count = (Number) query.getSingleResult();
+        assertThat(count.longValue()).isGreaterThan(0);
     }
 
     @Test
@@ -392,12 +360,13 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         auctionItemRepository.delete(first);
         entityManager.flush();
 
-        assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isFalse();
+        assertThat(auctionItemRepository.findBlockedProductIdsIn(List.of(product.getProductId()))).isEmpty();
 
         newAuctionItem(newAuctionRoom("두 번째 방"), product, AuctionItemStatus.READY);
         entityManager.flush();
 
-        assertThat(auctionItemRepository.existsByProduct_ProductId(product.getProductId())).isTrue();
+        assertThat(auctionItemRepository.findBlockedProductIdsIn(List.of(product.getProductId())))
+                .containsExactly(product.getProductId());
     }
 
     /**
@@ -469,6 +438,58 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 .containsExactly(
                         tuple(sold.getAuctionItemId(), "낙찰물품"),
                         tuple(failed.getAuctionItemId(), "유찰물품"));
+    }
+
+    @Test
+    @DisplayName("이 방에 약관 동의를 한 회원이면 참여자로 본다")
+    void existsParticipantReturnsTrueForAgreedParticipant() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        AuctionItem auctionItem = newAuctionItem(auctionRoom, "한정판피규어", AuctionItemStatus.IN_PROGRESS);
+        User bidder = newBidder("buyer1@hot6ix.com");
+        entityManager.flush();
+
+        auctionParticipantRepository.recordAgreement(
+                auctionRoom.getAuctionRoomId(), bidder.getUserId(), "v1");
+
+        assertThat(auctionItemRepository.existsParticipant(
+                auctionItem.getAuctionItemId(), bidder.getUserId())).isTrue();
+    }
+
+    @Test
+    @DisplayName("참여 행이 있어도 agreed_at이 비어 있으면 참여자로 보지 않는다")
+    void existsParticipantReturnsFalseWhenNotAgreed() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        AuctionItem auctionItem = newAuctionItem(auctionRoom, "한정판피규어", AuctionItemStatus.IN_PROGRESS);
+        User bidder = newBidder("buyer2@hot6ix.com");
+
+        // 빌더에 agreedAt이 없어 null로 들어간다. 동의 없이 행만 생긴 상태를 만든다.
+        entityManager.persist(AuctionParticipant.builder()
+                .auctionRoom(auctionRoom)
+                .user(bidder)
+                .build());
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.existsParticipant(
+                auctionItem.getAuctionItemId(), bidder.getUserId())).isFalse();
+    }
+
+    @Test
+    @DisplayName("다른 방에 동의한 회원은 이 방의 물품에 대해 참여자가 아니다")
+    void existsParticipantReturnsFalseForOtherRoomParticipant() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        AuctionRoom otherRoom = newAuctionRoom("다른 경매방");
+        AuctionItem auctionItem = newAuctionItem(auctionRoom, "한정판피규어", AuctionItemStatus.IN_PROGRESS);
+        User bidder = newBidder("buyer3@hot6ix.com");
+        entityManager.flush();
+
+        auctionParticipantRepository.recordAgreement(
+                otherRoom.getAuctionRoomId(), bidder.getUserId(), "v1");
+
+        assertThat(auctionItemRepository.existsParticipant(
+                auctionItem.getAuctionItemId(), bidder.getUserId())).isFalse();
     }
 
 }

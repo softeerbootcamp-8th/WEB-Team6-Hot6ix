@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.hot6ix.upbid.domain.sse.dto.ItemClosingSoonDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
 import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
 import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
+import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.RoomClosed;
@@ -56,6 +58,19 @@ class DomainEventSseListenerTest {
                 .as("화면에서 낙찰과 유찰은 '물품이 닫혔다'는 같은 사건이고, "
                         + "구분은 winnerNickname으로 한다. ITEM_PASSED로 내보내면 화면이 듣지 않는다")
                 .isEqualTo(new ItemEndedDto(ITEM_ID, "한정판 피규어", null, null));
+    }
+
+    @Test
+    @DisplayName("마감 임박은 ITEM_CLOSING_SOON으로 남은 초까지 함께 내보낸다")
+    void sendsItemClosingSoon() {
+
+        domainEventSseListener.on(
+                ItemClosingSoon.of(ROOM_ID, ITEM_ID, "한정판 피규어", 300, OCCURRED_AT));
+
+        assertThat(sentDto("ITEM_CLOSING_SOON"))
+                .as("알림 시점이 방의 Soft Close 트리거라 방마다 다르다. "
+                        + "이 값이 빠지면 화면이 '마감 1분 전'으로 고정된 문구밖에 못 만든다")
+                .isEqualTo(new ItemClosingSoonDto(ITEM_ID, "한정판 피규어", 300));
     }
 
     @Test

@@ -27,6 +27,9 @@ public interface DealSummaryProjection {
 
     String getProductName();
 
+    /** 상품 사진 주소. 판매자가 안 올렸으면 {@code null} */
+    String getImageUrl();
+
     String getAuctionRoomName();
 
     /** {@code AuctionItemStatus} 이름. 유찰 판정에 쓴다. */
@@ -40,6 +43,12 @@ public interface DealSummaryProjection {
      * 후보가 전원 실패한 것이라, 이 값이 유찰과 전원 실패를 가른다.
      */
     Integer getHasWaitingCandidate();
+
+    /** 구매 건이면 내 후보 상태, 판매 건이면 null */
+    String getMyCandidateStatus();
+
+    /** 구매 건이면 내 차례인지 여부(1 또는 0), 판매 건이면 0 */
+    Integer getMyTurn();
 
     Long getAmount();
 

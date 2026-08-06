@@ -25,6 +25,8 @@ export interface Deal {
   shareCode: string | null
   auctionRoomName: string
   productName: string
+  /** 판매자가 상품 사진을 안 올렸으면 없다. */
+  imageUrl: string | null
   role: DealRole
   status: DealItemStatus
   /** 유찰이면 없다. */
@@ -58,6 +60,7 @@ export function toDeals(dtos: DealSummaryResponseDto[] | undefined): Deal[] {
         shareCode: dto.shareCode ?? null,
         auctionRoomName: dto.auctionRoomName ?? '',
         productName: dto.productName ?? '이름 없는 물품',
+        imageUrl: dto.imageUrl ?? null,
         role: dto.role,
         status: dto.status,
         amount: dto.amount ?? null,

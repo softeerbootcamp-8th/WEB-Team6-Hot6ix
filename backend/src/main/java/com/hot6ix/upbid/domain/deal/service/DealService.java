@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.deal.dto.response.AuctionItemDealStatusResponseDt
 import com.hot6ix.upbid.domain.deal.dto.response.AuctionRoomDealStatusResponseDto;
 import com.hot6ix.upbid.domain.deal.dto.response.DealSummaryResponseDto;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
+import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
 import com.hot6ix.upbid.domain.deal.entity.DealItemStatus;
 import com.hot6ix.upbid.domain.deal.entity.DealProgress;
 import com.hot6ix.upbid.domain.deal.entity.DealRole;
@@ -146,17 +147,23 @@ public class DealService {
     }
 
     private DealSummaryResponseDto toResponse(DealSummaryProjection deal) {
+        boolean isSeller = isSeller(deal);
         return new DealSummaryResponseDto(
                 deal.getAuctionItemId(),
                 deal.getAuctionRoomId(),
                 deal.getShareCode(),
                 deal.getProductId(),
                 deal.getProductName(),
+                deal.getImageUrl(),
                 deal.getAuctionRoomName(),
-                isSeller(deal) ? DealRole.SELLER : DealRole.BUYER,
-                toItemStatus(deal.getItemStatus(),
+                isSeller ? DealRole.SELLER : DealRole.BUYER,
+                isSeller ? toItemStatus(deal.getItemStatus(),
                         deal.getDealCompleted() != 0,
-                        deal.getHasWaitingCandidate() != 0),
+                        deal.getHasWaitingCandidate() != 0)
+                         : toBuyerStatus(deal.getItemStatus(),
+                        deal.getDealCompleted() != 0,
+                        deal.getMyCandidateStatus(),
+                        deal.getMyTurn() != 0),
                 deal.getAmount(),
                 deal.getPartnerNickname(),
                 deal.getSellerProfileId(),
@@ -195,5 +202,23 @@ public class DealService {
             return DealItemStatus.COMPLETED;
         }
         return hasPartner ? DealItemStatus.IN_PROGRESS : DealItemStatus.ALL_FAILED;
+    }
+
+    private DealItemStatus toBuyerStatus(String itemStatus, boolean dealCompleted, String myCandidateStatus, boolean myTurn) {
+        DealCandidateStatus mine = DealCandidateStatus.valueOf(myCandidateStatus);
+
+        if (mine == DealCandidateStatus.COMPLETED) {
+            return DealItemStatus.COMPLETED;
+        }
+        if (mine == DealCandidateStatus.FAILED) {
+            return DealItemStatus.FAILED;
+        }
+
+        // 내 후보는 WAITING. 다른 후보가 거래를 성사했다면 내 차례는 오지 않는다.
+        if (dealCompleted) {
+            return DealItemStatus.FAILED;
+        }
+
+        return myTurn ? DealItemStatus.IN_PROGRESS : DealItemStatus.WAITING;
     }
 }

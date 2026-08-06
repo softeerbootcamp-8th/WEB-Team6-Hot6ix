@@ -31,3 +31,12 @@ dist-ssr
 # TanStack Router (auto-generated)
 src/routeTree.gen.ts
 .tanstack
+
+# 연출 APNG (저장소에 넣지 않는다)
+#
+# 합쳐서 11MB 인데 Git 은 바이너리를 diff 하지 못해 커밋할 때마다 통째로
+# 새로 쌓는다. 한 번 들어가면 지워도 히스토리에 영원히 남는다.
+# 배포는 s3://upbid-frontend/motion/v1/ 에 손으로 올린 것을 쓰고(자세한 내용은
+# src/components/motion-sources.ts), 로컬에서는 이 폴더에 같은 파일을 두면
+# vite 가 같은 경로로 서빙한다. 백업은 ~/hot6ix-personal-notes/motion-assets/.
+public/motion/

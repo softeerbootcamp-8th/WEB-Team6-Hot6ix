@@ -1,5 +1,7 @@
 import { isAxiosError } from 'axios'
 
+import type { CommonResponseBidCreateResponseDto } from '@/api/generated/model'
+
 /**
  * 입찰 실패 응답을 사용자에게 보여줄 문구로 바꾼다.
  *
@@ -14,6 +16,14 @@ export interface BidErrorMessage {
   description: string
   /** 같은 금액으로 다시 눌러볼 만한 실패인지. false 면 재시도를 권하지 않는다. */
   retryable: boolean
+}
+
+const BID_AMOUNT_LIMIT_MESSAGE = '입찰 가능한 금액 범위를 초과했어요'
+
+const BID_AMOUNT_LIMIT_ERROR: BidErrorMessage = {
+  title: BID_AMOUNT_LIMIT_MESSAGE,
+  description: '금액을 낮춰 다시 입력해 주세요.',
+  retryable: true,
 }
 
 /**
@@ -78,6 +88,11 @@ const BY_CODE: Record<number, BidErrorMessage> = {
     description: '본인이 올린 물품이에요.',
     retryable: false,
   },
+  7008: {
+    title: '경매방에 입장해야 입찰할 수 있어요',
+    description: '공유받은 링크로 입장해 약관에 동의해 주세요.',
+    retryable: false,
+  },
 }
 
 const UNKNOWN: BidErrorMessage = {
@@ -98,7 +113,18 @@ export function toBidErrorMessage(error: unknown): BidErrorMessage {
     }
   }
 
-  const code = (error.response.data as { code?: number } | undefined)?.code
+  const data = error.response.data as
+    CommonResponseBidCreateResponseDto | undefined
+  const amountError = data?.errors?.find(({ field }) => field === 'amount')
+
+  if (
+    data?.code === 2002 &&
+    amountError?.message === BID_AMOUNT_LIMIT_MESSAGE
+  ) {
+    return BID_AMOUNT_LIMIT_ERROR
+  }
+
+  const code = data?.code
   const known = code === undefined ? undefined : BY_CODE[code]
 
   if (import.meta.env.DEV && !known) {

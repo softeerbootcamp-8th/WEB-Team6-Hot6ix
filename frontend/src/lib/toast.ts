@@ -23,6 +23,11 @@ export interface Toast {
   description?: string
   /** 자동으로 닫히기까지의 시간(ms). 0 이면 사용자가 닫을 때까지 남는다. */
   duration: number
+  /**
+   * 아이콘 자리에 넣을 연출. 지금은 입찰 접수(`bidAccepted`) 하나뿐이다.
+   * 토스트마다 새 `id` 가 붙으므로 APNG 는 뜰 때마다 처음부터 재생된다.
+   */
+  motion?: 'bidAccepted'
 }
 
 type Options = Omit<Partial<Toast>, 'id' | 'message'>

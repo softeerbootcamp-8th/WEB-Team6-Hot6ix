@@ -14,35 +14,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> {
-
-    /**
-     * 이 상품이 어느 경매방엔가 물품으로 올라가 있는지 확인한다. 상태를 따지지 않는 이유는
-     * "한 상품은 한 번에 한 경매방에만" 규칙이 상태와 무관하기 때문이다. 물품을 빼면 행이
-     * 물리 삭제되므로, 뺀 상품은 이 검사를 자연히 통과해 다시 올릴 수 있다.
-     *
-     * <p>이 검사만으로는 동시 요청 두 건이 함께 통과할 수 있어
-     * {@code auction_items.product_id}에 unique 제약이 함께 걸려 있다. 여기서 거르는 건
-     * 정상 경로에서 읽기 쉬운 에러를 주기 위한 것이고, 최후 방어선은 그 제약이다.
-     */
-    boolean existsByProduct_ProductId(Long productId);
-
-    /**
-     * 넘긴 상품들 중 <b>이미 어느 경매방엔가 올라가 있는 상품의 ID만</b> 골라낸다.
-     * {@link #existsByProduct_ProductId}의 벌크판이며 판정 규칙도 같다(상태를 따지지 않는다).
-     *
-     * <p>벌크 추가에서 상품 수만큼 exists 쿼리를 돌리지 않으려고 한 번에 조회한다.
-     * 엔티티가 아니라 ID만 뽑는 이유는 이 값이 "거절 목록"을 만드는 데만 쓰이기 때문이다.
-     */
-    @Query("select ai.product.productId from AuctionItem ai where ai.product.productId in :productIds")
-    List<Long> findProductIdsIn(@Param("productIds") List<Long> productIds);
-
-    /**
-     * 이 상품이 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는지 확인한다
-     * (진행중·낙찰·유찰 전부 포함). Product 수정·삭제 시 "경매방이 시작된 적 있는 상품은
-     * 이후로도 계속 수정·삭제 불가" 규칙을 검증하는 데 쓰인다.
-     */
-    boolean existsByProduct_ProductIdAndStatusNot(Long productId, AuctionItemStatus status);
+public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>, AuctionItemRepositoryCustom {
 
     /**
      * 이 경매방에 속한 물품 중 한 번이라도 READY가 아닌 상태로 경매에 올라간 적이 있는 게
@@ -190,6 +162,22 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
     List<Long> findIdsByRoomAndStatus(
             @Param("auctionRoomId") Long auctionRoomId, @Param("status") AuctionItemStatus status);
 
+    /**
+     * 마감 임박 알림을 판정하는 데 필요한 값만 한 번에 읽는다. 알림 시각이
+     * {@code endAt - softCloseTriggerSeconds}라 물품과 경매방 양쪽 값이 함께 필요하다.
+     *
+     * <p><b>행 락을 걸지 않는다.</b> 알림은 상태를 바꾸지 않는 순수 조회이고, 하필 입찰이 가장
+     * 몰리는 구간에서 도는 조회라 여기서 {@code FOR UPDATE}를 잡으면 입찰을 막는다.
+     * 마감({@code findByIdForUpdate})이 락을 잡는 것은 그쪽이 쓰기를 하기 때문이다.
+     */
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.ClosingSoonItemProjection("
+            + "  ar.auctionRoomId, p.name, ai.status, ai.endAt, ar.softCloseTriggerSeconds) "
+            + "from AuctionItem ai "
+            + "join ai.product p "
+            + "join ai.auctionRoom ar "
+            + "where ai.auctionItemId = :auctionItemId")
+    Optional<ClosingSoonItemProjection> findClosingSoonView(@Param("auctionItemId") Long auctionItemId);
+
     /** 물품 전체를 읽지 않고 상태만 본다. 마감됐는지 판정하는 데 쓴다. */
     @Query("select ai.status from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItemStatus> findStatus(@Param("auctionItemId") Long auctionItemId);
@@ -206,4 +194,23 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long> 
             + "join ar.sellerProfile sp "
             + "where ai.auctionItemId = :auctionItemId")
     Optional<Long> findSellerUserId(@Param("auctionItemId") Long auctionItemId);
+
+    /**
+     * 이 물품이 속한 경매방에 입찰자의 참여 행이 있는지 확인한다. 입찰을 받을지 판정하는 데 쓴다.
+     *
+     * <p>{@code agreed_at}이 채워진 행만 참여로 본다. 그 행은 공유 코드를 알고 로그인한
+     * 사용자가 약관 동의 API를 부를 때만 생기므로, 물품 ID만 알고 보낸 요청과 링크를 거쳐
+     * 들어온 요청이 여기서 갈린다.
+     *
+     * <p>조회에 {@link #findByIdForUpdate}를 쓰지 않고 별개 쿼리로 두는 이유는 이 판정이
+     * 물품 상태와 무관해서 락 없이 끝나기 때문이다. 자격이 없는 요청은 락을 잡기 전에 거절된다.
+     */
+    @Query("select count(ap) > 0 from AuctionItem ai "
+            + "join ai.auctionRoom ar "
+            + "join AuctionParticipant ap on ap.auctionRoom = ar "
+            + "where ai.auctionItemId = :auctionItemId "
+            + "  and ap.user.userId = :userId "
+            + "  and ap.agreedAt is not null")
+    boolean existsParticipant(@Param("auctionItemId") Long auctionItemId,
+                              @Param("userId") Long userId);
 }

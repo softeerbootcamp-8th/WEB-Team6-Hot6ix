@@ -71,8 +71,9 @@ public interface ProductApi {
             @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "상품명 검색어")
             @RequestParam(required = false) String keyword,
-            @Parameter(description = "파생 상태 필터 — 연결된 AuctionItem이 없으면 UNREGISTERED, "
-                    + "있으면 그 상태에 따라 READY/IN_PROGRESS/ENDED(낙찰·유찰 병합)")
+            @Parameter(description = "파생 상태 필터 — 연결된 AuctionItem이 없거나, 유찰(FAILED)이거나, "
+                    + "낙찰(SOLD) 후 거래 후보가 전원 실패했으면 UNREGISTERED(다시 등록할 수 있다). "
+                    + "그 밖에는 READY/IN_PROGRESS/ENDED(낙찰 후 거래가 살아 있음)")
             @RequestParam(required = false) ProductListingStatus status,
             @Parameter(description = "이전 페이지 마지막 상품의 productId, 없으면 첫 페이지")
             @RequestParam(required = false) @Positive(message = "cursor는 양수여야 합니다.") Long cursor,
@@ -81,8 +82,9 @@ public interface ProductApi {
 
     @Operation(
             summary = "상품 수정",
-            description = "로그인한 판매자 본인 소유의 상품을 요청 값으로 전체 교체한다. 경매방이 한 번이라도 "
-                    + "시작된 적 있는 상품(READY가 아닌 AuctionItem이 하나라도 있으면)은 이후로도 계속 수정할 수 없다."
+            description = "로그인한 판매자 본인 소유의 상품을 요청 값으로 전체 교체한다. 파생 상태가 "
+                    + "UNREGISTERED(이력 없음·유찰·전원 실패) 또는 READY일 때만 수정할 수 있다 — "
+                    + "진행 중이거나 낙찰돼 거래가 살아 있는 상품은 수정할 수 없다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
@@ -100,9 +102,12 @@ public interface ProductApi {
 
     @Operation(
             summary = "상품 삭제",
-            description = "로그인한 판매자 본인 소유의 상품을 soft delete 한다. 경매방에 물품으로 올라가 있으면 "
-                    + "아직 시작 전(READY)이더라도 삭제할 수 없다 — 상품만 지우면 물품이 남아 삭제된 상품이 "
-                    + "경매방에 계속 노출되기 때문이다. 시작 전이라면 경매방에서 물품을 먼저 빼면 삭제할 수 있다."
+            description = "로그인한 판매자 본인 소유의 상품을 soft delete 한다. 파생 상태가 "
+                    + "UNREGISTERED(이력 없음·유찰·전원 실패)일 때만 삭제할 수 있다. "
+                    + "READY 물품이 걸려 있으면 아직 시작 전이더라도 삭제할 수 없다 — 상품만 지우면 물품이 "
+                    + "남아 삭제된 상품이 경매방에 계속 노출되기 때문이다. 경매방에서 물품을 먼저 빼면 "
+                    + "삭제할 수 있다. 유찰·전원 실패 물품(재등록 가능)은 막지 않는다 — 그 물품 행은 "
+                    + "노출이 아니라 기록이라 삭제해도 결과·거래 내역에서 사라지지 않는다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "삭제 성공"),

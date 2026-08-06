@@ -110,7 +110,12 @@ function JoinRoomPage() {
   }
 
   const isGuest = user === null
-  const alreadyAgreed = room.agreedToTerms === true
+  /*
+   * 방 주인은 동의 대상이 아니다. 서버도 `agreedToTerms` 를 null 로 주므로
+   * 여기서 걸러내지 않으면 자기 방 공유 링크로 들어온 판매자가 동의 화면을 만난다.
+   */
+  const isOwner = room.isOwner === true
+  const alreadyAgreed = isOwner || room.agreedToTerms === true
   const roomTitle = room.name ?? '경매방'
   const items = itemsQuery.data?.data ?? []
 
@@ -295,7 +300,7 @@ function JoinRoomPage() {
               </button>
             </>
           ) : alreadyAgreed ? (
-            // 이미 동의한 방: 체크박스 없이 바로 입장
+            // 이미 동의한 방이거나 내가 만든 방: 체크박스 없이 바로 입장
             <Button
               size="cta"
               variant="brand"

@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
@@ -119,14 +119,17 @@ const CANDIDATE_META: Record<CandidateStatus, { label: string; tone: Tone }> = {
 function toResultBadge(
   candidate: CandidateRow,
   settled: boolean,
+  dealFailed: boolean,
 ): { label: string; tone: Tone } {
   if (candidate.dealStatus !== 'WAITING') {
     return CANDIDATE_META[candidate.dealStatus]
   }
 
-  return settled
-    ? { label: '기회 없음', tone: 'muted' }
-    : CANDIDATE_META.WAITING
+  if (settled || (dealFailed && candidate.isMe)) {
+    return { label: '기회 없음', tone: 'muted' }
+  }
+
+  return CANDIDATE_META.WAITING
 }
 
 function TradeDetailPage() {
@@ -321,6 +324,19 @@ function TradeDetailPage() {
   const unsold = item.status === 'FAILED'
   const productName = item.productName ?? '이름 없는 물품'
 
+  /*
+   * 유찰(UNSOLD)이거나 낙찰 후보 전원이 실패(ALL_FAILED)한 물품은 서버가 재등록을
+   * 허용한다 — 백엔드는 이 두 조건과 정확히 같은 파생 상태에서만 상품을 다시 물품으로
+   * 올려 준다. 물품 추가는 전용 화면이 없고 경매방 생성 화면의 모달뿐이라
+   * `/seller/rooms/new` 로 보낸다.
+   *
+   * `useGetDeals` 는 탈퇴 회원을 반영하지 않아(거래 현황과 판정 기준이 다르다) 아주
+   * 드물게 서버는 재등록을 허용하는데 이 버튼이 안 뜨는 경우가 있다. 그래도 그 상품은
+   * `/seller/products` 에 "경매 미등록"으로 뜨므로 물품 추가 모달로 올릴 수 있다 —
+   * 버튼이 없는 쪽으로 틀리므로 안전하다.
+   */
+  const canRelist = isSeller && (unsold || deal?.status === 'ALL_FAILED')
+
   /** 전원 실패는 후보 전체가 이 페이지에 있을 때만 단정할 수 있다. */
   const allFailed =
     list.rows.length > 0 &&
@@ -475,6 +491,22 @@ function TradeDetailPage() {
               </div>
             </>
           )}
+
+          {/* 유찰·전원 실패 물품만 재등록 동선을 연다. 서버 판정을 그대로 따른다. */}
+          {canRelist && (
+            <div className="mt-5 shrink-0 border-t pt-5">
+              <p className="text-[13px] font-medium text-neutral-tertiary">
+                이 물품은 다시 등록할 수 있어요. 새 경매방을 만들어 물품
+                추가에서 골라 주세요.
+              </p>
+              <Link
+                to="/seller/rooms/new"
+                className="ease-soft mt-3 flex h-11 w-fit items-center rounded-xl border border-brand-300 bg-card px-5 text-[14px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-50 active:scale-95"
+              >
+                새 경매방에 다시 등록하기
+              </Link>
+            </div>
+          )}
         </Panel>
 
         {/* 순위 패널 — 792×560 */}
@@ -555,7 +587,11 @@ function TradeDetailPage() {
                 {list.rows.map((candidate, index) => {
                   const active = candidate.dealStatus === 'IN_PROGRESS'
                   const mine = !isSeller && candidate.isMe
-                  const result = toResultBadge(candidate, settled)
+                  const result = toResultBadge(
+                    candidate,
+                    settled,
+                    deal?.status === 'FAILED',
+                  )
                   const tone: Tone = mine ? 'mine' : result.tone
 
                   return (
@@ -662,7 +698,11 @@ function TradeDetailPage() {
                       const mine = !isSeller && candidate.isMe
 
                       // 구매자 화면은 "결과", 판매자 화면은 "거래 상태" 열이다.
-                      const result = toResultBadge(candidate, settled)
+                      const result = toResultBadge(
+                        candidate,
+                        settled,
+                        deal?.status === 'FAILED',
+                      )
                       const resultTone: Tone = mine ? 'mine' : result.tone
 
                       return (

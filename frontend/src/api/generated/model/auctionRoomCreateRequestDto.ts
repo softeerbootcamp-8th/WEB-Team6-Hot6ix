@@ -28,12 +28,12 @@ export interface AuctionRoomCreateRequestDto {
    */
   bidIncrement: number;
   /**
-   * @minimum 1
+   * @minimum 60
    * @maximum 3600
    */
   softCloseTriggerSeconds: number;
   /**
-   * @minimum 1
+   * @minimum 60
    * @maximum 3600
    */
   softCloseExtendSeconds: number;
