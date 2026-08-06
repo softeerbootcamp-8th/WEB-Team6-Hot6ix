@@ -19,7 +19,7 @@ import {
 import { toBidErrorMessage } from '@/features/live/bid-error'
 import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
-import { formatWon } from '@/lib/format'
+import { formatClosingLead, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { toast } from '@/lib/toast'
 import { useDevTools } from '@/lib/dev-tools'
@@ -154,7 +154,7 @@ function AuctionItemPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'CLOSE',
-              message: `${payload.itemName} 마감 1분 전`,
+              message: `${payload.itemName} 마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
               emphasized: true,
             },
           ])

@@ -61,7 +61,7 @@ import { RouteError, RoutePending } from '@/components/route-states'
 import { SharePanel } from '@/features/live/components/share-panel'
 import { cn } from '@/lib/utils'
 import { useCountdown } from '@/hooks/use-countdown'
-import { formatWon } from '@/lib/format'
+import { formatClosingLead, formatWon } from '@/lib/format'
 import { toast } from '@/lib/toast'
 import { useDevTools } from '@/lib/dev-tools'
 import { useCurrentUser } from '@/lib/session'
@@ -246,7 +246,7 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'CLOSE',
               itemId: payload.itemId,
-              message: `${payload.itemName} 마감 1분 전`,
+              message: `${payload.itemName} 마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
               emphasized: true,
             },
           ])

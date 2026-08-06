@@ -19,7 +19,23 @@ export type RealtimeStatus =
 
 export type SseEventPayload =
   | { kind: 'ItemStarted'; itemId: number; itemName: string; endedTime: string }
-  | { kind: 'ItemClosingSoon'; itemId: number; itemName: string }
+  /**
+   * 마감이 임박했다. **이 이벤트가 오는 순간부터가 Soft Close 연장 구간**이다.
+   *
+   * `remainingSeconds` 는 경매방의 "마감 임박 기준"(Soft Close 트리거)이라 방마다
+   * 다르다. 그래서 문구를 `마감 1분 전` 으로 박아 둘 수 없고 이 값으로 만들어야 한다.
+   * 실측한 잔여 시간이 아니라 설정값이므로, 서버 스케줄러가 조금 늦게 깨도
+   * `59초 전` 같은 문구가 나오지 않는다.
+   *
+   * 마감이 연장되면 이 이벤트도 새 마감 시각 기준으로 다시 온다. 다만 연장 폭이
+   * 트리거보다 작아 연장 구간을 벗어나지 못하면 다시 오지 않는다.
+   */
+  | {
+      kind: 'ItemClosingSoon'
+      itemId: number
+      itemName: string
+      remainingSeconds: number
+    }
   | {
       kind: 'BidPlaced'
       itemId: number

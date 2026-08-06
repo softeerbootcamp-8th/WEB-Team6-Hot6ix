@@ -39,6 +39,18 @@ export function formatRemaining(totalSeconds: number): string {
 }
 
 /**
+ * 마감 임박 알림 문구에 들어가는 남은 시간. `1분` · `5분` · `90초` 형태.
+ *
+ * 이 값은 방마다 다르다. 경매방의 "마감 임박 기준"(Soft Close 트리거)을 서버가 그대로
+ * 내려보내기 때문에 `마감 1분 전` 으로 문구를 박아 둘 수 없다. 트리거는 60~3600초라
+ * 대개 분으로 떨어지고, 90초처럼 안 떨어지는 값만 초로 적는다.
+ */
+export function formatClosingLead(totalSeconds: number): string {
+  const safe = Math.max(0, Math.round(totalSeconds))
+  return safe % 60 === 0 ? `${safe / 60}분` : `${safe}초`
+}
+
+/**
  * 전화번호 하이픈 자동 삽입.
  *
  * 입력하는 도중에도 자리수에 맞춰 끊어준다(토스 등에서 익숙한 방식).
