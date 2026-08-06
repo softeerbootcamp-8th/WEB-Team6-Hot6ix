@@ -113,6 +113,10 @@ class DealServiceTest {
                 return "포토카드";
             }
 
+            public String getImageUrl() {
+                return "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/products/1/photocard.png";
+            }
+
             public String getAuctionRoomName() {
                 return "승민상점 경매방";
             }

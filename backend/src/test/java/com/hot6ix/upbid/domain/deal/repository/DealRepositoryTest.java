@@ -32,6 +32,8 @@ import org.springframework.context.annotation.Import;
 class DealRepositoryTest extends AbstractMySqlContainerTest {
 
     private static final LocalDateTime END_AT = LocalDateTime.of(2026, 7, 29, 21, 0);
+    private static final String PRODUCT_IMAGE_URL =
+            "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/products/1/photocard.png";
 
     @Autowired
     private DealRepository dealRepository;
@@ -71,6 +73,7 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
                 .sellerProfile(sellerProfile)
                 .name(productName)
                 .description("미개봉 정품")
+                .imageUrl(PRODUCT_IMAGE_URL)
                 .build());
 
         return entityManager.persist(AuctionItem.builder()
@@ -131,6 +134,23 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(deal.getProductId()).as("내가 산 물건은 내 상품이 아니다").isNull();
         // 구매자는 이 ID로 판매자 프로필을 조회해 연락처를 얻는다.
         assertThat(deal.getSellerProfileId()).isEqualTo(sellerProfile.getSellerProfileId());
+    }
+
+    @Test
+    @DisplayName("판매 건과 구매 건 모두 상품 이미지 주소를 함께 내보낸다")
+    void findDealsReturnsProductImageUrl() {
+
+        User buyer = newUser("buyer@hot6ix.com", "지훈");
+        AuctionItem item = newItem("포토카드", AuctionItemStatus.SOLD, END_AT);
+        newCandidate(item, buyer, 1, 30_000L);
+
+        assertThat(findDeals(seller))
+                .extracting(DealSummaryProjection::getImageUrl)
+                .containsExactly(PRODUCT_IMAGE_URL);
+
+        assertThat(findDeals(buyer))
+                .extracting(DealSummaryProjection::getImageUrl)
+                .containsExactly(PRODUCT_IMAGE_URL);
     }
 
     @Test
