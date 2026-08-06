@@ -823,6 +823,7 @@ function LiveRoomPage() {
       })
       toast.success('입찰이 등록됐어요', {
         description: `${detailItem.name} · ${formatWon(detailAmount)}`,
+        motion: 'bidAccepted',
       })
       refreshItems(detailItem.id)
     } catch (error) {
@@ -971,6 +972,7 @@ function LiveRoomPage() {
       // 서버가 확정해 준 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       toast.success('입찰이 등록됐어요', {
         description: `${pendingBid.item.name} · ${formatWon(pendingBid.amount)}`,
+        motion: 'bidAccepted',
       })
       refreshItems(pendingBid.item.id)
       setPendingBid(null)

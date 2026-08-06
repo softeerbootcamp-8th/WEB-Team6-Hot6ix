@@ -1,6 +1,7 @@
 import { AlertCircle, Check, Info, X } from 'lucide-react'
 import { useEffect } from 'react'
 
+import { BidAcceptedMotion } from '@/components/BidAcceptedMotion'
 import { cn } from '@/lib/utils'
 import { toast, useToasts, type Toast, type ToastTone } from '@/lib/toast'
 
@@ -71,17 +72,25 @@ function ToastRow({ toast: item }: { toast: Toast }) {
         tone.className,
       )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full',
-          tone.accent,
-        )}
-      >
-        {tone.icon}
-      </span>
+      {/*
+       * 연출이 붙은 토스트는 아이콘 자리를 그림이 대신한다. 체크 아이콘까지
+       * 같이 두면 성공 표시가 둘이 된다.
+       */}
+      {item.motion === 'bidAccepted' ? (
+        <BidAcceptedMotion replayKey={item.id} size={44} />
+      ) : (
+        <span
+          aria-hidden
+          className={cn(
+            'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full',
+            tone.accent,
+          )}
+        >
+          {tone.icon}
+        </span>
+      )}
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 self-center">
         <p className="text-[14px] font-bold">{item.message}</p>
         {item.description && (
           <p className="mt-1 text-[12px] font-medium text-neutral-tertiary">
