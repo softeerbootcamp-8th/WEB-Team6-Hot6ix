@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 
+import { ProfilePhoto } from '@/components/profile-photo'
 import { cn } from '@/lib/utils'
 import { useCurrentUser } from '@/lib/session'
 
@@ -49,12 +50,16 @@ export function AppHeader() {
             className="ml-auto flex items-center gap-2.5 text-[13px] font-medium text-neutral-tertiary transition-colors hover:text-neutral-secondary"
           >
             {user.nickname} 님
-            <span
-              aria-hidden
-              className="flex size-8 items-center justify-center rounded-full bg-brand-200 text-[12px] font-bold text-brand-600"
-            >
-              {user.nickname.slice(0, 1)}
-            </span>
+            {/* 사진을 올렸으면 사진, 아니면 예전처럼 닉네임 첫 글자다(#213). */}
+            <ProfilePhoto
+              src={user.profileImageUrl}
+              className="size-8 shrink-0 rounded-full bg-brand-200"
+              fallback={
+                <span className="text-[12px] font-bold text-brand-600">
+                  {user.nickname.slice(0, 1)}
+                </span>
+              }
+            />
           </Link>
         )}
       </div>
