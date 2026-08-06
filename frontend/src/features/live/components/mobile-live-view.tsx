@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
+import type { AuctionStartFlashState } from '@/features/live/components/auction-start-flash'
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
 import { GuestNotice } from '@/features/live/components/live-shell'
@@ -42,6 +43,7 @@ export function MobileLiveView({
   rankedItems,
   justClosedId = null,
   justExtended = null,
+  justStarted = null,
   startingItemId = null,
   devTools,
   onShare,
@@ -77,6 +79,8 @@ export function MobileLiveView({
   justClosedId?: number | null
   /** 방금 소프트클로즈로 연장된 물품. 연장 애니메이션에 쓴다. */
   justExtended?: SoftCloseFlash | null
+  /** 방금 경매가 시작된 물품. 시작 애니메이션에 쓴다. */
+  justStarted?: AuctionStartFlashState | null
   /** 시작 요청이 서버에서 처리 중인 물품 id */
   startingItemId?: number | null
   /** 개발용 조작. 프로덕션에서는 넘기지 않는다. */
@@ -304,6 +308,7 @@ export function MobileLiveView({
                   isDimmed={isDimmed}
                   justClosedId={justClosedId}
                   justExtended={justExtended}
+                  justStarted={justStarted}
                   startingItemId={startingItemId}
                   onSelect={onSelectItem ?? ((item) => onOpenItem(item.id))}
                   onStart={onStart}
@@ -396,6 +401,9 @@ export function MobileLiveView({
                           key={item.id}
                           item={item}
                           justClosed={justClosedId === item.id}
+                          justStarted={
+                            justStarted?.itemId === item.id ? justStarted : null
+                          }
                           justExtended={
                             justExtended?.itemId === item.id
                               ? justExtended

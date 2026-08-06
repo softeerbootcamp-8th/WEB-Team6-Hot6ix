@@ -421,6 +421,22 @@
   animation: closed-stamp 1750ms var(--ease-in-out-soft) both;
 }
 
+/*
+ * 경매 시작 덮개.
+ *
+ * 연장 덮개와 같은 keyframe, 같은 규칙이다. 시작 APNG 가 1.5s 라 그보다
+ * 조금 길게 잡는다(`AUCTION_START_FLASH_MS` 와 같은 값이어야 한다).
+ * 이제부터 입찰할 수 있는 물품이라 어둡게 덮지 않는다.
+ *
+ * **빨강(`--live`)을 쓰지 않는다.** 마감·경고와 같은 색이라 시작을 알리는
+ * 자리에 쓰면 막힌 것처럼 읽힌다. 카드와 같은 흰 바탕에 글씨만 파랑
+ * (`text-brand-500`)으로 둔다. 연장 덮개(`--brand-50` 바탕)와도 갈린다.
+ */
+@utility animate-start-stamp {
+  background-color: color-mix(in srgb, var(--card) 92%, transparent);
+  animation: closed-stamp 1700ms var(--ease-in-out-soft) both;
+}
+
 @utility animate-closed-label {
   animation: closed-label 2200ms var(--ease-out-soft) both;
 }

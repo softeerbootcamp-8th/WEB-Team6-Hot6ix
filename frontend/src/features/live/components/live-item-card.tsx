@@ -3,6 +3,10 @@ import { useState } from 'react'
 
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { AuctionCloseFlashOverlay } from '@/features/live/components/auction-close-flash-overlay'
+import {
+  AuctionStartFlashOverlay,
+  type AuctionStartFlashState,
+} from '@/features/live/components/auction-start-flash'
 import { SoftCloseFlashOverlay } from '@/features/live/components/soft-close-flash-overlay'
 import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
 
@@ -38,6 +42,7 @@ export function LiveItemCard({
   dimmed = false,
   justClosed = false,
   justExtended = null,
+  justStarted = null,
   starting = false,
   rowRef,
   onSelect,
@@ -53,6 +58,8 @@ export function LiveItemCard({
   justClosed?: boolean
   /** 방금 소프트클로즈로 연장된 물품. `null` 이면 연출하지 않는다. */
   justExtended?: SoftCloseFlash | null
+  /** 방금 경매가 시작된 물품. `null` 이면 연출하지 않는다. */
+  justStarted?: AuctionStartFlashState | null
   /** 이 물품의 시작 요청을 서버가 아직 처리 중이다. */
   starting?: boolean
   /** 목록이 자리를 옮길 때 쓰는 FLIP 참조 */
@@ -162,6 +169,11 @@ export function LiveItemCard({
        */}
       {justExtended && !justClosed && (
         <SoftCloseFlashOverlay flash={justExtended} />
+      )}
+
+      {/* 방금 시작된 물품. 마감·연장과 같은 자리에 같은 규칙으로 뜬다. */}
+      {justStarted && !justClosed && !justExtended && (
+        <AuctionStartFlashOverlay flash={justStarted} />
       )}
 
       {/* 시작 전 물품은 방 주인이 진행 시간을 정해 바로 시작할 수 있다. */}
