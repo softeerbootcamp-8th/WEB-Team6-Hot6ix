@@ -14,6 +14,7 @@ import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
@@ -189,12 +190,12 @@ class ProductServiceTest {
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.of(sellerProfile));
-        when(productRepository.search(any(), any(), any(), any(), eq(2)))
+        when(productRepository.search(any(), any(), any(), any(), any(), eq(2)))
                 .thenReturn(new PageImpl<>(
                         List.of(newSummary(3L), newSummary(2L)), PageRequest.of(0, 2), 5));
 
         PageResponse<ProductSummaryResponseDto> response =
-                productService.getList(1L, null, null, null, 2);
+                productService.getList(1L, null, null, null, null, 2);
 
         assertThat(response.content()).extracting(ProductSummaryResponseDto::productId)
                 .containsExactly(3L, 2L);
@@ -204,20 +205,39 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("요청한 page·size를 그대로 조회에 넘긴다 — 기본값은 리포지토리가 채운다")
-    void getList_passesPageAndSizeThrough() {
+    @DisplayName("요청한 정렬·page·size를 그대로 조회에 넘긴다 — 기본값은 리포지토리가 채운다")
+    void getList_passesSortPageAndSizeThrough() {
 
         SellerProfile sellerProfile = newSellerProfile();
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.of(sellerProfile));
-        when(productRepository.search(any(), any(), any(), any(), any()))
+        when(productRepository.search(any(), any(), any(), any(), any(), any()))
                 .thenReturn(Page.empty());
 
-        productService.getList(1L, "노트북", ProductListingStatus.READY, 2, 10);
+        productService.getList(
+                1L, "노트북", ProductListingStatus.READY, ProductSortType.OLDEST, 2, 10);
 
         verify(productRepository).search(
-                sellerProfile.getSellerProfileId(), "노트북", ProductListingStatus.READY, 2, 10);
+                sellerProfile.getSellerProfileId(), "노트북", ProductListingStatus.READY,
+                ProductSortType.OLDEST, 2, 10);
+    }
+
+    @Test
+    @DisplayName("정렬을 생략하면 null을 그대로 넘긴다 — 기본 정렬은 리포지토리가 정한다")
+    void getList_sortOmittedIsPassedAsNull() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.search(any(), any(), any(), any(), any(), any()))
+                .thenReturn(Page.empty());
+
+        productService.getList(1L, null, null, null, null, null);
+
+        verify(productRepository).search(
+                sellerProfile.getSellerProfileId(), null, null, null, null, null);
     }
 
     @Test
@@ -227,7 +247,7 @@ class ProductServiceTest {
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> productService.getList(1L, null, null, null, null))
+        assertThatThrownBy(() -> productService.getList(1L, null, null, null, null, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);

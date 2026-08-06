@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.product.repository;
 
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -9,7 +10,8 @@ import org.springframework.data.domain.Pageable;
 public interface ProductRepositoryCustom {
 
     /**
-     * 정렬 키를 productId 내림차순(최신순)으로 고정한다. 상태는 정렬이 아니라 필터로만 쓴다.
+     * 정렬 키를 productId로 고정하고 방향만 {@code sort}로 고른다. 상태는 정렬이 아니라
+     * 필터로만 쓴다.
      *
      * <p>커서가 아니라 offset으로 넘긴다. 화면이 페이지 번호를 눌러 임의 페이지로 바로 가고
      * "총 N개"를 그리므로 커서로는 낼 수 없는 값들이다({@code DealCandidateRepository}가
@@ -19,7 +21,8 @@ public interface ProductRepositoryCustom {
      * <p>전체 개수는 목록과 <b>같은 조건</b>으로 세야 상태 탭별 개수와 목록이 어긋나지 않는다.
      */
     Page<ProductSummaryResponseDto> searchByPage(
-            Long sellerProfileId, String keyword, ProductListingStatus status, Pageable pageable);
+            Long sellerProfileId, String keyword, ProductListingStatus status,
+            ProductSortType sort, Pageable pageable);
 
     /**
      * 상세 조회·수정 응답에 쓸 파생 상태. {@link #searchByLimit}과 같은 CASE 식을 재사용해

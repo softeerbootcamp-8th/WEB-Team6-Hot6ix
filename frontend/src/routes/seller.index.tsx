@@ -21,7 +21,10 @@ import { requireMember } from '@/lib/route-guards'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useMySellerProfile } from '@/features/seller/use-my-seller-profile'
-import { useProductList } from '@/features/seller/use-product-list'
+import {
+  useProductList,
+  type ProductSort,
+} from '@/features/seller/use-product-list'
 import type { GetListStatus } from '@/api/generated/model'
 
 /**
@@ -58,12 +61,19 @@ const FILTERS: { key: 'ALL' | GetListStatus; label: string }[] = [
   { key: 'ENDED', label: '경매 종료' },
 ]
 
+/** 정렬 선택지. 기본은 최신순이다. */
+const SORTS: { key: ProductSort; label: string }[] = [
+  { key: 'LATEST', label: '최신순' },
+  { key: 'OLDEST', label: '오래된 순' },
+]
+
 function SellerHomePage() {
   const { profile, isPending, notFound, isError, error, refetch } =
     useMySellerProfile()
 
   const [filter, setFilter] = useState<'ALL' | GetListStatus>('ALL')
   const [keyword, setKeyword] = useState('')
+  const [sort, setSort] = useState<ProductSort>('LATEST')
   const [page, setPage] = useState(0)
   // 검색어는 서버로 나가므로 한 글자마다 보내지 않는다.
   const debouncedKeyword = useDebouncedValue(keyword.trim())
@@ -82,9 +92,19 @@ function SellerHomePage() {
     setPage(0)
   }
 
+  /*
+   * 정렬은 서버가 한다. 받아온 한 쪽만 뒤집으면 5개 안에서만 순서가 바뀌어,
+   * "오래된 순" 인데도 가장 오래된 상품이 마지막 쪽에 남는다.
+   */
+  const changeSort = (next: ProductSort) => {
+    setSort(next)
+    setPage(0)
+  }
+
   const products = useProductList({
     keyword: debouncedKeyword || undefined,
     status: filter === 'ALL' ? undefined : filter,
+    sort,
     page,
     size: PAGE_SIZE,
   })
@@ -213,7 +233,7 @@ function SellerHomePage() {
           </h2>
 
           {/*
-            검색·상태 필터. 상품이 아예 없으면 걸 조건도 없어서 숨긴다.
+            검색·정렬·상태 필터. 상품이 아예 없으면 걸 조건도 없어서 숨긴다.
             규격은 상품 관리 화면에서 쓰던 툴바와 같다.
           */}
           {!(
@@ -246,6 +266,18 @@ function SellerHomePage() {
                   label: item.label,
                 }))}
                 onChange={changeFilter}
+                className="w-32 shrink-0 md:w-40"
+              />
+
+              {/* 상태 필터와 같은 부품·같은 규격이다. 눌러서 목록에서 고른다. */}
+              <Dropdown
+                label="정렬 기준"
+                value={sort}
+                options={SORTS.map((item) => ({
+                  value: item.key,
+                  label: item.label,
+                }))}
+                onChange={changeSort}
                 className="w-32 shrink-0 md:w-40"
               />
             </div>

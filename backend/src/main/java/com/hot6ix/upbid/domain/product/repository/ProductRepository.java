@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.product.repository;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
@@ -54,14 +55,25 @@ public interface ProductRepository extends JpaRepository<Product, Long>, Product
 
     int FIRST_PAGE = 0;
 
+    ProductSortType DEFAULT_SORT = ProductSortType.LATEST;
+
+    /** 정렬을 지정하지 않고 조회한다. 기본 정렬(최신순)이 적용된다. */
+    default Page<ProductSummaryResponseDto> search(
+            Long sellerProfileId, String keyword, ProductListingStatus status, Integer page, Integer size) {
+        return search(sellerProfileId, keyword, status, null, page, size);
+    }
+
     /**
-     * 페이지 번호·크기의 기본값을 채워 {@link #searchByPage}에 넘긴다. 두 값 모두 요청에서
+     * 정렬·페이지 번호·크기의 기본값을 채워 {@link #searchByPage}에 넘긴다. 세 값 모두 요청에서
      * 생략할 수 있어 기본값을 한곳에 모은다.
      */
     default Page<ProductSummaryResponseDto> search(
-            Long sellerProfileId, String keyword, ProductListingStatus status, Integer page, Integer size) {
-        return searchByPage(sellerProfileId, keyword, status, PageRequest.of(
-                (page != null) ? page : FIRST_PAGE,
-                (size != null) ? size : DEFAULT_PAGE_SIZE));
+            Long sellerProfileId, String keyword, ProductListingStatus status,
+            ProductSortType sort, Integer page, Integer size) {
+        return searchByPage(sellerProfileId, keyword, status,
+                (sort != null) ? sort : DEFAULT_SORT,
+                PageRequest.of(
+                        (page != null) ? page : FIRST_PAGE,
+                        (size != null) ? size : DEFAULT_PAGE_SIZE));
     }
 }

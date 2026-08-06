@@ -5,8 +5,10 @@ import com.hot6ix.upbid.domain.auction.entity.QAuctionItem;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemPredicates;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.product.entity.QProduct;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.OrderSpecifier;
 import com.querydsl.core.types.Predicate;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
@@ -28,7 +30,8 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 
     @Override
     public Page<ProductSummaryResponseDto> searchByPage(
-            Long sellerProfileId, String keyword, ProductListingStatus status, Pageable pageable) {
+            Long sellerProfileId, String keyword, ProductListingStatus status,
+            ProductSortType sort, Pageable pageable) {
 
         QProduct product = QProduct.product;
         QAuctionItem ai = QAuctionItem.auctionItem;
@@ -41,7 +44,7 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
                 .from(product)
                 .leftJoin(ai).on(latestAuctionItem(product, ai))
                 .where(conditions)
-                .orderBy(product.productId.desc())
+                .orderBy(orderBy(product, sort))
                 .offset(pageable.getOffset())
                 .limit(pageable.getPageSize())
                 .fetch();
@@ -61,6 +64,16 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 
         // 첫 페이지가 다 안 찼거나 마지막 페이지면 개수가 이미 확정이라 count 쿼리를 건너뛴다.
         return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
+    }
+
+    /**
+     * 정렬 방향만 고른다. 키는 어느 쪽이든 productId다 — 불변이라 페이지를 넘길 때
+     * 같은 상품이 두 쪽에 겹치거나 빠지지 않는다.
+     */
+    private OrderSpecifier<Long> orderBy(QProduct product, ProductSortType sort) {
+        return (sort == ProductSortType.OLDEST)
+                ? product.productId.asc()
+                : product.productId.desc();
     }
 
     /**

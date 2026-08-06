@@ -16,6 +16,7 @@ import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.service.ProductService;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -208,13 +209,15 @@ class ProductControllerTest extends AbstractControllerTest {
                 .status(ProductListingStatus.UNREGISTERED)
                 .build();
 
-        when(productService.getList(eq(1L), eq("노트북"), eq(ProductListingStatus.UNREGISTERED), eq(1), eq(10)))
+        when(productService.getList(eq(1L), eq("노트북"), eq(ProductListingStatus.UNREGISTERED),
+                eq(ProductSortType.OLDEST), eq(1), eq(10)))
                 .thenReturn(PageResponse.of(
                         new PageImpl<>(List.of(summary), PageRequest.of(1, 10), 25)));
 
         mockMvc.perform(get("/api/v1/products")
                         .param("keyword", "노트북")
                         .param("status", "UNREGISTERED")
+                        .param("sort", "OLDEST")
                         .param("page", "1")
                         .param("size", "10"))
                 .andExpect(status().isOk())
@@ -239,7 +242,7 @@ class ProductControllerTest extends AbstractControllerTest {
     @DisplayName("판매자 프로필이 없으면 목록 조회 시 404와 에러코드를 반환한다")
     void getList_sellerProfileNotFound() throws Exception {
 
-        when(productService.getList(eq(1L), any(), any(), any(), any()))
+        when(productService.getList(eq(1L), any(), any(), any(), any(), any()))
                 .thenThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/products"))

@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
@@ -133,8 +134,8 @@ public class ProductService {
     }
 
     /**
-     * 로그인한 판매자 본인의 상품 목록을 productId 최신순으로 한 페이지 조회한다.
-     * 상태는 정렬이 아니라 필터로만 쓰인다.
+     * 로그인한 판매자 본인의 상품 목록을 한 페이지 조회한다. 정렬은 등록 순서(productId)의
+     * 방향만 고르고, 상태는 정렬이 아니라 필터로만 쓰인다.
      *
      * <p>화면이 페이지 번호를 눌러 임의 페이지로 이동하고 "총 N개"를 그리므로 커서가 아니라
      * offset 페이지네이션이다. 요청 범위를 넘는 page는 오류가 아니라 빈 목록으로 답한다 —
@@ -143,18 +144,20 @@ public class ProductService {
      * @param userId  조회를 요청한 회원의 ID
      * @param keyword 상품명 검색어(옵션)
      * @param status  파생 상태 필터(옵션) — UNREGISTERED/READY/IN_PROGRESS/ENDED
+     * @param sort    정렬 기준(옵션, 기본 최신순) — LATEST/OLDEST
      * @param page    0부터 세는 페이지 번호(옵션, 기본 {@value ProductRepository#FIRST_PAGE})
      * @param size    페이지 크기(옵션, 기본 {@value ProductRepository#DEFAULT_PAGE_SIZE})
      * @return 상품 요약 한 페이지와 전체 개수·전체 페이지 수
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND)
      */
     public PageResponse<ProductSummaryResponseDto> getList(
-            Long userId, String keyword, ProductListingStatus status, Integer page, Integer size) {
+            Long userId, String keyword, ProductListingStatus status,
+            ProductSortType sort, Integer page, Integer size) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
 
         return PageResponse.of(productRepository.search(
-                sellerProfile.getSellerProfileId(), keyword, status, page, size));
+                sellerProfile.getSellerProfileId(), keyword, status, sort, page, size));
     }
 
     private SellerProfile findActiveSellerProfile(Long userId) {

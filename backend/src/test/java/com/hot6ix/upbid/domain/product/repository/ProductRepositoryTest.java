@@ -11,6 +11,7 @@ import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -459,6 +460,46 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
 
         assertThat(secondPage.getContent()).extracting(ProductSummaryResponseDto::productId)
                 .containsExactly(first.getProductId());
+    }
+
+    @Test
+    @DisplayName("오래된 순으로 정렬하면 먼저 등록한 상품이 앞에 오고, 쪽을 넘겨도 순서가 이어진다")
+    void search_ordersByProductIdAscWhenOldestFirst() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller22@hot6ix.com");
+        Product first = newProduct(sellerProfile, "상품1");
+        Product second = newProduct(sellerProfile, "상품2");
+        Product third = newProduct(sellerProfile, "상품3");
+
+        List<ProductSummaryResponseDto> all = productRepository.search(
+                sellerProfile.getSellerProfileId(), null, null,
+                ProductSortType.OLDEST, null, null).getContent();
+
+        assertThat(all).extracting(ProductSummaryResponseDto::productId)
+                .containsExactly(first.getProductId(), second.getProductId(), third.getProductId());
+
+        // 한 페이지 2건이면 1페이지(0-based)에는 가장 최근 한 건만 남는다.
+        Page<ProductSummaryResponseDto> secondPage = productRepository.search(
+                sellerProfile.getSellerProfileId(), null, null,
+                ProductSortType.OLDEST, 1, 2);
+
+        assertThat(secondPage.getContent()).extracting(ProductSummaryResponseDto::productId)
+                .containsExactly(third.getProductId());
+    }
+
+    @Test
+    @DisplayName("정렬을 생략하면 최신순이다")
+    void search_defaultsToLatestWhenSortOmitted() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller23@hot6ix.com");
+        Product first = newProduct(sellerProfile, "상품1");
+        Product second = newProduct(sellerProfile, "상품2");
+
+        List<ProductSummaryResponseDto> results = productRepository.search(
+                sellerProfile.getSellerProfileId(), null, null, null, null, null).getContent();
+
+        assertThat(results).extracting(ProductSummaryResponseDto::productId)
+                .containsExactly(second.getProductId(), first.getProductId());
     }
 
     @Test

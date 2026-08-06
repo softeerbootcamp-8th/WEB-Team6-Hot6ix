@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.product.service.ProductService;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import com.hot6ix.upbid.global.response.PageResponse;
@@ -47,9 +48,11 @@ public class ProductController implements ProductApi {
     @GetMapping
     @Override
     public ResponseEntity<CommonResponse<PageResponse<ProductSummaryResponseDto>>> getList(
-            Long userId, String keyword, ProductListingStatus status, Integer page, Integer size) {
+            Long userId, String keyword, ProductListingStatus status,
+            ProductSortType sort, Integer page, Integer size) {
 
-        PageResponse<ProductSummaryResponseDto> response = productService.getList(userId, keyword, status, page, size);
+        PageResponse<ProductSummaryResponseDto> response =
+                productService.getList(userId, keyword, status, sort, page, size);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "상품 목록 조회에 성공했습니다."));
     }
