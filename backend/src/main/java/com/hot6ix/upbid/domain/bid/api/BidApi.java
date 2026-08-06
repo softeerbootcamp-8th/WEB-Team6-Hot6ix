@@ -25,6 +25,7 @@ public interface BidApi {
                     + "금액은 (금액 - 시작가)가 입찰 단위의 배수여야 하며, 여러 단위를 한 번에 올릴 수 있다. "
                     + "이미 최고 입찰자인 회원은 다시 입찰할 수 없다. "
                     + "물품을 올린 판매자 본인은 입찰할 수 없다. "
+                    + "공유 링크로 들어와 경매방 입장 약관에 동의한 회원만 입찰할 수 있다. "
                     + "로그인 세션의 회원으로 입찰한다."
     )
     @ApiResponses({
@@ -32,8 +33,9 @@ public interface BidApi {
             @ApiResponse(responseCode = "400", description = "입찰 금액 누락·음수 (code 2002), "
                     + "경로 변수가 숫자가 아님 (code 2002)"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
-            @ApiResponse(responseCode = "403", description = "판매자 본인의 입찰 (code 7007). "
-                    + "재시도해도 통과하지 않는다"),
+            @ApiResponse(responseCode = "403", description = "판매자 본인의 입찰 (code 7007) — "
+                    + "재시도해도 통과하지 않는다. 경매방 입장 약관 미동의 (code 7008) — "
+                    + "약관에 동의한 뒤에는 통과한다"),
             @ApiResponse(responseCode = "404", description = "물품이 없음 (code 4001), "
                     + "회원이 없거나 탈퇴함 (code 2003)"),
             @ApiResponse(responseCode = "409", description = "진행중인 물품이 아님 (code 7001), "
