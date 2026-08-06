@@ -75,7 +75,7 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
                 .sellerProfile(sellerProfile)
                 .name("승민의 경매방")
                 .shareCode(shareCode)
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build());
     }
@@ -88,7 +88,7 @@ class AuctionRoomRepositoryTest extends AbstractMySqlContainerTest {
                 .name(name)
                 .status(status)
                 .shareCode(shareCode)
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build());
     }

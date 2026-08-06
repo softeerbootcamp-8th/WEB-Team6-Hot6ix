@@ -61,7 +61,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .coverImageUrl("https://cdn.hot6ix.com/cover.png")
                 .description("한정판 피규어 경매")
                 .liveUrl("https://instagram.com/hot6ix")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
     }
@@ -72,7 +72,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .shareCode(SHARE_CODE)
                 .name("승민의 경매방")
                 .status(AuctionRoomStatus.BEFORE)
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .sellerStoreName("승민상점")
                 .isOwner(true)
@@ -103,7 +103,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
                 .bidIncrement(1_000L)
                 .name("")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 
@@ -123,7 +123,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
                 .bidIncrement(1_000L)
                 .name("<script>")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 
@@ -144,7 +144,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .bidIncrement(1_000L)
                 .name("승민의 경매방")
                 .coverImageUrl("not-a-url")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 
@@ -180,10 +180,52 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
                 .bidIncrement(1_000L)
                 .name("승민의 경매방")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(3601)
                 .build();
 
+        mockMvc.perform(post("/api/v1/auction-rooms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("softCloseExtendSeconds"));
+    }
+
+    @Test
+    @DisplayName("Soft Close 트리거 초가 60초 미만이면 생성 시 400을 반환한다")
+    void create_softCloseTriggerSecondsBelowMinimum() throws Exception {
+
+        AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(59)
+                .softCloseExtendSeconds(60)
+                .build();
+
+        // 임박 구간이 좁으면 그 안에 드느냐가 회선 상태로 갈려 연장이 사실상 안 걸린다.
+        mockMvc.perform(post("/api/v1/auction-rooms")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(2002))
+                .andExpect(jsonPath("$.errors[0].field").value("softCloseTriggerSeconds"));
+    }
+
+    @Test
+    @DisplayName("Soft Close 연장 초가 60초 미만이면 생성 시 400을 반환한다")
+    void create_softCloseExtendSecondsBelowMinimum() throws Exception {
+
+        AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
+                .bidIncrement(1_000L)
+                .name("승민의 경매방")
+                .softCloseTriggerSeconds(60)
+                .softCloseExtendSeconds(59)
+                .build();
+
+        // 연장 폭이 네트워크 지연 편차만 해지면 누가 이기는지가 회선 상태로 갈린다.
         mockMvc.perform(post("/api/v1/auction-rooms")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -200,7 +242,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
                 .bidIncrement(1_000_000_000_001L)
                 .name("승민의 경매방")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 
@@ -219,7 +261,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
 
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
                 .name("승민의 경매방")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 
@@ -239,7 +281,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
         AuctionRoomCreateRequestDto request = AuctionRoomCreateRequestDto.builder()
                 .bidIncrement(0L)
                 .name("승민의 경매방")
-                .softCloseTriggerSeconds(30)
+                .softCloseTriggerSeconds(60)
                 .softCloseExtendSeconds(60)
                 .build();
 

@@ -11,9 +11,11 @@ import com.hot6ix.upbid.domain.bid.repository.BidRepository;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
+import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,7 @@ public class BidService {
     private final AuctionItemRepository auctionItemRepository;
     private final UserRepository userRepository;
     private final DomainEventPublisher domainEventPublisher;
+    private final Clock clock;
 
     /**
      * 입찰을 접수해 기록을 남기고 물품의 현재가·최고 입찰자를 갱신한다.
@@ -37,6 +40,25 @@ public class BidService {
      * <p>물품 행에 쓰기 락을 걸고 읽으므로 같은 물품에 대한 입찰이 한 줄로 직렬화된다.
      * 자기 차례에 최신 현재가를 읽기 때문에, 경합에 밀렸어도 금액이 여전히 유효하면 그대로
      * 통과한다. 락을 잡기 전에 끝낼 수 있는 입찰자 조회는 먼저 해서 락 유지 시간을 줄인다.
+     *
+     * <p>마감이 임박한 입찰이면 <b>같은 락 안에서</b> Soft Close 연장까지 마친다. 연장을 커밋
+     * 뒤로 미루면 입찰은 이미 저장됐는데 마감 시각은 아직 그대로인 구간이 생기고, 하필 그때
+     * 마감 예약이 깨면 방금 받은 입찰을 두고 물품이 닫힌다.
+     *
+     * <p><b>시각을 둘 쓴다.</b> 입찰을 받을지와 마감을 연장할지는 서로 다른 질문이라 기준도
+     * 다르다. 하나로 합치면 어느 쪽으로 맞추든 다른 쪽이 손해를 본다.
+     *
+     * <ul>
+     *   <li>{@code arrivedAt}(락 앞) &mdash; 받아줄지 판정한다. 마감 전에 보낸 입찰이
+     *       <b>락을 기다렸다는 이유로</b> 거절되면 안 된다. 앞사람이 같은 물품에 입찰 중이라
+     *       줄을 섰을 뿐인데, 그 대기가 길수록 불리해지는 것은 보낸 사람 책임이 아니다.</li>
+     *   <li>{@code now}(락 뒤) &mdash; 연장할지 판정한다. 연장의 목적은 남은 사람에게 반응할
+     *       시간을 주는 것이라 <b>지금</b> 임박했는지로 재야 한다. 낡은 시각으로 보면 실제로는
+     *       임박 구간에 들어왔는데 아직 아니라고 판단해 연장을 조용히 건너뛴다.</li>
+     * </ul>
+     *
+     * <p>락 대기가 길어 {@code arrivedAt}이 한참 낡았더라도 그 사이에 마감이 실제로 실행됐다면
+     * 상태 검사가 먼저 걸러낸다. 시각만으로 무한정 관대해지지는 않는다.
      *
      * @param auctionItemId 입찰할 물품의 ID
      * @param bidderUserId  입찰자의 회원 ID
@@ -48,6 +70,8 @@ public class BidService {
     @Transactional
     public BidCreateResponseDto place(Long auctionItemId, Long bidderUserId, Long amount) {
 
+        LocalDateTime arrivedAt = LocalDateTime.now(clock);
+
         User bidder = userRepository.findByUserIdAndDeletedAtIsNull(bidderUserId)
                 .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
 
@@ -58,7 +82,9 @@ public class BidService {
         AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
-        validateBiddable(auctionItem, bidder, sellerUserId);
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        validateBiddable(auctionItem, bidder, sellerUserId, arrivedAt);
         validateAmount(auctionItem, amount);
 
         Bid bid = saveBid(auctionItem, bidder, amount);
@@ -73,7 +99,35 @@ public class BidService {
                 amount,
                 bid.getAcceptedAt()));
 
+        publishIfExtended(auctionItem, now);
+
         return BidCreateResponseDto.from(bid);
+    }
+
+    /**
+     * 마감이 임박했으면 연장하고 그 사실을 알린다. 연장이 없으면 아무 일도 하지 않는다.
+     *
+     * <p>{@code BidPlaced} 다음에 발행해 화면 이벤트 피드에 "입찰 발생 → 연장" 순서로 쌓이게
+     * 한다. 연장이 먼저 보이면 무엇 때문에 밀렸는지 알 수 없다.
+     *
+     * <p>이 이벤트는 {@code AuctionCloseScheduler}가 마감 예약을 갈아 끼우는 신호이기도 하다.
+     *
+     * @param now 락을 잡은 뒤에 구한 현재 시각. 받아들일지 판정한 {@code arrivedAt}과 달리
+     *            <b>지금</b>을 기준으로 임박 여부를 봐야 연장을 놓치지 않는다
+     */
+    private void publishIfExtended(AuctionItem auctionItem, LocalDateTime now) {
+
+        if (!auctionItem.extendIfClosingSoon(now)) {
+            return;
+        }
+
+        domainEventPublisher.publish(SoftCloseExtended.of(
+                auctionItem.getAuctionRoom().getAuctionRoomId(),
+                auctionItem.getAuctionItemId(),
+                auctionItem.getProduct().getName(),
+                auctionItem.getAuctionRoom().getSoftCloseExtendSeconds(),
+                auctionItem.getEndAt(),
+                now));
     }
 
     /**
@@ -83,7 +137,8 @@ public class BidService {
      * {@code endAt}이 지났는데도 진행중으로 남아 있는 물품이 생길 수 있기 때문이다.
      * {@code endAt}이 비어 있으면 마감 판정을 할 수 없으므로 받지 않는다.
      */
-    private void validateBiddable(AuctionItem auctionItem, User bidder, Long sellerUserId) {
+    private void validateBiddable(AuctionItem auctionItem, User bidder, Long sellerUserId,
+                                  LocalDateTime arrivedAt) {
 
         if (Objects.equals(sellerUserId, bidder.getUserId())) {
             throw new ApplicationException(BidErrorType.SELLER_CANNOT_BID);
@@ -94,7 +149,7 @@ public class BidService {
         }
 
         LocalDateTime endAt = auctionItem.getEndAt();
-        if (endAt == null || !LocalDateTime.now().isBefore(endAt)) {
+        if (endAt == null || !arrivedAt.isBefore(endAt)) {
             throw new ApplicationException(BidErrorType.ITEM_CLOSED);
         }
 

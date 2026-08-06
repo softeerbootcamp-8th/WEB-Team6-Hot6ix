@@ -11,5 +11,6 @@
  */
 
 export interface BidCreateRequestDto {
+  /** @maximum 5000000000000 */
   amount: number;
 }

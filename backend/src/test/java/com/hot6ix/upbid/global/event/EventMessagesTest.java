@@ -67,7 +67,8 @@ class EventMessagesTest {
     @Test
     @DisplayName("SoftCloseExtended는 연장 문구를 만든다")
     void softCloseExtended() {
-        assertThat(EventMessages.of(SoftCloseExtended.of(1L, 2L, "한정판 조던", 30, OCCURRED_AT)))
+        assertThat(EventMessages.of(
+                SoftCloseExtended.of(1L, 2L, "한정판 조던", 30, OCCURRED_AT.plusSeconds(30), OCCURRED_AT)))
                 .contains("Soft Close 발동 · 한정판 조던 마감 +30초 연장");
     }
 

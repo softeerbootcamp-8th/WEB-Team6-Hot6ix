@@ -294,21 +294,17 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'EXTEND',
               itemId: payload.itemId,
-              message: `마감 1분 전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
+              message: `마감 직전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
               subtitle: payload.itemName,
               emphasized: true,
             },
           ])
+          // 서버가 준 마감 시각을 그대로 쓴다. 직접 더하면 이벤트가 두 번 오거나
+          // 유실됐을 때 화면 카운트다운만 서버와 어긋난 채로 남는다.
           setItems((prev) =>
             (prev ?? roomItems).map((item) =>
               item.id === payload.itemId
-                ? {
-                    ...item,
-                    endsAt: new Date(
-                      new Date(item.endsAt).getTime() +
-                        payload.extendSeconds * 1000,
-                    ).toISOString(),
-                  }
+                ? { ...item, endsAt: payload.endedTime }
                 : item,
             ),
           )

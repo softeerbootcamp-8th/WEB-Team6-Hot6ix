@@ -27,11 +27,20 @@ export type SseEventPayload =
       bidPrice: number
       bidderNickname: string
     }
+  /**
+   * 마감 직전 입찰이 들어와 마감이 뒤로 밀렸다.
+   *
+   * `endedTime` 은 **연장이 반영된 마감 시각**이다. `extendSeconds` 를 직접
+   * 더하지 않고 이 값을 그대로 쓴다. 이벤트가 유실되거나 두 번 오면 더하기는
+   * 그만큼 어긋나는데, 절대값은 몇 번을 받아도 같은 시각에 도달한다.
+   * `extendSeconds` 는 이벤트 피드 문구("+30초 연장")에만 쓴다.
+   */
   | {
       kind: 'SoftCloseExtended'
       itemId: number
       itemName: string
       extendSeconds: number
+      endedTime: string
     }
   // 유찰도 이 이벤트로 온다. 입찰이 없었으면 낙찰가·낙찰자가 둘 다 null 이다.
   | {
