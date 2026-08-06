@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.ResponseEntity;
 
 @Tag(name = "인증", description = "세션 기반 인증 API")
@@ -32,5 +33,5 @@ public interface AuthApi {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "로그아웃 성공 (세션이 없던 경우 포함)")
     })
-    ResponseEntity<CommonResponse<Void>> logout(HttpServletRequest request);
+    ResponseEntity<CommonResponse<Void>> logout(HttpServletRequest request, HttpServletResponse response);
 }
