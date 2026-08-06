@@ -10,7 +10,6 @@ import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
-import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.upload.exception.UploadErrorType;
 import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
@@ -19,7 +18,6 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -103,22 +101,6 @@ class UserServiceTest {
 
         assertThat(userService.findByOAuth(OauthProvider.KAKAO, "kakao-123")).isEmpty();
         verify(userRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("탈퇴한 회원이면 WITHDRAWN_USER 예외가 발생한다")
-    void findByOAuth_withdrawnUser() {
-
-        User withdrawn = newUser();
-        withdrawn.softDelete(LocalDateTime.now());
-
-        when(userRepository.findByProviderAndProviderId(OauthProvider.KAKAO, "kakao-123"))
-                .thenReturn(Optional.of(withdrawn));
-
-        assertThatThrownBy(() -> userService.findByOAuth(OauthProvider.KAKAO, "kakao-123"))
-                .isInstanceOf(ApplicationException.class)
-                .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(AuthErrorType.WITHDRAWN_USER);
     }
 
     @Test

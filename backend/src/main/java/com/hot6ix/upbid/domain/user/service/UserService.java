@@ -2,7 +2,6 @@ package com.hot6ix.upbid.domain.user.service;
 
 import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
-import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
@@ -27,7 +26,6 @@ public class UserService {
     public Optional<Long> findByOAuth(OauthProvider provider, String providerId) {
 
         return userRepository.findByProviderAndProviderId(provider, providerId)
-                .map(this::verifyNotWithdrawn)
                 .map(User::getUserId);
     }
 
@@ -59,14 +57,5 @@ public class UserService {
         user.updateProfile(request.nickname(), request.profileImageUrl());
 
         return UserResponseDto.from(user);
-    }
-
-    private User verifyNotWithdrawn(User user) {
-
-        if (user.isDeleted()) {
-            throw new ApplicationException(AuthErrorType.WITHDRAWN_USER);
-        }
-
-        return user;
     }
 }
