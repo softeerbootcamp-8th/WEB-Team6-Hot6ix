@@ -1,7 +1,5 @@
 package com.hot6ix.upbid.domain.product.service;
 
-import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
-import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.product.dto.request.ProductCreateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.request.ProductUpdateRequestDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
@@ -20,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -29,7 +28,6 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
-    private final AuctionItemRepository auctionItemRepository;
     private final ImageUrlValidator imageUrlValidator;
 
     /**
@@ -71,8 +69,14 @@ public class ProductService {
     }
 
     /**
-     * 로그인한 판매자 본인 소유의 상품을 요청 값으로 전체 교체한다.
-     * 경매방이 한 번이라도 시작된(READY가 아닌 AuctionItem이 있는) 상품은 수정할 수 없다.
+     * 로그인한 판매자 본인 소유의 상품을 요청 값으로 전체 교체한다. 수정 가능 = 파생 상태가
+     * UNREGISTERED(이력 없음·유찰·전원 실패) 또는 READY다 — 진행 중이거나 낙찰돼 거래가 살아
+     * 있는 상품은 수정할 수 없다({@link #assertEditable}).
+     *
+     * <p>유찰·전원 실패 상품(재등록 가능)의 수정은 허용하지만, 결과·거래 조회는 전부
+     * {@code products}를 라이브 조인한다({@code AuctionItemRepository.findResults} 등).
+     * 그래서 이름·이미지를 바꾸면 그 방의 결과 화면·거래 내역·거래 현황에 소급 반영된다 —
+     * 스냅샷 컬럼이 없어서다. 알려진 트레이드오프로 수용한다.
      *
      * @param userId    수정을 요청한 회원의 ID
      * @param productId 수정할 상품의 ID
@@ -80,7 +84,7 @@ public class ProductService {
      * @return 수정된 상품
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
      *                               상품이 없거나 본인 소유가 아닐 때(PRODUCT_NOT_FOUND),
-     *                               경매방이 시작된 적 있을 때(PRODUCT_AUCTION_ALREADY_STARTED)
+     *                               진행 중이거나 거래가 살아 있을 때(PRODUCT_AUCTION_ALREADY_STARTED)
      */
     @Transactional
     public ProductResponseDto update(Long userId, Long productId, ProductUpdateRequestDto request) {
@@ -90,18 +94,27 @@ public class ProductService {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         Product product = findOwnedProduct(sellerProfile, productId);
-        assertAuctionNotStarted(productId);
+        ProductListingStatus status = findListingStatus(productId);
+        assertEditable(status);
 
         product.update(request);
 
-        return ProductResponseDto.from(product, findListingStatus(productId));
+        return ProductResponseDto.from(product, status);
     }
 
     /**
-     * 로그인한 판매자 본인 소유의 상품을 soft delete 한다.
-     * 경매방에 물품으로 올라가 있는 상품은 아직 시작 전(READY)이더라도 삭제할 수 없다 —
-     * 상품만 지우면 물품 행이 남아 경매방·목록에 삭제된 상품이 계속 노출되기 때문이다.
-     * 시작 전이라면 경매방에서 물품을 먼저 빼면 삭제할 수 있다.
+     * 로그인한 판매자 본인 소유의 상품을 soft delete 한다. 삭제 가능 = 파생 상태가
+     * UNREGISTERED뿐이다({@link #assertDeletable}) — READY·IN_PROGRESS 물품이 걸려 있으면
+     * 상품만 지워도 물품 행이 남아 경매방·목록에 삭제된 상품이 계속 노출된다. 유찰·전원
+     * 실패 물품(재등록 가능)은 막지 않는다 — 그 물품 행은 노출이 아니라 기록이고,
+     * 결과·거래 조회는 {@code products.deleted_at}을 보지 않으므로 삭제해도 내역이 사라지지
+     * 않는다.
+     *
+     * <p>상품 행에 쓰기 락을 걸고 읽는다({@link ProductRepository#findOwnedForUpdate}).
+     * 락이 없으면 삭제가 파생 상태를 확인하는 동안 {@code AuctionItemService.add}가 같은
+     * 상품으로 물품을 새로 추가해, 삭제된 상품이 READY 물품으로 경매방에 뜰 수 있다.
+     * {@code READ_COMMITTED}가 필요한 이유는 {@code AuctionItemService.start}의 같은
+     * 문단을 본다 — 락을 기다리는 동안 커밋된 물품을 놓치지 않아야 한다.
      *
      * @param userId    삭제를 요청한 회원의 ID
      * @param productId 삭제할 상품의 ID
@@ -109,12 +122,12 @@ public class ProductService {
      *                               상품이 없거나 본인 소유가 아닐 때(PRODUCT_NOT_FOUND),
      *                               경매방에 올라가 있을 때(PRODUCT_IN_AUCTION)
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void delete(Long userId, Long productId) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
-        Product product = findOwnedProduct(sellerProfile, productId);
-        assertNotInAuction(productId);
+        Product product = findOwnedProductForUpdate(sellerProfile, productId);
+        assertDeletable(findListingStatus(productId));
 
         product.softDelete(LocalDateTime.now());
     }
@@ -159,23 +172,43 @@ public class ProductService {
                 .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
     }
 
+    /**
+     * 소유자 확인과 상품 행 쓰기 락을 한 쿼리로 끝낸다. 삭제가 "파생 상태를 보고 →
+     * soft delete" 흐름이라, 락 없이는 그 사이에 물품이 추가될 수 있다.
+     */
+    private Product findOwnedProductForUpdate(SellerProfile sellerProfile, Long productId) {
+        return productRepository
+                .findOwnedForUpdate(productId, sellerProfile.getSellerProfileId())
+                .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
+    }
+
     private ProductListingStatus findListingStatus(Long productId) {
         return productRepository.findListingStatus(productId)
                 .orElseThrow(() -> new ApplicationException(ProductErrorType.PRODUCT_NOT_FOUND));
     }
 
-    private void assertAuctionNotStarted(Long productId) {
-        if (auctionItemRepository.existsByProduct_ProductIdAndStatusNot(productId, AuctionItemStatus.READY)) {
+    /**
+     * 수정 가능 = 파생 상태가 UNREGISTERED(이력 없음·유찰·전원 실패) 또는 READY.
+     * 프론트가 같은 규칙으로 버튼을 그린다({@code product-status.ts canEditProduct}) —
+     * 파생 상태만 바뀌면 두 쪽이 구조적으로 어긋날 수 없다.
+     */
+    private void assertEditable(ProductListingStatus status) {
+        if (status != ProductListingStatus.UNREGISTERED && status != ProductListingStatus.READY) {
             throw new ApplicationException(ProductErrorType.PRODUCT_AUCTION_ALREADY_STARTED);
         }
     }
 
     /**
-     * 삭제는 수정보다 엄격하다. 수정은 시작 전이면 허용해도 남는 게 없지만, 삭제는 물품 행이
-     * 남아 삭제된 상품이 경매방에 계속 노출되므로 READY 물품이어도 막는다.
+     * 삭제 가능 = 파생 상태가 UNREGISTERED뿐이다. 수정보다 엄격한 것은 그대로다 — READY
+     * 물품이 남아 있으면 삭제된 상품이 진행 예정 목록에 계속 뜬다.
+     *
+     * <p>유찰·전원 실패 물품(파생 상태도 UNREGISTERED로 되돌아간 상태)은 막지 않는다.
+     * 그 물품 행은 노출이 아니라 기록이고, 결과·거래 내역·거래 현황 조회
+     * (예: {@code AuctionItemRepository.findResults}, {@code DealRepository.findDeals})는
+     * 전부 {@code products.deleted_at}을 보지 않으므로 삭제해도 기록에서 사라지지 않는다.
      */
-    private void assertNotInAuction(Long productId) {
-        if (auctionItemRepository.existsByProduct_ProductId(productId)) {
+    private void assertDeletable(ProductListingStatus status) {
+        if (status != ProductListingStatus.UNREGISTERED) {
             throw new ApplicationException(ProductErrorType.PRODUCT_IN_AUCTION);
         }
     }

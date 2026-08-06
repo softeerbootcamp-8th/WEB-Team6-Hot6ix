@@ -1,47 +1,54 @@
 package com.hot6ix.upbid.domain.product.repository;
 
-import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import jakarta.persistence.LockModeType;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface ProductRepository extends JpaRepository<Product, Long> {
+public interface ProductRepository extends JpaRepository<Product, Long>, ProductRepositoryCustom {
 
     Optional<Product> findByProductIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(Long productId, Long sellerProfileId);
 
     /**
-     * 요청자 소유의 살아있는 상품만 한 번에 조회한다. 물품 벌크 추가에서 상품 수만큼 단건
-     * 조회를 돌리지 않으려고 쓴다. <b>없거나 남의 상품인 ID는 결과에서 빠지므로</b>, 호출한
-     * 쪽이 요청 목록과 대조해 거절 목록을 만든다.
+     * 소유자 확인과 상품 행 쓰기 락을 한 쿼리로 끝낸다. 물품 추가가 "차단 상태인지 보고 →
+     * INSERT" 흐름이라, 검사와 삽입 사이에 다른 요청이 끼어들면 같은 상품이 물품 두 개로
+     * 동시에 올라갈 수 있다. {@code auction_items.product_id}의 unique 제약을 없앤 뒤로는
+     * 이 락이 유일한 방어선이다({@link com.hot6ix.upbid.domain.auction.entity.AuctionItem} javadoc 참고).
+     *
+     * <p>이 락만으로는 부족하다 — 호출하는 트랜잭션이 {@code READ_COMMITTED}여야 한다.
+     * 기본값인 REPEATABLE READ에서는 락을 <b>기다리는 동안</b> 커밋된 물품을 뒤따르는 일반
+     * 조회가 보지 못해, 락이 요청을 줄 세워도 낡은 값으로 통과시킨다
+     * ({@code AuctionItemService.start}가 겪은 것과 같은 함정이다).
+     *
+     * <p>fetch join하지 않는다 — MySQL {@code FOR UPDATE}는 조인된 행까지 잠근다.
      */
-    List<Product> findByProductIdInAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-            List<Long> productIds, Long sellerProfileId);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.productId = :productId "
+            + "  and p.sellerProfile.sellerProfileId = :sellerProfileId and p.deletedAt is null")
+    Optional<Product> findOwnedForUpdate(
+            @Param("productId") Long productId, @Param("sellerProfileId") Long sellerProfileId);
+
+    /**
+     * {@link #findOwnedForUpdate}의 벌크판. <b>productId 오름차순으로 잠근다</b> — 잠그는
+     * 순서가 요청마다 다르면 상품 집합이 겹치는 두 벌크 요청이 서로를 기다리다 데드락에
+     * 빠진다. 소유하지 않거나 삭제된 상품은 결과에서 빠지므로, 호출한 쪽이 요청 목록과
+     * 대조해 거절 목록을 만든다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from Product p where p.productId in :productIds "
+            + "  and p.sellerProfile.sellerProfileId = :sellerProfileId and p.deletedAt is null "
+            + "order by p.productId asc")
+    List<Product> findOwnedForUpdate(
+            @Param("productIds") Collection<Long> productIds, @Param("sellerProfileId") Long sellerProfileId);
 
     int DEFAULT_PAGE_SIZE = 20;
-
-    /**
-     * 상품당 AuctionItem이 여러 건이어도 가장 최근 것(auctionItemId 최댓값) 하나만 쓴다.
-     */
-    String LATEST_AUCTION_ITEM_JOIN = "left join AuctionItem ai on ai.product = p and ai.auctionItemId = ("
-            + "  select max(ai2.auctionItemId) from AuctionItem ai2 where ai2.product = p)";
-
-    /**
-     * SOLD·FAILED는 ENDED로 합친다. {@link #LATEST_AUCTION_ITEM_JOIN}의 별칭 {@code ai}에 묶여 있다.
-     */
-    String DERIVED_STATUS_CASE = "case"
-            + "  when ai.auctionItemId is null then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.UNREGISTERED"
-            + "  when ai.status = com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.READY"
-            + "    then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.READY"
-            + "  when ai.status = com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.IN_PROGRESS"
-            + "    then com.hot6ix.upbid.domain.product.entity.ProductListingStatus.IN_PROGRESS"
-            + "  else com.hot6ix.upbid.domain.product.entity.ProductListingStatus.ENDED"
-            + "  end";
 
     /**
      * 정렬 키를 productId로 고정해 커서를 안정적으로 만든다. 상태는 정렬이 아니라 필터로만 쓴다.
@@ -49,55 +56,6 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     default List<ProductSummaryResponseDto> search(
             Long sellerProfileId, String keyword, ProductListingStatus status, Long cursor, Integer size) {
         int limit = (size != null) ? size : DEFAULT_PAGE_SIZE;
-        return searchByLimit(sellerProfileId, keyword,
-                toMatchUnregistered(status), toMatchAuctionStatuses(status),
-                cursor, Limit.of(limit + 1));
+        return searchByLimit(sellerProfileId, keyword, status, cursor, limit + 1);
     }
-
-    // ProductListingStatus를 JPQL 파라미터로 그대로 바인드하면 Hibernate가 값 매핑을 못 찾아
-    // 예외가 난다(엔티티 매핑 속성이 아니라서). 그래서 ai.auctionItemId/ai.status와 직접
-    // 비교 가능한 형태로 미리 변환한다.
-    private Boolean toMatchUnregistered(ProductListingStatus status) {
-        return (status == ProductListingStatus.UNREGISTERED) ? Boolean.TRUE : null;
-    }
-
-    private List<AuctionItemStatus> toMatchAuctionStatuses(ProductListingStatus status) {
-        if (status == null) {
-            return null;
-        }
-        return switch (status) {
-            case UNREGISTERED -> null;
-            case READY -> List.of(AuctionItemStatus.READY);
-            case IN_PROGRESS -> List.of(AuctionItemStatus.IN_PROGRESS);
-            case ENDED -> List.of(AuctionItemStatus.SOLD, AuctionItemStatus.FAILED);
-        };
-    }
-
-    /**
-     * 상세 조회·수정 응답에 쓸 파생 상태. 목록과 같은 CASE 문을 재사용해 두 응답이 어긋나지 않게 한다.
-     */
-    @Query("select " + DERIVED_STATUS_CASE + " "
-            + "from Product p "
-            + LATEST_AUCTION_ITEM_JOIN + " "
-            + "where p.productId = :productId")
-    Optional<ProductListingStatus> findListingStatus(@Param("productId") Long productId);
-
-    @Query("select new com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto("
-            + "  p.productId, p.name, p.imageUrl, " + DERIVED_STATUS_CASE + ", p.createdAt) "
-            + "from Product p "
-            + LATEST_AUCTION_ITEM_JOIN + " "
-            + "where p.sellerProfile.sellerProfileId = :sellerProfileId "
-            + "  and p.deletedAt is null "
-            + "  and (:keyword is null or p.name like concat('%', :keyword, '%')) "
-            + "  and (:cursor is null or p.productId < :cursor) "
-            + "  and (:matchUnregistered is null or ai.auctionItemId is null) "
-            + "  and (:matchAuctionStatuses is null or ai.status in :matchAuctionStatuses) "
-            + "order by p.productId desc")
-    List<ProductSummaryResponseDto> searchByLimit(
-            @Param("sellerProfileId") Long sellerProfileId,
-            @Param("keyword") String keyword,
-            @Param("matchUnregistered") Boolean matchUnregistered,
-            @Param("matchAuctionStatuses") List<AuctionItemStatus> matchAuctionStatuses,
-            @Param("cursor") Long cursor,
-            Limit limit);
 }
