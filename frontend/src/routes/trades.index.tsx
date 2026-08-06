@@ -9,6 +9,7 @@ import { RouteError, RoutePending } from '@/components/route-states'
 import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
 import { toDeals, type DealItemStatus } from '@/features/trades/adapt-deal'
 import {
+  DEAL_STATUS_GROUP,
   DEAL_STATUS_LABEL,
   DEAL_STATUS_TONE,
 } from '@/features/trades/deal-status'
@@ -19,7 +20,7 @@ import { requireMember } from '@/lib/route-guards'
 /**
  * 거래 내역 (Figma `WEB-01 · 공통 · 거래 내역`).
  *
- * 상단에 거래 현황 요약(왼쪽 강조 바 + 상태별 미니 카드 4개),
+ * 상단에 거래 현황 요약(왼쪽 강조 바 + 상태별 미니 카드),
  * 그 아래 필터 바, 그 아래 596×144 카드 2열이다.
  */
 export const Route = createFileRoute('/trades/')({
@@ -34,7 +35,6 @@ const STATUS_STYLE: Record<
     label: string
     chip: string
     text: string
-    mini: string
     value: string
     /**
      * 모바일 카드 둘째 줄. Figma MOB-01 문구를 상태별로 쓴다.
@@ -49,7 +49,6 @@ const STATUS_STYLE: Record<
     label: DEAL_STATUS_LABEL.IN_PROGRESS,
     chip: DEAL_STATUS_TONE.IN_PROGRESS.chip,
     text: DEAL_STATUS_TONE.IN_PROGRESS.text,
-    mini: 'bg-[#fff8e9]',
     value: DEAL_STATUS_TONE.IN_PROGRESS.text,
     hint: (partner) =>
       partner
@@ -60,7 +59,6 @@ const STATUS_STYLE: Record<
     label: DEAL_STATUS_LABEL.COMPLETED,
     chip: DEAL_STATUS_TONE.COMPLETED.chip,
     text: DEAL_STATUS_TONE.COMPLETED.text,
-    mini: DEAL_STATUS_TONE.COMPLETED.chip,
     value: DEAL_STATUS_TONE.COMPLETED.text,
     hint: (partner) =>
       partner ? `거래: ${partner} · 거래 완료` : '거래: 거래 완료',
@@ -69,7 +67,6 @@ const STATUS_STYLE: Record<
     label: DEAL_STATUS_LABEL.UNSOLD,
     chip: DEAL_STATUS_TONE.UNSOLD.chip,
     text: DEAL_STATUS_TONE.UNSOLD.text,
-    mini: DEAL_STATUS_TONE.UNSOLD.chip,
     value: DEAL_STATUS_TONE.UNSOLD.text,
     hint: () => '거래할 후보가 없어 종료되었어요.',
   },
@@ -77,16 +74,40 @@ const STATUS_STYLE: Record<
     label: DEAL_STATUS_LABEL.ALL_FAILED,
     chip: DEAL_STATUS_TONE.ALL_FAILED.chip,
     text: DEAL_STATUS_TONE.ALL_FAILED.text,
-    mini: DEAL_STATUS_TONE.ALL_FAILED.chip,
     value: DEAL_STATUS_TONE.ALL_FAILED.text,
     hint: () => '낙찰 후보가 모두 실패해 종료되었어요.',
   },
+  WAITING: {
+    label: DEAL_STATUS_LABEL.WAITING,
+    chip: DEAL_STATUS_TONE.WAITING.chip,
+    text: DEAL_STATUS_TONE.WAITING.text,
+    value: DEAL_STATUS_TONE.WAITING.text,
+    hint: () => '앞 순위의 거래 진행을 기다리고 있어요.',
+  },
+  FAILED: {
+    label: DEAL_STATUS_LABEL.FAILED,
+    chip: DEAL_STATUS_TONE.FAILED.chip,
+    text: DEAL_STATUS_TONE.FAILED.text,
+    value: DEAL_STATUS_TONE.FAILED.text,
+    hint: () => '기회를 놓쳐 거래가 성사되지 않았어요.',
+  },
 }
 
-type Filter = 'ALL' | 'BUYER' | 'SELLER' | DealItemStatus
+type GroupKey = (typeof DEAL_STATUS_GROUP)[number]['key']
+type Filter = 'ALL' | 'BUYER' | 'SELLER' | GroupKey
 
 /** 모바일 필터 바에 들어가는 4개. */
-const MOBILE_FILTERS: Filter[] = ['ALL', 'BUYER', 'SELLER', 'IN_PROGRESS']
+const MOBILE_FILTERS: Filter[] = ['ALL', 'BUYER', 'SELLER', 'progress']
+
+/** 보드 미니 카드용 스타일 (묶음 단위) */
+const GROUP_STYLE: Record<
+  GroupKey,
+  { label: string; mini: string; value: string }
+> = {
+  progress: { label: '진행 중', mini: 'bg-[#fff8e9]', value: DEAL_STATUS_TONE.IN_PROGRESS.text },
+  completed: { label: '거래 완료', mini: DEAL_STATUS_TONE.COMPLETED.chip, value: DEAL_STATUS_TONE.COMPLETED.text },
+  failed: { label: '거래 불성립', mini: DEAL_STATUS_TONE.ALL_FAILED.chip, value: DEAL_STATUS_TONE.ALL_FAILED.text },
+}
 
 function TradesPage() {
   const [filter, setFilter] = useState<Filter>('ALL')
@@ -101,7 +122,8 @@ function TradesPage() {
     if (filter === 'BUYER' || filter === 'SELLER') {
       return trades.filter((trade) => trade.role === filter)
     }
-    return trades.filter((trade) => trade.status === filter)
+    const statuses = DEAL_STATUS_GROUP.find((g) => g.key === filter)?.statuses || []
+    return trades.filter((trade) => statuses.includes(trade.status))
   }, [trades, filter])
 
   if (deals.isPending) return <RoutePending />
@@ -109,8 +131,10 @@ function TradesPage() {
     return <RouteError error={deals.error} reset={() => void deals.refetch()} />
   }
 
-  const countBy = (status: DealItemStatus) =>
-    trades.filter((trade) => trade.status === status).length
+  const countByGroup = (key: GroupKey) => {
+    const statuses = DEAL_STATUS_GROUP.find((g) => g.key === key)?.statuses || []
+    return trades.filter((trade) => statuses.includes(trade.status)).length
+  }
 
   const FILTERS: { key: Filter; label: string }[] = [
     { key: 'ALL', label: `전체 ${trades.length}` },
@@ -122,19 +146,12 @@ function TradesPage() {
       key: 'SELLER',
       label: `판매 ${trades.filter((t) => t.role === 'SELLER').length}`,
     },
-    { key: 'IN_PROGRESS', label: `거래 중 ${countBy('IN_PROGRESS')}` },
-    { key: 'COMPLETED', label: `거래 완료 ${countBy('COMPLETED')}` },
-  ]
-
-  const MINI: { status: DealItemStatus }[] = [
-    { status: 'IN_PROGRESS' },
-    { status: 'COMPLETED' },
-    { status: 'UNSOLD' },
-    { status: 'ALL_FAILED' },
+    { key: 'progress', label: `진행 중 ${countByGroup('progress')}` },
+    { key: 'completed', label: `거래 완료 ${countByGroup('completed')}` },
   ]
 
   // 아직 마무리되지 않은 거래 = 사용자가 지금 손대야 하는 거래
-  const openCount = countBy('IN_PROGRESS')
+  const openCount = countByGroup('progress')
 
   return (
     <AppShell title="거래 내역" className="max-w-[1280px]">
@@ -153,8 +170,8 @@ function TradesPage() {
         </div>
       ) : (
         <>
-          {/* 거래 현황 — 모바일(MOB-01)에는 없는 패널이다 */}
-          <section className="mt-6 hidden flex-wrap items-center gap-6 rounded-[20px] border bg-card p-7 md:flex">
+          {/* 거래 현황 — 모바일(MOB-01) 화면 대응 */}
+          <section className="mt-6 flex flex-wrap items-center gap-6 rounded-[20px] border bg-card p-7">
             <span
               aria-hidden
               className="h-[72px] w-1.5 rounded-[3px] bg-brand-500"
@@ -176,11 +193,11 @@ function TradesPage() {
              * 정렬해도 빈 쪽이 눈에 걸린다. 같은 줄에 두면 눈이 한 번만 간다.
              */}
             <dl className="ml-auto grid w-full max-w-[360px] grid-cols-2 gap-2">
-              {MINI.map(({ status }) => {
-                const style = STATUS_STYLE[status]
+              {DEAL_STATUS_GROUP.map(({ key }) => {
+                const style = GROUP_STYLE[key]
                 return (
                   <div
-                    key={status}
+                    key={key}
                     className={cn(
                       'flex h-12 items-center gap-2 rounded-2xl px-3.5',
                       style.mini,
@@ -202,7 +219,7 @@ function TradesPage() {
                         style.value,
                       )}
                     >
-                      {countBy(status)}
+                      {countByGroup(key)}
                     </dd>
                   </div>
                 )
@@ -257,7 +274,9 @@ function TradesPage() {
                  * 금액처럼 읽힌다.
                  */
                 const amount =
-                  trade.status === 'UNSOLD' || trade.status === 'ALL_FAILED'
+                  trade.status === 'UNSOLD' ||
+                  trade.status === 'ALL_FAILED' ||
+                  trade.status === 'FAILED'
                     ? null
                     : trade.amount
 

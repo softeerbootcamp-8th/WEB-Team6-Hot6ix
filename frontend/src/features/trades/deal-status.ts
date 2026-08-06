@@ -14,6 +14,8 @@ export const DEAL_STATUS_LABEL: Record<DealItemStatus, string> = {
    * 이쪽은 후보가 있었는데 전부 실패한 것이다. 판매자가 취할 조치가 다르다.
    */
   ALL_FAILED: '거래 불성립',
+  WAITING: '대기',
+  FAILED: '거래 불성립',
 }
 
 /** Figma 값을 그대로 쓴다 (`trades.$itemId.tsx` 의 `TONE` 과 같은 사정). */
@@ -29,4 +31,13 @@ export const DEAL_STATUS_TONE: Record<
   UNSOLD: { chip: 'bg-result-failed-surface', text: 'text-live' },
   // 색은 유찰과 같게 두고 이름으로 구분한다 — 결과가 같은 갈래이기 때문이다.
   ALL_FAILED: { chip: 'bg-result-failed-surface', text: 'text-live' },
+  WAITING: { chip: 'bg-system-gray-2', text: 'text-system-gray-4' }, // 디자인팀 지정 회색 톤
+  FAILED: { chip: 'bg-result-failed-surface', text: 'text-live' },
 }
+
+/** 현황 보드와 모바일 필터를 그릴 때 쓰는 상태 묶음 */
+export const DEAL_STATUS_GROUP = [
+  { key: 'progress', statuses: ['IN_PROGRESS', 'WAITING'] as DealItemStatus[] },
+  { key: 'completed', statuses: ['COMPLETED'] as DealItemStatus[] },
+  { key: 'failed', statuses: ['UNSOLD', 'ALL_FAILED', 'FAILED'] as DealItemStatus[] },
+] as const
