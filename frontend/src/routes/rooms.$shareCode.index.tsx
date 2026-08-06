@@ -36,6 +36,7 @@ import {
   AUCTION_START_FLASH_MS,
   type AuctionStartFlashState,
 } from '@/features/live/components/auction-start-flash'
+import { preloadLiveMotion } from '@/features/live/preload-motion'
 import {
   SOFT_CLOSE_FLASH_MS,
   type SoftCloseFlash,
@@ -863,6 +864,14 @@ function LiveRoomPage() {
     const timer = window.setTimeout(() => setJustClosedId(null), 3050)
     return () => window.clearTimeout(timer)
   }, [justClosedId])
+
+  /*
+   * 마감·연장·입찰 연출 이미지를 미리 받아둔다. 마감은 예고 없이 일어나서
+   * 그때 받기 시작하면 늦는다.
+   */
+  useEffect(() => {
+    preloadLiveMotion()
+  }, [])
 
   // 시작 알림도 한 번만 보여주고 지운다.
   useEffect(() => {
