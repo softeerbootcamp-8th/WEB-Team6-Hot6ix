@@ -125,14 +125,13 @@ public interface DealRepository extends Repository<DealCandidate, Long> {
                                    AND o.deal_candidate_id < dc.deal_candidate_id))
                    )                    AS myTurn,
                    dc.bid_amount        AS amount,
-                   su.nickname          AS partnerNickname,
+                   sp.store_name        AS partnerNickname,
                    sp.seller_profile_id AS sellerProfileId,
                    ai.end_at            AS closedAt
               FROM deal_candidates dc
               JOIN auction_items ai    ON ai.auction_item_id = dc.auction_item_id
               JOIN auction_rooms ar    ON ar.auction_room_id = ai.auction_room_id
               JOIN seller_profiles sp  ON sp.seller_profile_id = ar.seller_profile_id
-              JOIN users su            ON su.user_id = sp.user_id
               JOIN products p          ON p.product_id = ai.product_id
              WHERE dc.bidder_user_id = :userId)
             ) deals
