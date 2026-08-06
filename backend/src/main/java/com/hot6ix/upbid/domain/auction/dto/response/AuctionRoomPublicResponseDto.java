@@ -38,7 +38,7 @@ public record AuctionRoomPublicResponseDto(
         // 실제 권한은 조작 API가 다시 검증한다. 로그인하지 않았으면 false.
         boolean isOwner,
         // 로그인한 사용자가 이 방의 약관에 동의했는지.
-        // 게스트이거나 판매자 조작 응답(생성·수정·종료)에서는 null이다.
+        // 게스트, 방 주인, 판매자 조작 응답(생성·수정·종료)에서는 null이다 — 동의를 물을 대상이 아니다.
         Boolean agreedToTerms
 ) {
     public static AuctionRoomPublicResponseDto from(AuctionRoom auctionRoom, Long itemCount,

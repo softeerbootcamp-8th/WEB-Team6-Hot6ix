@@ -144,9 +144,15 @@ function LiveRoomPage() {
 
   const roomQuery = useGetRoomByShareCode(shareCode)
 
-  // 로그인 유저가 약관 동의 없이 직접 접근하면 입장 페이지로 보낸다.
+  /*
+   * 로그인 유저가 약관 동의 없이 직접 접근하면 입장 페이지로 보낸다.
+   *
+   * 방 주인은 제외한다 — 판매자는 참여자가 아니라 동의 기록이 없고, 서버가 `false` 를
+   * 주더라도 자기 방에서 튕겨나가면 안 된다.
+   */
   useEffect(() => {
-    if (!isGuest && roomQuery.data?.data?.agreedToTerms === false) {
+    const dto = roomQuery.data?.data
+    if (!isGuest && !dto?.isOwner && dto?.agreedToTerms === false) {
       void navigate({ to: '/join/$shareCode', params: { shareCode } })
     }
   }, [isGuest, roomQuery.data, shareCode, navigate])
