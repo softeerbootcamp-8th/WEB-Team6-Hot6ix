@@ -136,11 +136,20 @@ export function ItemDetailPanel({
         </div>
 
         {/* 오른쪽 · 리더보드 → 이벤트 → 퀵입찰 */}
-        <div className="flex min-w-0 flex-col gap-4">
-          <section className="shrink-0 rounded-2xl border p-5">
-            <div className="flex items-baseline">
+        <div className="flex min-w-0 flex-col gap-4 lg:min-h-0">
+          {/*
+            남는 높이는 아래 두 칸 중 살아 있는 쪽이 가져간다. 셋 다 고정 높이면
+            패널 아래쪽에 아무것도 없는 빈칸이 크게 남는다.
+          */}
+          <section
+            className={cn(
+              'flex flex-col rounded-2xl border p-5',
+              closed ? 'lg:min-h-0 lg:flex-1' : 'shrink-0',
+            )}
+          >
+            <div className="flex shrink-0 items-baseline">
               <h3 className="text-[13px] font-bold text-neutral-tertiary">
-                실시간 리더보드
+                {closed ? '최종 순위' : '실시간 리더보드'}
               </h3>
               <span
                 className={cn(
@@ -153,15 +162,28 @@ export function ItemDetailPanel({
               </span>
             </div>
 
-            <div className="mt-3 border-t pt-3">
-              <LeaderboardRows entries={item.leaderboard} />
+            <div className="mt-3 min-h-0 flex-1 overflow-y-auto border-t pt-3">
+              {/*
+                끝난 물품은 이벤트 칸이 빠진 자리를 이 카드가 물려받는다.
+                서버가 상위 3명만 내려주므로(`LEADERBOARD_SIZE`) 입찰자가 적으면
+                카드가 헐렁하다. 더 채우려면 서버가 내려주는 수를 늘려야 한다.
+              */}
+              <LeaderboardRows
+                entries={item.leaderboard}
+                emptyText={closed ? '입찰 없이 마감됐어요' : undefined}
+              />
             </div>
           </section>
 
-          {/* 이벤트 로그 — 로그 3개 높이 고정, 넘치면 스크롤 */}
-          <div className="flex h-[200px] flex-col overflow-hidden">
-            <ItemEventList events={events} />
-          </div>
+          {/*
+            끝난 물품에는 이벤트 칸을 두지 않는다. 더 들어올 이벤트가 없어
+            "시작했습니다 / 마감되었습니다" 두 줄만 남은 칸이 자리만 차지한다.
+          */}
+          {!closed && (
+            <div className="flex h-[200px] flex-col overflow-hidden lg:h-auto lg:min-h-[200px] lg:flex-1">
+              <ItemEventList events={events} />
+            </div>
+          )}
 
           {/* 입찰 영역 — 하단 한 줄 고정 */}
           <div className="shrink-0">

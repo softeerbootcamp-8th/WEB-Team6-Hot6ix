@@ -87,6 +87,10 @@ export interface AuctionRoomDetail {
   shareCode: string
   /** 마감 직전 입찰 시 연장되는 시간(초) */
   softCloseSeconds: number
+  /** 남은 시간이 이 아래로 내려간 뒤 입찰이 들어오면 연장된다(초) */
+  softCloseTriggerSeconds: number
+  /** 방 기본 입찰 단위(원). 물품에 담길 때 복사되므로 물품 값이 우선이다. */
+  bidUnit: number
   items: AuctionItemDetail[]
 }
 

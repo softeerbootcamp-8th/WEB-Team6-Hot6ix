@@ -5,7 +5,12 @@ import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
 import { cn } from '@/lib/utils'
-import { formatRemaining, formatWon, toHref } from '@/lib/format'
+import {
+  formatClosingLead,
+  formatRemaining,
+  formatWon,
+  toHref,
+} from '@/lib/format'
 import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
 
 /**
@@ -17,6 +22,8 @@ import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
 export function MobileItemDetailView({
   item,
   sellerName,
+  softCloseTriggerSeconds = 0,
+  softCloseSeconds = 0,
   events,
   remaining,
   closed,
@@ -33,6 +40,10 @@ export function MobileItemDetailView({
 }: {
   item: AuctionItemDetail
   sellerName: string
+  /** 방의 마감 임박 기준(초). 0 이면 연장 규칙 줄을 그리지 않는다. */
+  softCloseTriggerSeconds?: number
+  /** 방의 연장 폭(초) */
+  softCloseSeconds?: number
   events: RoomEvent[]
   remaining: number
   closed: boolean
@@ -141,6 +152,18 @@ export function MobileItemDetailView({
                 입찰 단위 +{item.bidUnit.toLocaleString('ko-KR')}원
               </span>
             </div>
+
+            {/*
+              이 화면은 링크로 바로 들어오면 방 헤더 없이 단독으로 뜬다.
+              데스크톱은 `LiveShell` 헤더가 규칙을 들고 있지만 여기는 없어서,
+              연장 규칙을 볼 자리가 아예 없었다. 끝난 물품에는 의미가 없어 뺀다.
+            */}
+            {!closed && softCloseTriggerSeconds > 0 && softCloseSeconds > 0 && (
+              <p className="mt-1.5 border-t border-brand-200 pt-1.5 text-[10px] font-semibold tabular-nums text-neutral-tertiary">
+                마감 {formatClosingLead(softCloseTriggerSeconds)} 전 입찰 시{' '}
+                {formatClosingLead(softCloseSeconds)} 자동 연장
+              </p>
+            )}
           </div>
 
           <div className="mt-5 border-t pt-5">
@@ -173,48 +196,65 @@ export function MobileItemDetailView({
          * 라이브 화면과 마찬가지로 높이를 뷰포트에 묶어 **카드 안에서만** 스크롤한다.
          */}
         <section className="mt-4 flex h-[min(400px,calc(100svh-22rem))] flex-col overflow-hidden rounded-2xl border bg-card">
-          <div
-            role="tablist"
-            aria-label="물품 상세 보기"
-            className="grid grid-cols-2 gap-2 border-b p-2"
-          >
-            {(
-              [
-                { key: 'events', label: '경매방 이벤트' },
-                { key: 'leaderboard', label: '리더보드' },
-              ] as const
-            ).map((entry) => (
-              <button
-                key={entry.key}
-                type="button"
-                role="tab"
-                aria-selected={tab === entry.key}
-                onClick={() => setTab(entry.key)}
-                className={cn(
-                  'ease-soft h-8 rounded-lg border text-[13px] transition-all duration-150 active:scale-95',
-                  tab === entry.key
-                    ? 'border-brand-300 bg-brand-100 font-bold text-brand-500'
-                    : 'border-transparent font-medium text-neutral-tertiary hover:bg-fill',
-                )}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)]">
-            <Slot active={tab === 'events'}>
-              {/* 경매방 이벤트와 완전히 같은 피드. 이 물품 것만 걸러 보여준다. */}
-              <MobileEventFeed events={events} />
-            </Slot>
-
-            <Slot active={tab === 'leaderboard'}>
-              {/* 경매방 리더보드와 같은 카드. 이 물품 하나만 담는다. */}
+          {/*
+            끝난 물품에는 이벤트 칸을 두지 않는다. 더 들어올 이벤트가 없어서
+            세그먼트 한 칸이 죽은 탭이 된다. 그때는 최종 순위만 남긴다.
+          */}
+          {closed ? (
+            <>
+              <p className="border-b p-4 text-[13px] font-bold text-foreground">
+                최종 순위
+              </p>
               <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4">
                 <ItemLeaderboard item={item} />
               </ul>
-            </Slot>
-          </div>
+            </>
+          ) : (
+            <>
+              <div
+                role="tablist"
+                aria-label="물품 상세 보기"
+                className="grid grid-cols-2 gap-2 border-b p-2"
+              >
+                {(
+                  [
+                    { key: 'events', label: '경매방 이벤트' },
+                    { key: 'leaderboard', label: '리더보드' },
+                  ] as const
+                ).map((entry) => (
+                  <button
+                    key={entry.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === entry.key}
+                    onClick={() => setTab(entry.key)}
+                    className={cn(
+                      'ease-soft h-8 rounded-lg border text-[13px] transition-all duration-150 active:scale-95',
+                      tab === entry.key
+                        ? 'border-brand-300 bg-brand-100 font-bold text-brand-500'
+                        : 'border-transparent font-medium text-neutral-tertiary hover:bg-fill',
+                    )}
+                  >
+                    {entry.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)]">
+                <Slot active={tab === 'events'}>
+                  {/* 이 물품 것만 걸러 보여주므로 물품 이름표는 붙이지 않는다. */}
+                  <MobileEventFeed events={events} showItemTag={false} />
+                </Slot>
+
+                <Slot active={tab === 'leaderboard'}>
+                  {/* 경매방 리더보드와 같은 카드. 이 물품 하나만 담는다. */}
+                  <ul className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4">
+                    <ItemLeaderboard item={item} />
+                  </ul>
+                </Slot>
+              </div>
+            </>
+          )}
         </section>
 
         {feedback && (

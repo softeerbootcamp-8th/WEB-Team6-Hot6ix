@@ -7,6 +7,7 @@ import {
   StartIcon,
   WinIcon,
 } from '@/features/live/components/event-icons'
+import { EventItemTag } from '@/features/live/components/event-item-tag'
 import { useEventEntrance } from '@/features/live/use-event-entrance'
 import { cn } from '@/lib/utils'
 import { formatTime } from '@/lib/format'
@@ -45,7 +46,18 @@ function resolveTone(event: RoomEvent) {
 const BOTTOM_THRESHOLD = 10 // px
 
 /** 시간 오름차순 — 늦은 이벤트가 아래로 간다 (웹 피드와 같은 규칙). */
-export function MobileEventFeed({ events }: { events: RoomEvent[] }) {
+export function MobileEventFeed({
+  events,
+  showItemTag = true,
+}: {
+  events: RoomEvent[]
+  /**
+   * 물품 이름표를 붙일지. 방 피드는 여러 물품이 섞여 필요하지만, 물품 상세의
+   * 이벤트 탭은 한 물품만 담아서 줄마다 같은 이름이 반복된다.
+   * (데스크톱은 이 자리에 `ItemEventList` 라는 별도 컴포넌트를 쓴다.)
+   */
+  showItemTag?: boolean
+}) {
   const ordered = [...events].sort(
     (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
   )
@@ -127,6 +139,8 @@ export function MobileEventFeed({ events }: { events: RoomEvent[] }) {
                     </span>
 
                     <div className="min-w-0 flex-1 py-2">
+                      {/* 입찰·연장은 문구에 물품명이 없다. 이름표로 올려 준다. */}
+                      {showItemTag && <EventItemTag event={event} />}
                       <p className="text-[13px] font-semibold text-foreground">
                         {event.message}
                       </p>

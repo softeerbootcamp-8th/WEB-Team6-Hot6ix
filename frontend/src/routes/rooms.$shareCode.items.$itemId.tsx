@@ -17,7 +17,8 @@ import {
   toAuctionItems,
 } from '@/features/live/adapt-item'
 import { toBidErrorMessage } from '@/features/live/bid-error'
-import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
+import { toAuctionRoomDetail } from '@/features/live/adapt-room'
+import { useGetRoomByShareCode } from '@/api/generated/경매방/경매방'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { formatClosingLead, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -70,15 +71,15 @@ function AuctionItemPage() {
   )
 
   /*
-   * 방 제목·판매자명은 아직 목업이다. 물품 배열은 서버 값만 쓴다 —
-   * 목업으로 채우면 실제 입찰과 무관한 현재가·리더보드가 그대로 보인다.
+   * 방 정보도 서버에서 받는다. 예전에는 제목·판매자명만 쓴다고 목업으로
+   * 뒀는데, 헤더가 입찰 단위와 연장 규칙까지 보여주게 되면서 남의 방 숫자가
+   * 사실인 것처럼 붙었다. 규칙은 방마다 달라 목업으로 대신할 수 없다.
    */
-  const mockRoom =
-    findMockRoom(detailQuery.data?.data?.auctionRoomId ?? 0) ?? MOCK_ROOM_DETAIL
-  const room = {
-    ...mockRoom,
-    items: serverItems,
-  }
+  const roomQuery = useGetRoomByShareCode(shareCode)
+  const room = useMemo(
+    () => toAuctionRoomDetail(roomQuery.data?.data ?? {}, serverItems),
+    [roomQuery.data, serverItems],
+  )
   const isGuest = user === null
 
   const [keyword, setKeyword] = useState('')
@@ -385,6 +386,8 @@ function AuctionItemPage() {
       <MobileItemDetailView
         item={item}
         sellerName={room.sellerName}
+        softCloseTriggerSeconds={room.softCloseTriggerSeconds}
+        softCloseSeconds={room.softCloseSeconds}
         events={itemEvents}
         remaining={remaining}
         closed={closed}
@@ -461,7 +464,9 @@ function AuctionItemPage() {
       }
       centerLabel={
         <>
-          <span>선택한 물품 상세 · 라이브</span>
+          <span>
+            선택한 물품 상세 · {closed ? '종료' : ready ? '시작 전' : '라이브'}
+          </span>
           <Link
             to="/rooms/$shareCode"
             params={{ shareCode }}

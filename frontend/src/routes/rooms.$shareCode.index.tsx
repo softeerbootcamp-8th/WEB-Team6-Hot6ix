@@ -1176,6 +1176,8 @@ function LiveRoomPage() {
             <MobileItemDetailView
               item={detailItem}
               sellerName={room.sellerName}
+              softCloseTriggerSeconds={room.softCloseTriggerSeconds}
+              softCloseSeconds={room.softCloseSeconds}
               events={roomEvents.filter(
                 (event) => event.itemId === detailItem.id,
               )}

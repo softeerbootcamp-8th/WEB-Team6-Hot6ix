@@ -9,6 +9,10 @@ import {
   StartIcon,
   WinIcon,
 } from '@/features/live/components/event-icons'
+import {
+  EventItemTag,
+  EventSubtitleLine,
+} from '@/features/live/components/event-item-tag'
 import { formatTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { RoomEvent } from '@/mocks/types'
@@ -140,19 +144,10 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
                 </span>
 
                 <div className="min-w-0 flex-1 pt-0.5">
+                  {/* 입찰·연장은 물품명을 문구 위 이름표로 올린다. */}
+                  <EventItemTag event={event} />
                   <p className={style.text}>{event.message}</p>
-                  {event.subtitle && (
-                    <p
-                      className={cn(
-                        'mt-1 text-[12px]',
-                        event.kind === 'CLOSE'
-                          ? 'font-semibold text-success'
-                          : 'font-normal text-neutral-tertiary',
-                      )}
-                    >
-                      {event.subtitle}
-                    </p>
-                  )}
+                  <EventSubtitleLine event={event} />
                 </div>
 
                 <time
