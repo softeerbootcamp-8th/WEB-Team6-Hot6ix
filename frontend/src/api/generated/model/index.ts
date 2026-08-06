@@ -91,4 +91,5 @@ export * from './smsVerifyRequestDto';
 export * from './sseEmitter';
 export * from './userResponseDto';
 export * from './userUpdateRequestDto';
+export * from './userUpdateRequestDtoProfileImageUrl';
 export * from './validationError';

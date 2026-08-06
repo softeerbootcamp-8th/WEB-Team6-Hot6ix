@@ -13,6 +13,7 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
@@ -65,6 +66,11 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
     // 발행 내용은 검증하지 않고, 컨텍스트만 뜨게 목으로 채운다.
     @MockitoBean
     private DomainEventPublisher domainEventPublisher;
+
+    // 커버 주소 검증도 슬라이스 밖이다. 실제 빈은 AwsProperties를 받는데 그것도 안 올라온다.
+    // 검증 내용은 ImageUrlValidatorTest에서 본다.
+    @MockitoBean
+    private ImageUrlValidator imageUrlValidator;
 
     private SellerProfile newSellerProfile() {
         User user = userRepository.saveAndFlush(User.builder()

@@ -26,6 +26,7 @@ import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.domain.deal.repository.MyCandidateRankProjection;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -72,6 +73,11 @@ class AuctionRoomServiceTest {
 
     @Mock
     private DomainEventPublisher domainEventPublisher;
+
+    // 이미지 주소 검증은 ImageUrlValidatorTest에서 본다. 여기서는 통과시킨다.
+    // 빼면 @InjectMocks가 null을 꽂아서 create·update가 NPE로 죽는다.
+    @Mock
+    private ImageUrlValidator imageUrlValidator;
 
     @InjectMocks
     private AuctionRoomService auctionRoomService;
@@ -253,6 +259,41 @@ class AuctionRoomServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("커버 주소가 우리 버킷에서 온 것인지 생성할 때 확인한다")
+    void create_validatesCoverImageUrl() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoomCreateRequestDto request = newCreateRequest();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(sellerProfile));
+        when(auctionRoomShareService.generateCandidateShareCode()).thenReturn("FAKESHARECODE1234");
+        when(auctionRoomRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        auctionRoomService.create(1L, request);
+
+        verify(imageUrlValidator, times(1)).validate("https://cdn.hot6ix.com/cover.png");
+    }
+
+    @Test
+    @DisplayName("커버 주소는 수정할 때도 확인한다 — 생성만 막으면 검증이 없는 것과 같다")
+    void update_validatesCoverImageUrl() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+        AuctionRoom auctionRoom = newUpdatableRoom(sellerProfile, AuctionRoomStatus.BEFORE);
+        AuctionRoomUpdateRequestDto request = AuctionRoomUpdateRequestDto.builder()
+                .coverImageUrl("https://cdn.hot6ix.com/new-cover.png")
+                .build();
+
+        stubOwnedRoom(sellerProfile, auctionRoom);
+        when(auctionItemRepository.existsByAuctionRoom_AuctionRoomIdAndStatusNot(10L, AuctionItemStatus.READY))
+                .thenReturn(false);
+
+        auctionRoomService.update(1L, 10L, request);
+
+        verify(imageUrlValidator, times(1)).validate("https://cdn.hot6ix.com/new-cover.png");
     }
 
     @Test
