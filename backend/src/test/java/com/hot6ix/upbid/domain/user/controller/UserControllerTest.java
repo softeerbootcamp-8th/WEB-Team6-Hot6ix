@@ -2,7 +2,11 @@ package com.hot6ix.upbid.domain.user.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -11,8 +15,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.hot6ix.upbid.domain.upload.exception.UploadErrorType;
 import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
+import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
 import com.hot6ix.upbid.domain.user.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
@@ -182,5 +189,54 @@ class UserControllerTest extends AbstractControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false));
+    }
+
+    // ==================== DELETE /me ====================
+
+    @Test
+    @DisplayName("탈퇴에 성공하면 200을 반환하고 세션을 무효화한다")
+    void withdraw() throws Exception {
+
+        mockMvc.perform(delete("/api/v1/users/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(sessionManager).invalidate(any(HttpServletRequest.class), any(HttpServletResponse.class));
+    }
+
+    @Test
+    @DisplayName("비로그인 상태로 요청하면 401을 반환한다")
+    void withdraw_unauthorized() throws Exception {
+
+        비로그인_상태로_바꾼다();
+
+        mockMvc.perform(delete("/api/v1/users/me"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("존재하지 않거나 이미 탈퇴한 사용자면 404를 반환한다")
+    void withdraw_userNotFound() throws Exception {
+
+        doThrow(new ApplicationException(UserErrorType.USER_NOT_FOUND))
+                .when(userService).withdraw(LOGIN_USER_ID);
+
+        mockMvc.perform(delete("/api/v1/users/me"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(9001));
+    }
+
+    @Test
+    @DisplayName("진행 중인 경매방이 있으면 409를 반환하고 세션을 무효화하지 않는다")
+    void withdraw_sellerProfileInUse() throws Exception {
+
+        doThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_IN_USE))
+                .when(userService).withdraw(LOGIN_USER_ID);
+
+        mockMvc.perform(delete("/api/v1/users/me"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(3003));
+
+        verify(sessionManager, never()).invalidate(any(), any());
     }
 }
