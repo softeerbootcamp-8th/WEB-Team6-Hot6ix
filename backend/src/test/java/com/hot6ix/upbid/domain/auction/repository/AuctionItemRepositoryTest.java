@@ -8,6 +8,7 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import com.hot6ix.upbid.domain.auction.entity.AuctionParticipant;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -36,6 +37,9 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
 
     @Autowired
     private AuctionItemRepository auctionItemRepository;
+
+    @Autowired
+    private AuctionParticipantRepository auctionParticipantRepository;
 
     @Autowired
     private TestEntityManager entityManager;
@@ -91,6 +95,16 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 .bidIncrement(1_000L)
                 .status(status)
                 .endAt(LocalDateTime.of(2026, 7, 29, 21, 0))
+                .build());
+    }
+
+    /** 입찰자. 판매자와 달리 SellerProfile이 없다. 전화번호는 unique가 아니라 겹쳐도 된다. */
+    private User newBidder(String email) {
+        return entityManager.persist(User.builder()
+                .email(email)
+                .password("password")
+                .nickname("한기")
+                .phoneNumber("010-1234-5678")
                 .build());
     }
 
@@ -469,6 +483,58 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 .containsExactly(
                         tuple(sold.getAuctionItemId(), "낙찰물품"),
                         tuple(failed.getAuctionItemId(), "유찰물품"));
+    }
+
+    @Test
+    @DisplayName("이 방에 약관 동의를 한 회원이면 참여자로 본다")
+    void existsParticipantReturnsTrueForAgreedParticipant() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        AuctionItem auctionItem = newAuctionItem(auctionRoom, "한정판피규어", AuctionItemStatus.IN_PROGRESS);
+        User bidder = newBidder("buyer1@hot6ix.com");
+        entityManager.flush();
+
+        auctionParticipantRepository.recordAgreement(
+                auctionRoom.getAuctionRoomId(), bidder.getUserId(), "v1");
+
+        assertThat(auctionItemRepository.existsParticipant(
+                auctionItem.getAuctionItemId(), bidder.getUserId())).isTrue();
+    }
+
+    @Test
+    @DisplayName("참여 행이 있어도 agreed_at이 비어 있으면 참여자로 보지 않는다")
+    void existsParticipantReturnsFalseWhenNotAgreed() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        AuctionItem auctionItem = newAuctionItem(auctionRoom, "한정판피규어", AuctionItemStatus.IN_PROGRESS);
+        User bidder = newBidder("buyer2@hot6ix.com");
+
+        // 빌더에 agreedAt이 없어 null로 들어간다. 동의 없이 행만 생긴 상태를 만든다.
+        entityManager.persist(AuctionParticipant.builder()
+                .auctionRoom(auctionRoom)
+                .user(bidder)
+                .build());
+        entityManager.flush();
+
+        assertThat(auctionItemRepository.existsParticipant(
+                auctionItem.getAuctionItemId(), bidder.getUserId())).isFalse();
+    }
+
+    @Test
+    @DisplayName("다른 방에 동의한 회원은 이 방의 물품에 대해 참여자가 아니다")
+    void existsParticipantReturnsFalseForOtherRoomParticipant() {
+
+        AuctionRoom auctionRoom = newAuctionRoom("승민상점 경매방");
+        AuctionRoom otherRoom = newAuctionRoom("다른 경매방");
+        AuctionItem auctionItem = newAuctionItem(auctionRoom, "한정판피규어", AuctionItemStatus.IN_PROGRESS);
+        User bidder = newBidder("buyer3@hot6ix.com");
+        entityManager.flush();
+
+        auctionParticipantRepository.recordAgreement(
+                otherRoom.getAuctionRoomId(), bidder.getUserId(), "v1");
+
+        assertThat(auctionItemRepository.existsParticipant(
+                auctionItem.getAuctionItemId(), bidder.getUserId())).isFalse();
     }
 
 }
