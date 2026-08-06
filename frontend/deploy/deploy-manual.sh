@@ -20,6 +20,8 @@ BUCKET="upbid-frontend"
 DISTRIBUTION_ID="E17BE3ZTNT6VTF"
 API_BASE_URL="https://api.upbid.store"
 FE_URL="https://www.upbid.store"
+# src/components/motion-sources.ts 의 MOTION_BASE 와 같은 값이어야 한다.
+MOTION_VERSION="v1"
 export AWS_DEFAULT_REGION="ap-northeast-2"
 
 cd "$(dirname "$0")/.."
@@ -54,6 +56,29 @@ if ! aws s3 ls "s3://$BUCKET/" >/dev/null 2>&1; then
   exit 1
 fi
 echo "  ok"
+
+# ── 2-1. 연출 APNG 존재 확인 ────────────────────────────────────────
+# 이 셋은 저장소에 없고 손으로 S3 에 올린 것을 쓴다
+# (src/components/motion-sources.ts). 빌드 산출물이 아니라서 배포가 만들어
+# 주지 않으므로, 없는 채로 코드만 올리면 라이브 경매방 연출이 통째로 정지
+# 이미지로 떨어진다. 그 상태를 배포하고 나서 알아차리는 일이 없도록
+# 여기서 먼저 막는다.
+echo "▶ 연출 APNG 확인 (motion/$MOTION_VERSION)..."
+MISSING=0
+for name in auction-cat-sold soft-close-extended auction-start; do
+  if aws s3 ls "s3://$BUCKET/motion/$MOTION_VERSION/$name.png" >/dev/null 2>&1; then
+    echo "  ok   $name.png"
+  else
+    echo "  없음 $name.png" >&2
+    MISSING=1
+  fi
+done
+if [ "$MISSING" = "1" ]; then
+  echo "✗ 연출 APNG 가 S3 에 없다. 배포를 중단한다." >&2
+  echo "  콘솔에서 s3://$BUCKET/motion/$MOTION_VERSION/ 에 올린 뒤 다시 실행한다." >&2
+  echo "  백업: ~/hot6ix-personal-notes/motion-assets/" >&2
+  exit 1
+fi
 
 # ── 3. 빌드 ─────────────────────────────────────────────────────────
 # pnpm build(= tsc -b && vite build)를 쓰지 않는다. routeTree.gen.ts 가
@@ -125,6 +150,22 @@ check "해시 자산" "$FE_URL/$ENTRY_JS" 200
 check "SPA 딥링크 /rooms/1" "$FE_URL/rooms/1" 200
 check "SPA 딥링크 /join/abc123" "$FE_URL/join/abc123" 200
 check "HTTP→HTTPS 리다이렉트" "http://www.upbid.store/" 301
+
+# 연출 APNG 는 상태 코드만으로 검증할 수 없다. CloudFront 가 없는 파일에
+# index.html 을 200 으로 돌려주기 때문에, 진짜 이미지인지 Content-Type 까지 본다.
+check_image() { # $1=설명 $2=URL
+  local ctype
+  ctype=$(curl -sS -o /dev/null -w '%{content_type}' "$2" 2>/dev/null || echo "ERR")
+  if [ "$ctype" = "image/png" ]; then
+    printf '  ✓ %-32s %s\n' "$1" "$ctype"
+  else
+    printf '  ✗ %-32s %s (기대: image/png)\n' "$1" "$ctype"
+  fi
+}
+
+for name in auction-cat-sold soft-close-extended auction-start; do
+  check_image "연출 $name" "$FE_URL/motion/$MOTION_VERSION/$name.png"
+done
 
 if [ -n "$KO_CHUNK" ]; then
   ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$KO_CHUNK")
