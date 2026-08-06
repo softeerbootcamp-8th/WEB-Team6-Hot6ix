@@ -43,10 +43,10 @@ export const Route = createFileRoute('/seller/')({
 /**
  * 한 쪽에 담는 줄 수.
  *
- * 패널 높이(560)에 툴바와 페이지네이션까지 들어가야 해서 4줄이다.
+ * 패널 높이(560)에 툴바와 페이지네이션까지 들어가야 해서 5줄이다.
  * 이보다 늘리면 목록이 패널 안에서 스크롤된다.
  */
-const PAGE_SIZE = 4
+const PAGE_SIZE = 5
 
 const TABLE_COLS = 'grid-cols-[56px_minmax(0,1fr)_160px_110px_104px] gap-x-4'
 
@@ -353,20 +353,7 @@ function SellerHomePage() {
 
                 <div className="mt-4 hidden overflow-x-auto md:block">
                   <div className="min-w-[600px]">
-                    <div
-                      className={cn(
-                        'grid h-11 items-center rounded-[14px] bg-surface-subtle pr-5 pl-4 text-[13px] font-bold text-neutral-tertiary',
-                        TABLE_COLS,
-                      )}
-                    >
-                      <span>상품</span>
-                      <span />
-                      <span>등록일</span>
-                      <span>경매 상태</span>
-                      <span className="text-center">관리</span>
-                    </div>
-
-                    <ul className="mt-3 space-y-1">
+                    <ul className="space-y-1">
                       {products.products.map((product, index) => {
                         const status =
                           PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
