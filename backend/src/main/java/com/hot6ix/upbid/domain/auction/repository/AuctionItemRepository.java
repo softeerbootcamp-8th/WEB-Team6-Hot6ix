@@ -178,6 +178,23 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
             + "where ai.auctionItemId = :auctionItemId")
     Optional<ClosingSoonItemProjection> findClosingSoonView(@Param("auctionItemId") Long auctionItemId);
 
+    /**
+     * 진행 중이면서 마감 시각이 정해진 물품을 전부 조회한다. 서버 기동 시 마감 예약을 다시
+     * 거는 {@code AuctionRecoveryRunner}가 쓴다.
+     *
+     * <p>경매방으로 좁히지 않는 것이 이 쿼리의 요점이다. 프로세스가 죽으면 예약이 방을
+     * 가리지 않고 전부 사라지므로 복구도 전부를 대상으로 해야 한다.
+     *
+     * <p>{@code endAt}이 null인 물품은 뺀다. 시작하면 반드시 채워지는 값이라 정상 경로에는
+     * 없지만, 있더라도 예약을 걸 시각이 없어 어차피 아무것도 할 수 없다.
+     */
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.InProgressAuctionItemProjection("
+            + "  ai.auctionItemId, ai.endAt) "
+            + "from AuctionItem ai "
+            + "where ai.status = :status and ai.endAt is not null "
+            + "order by ai.endAt asc")
+    List<InProgressAuctionItemProjection> findScheduleTargets(@Param("status") AuctionItemStatus status);
+
     /** 물품 전체를 읽지 않고 상태만 본다. 마감됐는지 판정하는 데 쓴다. */
     @Query("select ai.status from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItemStatus> findStatus(@Param("auctionItemId") Long auctionItemId);
