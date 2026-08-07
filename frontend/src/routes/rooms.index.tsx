@@ -152,16 +152,19 @@ function MyRoomsPage() {
           ))}
         </div>
 
-        {/* 상태와 직교하는 축이라 탭 줄에 끼우지 않는다. */}
+        {/*
+          상태와 직교하는 축이라 탭 줄에 끼우지 않는다. 다만 생김새는 상태 탭과
+          같은 규격을 쓴다 — 같은 줄에서 테두리 유무로 모양이 갈리면 어긋나 보인다.
+        */}
         <button
           type="button"
           aria-pressed={mineOnly}
           onClick={() => setMineOnly((prev) => !prev)}
           className={cn(
-            'ease-soft h-9 rounded-[10px] border px-3.5 text-[13px] transition-all duration-150 active:scale-95',
+            'h-9 rounded-[10px] px-3.5 text-[13px] transition-colors',
             mineOnly
-              ? 'border-brand-300 bg-brand-50 font-semibold text-brand-600'
-              : 'font-medium text-neutral-tertiary hover:border-border-strong',
+              ? 'bg-brand-50 font-semibold text-brand-600'
+              : 'font-medium text-neutral-tertiary hover:bg-fill',
           )}
         >
           내가 만든 방

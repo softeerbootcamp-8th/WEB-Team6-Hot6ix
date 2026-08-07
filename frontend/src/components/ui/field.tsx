@@ -124,9 +124,12 @@ export function TextField({
  * 값에 단위를 섞어 넣으면 커서가 단위 뒤로 가거나 지우기 애매해서,
  * 어디까지가 입력값인지 헷갈린다.
  *
- * `steps` 를 주면 −/+ 버튼과 **증감 단위 칩**이 붙는다.
- * 칩은 값을 바꾸는 게 아니라 **−/+ 가 한 번에 움직일 폭**을 고른다.
- * (1,000씩 · 5,000씩 · 10,000씩) 라이브 퀵입찰과 같은 조작감이다.
+ * `steps` 를 주면 −/+ 버튼이 붙는다. 두 개 이상이면 **−/+ 가 한 번에 움직일
+ * 폭**을 고르는 칩이 함께 붙는다.
+ *
+ * `quickAdd` 는 다른 방식이다. 칩이 폭을 고르는 게 아니라 **누르는 즉시 그만큼
+ * 더한다**(`+1,000원`). 목표 금액이 정해져 있어 한 번에 올리고 싶은 입찰 단위용이다.
+ * `steps` 와 같이 쓰지 않는다 — 같은 칩 줄이 두 가지 뜻을 가지면 헷갈린다.
  *
  * `max` 는 −/+ 버튼만 가둔다. **직접 입력은 막지 않는다.** 타이핑하는 값을 조용히
  * 되돌리면 왜 바뀌었는지 알 수 없어서, 넘긴 값은 그대로 두고 부르는 쪽이 `error` 로
@@ -141,6 +144,7 @@ export function NumberField({
   value,
   onValueChange,
   steps,
+  quickAdd,
   min = 0,
   max = Number.MAX_SAFE_INTEGER,
   disabled,
@@ -155,11 +159,13 @@ export function NumberField({
     onValueChange: (next: number) => void
     /** −/+ 가 움직일 폭. 두 개 이상이면 고르는 칩이 붙는다. */
     steps?: number[]
+    /** 누르면 그만큼 바로 더하는 칩. `steps` 대신 쓴다(−/+ 버튼은 안 붙는다). */
+    quickAdd?: number[]
     min?: number
     max?: number
   }) {
   const [stepIndex, setStepIndex] = useState(0)
-  const step = steps?.[stepIndex] ?? steps?.[0]
+  const step = quickAdd ? undefined : (steps?.[stepIndex] ?? steps?.[0])
 
   const stepBy = (delta: number) =>
     onValueChange(Math.min(max, Math.max(min, value + delta)))
@@ -209,7 +215,27 @@ export function NumberField({
             </span>
           </div>
 
-          {steps && steps.length > 1 && (
+          {quickAdd && quickAdd.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-medium text-neutral-muted">
+                빠른 입력
+              </span>
+              {quickAdd.map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => stepBy(amount)}
+                  className="ease-soft h-8 rounded-lg border bg-card px-3 text-[12px] font-bold text-neutral-tertiary transition-all duration-150 hover:border-border-strong active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  +{amount.toLocaleString('ko-KR')}
+                  {unit}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!quickAdd && steps && steps.length > 1 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className="text-[11px] font-medium text-neutral-muted">
                 증감 단위

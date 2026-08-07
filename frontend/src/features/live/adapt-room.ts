@@ -51,6 +51,8 @@ export function toAuctionRoomDetail(
      */
     shareCode: '',
     softCloseSeconds: dto.softCloseExtendSeconds ?? 0,
+    softCloseTriggerSeconds: dto.softCloseTriggerSeconds ?? 0,
+    bidUnit: dto.bidIncrement ?? 0,
     items,
   }
 }

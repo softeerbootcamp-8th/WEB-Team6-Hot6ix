@@ -17,7 +17,8 @@ import {
   toAuctionItems,
 } from '@/features/live/adapt-item'
 import { toBidErrorMessage } from '@/features/live/bid-error'
-import { findMockRoom, MOCK_ROOM_DETAIL } from '@/mocks/data'
+import { toAuctionRoomDetail } from '@/features/live/adapt-room'
+import { useGetRoomByShareCode } from '@/api/generated/경매방/경매방'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
 import { formatClosingLead, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -70,15 +71,15 @@ function AuctionItemPage() {
   )
 
   /*
-   * 방 제목·판매자명은 아직 목업이다. 물품 배열은 서버 값만 쓴다 —
-   * 목업으로 채우면 실제 입찰과 무관한 현재가·리더보드가 그대로 보인다.
+   * 방 정보도 서버에서 받는다. 예전에는 제목·판매자명만 쓴다고 목업으로
+   * 뒀는데, 헤더가 입찰 단위와 연장 규칙까지 보여주게 되면서 남의 방 숫자가
+   * 사실인 것처럼 붙었다. 규칙은 방마다 달라 목업으로 대신할 수 없다.
    */
-  const mockRoom =
-    findMockRoom(detailQuery.data?.data?.auctionRoomId ?? 0) ?? MOCK_ROOM_DETAIL
-  const room = {
-    ...mockRoom,
-    items: serverItems,
-  }
+  const roomQuery = useGetRoomByShareCode(shareCode)
+  const room = useMemo(
+    () => toAuctionRoomDetail(roomQuery.data?.data ?? {}, serverItems),
+    [roomQuery.data, serverItems],
+  )
   const isGuest = user === null
 
   const [keyword, setKeyword] = useState('')
@@ -137,7 +138,7 @@ function AuctionItemPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'START',
-              message: `${payload.itemName} 경매가 시작됐어요`,
+              message: '경매가 시작됐어요',
             },
           ])
           setOverride((prev) => ({
@@ -154,7 +155,7 @@ function AuctionItemPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'CLOSE',
-              message: `${payload.itemName} 마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
+              message: `마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
               emphasized: true,
             },
           ])
@@ -168,7 +169,6 @@ function AuctionItemPage() {
               at: new Date().toISOString(),
               kind: 'BID',
               message: `${payload.bidderNickname}님이 ${formatWon(payload.bidPrice)} 입찰`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -206,7 +206,6 @@ function AuctionItemPage() {
               at: new Date().toISOString(),
               kind: 'EXTEND',
               message: `마감 직전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -224,16 +223,13 @@ function AuctionItemPage() {
             {
               id: eventId,
               at: new Date().toISOString(),
-              kind: 'CLOSE',
-              message: payload.winnerNickname
-                ? `${payload.itemName} 낙찰 확정`
-                : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
-              // 유찰이면 둘 다 null 이라 낙찰 줄을 붙이지 않는다.
-              ...(payload.winnerNickname &&
-                payload.finalPrice !== null && {
-                  subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
-                  emphasized: true,
-                }),
+              // 낙찰가·낙찰자를 보조 줄로 빼지 않고 입찰 문구와 같은 결로 한 줄에 담는다.
+              kind: payload.winnerNickname ? 'WIN' : 'CLOSE',
+              message:
+                payload.winnerNickname && payload.finalPrice !== null
+                  ? `${payload.winnerNickname}님이 ${formatWon(payload.finalPrice)}에 낙찰`
+                  : '경매 종료 · 낙찰자 없음',
+              emphasized: true,
             },
           ])
           setOverride((prev) => ({
@@ -306,7 +302,6 @@ function AuctionItemPage() {
         at: new Date().toISOString(),
         kind: 'BID' as const,
         message: `${nickname}님이 ${formatWon(next)} 입찰`,
-        subtitle: item.name,
       },
     ])
 
@@ -385,6 +380,8 @@ function AuctionItemPage() {
       <MobileItemDetailView
         item={item}
         sellerName={room.sellerName}
+        softCloseTriggerSeconds={room.softCloseTriggerSeconds}
+        softCloseSeconds={room.softCloseSeconds}
         events={itemEvents}
         remaining={remaining}
         closed={closed}
@@ -461,7 +458,9 @@ function AuctionItemPage() {
       }
       centerLabel={
         <>
-          <span>선택한 물품 상세 · 라이브</span>
+          <span>
+            선택한 물품 상세 · {closed ? '종료' : ready ? '시작 전' : '라이브'}
+          </span>
           <Link
             to="/rooms/$shareCode"
             params={{ shareCode }}

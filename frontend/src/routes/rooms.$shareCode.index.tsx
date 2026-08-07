@@ -230,7 +230,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'START',
               itemId: payload.itemId,
-              message: `${payload.itemName} 경매가 시작됐어요`,
+              itemName: payload.itemName,
+              message: '경매가 시작됐어요',
             },
           ])
           setItems((prev) =>
@@ -269,7 +270,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'CLOSE',
               itemId: payload.itemId,
-              message: `${payload.itemName} 마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
+              itemName: payload.itemName,
+              message: `마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
               emphasized: true,
             },
           ])
@@ -283,8 +285,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'BID',
               itemId: payload.itemId,
+              itemName: payload.itemName,
               message: `${payload.bidderNickname}님이 ${formatWon(payload.bidPrice)} 입찰`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -325,8 +327,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'EXTEND',
               itemId: payload.itemId,
+              itemName: payload.itemName,
               message: `마감 직전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -356,17 +358,15 @@ function LiveRoomPage() {
             {
               id: eventId,
               at: new Date().toISOString(),
-              kind: 'CLOSE',
+              // 낙찰가·낙찰자를 보조 줄로 빼지 않고 입찰 문구와 같은 결로 한 줄에 담는다.
+              kind: payload.winnerNickname ? 'WIN' : 'CLOSE',
               itemId: payload.itemId,
-              message: payload.winnerNickname
-                ? `${payload.itemName} 낙찰 확정`
-                : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
-              // 유찰이면 둘 다 null 이라 낙찰 줄을 붙이지 않는다.
-              ...(payload.winnerNickname &&
-                payload.finalPrice !== null && {
-                  subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
-                  emphasized: true,
-                }),
+              itemName: payload.itemName,
+              message:
+                payload.winnerNickname && payload.finalPrice !== null
+                  ? `${payload.winnerNickname}님이 ${formatWon(payload.finalPrice)}에 낙찰`
+                  : '경매 종료 · 낙찰자 없음',
+              emphasized: true,
             },
           ])
           setItems((prev) =>
@@ -1183,6 +1183,8 @@ function LiveRoomPage() {
             <MobileItemDetailView
               item={detailItem}
               sellerName={room.sellerName}
+              softCloseTriggerSeconds={room.softCloseTriggerSeconds}
+              softCloseSeconds={room.softCloseSeconds}
               events={roomEvents.filter(
                 (event) => event.itemId === detailItem.id,
               )}
@@ -1747,8 +1749,8 @@ function makeDemoEvent(
     kind: 'BID',
     // 물품 상세의 로그도 id 로 골라내므로, 데모 이벤트에도 붙여야 거기 보인다.
     itemId,
+    itemName,
     message: `데모입찰러님이 ${amount.toLocaleString('ko-KR')}원 입찰`,
-    subtitle: itemName,
     emphasized: true,
   }
 }
