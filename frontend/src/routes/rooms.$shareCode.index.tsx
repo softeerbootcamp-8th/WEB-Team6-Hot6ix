@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Minus, Plus, Search, X } from 'lucide-react'
+import { ArrowRight, Minus, Plus, Search, X } from 'lucide-react'
 
 import {
   getGetDetail1QueryKey,
@@ -359,15 +359,16 @@ function LiveRoomPage() {
             {
               id: eventId,
               at: new Date().toISOString(),
-              kind: 'CLOSE',
-              itemId: payload.itemId,
               /*
-               * 물품명을 subtitle 이 아니라 본문에 넣는다. 모바일 피드
-               * (`mobile-event-feed.tsx`)가 subtitle 을 그리지 않아 어느 물품인지
-               * 알 수 없고, 무엇보다 CLOSE 이벤트에 subtitle 이 있으면 그걸
-               * 낙찰로 보고 초록 배경에 트로피를 칠한다.
+               * 연장과 같은 자리에 둔다. 둘 다 "마감 시각이 바뀌었다"는 사건이고
+               * 화면에서도 카운트다운이 함께 점프한다. 마감 임박·유찰(CLOSE)로 두면
+               * 아직 진행 중인 물품이 끝난 것처럼 보인다.
                */
-              message: `${payload.itemName} 마감 앞당김 · ${formatClosingLead(payload.remainingSeconds)} 뒤 마감`,
+              kind: 'EXTEND',
+              itemId: payload.itemId,
+              // 물품명은 문구에 섞지 않고 피드가 이름표로 올린다.
+              itemName: payload.itemName,
+              message: `판매자가 마감 앞당김 · ${formatClosingLead(payload.remainingSeconds)} 뒤 마감`,
               emphasized: true,
             },
           ])
@@ -1210,19 +1211,30 @@ function LiveRoomPage() {
       description={
         closingEarlyItem ? (
           <>
-            <p className="font-semibold text-foreground">
+            <p className="text-[14px] font-semibold text-foreground">
               {closingEarlyItem.name}
             </p>
-            <p className="mt-1.5 flex items-baseline gap-2 tabular-nums">
-              남은 시간
-              <span>
-                {formatRemaining(closingEarlyRemaining)} →{' '}
-                <span className="font-bold text-foreground">
+
+            {/* 줄글로 적으면 두 시각을 눈으로 대조하기 어려워 한 칸에 모아 둔다. */}
+            <div className="mt-3.5 rounded-xl bg-fill px-4 py-4 text-center">
+              <p className="text-[11px] font-semibold text-neutral-muted">
+                남은 시간
+              </p>
+              <p className="mt-2 flex items-center justify-center gap-3 tabular-nums">
+                <span className="text-[15px] font-semibold text-neutral-tertiary">
+                  {formatRemaining(closingEarlyRemaining)}
+                </span>
+                <ArrowRight
+                  aria-hidden
+                  className="size-3.5 text-neutral-muted"
+                />
+                <span className="text-[18px] font-bold text-live">
                   {formatRemaining(room.softCloseTriggerSeconds)}
                 </span>
-              </span>
-            </p>
-            <p className="mt-3 text-[13px]">
+              </p>
+            </div>
+
+            <p className="mt-4 text-[13px] leading-relaxed">
               마감 직전 입찰이 들어오면 지금처럼 다시 연장돼요.
             </p>
           </>
