@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -44,6 +46,11 @@ class InMemoryAuctionCloseSchedulerTest {
 
     @Mock
     private AuctionItemCloseService auctionItemCloseService;
+
+    /** 마감 지연 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다. */
+    @Spy
+    private AuctionCloseMetrics auctionCloseMetrics =
+            new AuctionCloseMetrics(new SimpleMeterRegistry());
 
     @InjectMocks
     private InMemoryAuctionCloseScheduler auctionCloseScheduler;

@@ -9,6 +9,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
+import com.hot6ix.upbid.domain.sse.config.SseProperties;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -25,8 +27,16 @@ class RoomSseManagerTest {
     private static final Long ROOM_ID = 1L;
     private static final String EVENT_NAME = "TEST_EVENT";
     private static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
+    private static final long EMITTER_TIMEOUT_MS = 60 * 60 * 1000L;
 
-    private final RoomSseManager roomSseManager = new RoomSseManager();
+    private final RoomSseManager roomSseManager = newRoomSseManager();
+
+    /** 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다. */
+    private static RoomSseManager newRoomSseManager() {
+        return new RoomSseManager(
+                new SseProperties(30_000L, EMITTER_TIMEOUT_MS),
+                new SseMetrics(new SimpleMeterRegistry()));
+    }
 
     @Test
     @DisplayName("여러 스레드가 동시에 구독해도 참여자 수가 구독 수와 일치한다")
@@ -132,7 +142,7 @@ class RoomSseManagerTest {
     @DisplayName("heartbeat 로 구독을 걷어내면 남은 구독에 참여자 수를 다시 알린다")
     void broadcastsCountAfterHeartbeatSweep() {
 
-        RoomSseManager manager = spy(new RoomSseManager());
+        RoomSseManager manager = spy(newRoomSseManager());
 
         manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
         SseEmitter dead = manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
@@ -149,7 +159,7 @@ class RoomSseManagerTest {
     @DisplayName("걷어낼 구독이 없으면 참여자 수를 다시 알리지 않는다")
     void doesNotBroadcastCountWhenNothingSwept() {
 
-        RoomSseManager manager = spy(new RoomSseManager());
+        RoomSseManager manager = spy(newRoomSseManager());
 
         manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
 

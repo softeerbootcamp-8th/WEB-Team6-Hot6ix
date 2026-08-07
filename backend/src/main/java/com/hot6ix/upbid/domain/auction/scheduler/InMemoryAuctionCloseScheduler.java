@@ -27,6 +27,8 @@ public class InMemoryAuctionCloseScheduler implements AuctionCloseScheduler {
 
     private final TaskScheduler taskScheduler;
     private final AuctionItemCloseService auctionItemCloseService;
+    /** 계측은 이 객체가 안다. 이 클래스는 Micrometer 를 모른다. */
+    private final AuctionCloseMetrics auctionCloseMetrics;
 
     /**
      * 아직 실행되지 않은 예약의 핸들. 마감된 물품의 예약을 취소하는 데 쓰고, Soft Close 연장이
@@ -103,8 +105,11 @@ public class InMemoryAuctionCloseScheduler implements AuctionCloseScheduler {
      * 예약한 시각보다 실제 실행이 얼마나 늦었는지 남긴다. 스케줄러 스레드가 모자라거나 마감이
      * 행 락을 기다리면 늦어지는데, 지금은 늦는지조차 알 수 없어 스레드 수를 정할 근거가 없다.
      *
-     * <p>측정만 하고 아무것도 조정하지 않는다. 이 로그로 분포를 뽑아 스레드 수와 전용 스케줄러
+     * <p>측정만 하고 아무것도 조정하지 않는다. 이 값으로 분포를 뽑아 스레드 수와 전용 스케줄러
      * 분리 여부를 정하는 것은 별도 작업이다(이슈 #198).
+     *
+     * <p>로그와 같은 값을 지표로도 내보낸다. 로그는 한 건씩 눈으로 보는 용도고, 지표는 마감
+     * 물품 수를 올려 가며 p95가 어떻게 움직이는지 보는 용도다.
      */
     private void logDelay(Long auctionItemId, LocalDateTime scheduledFor) {
 
@@ -115,5 +120,7 @@ public class InMemoryAuctionCloseScheduler implements AuctionCloseScheduler {
         long delayMillis = Duration.between(scheduledFor, LocalDateTime.now()).toMillis();
 
         log.info("물품 마감 실행: itemId={}, 예정={}, 지연={}ms", auctionItemId, scheduledFor, delayMillis);
+
+        auctionCloseMetrics.recordCloseDelay(delayMillis);
     }
 }
