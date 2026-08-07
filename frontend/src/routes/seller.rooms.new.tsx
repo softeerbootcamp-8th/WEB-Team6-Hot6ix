@@ -255,10 +255,14 @@ function AuctionRoomNewPage() {
               />
 
               <div>
+                {/*
+                  높이 240은 왼쪽 대표 이미지 칸(240 정사각형)과 맞춘 값이다.
+                  라벨 규격이 같아서 이 둘만 같으면 두 칸의 아래 끝이 나란해진다.
+                */}
                 <TextAreaField
                   label="소개"
                   value={intro}
-                  className="h-[184px]"
+                  className="h-60"
                   placeholder="경매방을 간단히 소개해 주세요."
                   onChange={(event) => setIntro(event.target.value)}
                 />
@@ -278,7 +282,7 @@ function AuctionRoomNewPage() {
                 unit="원"
                 required
                 hint="첫 입찰은 시작가 + 입찰 단위부터 가능해요."
-                steps={[1000, 5000, 10000]}
+                quickAdd={[1000, 5000, 10000]}
                 min={1000}
                 value={bidUnit}
                 onValueChange={setBidUnit}

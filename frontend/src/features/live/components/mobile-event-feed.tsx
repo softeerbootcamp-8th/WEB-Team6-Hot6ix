@@ -1,51 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 
-import {
-  BidIcon,
-  ClosingIcon,
-  SoftCloseIcon,
-  StartIcon,
-  WinIcon,
-} from '@/features/live/components/event-icons'
+import { EventItemTag } from '@/features/live/components/event-item-tag'
+import { resolveEventTone } from '@/features/live/components/event-tone'
 import { useEventEntrance } from '@/features/live/use-event-entrance'
 import { cn } from '@/lib/utils'
 import { formatTime } from '@/lib/format'
 import type { RoomEvent } from '@/mocks/types'
 
-/**
- * 이벤트 한 줄의 배경·칩 색. Figma `MOB-04` 값을 그대로 쓴다.
- * 웹 피드(`event-feed.tsx`)는 칩만 칠하는데 모바일은 줄 전체가 칠해진다.
- */
-function resolveTone(event: RoomEvent) {
-  switch (event.kind) {
-    case 'START':
-      return { row: 'bg-[#f7f9fb]', chip: 'bg-fill', icon: <StartIcon /> }
-    case 'CLOSE':
-      return event.subtitle
-        ? { row: 'bg-[#f2fcf8]', chip: 'bg-[#e7f7ef]', icon: <WinIcon /> }
-        : { row: 'bg-[#fff5f5]', chip: 'bg-[#fdeced]', icon: <ClosingIcon /> }
-    case 'EXTEND':
-      return {
-        row: 'bg-notice-surface/50',
-        chip: 'bg-notice-surface',
-        icon: <SoftCloseIcon />,
-      }
-    case 'REJECT':
-      return {
-        row: 'bg-[#fff5f5]',
-        chip: 'bg-[#fdeced]',
-        icon: <ClosingIcon />,
-      }
-    case 'BID':
-    default:
-      return { row: 'bg-[#f4f9ff]', chip: 'bg-brand-100', icon: <BidIcon /> }
-  }
-}
-
 const BOTTOM_THRESHOLD = 10 // px
 
 /** 시간 오름차순 — 늦은 이벤트가 아래로 간다 (웹 피드와 같은 규칙). */
-export function MobileEventFeed({ events }: { events: RoomEvent[] }) {
+export function MobileEventFeed({
+  events,
+  showItemTag = true,
+}: {
+  events: RoomEvent[]
+  /**
+   * 물품 이름표를 붙일지. 방 피드는 여러 물품이 섞여 필요하지만, 물품 상세의
+   * 이벤트 탭은 한 물품만 담아서 줄마다 같은 이름이 반복된다.
+   * (데스크톱은 이 자리에 `ItemEventList` 라는 별도 컴포넌트를 쓴다.)
+   */
+  showItemTag?: boolean
+}) {
   const ordered = [...events].sort(
     (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
   )
@@ -97,7 +73,7 @@ export function MobileEventFeed({ events }: { events: RoomEvent[] }) {
             {/* 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다 */}
             <ul className="flex min-h-full flex-col justify-end gap-2">
               {ordered.map((event, index) => {
-                const tone = resolveTone(event)
+                const tone = resolveEventTone(event)
 
                 return (
                   <li
@@ -127,12 +103,20 @@ export function MobileEventFeed({ events }: { events: RoomEvent[] }) {
                     </span>
 
                     <div className="min-w-0 flex-1 py-2">
-                      <p className="text-[13px] font-semibold text-foreground">
-                        {event.message}
-                      </p>
-                      <time className="mt-1 block text-[11px] font-medium tabular-nums text-neutral-muted">
-                        {formatTime(event.at)}
-                      </time>
+                      {/* 어느 물품인지는 종류와 상관없이 이름표가 맡는다. */}
+                      {showItemTag && <EventItemTag event={event} />}
+                      {/*
+                        이름표는 알약이라 안쪽 여백(px-1.5)만큼 글자가 들어가 있다.
+                        아래 문구도 같은 만큼 밀어야 글자 시작선이 나란해진다.
+                      */}
+                      <div className="pl-1.5">
+                        <p className="text-[13px] font-semibold text-foreground">
+                          {event.message}
+                        </p>
+                        <time className="mt-1 block text-[11px] font-medium tabular-nums text-neutral-muted">
+                          {formatTime(event.at)}
+                        </time>
+                      </div>
                     </div>
                   </li>
                 )
