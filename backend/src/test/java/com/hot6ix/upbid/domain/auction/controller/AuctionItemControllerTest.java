@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.controller;
 
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -503,7 +504,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
-                .andExpect(jsonPath("$.data.endAt").exists());
+                .andExpect(jsonPath("$.data.endAt").value(matchesPattern(OFFSET_DATE_TIME_PATTERN)));
     }
 
     @Test

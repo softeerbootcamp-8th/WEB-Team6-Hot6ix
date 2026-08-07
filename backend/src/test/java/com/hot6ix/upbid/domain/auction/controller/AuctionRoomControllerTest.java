@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.controller;
 
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -636,7 +637,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.status").value("CLOSED"))
-                .andExpect(jsonPath("$.data.closedAt").exists());
+                .andExpect(jsonPath("$.data.closedAt").value(matchesPattern(OFFSET_DATE_TIME_PATTERN)));
     }
 
     @Test

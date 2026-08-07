@@ -28,6 +28,12 @@ public abstract class AbstractControllerTest {
 
     protected static final Long LOGIN_USER_ID = 1L;
 
+    /**
+     * 응답 날짜·시각 문자열이 오프셋을 담고 있는지 보는 패턴. 값이 아니라 존재를 검증하므로
+     * 테스트 러너의 TZ에 묶이지 않는다(이슈 #183).
+     */
+    protected static final String OFFSET_DATE_TIME_PATTERN = ".*(Z|[+-]\\d{2}:\\d{2})$";
+
     @Autowired
     protected MockMvc mockMvc;
 
