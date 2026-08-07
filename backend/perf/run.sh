@@ -536,7 +536,7 @@ K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
 {
   echo "metric,timestamp,value"
   for series in \
-    "sum(rate(http_server_requests_seconds_count{$NOT_ACTUATOR}[30s]))|rps" \
+    "sum(rate(http_server_requests_seconds_count{$NOT_ACTUATOR}[30s]))|throughput_req_per_s" \
     "tomcat_threads_busy_threads{$RUN}|tomcat_busy" \
     "hikaricp_connections_active{$RUN}|hikari_active" \
     "hikaricp_connections_pending{$RUN}|hikari_pending" \
@@ -580,20 +580,22 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,scenario,vus,pool,items,sse,rps,p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,close_delay_p95_ms,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,scenario,vus,pool,items,sse,throughput_req_per_s,p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,close_delay_p95_ms,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
-# 헤더는 파일이 없을 때만 쓴다. 그래서 칸이 늘어난 뒤에도 낡은 파일이 남아 있으면 새 줄이
+# 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
 # 한 칸씩 밀려 들어가고, 콘솔 결과 표도 헤더 순서대로 읽어서 엉뚱한 이름이 붙는다.
-# 칸 수가 다르면 옛 파일을 옆으로 치우고 새로 시작한다 (지우지는 않는다).
+#
+# 칸 수가 아니라 헤더 줄 전체를 비교한다. 칸 수는 그대로 두고 이름만 바꾸는 경우(rps →
+# throughput_req_per_s)가 실제로 있었는데, 칸 수만 보면 그걸 못 잡아서 콘솔이 그 칸을
+# 아예 못 찾고 표에서 조용히 빠졌다.
 if [ -f "$INDEX" ]; then
-  EXPECTED="$(echo "$HEADER" | tr ',' '\n' | wc -l | tr -d ' ')"
-  ACTUAL="$(head -1 "$INDEX" | tr ',' '\n' | wc -l | tr -d ' ')"
+  ACTUAL_HEADER="$(head -1 "$INDEX")"
 
-  if [ "$EXPECTED" != "$ACTUAL" ]; then
+  if [ "$ACTUAL_HEADER" != "$HEADER" ]; then
     BACKUP="$INDEX.$(date +%Y%m%d-%H%M%S).bak"
     mv "$INDEX" "$BACKUP"
-    echo "※ index.csv 의 칸 수가 달라져서(${ACTUAL} → ${EXPECTED}) 옛 파일을 옆으로 옮겼다:" >&2
+    echo "※ index.csv 의 헤더가 달라져서 옛 파일을 옆으로 옮겼다 (지우지는 않았다):" >&2
     echo "  $(basename "$BACKUP")" >&2
   fi
 fi

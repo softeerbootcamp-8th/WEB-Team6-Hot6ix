@@ -88,6 +88,9 @@
   .page { display: none; padding: 24px 28px 40px; max-width: 1560px; margin: 0 auto; }
   .page.on { display: block; }
   .cols { display: grid; grid-template-columns: minmax(430px, 520px) 1fr; gap: 20px; align-items: start; }
+  /* grid 칸의 기본 min-width 가 auto 라, 안에 든 결과 표(칸이 많고 줄바꿈을 막아 둔다)가
+     칸을 통째로 밀어내서 페이지가 가로로 넘친다. 0 으로 눌러야 표만 안에서 스크롤한다. */
+  .cols > * { min-width: 0; }
 
   .lead {
     background: #fff;
@@ -246,7 +249,8 @@
 
   table { width: 100%; border-collapse: collapse; }
   th, td { padding: 10px 18px; text-align: left; border-bottom: 1px solid #f0f2f8; font-size: 13.5px; }
-  th { font-size: 11.5px; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; background: #fbfcfe; white-space: nowrap; }
+  /* uppercase 를 안 건다. 헤더에 (ms) 같은 단위가 들어가는데 (MS) 로 보여서 딴 뜻이 된다. */
+  th { font-size: 11.5px; color: var(--ink-3); font-weight: 600; letter-spacing: .4px; background: #fbfcfe; white-space: nowrap; }
   tr:last-child td { border-bottom: 0; }
   /* 스텝 번호 배지가 .num 을 이미 쓰고 있다. 표 숫자 열에 같은 이름을 주면 셀이
      width:25px + border-radius:50% 를 그대로 받아 동그라미로 찌그러진다. */
@@ -394,7 +398,7 @@
   <div class="lead">
     <div>
       <div class="big" id="lead-title">1번부터 순서대로 누르면 됩니다</div>
-      <div class="sub" id="lead-sub">방을 만들고 참여자를 붙인 뒤 입찰을 흘리면, 실제 경매방 화면이 살아 움직입니다.</div>
+      <div class="sub" id="lead-sub">방을 만들고 참여자를 붙인 뒤 자동 입찰을 켜면, 실제 경매방 화면이 살아 움직입니다.</div>
     </div>
     <div class="spacer"></div>
     <button class="act sub" style="width:auto;padding:9px 16px" id="btn-reset">처음부터</button>
@@ -517,8 +521,8 @@
         <div class="step-head">
           <div class="num">4</div>
           <div>
-            <div class="step-title">입찰 흘리기</div>
-            <div class="step-note" id="note-4">화면이 실시간으로 움직입니다</div>
+            <div class="step-title">자동 입찰 반복</div>
+            <div class="step-note" id="note-4">가짜 입찰을 정지할 때까지 계속 보냅니다</div>
           </div>
           <div class="chev">▾</div>
         </div>
@@ -542,7 +546,7 @@
             <select id="f-bid-target"><option value="random">진행중인 것 아무거나</option></select>
           </div>
           <div class="btn-row">
-            <button class="act" id="btn-bid">입찰 시작</button>
+            <button class="act" id="btn-bid">반복 시작</button>
             <button class="act stop" id="btn-bid-stop" disabled>정지</button>
           </div>
         </div>
@@ -554,13 +558,13 @@
           <div class="num">5</div>
           <div>
             <div class="step-title">동시 입찰 검증</div>
-            <div class="step-note" id="note-5">여러 명이 같은 순간에 입찰하면 어떻게 되나</div>
+            <div class="step-note" id="note-5">여러 명이 같은 순간에 입찰하면 한 명만 접수되는지</div>
           </div>
           <div class="chev">▾</div>
         </div>
         <div class="step-body">
           <div class="why">
-            <b>4번의 입찰 흘리기는 진짜 동시가 아닙니다.</b> 브라우저는 세션 쿠키를 하나만 들 수 있어서
+            <b>4번의 자동 입찰 반복은 진짜 동시가 아닙니다.</b> 브라우저는 세션 쿠키를 하나만 들 수 있어서
             계정을 갈아타며 <b>순차로</b> 흉내 낸 것이라 락 경합이 아예 안 생깁니다.
             여기서는 콘솔 서버가 사람마다 접속을 따로 만들고 <b>정확히 같은 순간에</b> 쏩니다.
             부하가 아니라 정합성을 보는 것이라 인원이 적어도 됩니다.
@@ -586,7 +590,7 @@
               사람이 1위가 되고 현재가가 그 값이어야 합니다.
             </div>
           </div>
-          <button class="act" id="btn-cc">동시에 쏘기</button>
+          <button class="act" id="btn-cc">동시 입찰 1회 보내기</button>
           <div id="cc-result" style="margin-top:14px"></div>
         </div>
       </div>
@@ -646,8 +650,31 @@
 <div class="page" id="page-perf">
   <div class="lead">
     <div>
-      <div class="big">재고 싶은 것을 고르면 명령을 만들어 드립니다</div>
-      <div class="sub">복사해서 터미널에 붙여 넣으면 됩니다. 컨테이너 기동부터 결과 저장까지 한 번에 끝납니다.</div>
+      <div class="big">시나리오를 고르고 [이 조건으로 실행]을 누르면 됩니다</div>
+      <div class="sub">서버가 몇 명까지 버티는지 재고, 어디서 느려지는지를 찾습니다. 한 번에 4~5분 걸립니다.</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:18px">
+    <div class="card-head">누르면 무슨 일이 일어나나</div>
+    <div style="padding:14px 18px">
+      <div class="note-sm">
+        <b>측정용 서버를 따로 띄웁니다.</b> 지금 보고 있는 개발 서버(<code>:18000</code>)는 안 건드립니다.
+        측정용은 CPU와 메모리를 고정해 두기 때문에, 팀원끼리 잰 숫자를 나란히 놓고 볼 수 있습니다.
+      </div>
+      <table style="margin-top:12px">
+        <thead><tr><th></th><th>무슨 일이</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>측정용 서버와 DB, 그래프 도구를 도커로 띄웁니다 (처음 한 번은 내려받느라 더 걸립니다)</td></tr>
+          <tr><td>2</td><td><b>측정용 DB를 싹 비우고</b> 판매자와 경매방, 물품, 입찰자를 새로 만듭니다</td></tr>
+          <tr><td>3</td><td>가짜 사용자를 정한 수만큼 붙여서 3분 동안 입찰을 보냅니다</td></tr>
+          <tr><td>4</td><td>그동안 서버에서 긁어모은 숫자를 정리해 <b>결과 폴더와 <code>index.csv</code> 한 줄</b>로 남깁니다</td></tr>
+        </tbody>
+      </table>
+      <div class="note-sm" style="margin-top:12px">
+        끝나면 아래 <b>"쌓인 결과"</b> 표에 한 줄이 늘고, 그래프 링크가 같이 뜹니다.
+        <b>개발 환경에서 만들어 둔 경매방은 그대로 남습니다.</b>
+      </div>
     </div>
   </div>
 
@@ -687,13 +714,22 @@
 
     <div>
       <div class="card">
-        <div class="card-head">터미널에 붙여 넣으세요 <span class="muted"><code>backend/</code> 에서</span></div>
+        <div class="card-head">실행 <span class="muted">아래 버튼만 누르면 됩니다</span></div>
         <div style="padding:16px 18px">
-          <div class="cmd">
-            <div class="text mono" id="cmd-text"></div>
-            <button id="btn-copy">복사</button>
-          </div>
           <div class="answer" id="cmd-answer"></div>
+
+          <details style="margin-top:14px">
+            <summary style="cursor:pointer; font-size:12.5px; color:var(--ink-3)">
+              터미널로 돌리고 싶을 때 쓰는 명령 (안 눌러도 됩니다)
+            </summary>
+            <div class="cmd" style="margin-top:8px">
+              <div class="text mono" id="cmd-text"></div>
+              <button id="btn-copy">복사</button>
+            </div>
+            <div style="font-size:12px; color:var(--ink-3); margin-top:6px">
+              <code>backend/</code> 폴더에서 실행합니다. 버튼으로 돌리는 것과 결과가 같습니다.
+            </div>
+          </details>
 
           <div id="runner-off" class="offline" style="margin-top:14px; display:none">
             <b>실행기가 꺼져 있습니다.</b> 지금은 위 명령을 복사해서 터미널에 붙여 넣어야 합니다.<br><br>
@@ -739,25 +775,68 @@
       </div>
 
       <div class="card">
-        <div class="card-head">읽는 법</div>
+        <div class="card-head">위 표의 칸이 각각 무슨 뜻인가</div>
+        <div style="padding:4px 18px 16px">
+          <table style="margin-top:8px">
+            <thead><tr><th>칸</th><th>뜻</th><th>어떻게 보나</th></tr></thead>
+            <tbody>
+              <tr><td>동시 사용자</td><td>가짜 사용자를 몇 명 만들어 붙였는지</td><td>내가 정한 값입니다</td></tr>
+              <tr><td>물품 수</td><td>입찰이 한 물품에 몰리는지 흩어지는지</td><td>내가 정한 값입니다</td></tr>
+              <tr><td>DB 커넥션</td><td>서버가 DB에 동시에 열어 두는 연결 개수</td><td>내가 정한 값입니다 (기본 10)</td></tr>
+              <tr><td>실시간 접속</td><td>재는 동안 배경에 붙여 둔 SSE 연결 수</td><td>내가 정한 값입니다</td></tr>
+              <tr><td><b>처리량 (건/초)</b></td><td>서버가 1초에 처리한 요청 수</td><td><b>클수록 좋습니다.</b> 판정의 주인공</td></tr>
+              <tr><td><b>응답 p95 (ms)</b></td><td>100번 중 95번은 이 시간 안에 끝났다</td><td>작을수록 좋습니다. 체감 속도</td></tr>
+              <tr><td>서버 스레드 (최대)</td><td>톰캣이 동시에 쓴 스레드 수</td><td>200에 붙으면 스레드가 마른 것</td></tr>
+              <tr><td>DB 연결 대기 (최대)</td><td>연결을 못 받고 줄 선 스레드 수</td><td><b>0이 정상.</b> 0보다 크면 풀이 마른 것</td></tr>
+              <tr><td>락 대기 p95 (ms)</td><td>입찰이 물품 행 락을 기다린 시간</td><td>커지면 입찰이 한 줄로 선 것</td></tr>
+              <tr><td>부하 발생기 CPU (%)</td><td>가짜 사용자를 만드는 쪽(k6)이 쓴 CPU</td><td><b>100에 가까우면 그 줄은 버립니다</b></td></tr>
+              <tr><td>판정</td><td>병목이 어디였는지</td><td><b>사람이 직접 적는 칸입니다</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">그래서 한계를 어떻게 정하나</div>
         <div style="padding:4px 18px 16px">
           <div class="note-sm">
-            <b>판정 규칙은 하나입니다.</b> 부하를 두 배 올렸는데 처리량이 <b>1.2배도 안 오르는 첫 줄</b>이
-            한계입니다. 단, 그 줄에서 k6 CPU가 100%에 가까우면 부하 발생기가 먼저 막힌 것이라 보류합니다.
+            <b>규칙은 하나입니다.</b> 동시 사용자를 두 배 올렸는데 처리량이 <b>1.2배도 안 오르는 첫 줄</b>,
+            거기가 한계입니다. 단 그 줄에서 부하 발생기 CPU가 100%에 가까우면 서버가 아니라 내 노트북이
+            먼저 힘에 부친 것이라 그 줄은 못 씁니다.
           </div>
           <table style="margin-top:12px">
-            <thead><tr><th>결과에서 보이는 것</th><th>범인</th></tr></thead>
+            <thead><tr><th>그 줄에서 이게 보이면</th><th>병목은 여기입니다</th></tr></thead>
             <tbody>
-              <tr><td><code>hikari_pending_max</code> &gt; 0</td><td>커넥션 부족이거나, 락을 기다리며 커넥션을 붙잡음</td></tr>
-              <tr><td><code>tomcat_busy_max</code>가 200 근처</td><td>톰캣 스레드 고갈</td></tr>
-              <tr><td>힙이 GC 후에도 안 내려감</td><td>메모리</td></tr>
-              <tr><td><b>넷 다 여유로운데 안 오름</b></td><td><b>락 대기.</b> 자원은 노는데 한 줄로 선 상태</td></tr>
+              <tr><td>DB 연결 대기가 0보다 큼</td><td>커넥션이 모자라거나, 락을 기다리며 커넥션을 붙잡고 있음</td></tr>
+              <tr><td>서버 스레드가 200 근처</td><td>톰캣 스레드 고갈</td></tr>
+              <tr><td>힙이 GC 뒤에도 안 내려감</td><td>메모리</td></tr>
+              <tr><td><b>넷 다 여유로운데 처리량이 안 오름</b></td><td><b>락 대기.</b> 자원은 노는데 입찰이 한 줄로 선 상태</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">결과가 어디에 남나</div>
+        <div style="padding:4px 18px 16px">
+          <div class="note-sm">
+            실행 한 번에 <b>폴더 하나</b>가 생기고, 동시에 <b><code>index.csv</code>에 한 줄</b>이 붙습니다.
+            위의 "쌓인 결과" 표가 그 <code>index.csv</code>를 그대로 읽은 것입니다.
+            <b>한 줄 = 측정 한 번</b>이라 동시 사용자를 올려 가며 5번 재면 5줄이 됩니다.
+          </div>
+          <table style="margin-top:12px">
+            <thead><tr><th>어디에</th><th>무엇이</th></tr></thead>
+            <tbody>
+              <tr><td><code>results/index.csv</code></td><td>실행마다 한 줄. <b>개선 전후 비교는 이 파일 하나로 합니다</b></td></tr>
+              <tr><td><code>results/{실행이름}/note.md</code></td><td>사람이 읽는 요약. 판정을 적는 빈칸이 있습니다</td></tr>
+              <tr><td><code>results/{실행이름}/metrics.csv</code></td><td>그래프의 원본 숫자</td></tr>
+              <tr><td><code>results/{실행이름}/summary.json</code></td><td>접수와 거절, 실패 건수</td></tr>
+              <tr><td>Grafana <code>:13000</code></td><td>같은 숫자를 그래프로. 실행이 끝나면 아래에 링크가 뜹니다</td></tr>
             </tbody>
           </table>
           <div class="note-sm" style="margin-top:12px">
-            자세한 건 <code>backend/perf/README.md</code> 를 봅니다.
-            결과는 <code>backend/perf/results/{실행이름}/</code> 에 폴더로 쌓이고,
-            위 표는 그중 <code>index.csv</code> 를 읽은 것입니다.
+            <b>결과 폴더는 git에 안 올라갑니다.</b> 각자 노트북에만 남으니 팀에 공유할 때는 노션에 올려 주세요.
+            더 자세한 건 <code>backend/perf/README.md</code>에 있습니다.
           </div>
         </div>
       </div>
@@ -1019,7 +1098,7 @@ el('btn-start').onclick = async () => {
   }
 }
 
-// ── 4. 입찰 흘리기 ───────────────────────────────────────────────────
+// ── 4. 자동 입찰 반복 ───────────────────────────────────────────────────
 el('btn-bid').onclick = () => {
   if (bidTimer) return
 
@@ -1047,7 +1126,7 @@ function stopBidding(reason) {
   bidTimer = null
   el('btn-bid').disabled = false
   el('btn-bid-stop').disabled = true
-  log(`입찰 흘리기 ${reason}`, 'warn')
+  log(`자동 입찰 반복 ${reason}`, 'warn')
 }
 
 async function placeOneBid() {
@@ -1162,7 +1241,7 @@ el('btn-cc').onclick = async () => {
     el('cc-result').innerHTML = `<div class="offline">콘솔 서버에 닿지 못했습니다 — ${e.message}</div>`
   } finally {
     button.disabled = false
-    button.textContent = '동시에 쏘기'
+    button.textContent = '동시 입찰 1회 보내기'
   }
 }
 
@@ -1194,7 +1273,7 @@ el('btn-reset').onclick = () => {
   for (const id of ['s-items', 's-live', 's-buyers', 's-bids']) {
     el(id).textContent = '-'; el(id).classList.add('dim')
   }
-  lead('1번부터 순서대로 누르면 됩니다', '방을 만들고 참여자를 붙인 뒤 입찰을 흘리면, 실제 경매방 화면이 살아 움직입니다.')
+  lead('1번부터 순서대로 누르면 됩니다', '방을 만들고 참여자를 붙인 뒤 자동 입찰을 켜면, 실제 경매방 화면이 살아 움직입니다.')
   log('처음부터 다시 시작합니다', 'dim')
 }
 
@@ -1256,43 +1335,52 @@ function fillSelects() {
 setInterval(refresh, 2000)
 
 // ══════════════ 부하 테스트 탭 ══════════════
+// where  = 우리 서비스의 어느 화면, 어느 기능인지. 이게 없으면 무엇을 재는 건지 안 와닿는다.
+// watch  = 볼 지표. 원본 이름(upbid_bid_lock_wait)만 적으면 처음 보는 사람이 못 읽으니 말로 쓰고
+//          괄호에 원본 이름을 붙인다. Grafana 패널에서 그 이름으로 찾을 수 있어야 하기 때문이다.
 const SCENARIOS = [
-  { key: 's1', scenario: 1, tag: '시나리오 1', name: '한 물품에 몰기',
-    raise: '물품 1개에 입찰자를 올립니다',
-    breaks: '물품 행 락이 커밋까지 유지돼 한 줄로 섭니다',
-    watch: 'upbid_bid_lock_wait p95',
+  { key: 's1', scenario: 1, tag: '시나리오 1', name: '한 물품 입찰 경합',
+    where: '경매방 화면의 <b>[입찰하기]</b> 버튼',
+    raise: '물품 1개에 입찰자 수를 올립니다',
+    breaks: '한 물품에 입찰이 몰리면 DB가 한 명씩 순서대로 처리합니다',
+    watch: '입찰이 순서를 기다린 시간 (<code>upbid_bid_lock_wait</code>)',
     items: 1, sse: 0, vusKnob: true,
-    answer: '한 물품에 <b>몇 명까지 몰리면 처리량이 안 오르는지</b>를 봅니다. 자원 넷이 다 여유로운데 안 오르면 그게 락 직렬화입니다.' },
-  { key: 's2', scenario: 2, tag: '시나리오 2', name: '물품 분산 (1의 대조군)',
-    raise: '계단은 1과 같게 두고 물품만 20개로 흩습니다',
-    breaks: '락이 안 겹치는 대신 커넥션 풀이나 스레드가 마릅니다',
-    watch: 'hikaricp_connections_pending',
+    answer: '인기 물품 하나에 사람이 몰리는 상황입니다. <b>몇 명까지 몰리면 처리량이 안 오르는지</b>를 봅니다. 자원이 넷 다 여유로운데 안 오르면 그게 순서 대기입니다.' },
+  { key: 's2', scenario: 2, tag: '시나리오 2', name: '여러 물품에 분산 (1의 비교군)',
+    where: '같은 <b>[입찰하기]</b>인데 물품이 여러 개인 경매방',
+    raise: '사람 수는 1과 똑같이 두고 물품만 20개로 흩습니다',
+    breaks: '순서 대기는 안 생기는 대신 DB 커넥션이나 서버 스레드가 마릅니다',
+    watch: 'DB 연결 대기 (<code>hikaricp_connections_pending</code>)',
     items: 20, sse: 0, vusKnob: true,
-    answer: '<b>1번과 나란히 놓고 봅니다.</b> 물품을 흩었더니 처리량이 오르면 범인은 락이고, 그대로면 락이 아니라 다른 데가 막힌 것입니다.' },
-  { key: 's3', scenario: 3, tag: '시나리오 3', name: 'SSE 동시 접속',
-    raise: '접속 수를 올립니다 (회원이 필요 없습니다)',
-    breaks: 'emitter가 힙에 쌓이고, heartbeat가 마감 예약과 스레드 풀을 나눠 씁니다',
-    watch: 'upbid_sse_connections, 힙, heartbeat p95',
+    answer: '<b>1번과 나란히 놓고 봅니다.</b> 물품을 흩었더니 처리량이 오르면 범인은 순서 대기이고, 그대로면 다른 데가 막힌 것입니다. 이것만 따로 보면 의미가 없습니다.' },
+  { key: 's3', scenario: 3, tag: '시나리오 3', name: '실시간 접속 동시 연결',
+    where: '경매방 화면이 <b>새로고침 없이 갱신되는 것</b> (SSE)',
+    raise: '실시간 접속 수를 올립니다 (회원이 필요 없습니다)',
+    breaks: '접속 하나마다 서버가 메모리를 붙들고, 30초마다 전원에게 신호를 보냅니다',
+    watch: '접속 수와 메모리 (<code>upbid_sse_connections</code>)',
     items: 1, sse: 0, vusKnob: true,
-    answer: '<b>접속 몇 개까지 버티는지</b>와 접속당 메모리를 봅니다. 톰캣 스레드가 접속 수만큼 오르면 async가 안 걸린 것이고 그 자체가 발견입니다.' },
+    answer: '경매방을 열어 둔 사람이 늘 때를 재는 것입니다. <b>접속 몇 개까지 버티는지</b>와 접속 하나에 메모리가 얼마나 드는지를 봅니다.' },
   { key: 's4', scenario: 4, tag: '시나리오 4', name: '동시 마감',
-    raise: '같은 시각에 닫히는 물품 수를 올립니다',
-    breaks: '마감 예약이 스레드 풀을 공유하고, 마감도 같은 행 락을 잡습니다',
-    watch: 'upbid_auction_close_delay p95',
+    where: '경매 시간이 끝나 <b>낙찰자가 정해지는 것</b>',
+    raise: '올리는 값이 사람 수가 아니라 <b>물품 수</b>입니다',
+    breaks: '마감도 입찰과 같은 물품을 붙잡기 때문에 서로 기다립니다',
+    watch: '마감이 예정보다 늦은 시간 (<code>upbid_auction_close_delay</code>)',
     items: 20, sse: 0, vusKnob: false,
-    answer: '올리는 값이 사람 수가 아니라 <b>물품 수</b>입니다. 마감이 얼마나 밀리는지를 봅니다.' },
-  { key: 's5', scenario: 1, tag: '시나리오 5', name: '겹쳐서 재기',
-    raise: '입찰과 SSE 접속을 동시에 겁니다',
-    breaks: '입찰 처리한 스레드가 방 전원에게 SSE를 다 쏘고 나서 응답합니다',
-    watch: 'upbid_sse_broadcast p95, 처리량 하락폭',
+    answer: '여러 물품이 한꺼번에 닫힐 때를 재는 것입니다. <b>마감이 예정 시각보다 얼마나 밀리는지</b>를 봅니다. 밀리면 낙찰 안내도 그만큼 늦습니다.' },
+  { key: 's5', scenario: 1, tag: '시나리오 5', name: '입찰 + 실시간 접속 동시',
+    where: '경매방 화면 <b>전체</b> (실제로 쓰이는 모습에 가장 가깝습니다)',
+    raise: '입찰과 실시간 접속을 같이 겁니다',
+    breaks: '입찰을 처리한 스레드가 방에 있는 전원에게 알림을 다 쏘고 나서야 응답합니다',
+    watch: '알림을 쏜 시간과 처리량 하락폭 (<code>upbid_sse_broadcast</code>)',
     items: 1, sse: 800, vusKnob: true,
-    answer: '<b>브로드캐스트가 입찰 처리량을 얼마나 깎는지</b>를 봅니다 (#234). 마지막에 한 번 재는 조합입니다.' },
-  { key: 's0', scenario: 0, tag: '먼저 이것부터', name: '부하 발생기 한계',
-    raise: '/actuator/health 에 같은 계단을 겁니다',
-    breaks: 'DB도 락도 안 탑니다. 여기서 막히면 서버가 아니라 노트북이 한계입니다',
-    watch: 'k6 CPU',
+    answer: '보는 사람이 많을수록 입찰이 느려지는지를 봅니다 (#234). 1번과 처리량을 비교하면 <b>실시간 알림이 입찰을 얼마나 깎는지</b>가 나옵니다. 마지막에 한 번 재는 조합입니다.' },
+  { key: 's0', scenario: 0, tag: '먼저 이것부터', name: '내 노트북 한계 재기',
+    where: '서비스 기능이 아닙니다. <b>측정 도구 자체를 재는 것</b>입니다',
+    raise: '아무 일도 안 하는 주소에 같은 부하를 겁니다',
+    breaks: 'DB도 안 타고 순서 대기도 없습니다. 여기서 막히면 서버가 아니라 내 노트북이 한계입니다',
+    watch: '부하 발생기 CPU',
     items: 1, sse: 0, vusKnob: true,
-    answer: '<b>시나리오보다 먼저 돌립니다.</b> 여기서 처리량이 평평해지는 지점 위쪽 숫자는 전원이 안 믿기로 했습니다.' },
+    answer: '<b>다른 시나리오보다 먼저 한 번 돌립니다.</b> 여기서 처리량이 평평해지는 지점보다 위의 숫자는 서버 성능이 아니라 내 노트북 한계라서, 전원이 안 믿기로 한 값입니다.' },
 ]
 
 let picked = SCENARIOS[0]
@@ -1302,9 +1390,10 @@ el('scens').innerHTML = SCENARIOS.map((s) => `
     <div class="tag">${s.tag}</div>
     <h3>${s.name}</h3>
     <dl>
+      <dt>어느 기능</dt> <dd>${s.where}</dd>
       <dt>올리는 값</dt> <dd>${s.raise}</dd>
-      <dt>무너질 곳</dt> <dd>${s.breaks}</dd>
-      <dt>볼 지표</dt> <dd><code>${s.watch}</code></dd>
+      <dt>왜 느려지나</dt> <dd>${s.breaks}</dd>
+      <dt>볼 지표</dt> <dd>${s.watch}</dd>
     </dl>
   </div>`).join('')
 
@@ -1487,15 +1576,30 @@ async function loadResults() {
     return
   }
 
-  // 칸이 27개라 다 보여주면 못 읽는다. 판정에 쓰는 것만 고른다.
+  // 칸이 28개라 다 보여주면 못 읽는다. 판정에 쓰는 것만 고른다.
+  // 이름은 index.csv 의 영문 헤더를 그대로 풀어 쓴 것이라, 파일을 열어도 같은 칸을 찾을 수 있다.
   const want = ['run_id', 'scenario', 'vus', 'pool', 'items', 'sse',
-                'rps', 'p95_ms', 'tomcat_busy_max', 'hikari_pending_max',
+                'throughput_req_per_s', 'p95_ms', 'tomcat_busy_max', 'hikari_pending_max',
                 'lock_wait_p95_ms', 'k6_cpu_max', 'bottleneck']
-  const label = { run_id: '실행', scenario: '시나', vus: 'VU', pool: '풀', items: '물품', sse: 'SSE',
-                  rps: '처리량', p95_ms: 'p95(ms)', tomcat_busy_max: '스레드',
-                  hikari_pending_max: 'pending', lock_wait_p95_ms: '락대기(ms)',
-                  k6_cpu_max: 'k6 CPU', bottleneck: '판정' }
+  const label = {
+    run_id: '언제',
+    scenario: '시나리오',
+    vus: '동시 사용자',
+    pool: 'DB 커넥션',
+    items: '물품 수',
+    sse: '실시간 접속',
+    throughput_req_per_s: '처리량 (건/초)',
+    p95_ms: '응답 p95 (ms)',
+    tomcat_busy_max: '서버 스레드 (최대)',
+    hikari_pending_max: 'DB 연결 대기 (최대)',
+    lock_wait_p95_ms: '락 대기 p95 (ms)',
+    k6_cpu_max: '부하 발생기 CPU (%)',
+    bottleneck: '판정 (직접 적기)',
+  }
 
+  // 옛 index.csv 는 칸 이름이 달라서 몇 개가 안 잡힌다. 그냥 빼고 그리면 표에서 조용히
+  // 사라져서 "처리량이 왜 없지"가 되므로, 무엇이 빠졌는지 화면에 말해 준다.
+  const missing = want.filter((key) => data.header.indexOf(key) < 0)
   const idx = want.map((key) => data.header.indexOf(key)).filter((i) => i >= 0)
 
   el('res-head').innerHTML = '<tr>' +
@@ -1508,7 +1612,10 @@ async function loadResults() {
       return `<td>${data.header[i] === 'run_id' ? v.split('_')[0] : v}</td>`
     }).join('') + '</tr>').join('')
 
-  el('res-note').textContent = `results/index.csv · ${data.rows.length}줄`
+  el('res-note').innerHTML = missing.length === 0
+    ? `results/index.csv, ${data.rows.length}줄`
+    : `<b style="color:var(--red)">옛 형식입니다.</b> ${missing.map((k) => label[k]).join(', ')} 칸이 없습니다.`
+      + ' 다음 실행 때 옛 파일을 옆으로 옮기고 새로 시작합니다'
 }
 
 checkRunner()
