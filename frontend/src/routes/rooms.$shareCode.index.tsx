@@ -597,10 +597,8 @@ function LiveRoomPage() {
   const detailMinimum = detailItem
     ? detailItem.currentPrice + detailItem.bidUnit
     : 0
-  // 상세가 닫혀 있으면 지금 시각을 넣어 0 초가 되게 한다(훅은 늘 같은 순서로).
-  const detailRemaining = useCountdown(
-    detailItem?.endsAt ?? new Date().toISOString(),
-  )
+  // 상세가 닫혀 있거나 시작 전 물품이면 null 이라 0 초다(훅은 늘 같은 순서로).
+  const detailRemaining = useCountdown(detailItem?.endsAt ?? null)
 
   // 상세를 열 때마다 최소 입찰가로 맞춘다.
   useEffect(() => {
@@ -1095,12 +1093,21 @@ function LiveRoomPage() {
    * 방 종료 확인. 데스크톱·모바일 분기가 갈리므로 한 번 만들어 양쪽에서 쓴다.
    * 예전에는 데스크톱 분기에만 있어서 모바일에서는 눌러도 아무 일이 없었다.
    */
+  /*
+   * 진행 중인 물품은 마감 시각이 남아 있어도 함께 닫힌다(`AuctionRoomCloseService`).
+   * 몇 개가 딸려 닫히는지 세어 보여준다 — 그걸 모르고 누르면 아직 입찰을 받고 있던
+   * 물품이 그대로 마감되고, 되돌릴 방법이 없다.
+   */
   const closeRoomDialog = (
     <ConfirmDialog
       open={closingRoom}
       tone="danger"
       title="경매방을 종료할까요?"
-      description="진행 중인 물품이 모두 마감되고 낙찰 결과가 확정됩니다. 되돌릴 수 없어요."
+      description={
+        liveItems.length > 0
+          ? `진행 중인 물품 ${liveItems.length}개가 마감 시각과 상관없이 지금 마감되고 낙찰 결과가 확정됩니다. 되돌릴 수 없어요.`
+          : '경매방이 종료되고 참여자는 더 이상 입장할 수 없어요. 되돌릴 수 없어요.'
+      }
       confirmLabel="경매방 종료"
       onCancel={() => setClosingRoom(false)}
       pending={closeRoom.isPending}

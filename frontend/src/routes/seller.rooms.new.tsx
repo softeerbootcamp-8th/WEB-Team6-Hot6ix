@@ -31,6 +31,11 @@ import { NumberField, TextAreaField, TextField } from '@/components/ui/field'
 import { requireMember } from '@/lib/route-guards'
 import { RoutePending } from '@/components/route-states'
 import { useMySellerProfile } from '@/features/seller/use-my-seller-profile'
+import {
+  MAX_SOFT_CLOSE_MINUTES,
+  MIN_SOFT_CLOSE_MINUTES,
+  softCloseMinutesError,
+} from '@/features/rooms/soft-close'
 
 /**
  * 경매방 생성 (Figma `WEB-08 · 판매자 · 경매방 생성`).
@@ -108,7 +113,16 @@ function AuctionRoomNewPage() {
     )
   }
 
-  const canSubmit = title.trim().length >= 2 && items.length > 0
+  /*
+   * Soft Close 값이 범위를 벗어나면 버튼을 잠근다. 서버가 어차피 400 으로 거절하는데,
+   * 그때는 커버 이미지가 이미 S3 에 올라간 뒤라 쓰지 않는 파일이 남는다.
+   */
+  const softCloseValid =
+    softCloseMinutesError(thresholdMinutes) === undefined &&
+    softCloseMinutesError(extendMinutes) === undefined
+
+  const canSubmit =
+    title.trim().length >= 2 && items.length > 0 && softCloseValid
 
   // 방은 이미 만들어졌고 물품만 남은 상태면 버튼이 재시도라는 걸 드러낸다.
   const submitLabel =
@@ -121,6 +135,8 @@ function AuctionRoomNewPage() {
       return
     }
     if (items.length === 0) return
+    // 버튼이 잠겨 있어도 Enter 로 제출될 수 있어 여기서 한 번 더 본다.
+    if (!softCloseValid) return
 
     try {
       // 방이 이미 있으면(= 직전 시도에서 물품만 실패) 다시 만들지 않는다.
@@ -301,17 +317,21 @@ function AuctionRoomNewPage() {
                 label="마감 임박 기준"
                 unit="분"
                 steps={[1]}
-                min={1}
+                min={MIN_SOFT_CLOSE_MINUTES}
+                max={MAX_SOFT_CLOSE_MINUTES}
                 value={thresholdMinutes}
                 onValueChange={setThresholdMinutes}
+                error={softCloseMinutesError(thresholdMinutes)}
               />
               <NumberField
                 label="연장 시간"
                 unit="분"
                 steps={[1]}
-                min={1}
+                min={MIN_SOFT_CLOSE_MINUTES}
+                max={MAX_SOFT_CLOSE_MINUTES}
                 value={extendMinutes}
                 onValueChange={setExtendMinutes}
+                error={softCloseMinutesError(extendMinutes)}
               />
             </div>
 

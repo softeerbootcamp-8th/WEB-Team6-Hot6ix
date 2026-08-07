@@ -130,6 +130,10 @@ export function TextField({
  * `quickAdd` 는 다른 방식이다. 칩이 폭을 고르는 게 아니라 **누르는 즉시 그만큼
  * 더한다**(`+1,000원`). 목표 금액이 정해져 있어 한 번에 올리고 싶은 입찰 단위용이다.
  * `steps` 와 같이 쓰지 않는다 — 같은 칩 줄이 두 가지 뜻을 가지면 헷갈린다.
+ *
+ * `max` 는 −/+ 버튼만 가둔다. **직접 입력은 막지 않는다.** 타이핑하는 값을 조용히
+ * 되돌리면 왜 바뀌었는지 알 수 없어서, 넘긴 값은 그대로 두고 부르는 쪽이 `error` 로
+ * 알리게 한다.
  */
 export function NumberField({
   label,
@@ -142,12 +146,13 @@ export function NumberField({
   steps,
   quickAdd,
   min = 0,
+  max = Number.MAX_SAFE_INTEGER,
   disabled,
   ...props
 }: BaseProps &
   Omit<
     React.ComponentProps<'input'>,
-    'id' | 'className' | 'value' | 'onChange' | 'type' | 'step' | 'min'
+    'id' | 'className' | 'value' | 'onChange' | 'type' | 'step' | 'min' | 'max'
   > & {
     unit: string
     value: number
@@ -157,11 +162,13 @@ export function NumberField({
     /** 누르면 그만큼 바로 더하는 칩. `steps` 대신 쓴다(−/+ 버튼은 안 붙는다). */
     quickAdd?: number[]
     min?: number
+    max?: number
   }) {
   const [stepIndex, setStepIndex] = useState(0)
   const step = quickAdd ? undefined : (steps?.[stepIndex] ?? steps?.[0])
 
-  const stepBy = (delta: number) => onValueChange(Math.max(min, value + delta))
+  const stepBy = (delta: number) =>
+    onValueChange(Math.min(max, Math.max(min, value + delta)))
 
   return (
     <Field label={label} required={required} hint={hint} error={error}>
@@ -198,7 +205,7 @@ export function NumberField({
               <StepButton
                 sign="plus"
                 label={`${step.toLocaleString('ko-KR')}${unit} 늘리기`}
-                disabled={disabled}
+                disabled={disabled || value + step > max}
                 onClick={() => stepBy(step)}
               />
             )}

@@ -146,7 +146,12 @@ export function MobileItemDetailView({
                   urgent ? 'text-live' : 'text-neutral-tertiary',
                 )}
               >
-                {closed ? '마감됨' : `남은 시간 ${formatRemaining(remaining)}`}
+                {/* 시작 전에는 마감 시각이 아직 없다. 카운트다운을 그리면 0초로 굳는다. */}
+                {closed
+                  ? '마감됨'
+                  : ready
+                    ? '시작 전'
+                    : `남은 시간 ${formatRemaining(remaining)}`}
               </span>
               <span className="text-[10px] font-semibold tabular-nums text-neutral-tertiary">
                 입찰 단위 +{item.bidUnit.toLocaleString('ko-KR')}원
