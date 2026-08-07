@@ -231,7 +231,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'START',
               itemId: payload.itemId,
-              message: `${payload.itemName} 경매가 시작됐어요`,
+              itemName: payload.itemName,
+              message: '경매가 시작됐어요',
             },
           ])
           setItems((prev) =>
@@ -270,7 +271,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'CLOSE',
               itemId: payload.itemId,
-              message: `${payload.itemName} 마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
+              itemName: payload.itemName,
+              message: `마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
               emphasized: true,
             },
           ])
@@ -284,8 +286,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'BID',
               itemId: payload.itemId,
+              itemName: payload.itemName,
               message: `${payload.bidderNickname}님이 ${formatWon(payload.bidPrice)} 입찰`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -326,8 +328,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'EXTEND',
               itemId: payload.itemId,
+              itemName: payload.itemName,
               message: `마감 직전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -386,17 +388,15 @@ function LiveRoomPage() {
             {
               id: eventId,
               at: new Date().toISOString(),
-              kind: 'CLOSE',
+              // 낙찰가·낙찰자를 보조 줄로 빼지 않고 입찰 문구와 같은 결로 한 줄에 담는다.
+              kind: payload.winnerNickname ? 'WIN' : 'CLOSE',
               itemId: payload.itemId,
-              message: payload.winnerNickname
-                ? `${payload.itemName} 낙찰 확정`
-                : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
-              // 유찰이면 둘 다 null 이라 낙찰 줄을 붙이지 않는다.
-              ...(payload.winnerNickname &&
-                payload.finalPrice !== null && {
-                  subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
-                  emphasized: true,
-                }),
+              itemName: payload.itemName,
+              message:
+                payload.winnerNickname && payload.finalPrice !== null
+                  ? `${payload.winnerNickname}님이 ${formatWon(payload.finalPrice)}에 낙찰`
+                  : '경매 종료 · 낙찰자 없음',
+              emphasized: true,
             },
           ])
           setItems((prev) =>
@@ -634,10 +634,8 @@ function LiveRoomPage() {
   const detailMinimum = detailItem
     ? detailItem.currentPrice + detailItem.bidUnit
     : 0
-  // 상세가 닫혀 있으면 지금 시각을 넣어 0 초가 되게 한다(훅은 늘 같은 순서로).
-  const detailRemaining = useCountdown(
-    detailItem?.endsAt ?? new Date().toISOString(),
-  )
+  // 상세가 닫혀 있거나 시작 전 물품이면 null 이라 0 초다(훅은 늘 같은 순서로).
+  const detailRemaining = useCountdown(detailItem?.endsAt ?? null)
 
   /*
    * 앞당기기 확인 다이얼로그가 "지금 남은 시간 → 앞당긴 뒤 남은 시간"을 보여준다.
@@ -1178,12 +1176,21 @@ function LiveRoomPage() {
    * 방 종료 확인. 데스크톱·모바일 분기가 갈리므로 한 번 만들어 양쪽에서 쓴다.
    * 예전에는 데스크톱 분기에만 있어서 모바일에서는 눌러도 아무 일이 없었다.
    */
+  /*
+   * 진행 중인 물품은 마감 시각이 남아 있어도 함께 닫힌다(`AuctionRoomCloseService`).
+   * 몇 개가 딸려 닫히는지 세어 보여준다 — 그걸 모르고 누르면 아직 입찰을 받고 있던
+   * 물품이 그대로 마감되고, 되돌릴 방법이 없다.
+   */
   const closeRoomDialog = (
     <ConfirmDialog
       open={closingRoom}
       tone="danger"
       title="경매방을 종료할까요?"
-      description="진행 중인 물품이 모두 마감되고 낙찰 결과가 확정됩니다. 되돌릴 수 없어요."
+      description={
+        liveItems.length > 0
+          ? `진행 중인 물품 ${liveItems.length}개가 마감 시각과 상관없이 지금 마감되고 낙찰 결과가 확정됩니다. 되돌릴 수 없어요.`
+          : '경매방이 종료되고 참여자는 더 이상 입장할 수 없어요. 되돌릴 수 없어요.'
+      }
       confirmLabel="경매방 종료"
       onCancel={() => setClosingRoom(false)}
       pending={closeRoom.isPending}
@@ -1298,6 +1305,8 @@ function LiveRoomPage() {
             <MobileItemDetailView
               item={detailItem}
               sellerName={room.sellerName}
+              softCloseTriggerSeconds={room.softCloseTriggerSeconds}
+              softCloseSeconds={room.softCloseSeconds}
               events={roomEvents.filter(
                 (event) => event.itemId === detailItem.id,
               )}
@@ -1867,8 +1876,8 @@ function makeDemoEvent(
     kind: 'BID',
     // 물품 상세의 로그도 id 로 골라내므로, 데모 이벤트에도 붙여야 거기 보인다.
     itemId,
+    itemName,
     message: `데모입찰러님이 ${amount.toLocaleString('ko-KR')}원 입찰`,
-    subtitle: itemName,
     emphasized: true,
   }
 }

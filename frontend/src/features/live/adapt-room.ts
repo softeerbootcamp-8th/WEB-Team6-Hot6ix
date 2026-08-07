@@ -57,6 +57,7 @@ export function toAuctionRoomDetail(
      * 앞당기기 안내가 "0초 뒤 마감"이 된다.
      */
     softCloseTriggerSeconds: dto.softCloseTriggerSeconds ?? 60,
+    bidUnit: dto.bidIncrement ?? 0,
     items,
   }
 }

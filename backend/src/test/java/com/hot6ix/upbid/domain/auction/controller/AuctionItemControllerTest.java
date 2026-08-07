@@ -542,8 +542,8 @@ class AuctionItemControllerTest extends AbstractControllerTest {
      * 받아들여지는지 함께 본다.
      */
     @ParameterizedTest
-    @ValueSource(ints = {1, 43_200})
-    @DisplayName("경매 시간이 1분과 43200분이면 시작이 받아들여진다")
+    @ValueSource(ints = {1, 720})
+    @DisplayName("경매 시간이 1분과 720분이면 시작이 받아들여진다")
     void startAcceptsBoundaryDuration(int durationMinutes) throws Exception {
 
         when(auctionItemService.start(eq(30L), eq(LOGIN_USER_ID), any(AuctionItemStartRequestDto.class)))
@@ -557,12 +557,12 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     }
 
     @Test
-    @DisplayName("경매 시간이 30일을 넘으면 시작 시 400을 반환한다")
+    @DisplayName("경매 시간이 12시간을 넘으면 시작 시 400을 반환한다")
     void startWithDurationOutOfRange() throws Exception {
 
         mockMvc.perform(post("/api/v1/auction-items/30/start")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(newStartRequest(43_201))))
+                        .content(objectMapper.writeValueAsString(newStartRequest(721))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(2002))

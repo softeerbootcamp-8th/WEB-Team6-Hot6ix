@@ -26,18 +26,18 @@ function resolveStyle(event: RoomEvent) {
         icon: <StartIcon />,
         text: 'font-semibold text-foreground',
       }
+    case 'WIN':
+      return {
+        chip: 'bg-success-surface',
+        icon: <WinIcon />,
+        text: 'font-semibold text-foreground',
+      }
     case 'CLOSE':
-      return event.subtitle
-        ? {
-            chip: 'bg-success-surface',
-            icon: <WinIcon />,
-            text: 'font-bold text-foreground',
-          }
-        : {
-            chip: 'bg-live-surface',
-            icon: <ClosingIcon />,
-            text: 'font-semibold text-foreground',
-          }
+      return {
+        chip: 'bg-live-surface',
+        icon: <ClosingIcon />,
+        text: 'font-semibold text-foreground',
+      }
     case 'EXTEND':
       return {
         chip: 'bg-notice-surface',

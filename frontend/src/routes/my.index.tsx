@@ -53,9 +53,6 @@ function MyPage() {
             <p className="truncate text-[18px] font-bold text-foreground">
               {user.nickname}
             </p>
-            <p className="mt-1.5 truncate text-[12px] font-medium text-neutral-tertiary">
-              프로필과 계정 정보를 확인하세요.
-            </p>
           </div>
 
           <Link

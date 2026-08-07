@@ -3,6 +3,8 @@ import { Settings, Share2, Square, Users } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
+import { RoomRuleChips } from '@/features/live/components/room-rule-chips'
+import { cn } from '@/lib/utils'
 import type { AuctionRoomDetail } from '@/mocks/types'
 
 /**
@@ -85,18 +87,44 @@ export function LiveShell({
       {/* 방 헤더 */}
       <div className="shrink-0 border-b bg-card">
         <div className="mx-auto flex min-h-[68px] max-w-[1280px] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 md:px-7">
-          <span className="flex h-6 items-center rounded-full bg-live px-3 text-[11px] font-extrabold text-white">
-            LIVE
+          {/*
+            배지를 LIVE 로 못 박아 두면 물품 상세 라우트처럼 종료된 방에도
+            이 골격을 그대로 쓰는 화면에서 "LIVE" 가 뜬다. 방 상태를 따른다.
+          */}
+          <span
+            className={cn(
+              'flex h-6 items-center rounded-full px-3 text-[11px] font-extrabold',
+              room.status === 'CLOSED'
+                ? 'bg-fill text-neutral-tertiary'
+                : room.status === 'READY'
+                  ? 'bg-notice-surface text-notice'
+                  : 'bg-live text-white',
+            )}
+          >
+            {room.status === 'CLOSED'
+              ? '종료'
+              : room.status === 'READY'
+                ? '준비 중'
+                : 'LIVE'}
           </span>
 
           <h1 className="text-[17px] font-bold text-foreground">
             {room.title}
           </h1>
 
+          {/* 누가 파는 방인지. 링크만 받고 들어온 사람에게는 이게 첫 단서다. */}
+          {room.sellerName && (
+            <p className="min-w-0 truncate text-[13px] font-medium text-neutral-secondary">
+              {room.sellerName}
+            </p>
+          )}
+
           <p className="flex items-center gap-1.5 text-[13px] font-medium text-neutral-tertiary">
             <Users aria-hidden className="size-[15px]" />
             {participantCount ?? room.participantCount}명 참여 중
           </p>
+
+          <RoomRuleChips room={room} />
 
           <div className="ml-auto flex items-center gap-2">
             {headerActions}

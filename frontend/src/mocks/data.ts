@@ -134,7 +134,8 @@ const ROOM_1: AuctionRoomDetail = {
   participantCount: 128,
   shareCode: 'live001',
   softCloseSeconds: 30,
-  softCloseTriggerSeconds: 30,
+  softCloseTriggerSeconds: 60,
+  bidUnit: 1000,
   items: [
     {
       id: 101,
@@ -314,7 +315,8 @@ const ROOM_2: AuctionRoomDetail = {
   participantCount: 64,
   shareCode: 'live002',
   softCloseSeconds: 30,
-  softCloseTriggerSeconds: 30,
+  softCloseTriggerSeconds: 60,
+  bidUnit: 1000,
   items: [
     {
       id: 201,
@@ -400,7 +402,8 @@ const ROOM_3: AuctionRoomDetail = {
   participantCount: 41,
   shareCode: 'done003',
   softCloseSeconds: 30,
-  softCloseTriggerSeconds: 30,
+  softCloseTriggerSeconds: 60,
+  bidUnit: 1000,
   items: [
     {
       id: 301,
@@ -466,7 +469,8 @@ const ROOM_4: AuctionRoomDetail = {
   participantCount: 213,
   shareCode: 'done004',
   softCloseSeconds: 30,
-  softCloseTriggerSeconds: 30,
+  softCloseTriggerSeconds: 60,
+  bidUnit: 1000,
   items: [
     {
       id: 401,
@@ -614,7 +618,8 @@ const ROOM_5: AuctionRoomDetail = {
   participantCount: 88,
   shareCode: 'done005',
   softCloseSeconds: 30,
-  softCloseTriggerSeconds: 30,
+  softCloseTriggerSeconds: 60,
+  bidUnit: 1000,
   items: [
     {
       id: 501,
@@ -703,7 +708,8 @@ const ROOM_6: AuctionRoomDetail = {
   participantCount: 57,
   shareCode: 'done006',
   softCloseSeconds: 30,
-  softCloseTriggerSeconds: 30,
+  softCloseTriggerSeconds: 60,
+  bidUnit: 1000,
   items: [
     {
       id: 601,
@@ -831,7 +837,8 @@ export const MOCK_EMPTY_ROOM: AuctionRoomDetail = {
   participantCount: 0,
   shareCode: 'ready007',
   softCloseSeconds: 30,
-  softCloseTriggerSeconds: 30,
+  softCloseTriggerSeconds: 60,
+  bidUnit: 1000,
   items: [],
 }
 

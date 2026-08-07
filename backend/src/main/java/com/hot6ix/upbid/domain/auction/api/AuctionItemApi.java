@@ -152,7 +152,7 @@ public interface AuctionItemApi {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "시작 성공"),
-            @ApiResponse(responseCode = "400", description = "경매 시간이 없거나 1~43200분(30일) 범위를 "
+            @ApiResponse(responseCode = "400", description = "경매 시간이 없거나 1~720분(12시간) 범위를 "
                     + "벗어남 (code 2002)"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002), "
