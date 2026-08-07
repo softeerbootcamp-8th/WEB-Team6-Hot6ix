@@ -206,3 +206,12 @@ gradle-app.setting
 
 /docs
 # End of https://www.toptal.com/developers/gitignore/api/java,macos,dotenv,intellij,gradle
+
+### 부하 측정 결과 (#242) ###
+# 실행 결과는 저장소에 커밋하지 않고 노션에 공유한다.
+# 폴더 자체는 남겨야 run.sh 가 여기에 쓴다.
+perf/results/*
+!perf/results/.gitkeep
+
+# 측정 실행 잠금 (run.sh 가 만들고 지운다)
+perf/.run.lock/

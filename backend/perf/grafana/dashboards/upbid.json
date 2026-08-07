@@ -1,0 +1,920 @@
+{
+  "uid": "upbid-perf",
+  "title": "Upbid 부하 측정",
+  "description": "이슈 #242. 다섯 명이 같은 화면을 보려고 커밋해 둔 대시보드다. UI 에서 고쳐도 저장되지 않는다 — 바꾸려면 JSON 을 내보내 커밋한다.",
+  "tags": [
+    "upbid",
+    "perf"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m"
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "판정 — 두 배 올렸는데 1.2배도 안 오르는 첫 줄을 찾는다",
+      "id": 1,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "처리량 (req/s)",
+      "description": "부하를 두 배 올렸는데 이 값이 1.2배도 안 오르면 그 줄이 한계다. actuator 스크랩은 제외해서 프로메테우스가 긁는 요청이 처리량에 섞이지 않게 한다. SSE 구독은 뺀다. 끝나지 않는 스트림이라 연결이 끊길 때 수십 초짜리 응답 하나로 기록돼서, 섞으면 p95 가 통째로 그쪽으로 끌려간다. run.sh 가 index.csv 에 적는 값과 같은 필터다.",
+      "id": 2,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "legendFormat": "전체",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=\"$run\", uri=~\".*bids\"}[30s]))",
+          "legendFormat": "입찰",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "응답 p95 (ms)",
+      "description": "처리량은 그대로인데 이것만 오르면 어딘가에서 줄을 서고 있다는 뜻이다. 구간 전체 p95 는 이 그래프를 평균 내지 말고 run.sh 가 뽑은 값을 쓴다. SSE 구독은 뺀다. 끝나지 않는 스트림이라 연결이 끊길 때 수십 초짜리 응답 하나로 기록돼서, 섞으면 p95 가 통째로 그쪽으로 끌려간다. run.sh 가 index.csv 에 적는 값과 같은 필터다.",
+      "id": 3,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))) * 1000",
+          "legendFormat": "p95 전체",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=\"$run\", uri=~\".*bids\"}[30s]))) * 1000",
+          "legendFormat": "p95 입찰",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "자원 — 넷 다 여유로운데 처리량이 안 오르면 그건 락이다",
+      "id": 4,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "톰캣 스레드",
+      "description": "busy 가 max(200) 근처면 스레드 고갈. SSE 접속 수만큼 busy 가 오르면 async 가 안 걸린 것이고 그 자체가 발견이다.",
+      "id": 5,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 8,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "tomcat_threads_busy_threads{run=\"$run\"}",
+          "legendFormat": "busy {{instance}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "tomcat_threads_config_max_threads{run=\"$run\"}",
+          "legendFormat": "max",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "DB 커넥션 (pending 을 본다)",
+      "description": "제일 자주 빠뜨리는 지표. active 10/10 만 봐서는 '일하는 중'인지 '줄 서 있는 중'인지 구분이 안 된다. pending 이 0보다 크면 커넥션이 모자라거나, 락을 기다리며 커넥션을 붙잡고 있는 것이다. 획득 p95 는 커넥션을 받기까지 기다린 시간이다. pending 이 \"몇 개가 줄 서 있나\"라면 이건 \"얼마나 오래\"라, 커넥션이 모자란 것과 락 때문에 오래 붙잡는 것을 가른다.",
+      "id": 6,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 10,
+        "w": 8,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "hikaricp_connections_active{run=\"$run\"}",
+          "legendFormat": "active {{instance}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "hikaricp_connections_idle{run=\"$run\"}",
+          "legendFormat": "idle",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "hikaricp_connections_pending{run=\"$run\"}",
+          "legendFormat": "pending",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "hikaricp_connections_max{run=\"$run\"}",
+          "legendFormat": "max",
+          "range": true,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "range": true,
+          "refId": "E",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "legendFormat": "획득 p95 (ms)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "힙과 GC pause",
+      "description": "GC 가 돌고 나서도 힙이 안 내려가면 메모리다. SSE 접속당 힙은 0명과 800명일 때 각각 jcmd GC.run 후 읽어서 차이를 나눈다.",
+      "id": 7,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 10,
+        "w": 8,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(jvm_memory_used_bytes{run=\"$run\", area=\"heap\"}) / 1024 / 1024",
+          "legendFormat": "heap used (MB)",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(jvm_gc_pause_seconds_sum{run=\"$run\"}[30s]) * 1000",
+          "legendFormat": "GC pause (ms/s)",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "직접 심은 지표 — 기성 지표에 없어서 없으면 '락이 범인'을 못 말한다",
+      "id": 8,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "입찰 락 대기 p95 (ms)",
+      "description": "findByIdForUpdate 가 물품 행 락을 잡기까지 기다린 시간. 부하에 비례해 늘어나는데 스레드·커넥션·힙이 다 여유로우면 그게 락 직렬화다.",
+      "id": 9,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "legendFormat": "p95",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "legendFormat": "p50",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SSE 접속 수 / 방 수",
+      "description": "지금 열려 있는 SseEmitter 수. 이 값이 목표만큼 안 오르면 서버 한계가 아니라 k6 셸의 ulimit -n 일 때가 많다.",
+      "id": 10,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "upbid_sse_connections{run=\"$run\"}",
+          "legendFormat": "접속 {{instance}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "upbid_sse_rooms{run=\"$run\"}",
+          "legendFormat": "방",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SSE heartbeat / broadcast p95 (ms)",
+      "description": "broadcast 는 입찰을 처리한 톰캣 스레드가 방 전원에게 쏘는 시간이라 그대로 입찰 응답에 얹힌다(#234). heartbeat 는 마감 예약과 스케줄러 풀을 같이 쓰므로 길어지면 마감이 밀린다.",
+      "id": 11,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_heartbeat_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "legendFormat": "heartbeat p95",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_broadcast_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "legendFormat": "broadcast p95",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "물품 마감 지연 p95 (ms)",
+      "description": "예약한 마감 시각보다 실제 실행이 얼마나 늦었는지. 스케줄러 스레드가 모자라거나 마감이 입찰의 행 락을 기다리면 늘어난다(#198).",
+      "id": 12,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 27,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "legendFormat": "p95",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(1.00, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "legendFormat": "max",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "부하 발생기와 응답 분포 — 거절은 에러가 아니다",
+      "id": 13,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "k6 VU 수와 요청률",
+      "description": "dropped_iterations 가 0보다 크면 k6 가 목표 속도를 못 냈다는 뜻이다. 그 줄의 숫자는 서버 한계가 아니라 부하 발생기 한계라 판정을 보류한다.",
+      "id": 14,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "k6_vus",
+          "legendFormat": "VU",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(k6_http_reqs_total[30s]))",
+          "legendFormat": "k6 요청률",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(k6_dropped_iterations_total[30s]))",
+          "legendFormat": "dropped/s",
+          "range": true,
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "응답 상태 분포",
+      "description": "4xx 는 정상 동작이다. ALREADY_TOP_BIDDER, BID_AMOUNT_TOO_LOW, INVALID_BID_UNIT, ITEM_CLOSED 는 규칙대로 거절한 것이라 실패로 세면 안 된다. 진짜 실패는 5xx 와 타임아웃뿐이다. SSE 구독은 뺀다. 끝나지 않는 스트림이라 연결이 끊길 때 수십 초짜리 응답 하나로 기록돼서, 섞으면 p95 가 통째로 그쪽으로 끌려간다. run.sh 가 index.csv 에 적는 값과 같은 필터다.",
+      "id": 15,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (status) (rate(http_server_requests_seconds_count{run=\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "legendFormat": "{{status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "run",
+        "label": "실행",
+        "description": "어느 실행을 볼지. 최신이 맨 위다. run.sh 가 실행마다 다른 값을 모든 지표에 라벨로 붙인다.",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "upbid-prometheus"
+        },
+        "definition": "label_values(process_start_time_seconds{run=~\"[0-9]{4}-[0-9]{2}-[0-9]{2}T.*\"}, run)",
+        "query": {
+          "qryType": 1,
+          "query": "label_values(process_start_time_seconds{run=~\"[0-9]{4}-[0-9]{2}-[0-9]{2}T.*\"}, run)",
+          "refId": "run"
+        },
+        "sort": 2,
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": []
+      }
+    ]
+  }
+}
