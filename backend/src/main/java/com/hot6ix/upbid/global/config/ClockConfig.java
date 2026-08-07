@@ -13,8 +13,10 @@ import org.springframework.context.annotation.Configuration;
  * "락을 300밀리초 기다리는 동안 시각이 흘렀다" 같은 상황도 재현할 수 있다.
  *
  * <p>{@code systemDefaultZone()}은 지금 코드가 쓰는 {@code LocalDateTime.now()}와 같은 시계다.
- * 이 빈을 넣는다고 동작이 달라지지 않는다. 서버 타임존에 묶여 있다는 성질도 그대로여서, 그건
- * 별도로 다룬다.
+ * 이 빈을 넣는다고 동작이 달라지지 않는다. 여전히 서버 타임존에 묶여 있지만, 이제 그 자체가
+ * 문제는 아니다 — 응답 경계의 {@link com.hot6ix.upbid.global.common.ServerTime}이 같은
+ * {@code ZoneId.systemDefault()}로 오프셋을 붙이므로, 서버가 어느 시간대로 뜨든 응답값이
+ * 사실과 일치한다(이슈 #183).
  */
 @Configuration
 public class ClockConfig {

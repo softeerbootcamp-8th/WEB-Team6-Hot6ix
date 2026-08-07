@@ -54,6 +54,26 @@ Validation 에러 응답:
 성공 응답에 `code`와 `errors`가 없고, 데이터 없는 성공에 `data`가 없는 이유다.
 JSON 객체의 키 순서는 계약이 아니므로 파싱에는 영향이 없다.
 
+## 날짜·시각
+
+**모든 날짜·시각 응답에 타임존 오프셋이 실린다.** REST와 SSE 모두 같다.
+
+    "endAt": "2026-08-04T12:52:25.949725+09:00"
+
+- 필드 타입은 `OffsetDateTime`. 오프셋은 서버 시계의 존(`ZoneId.systemDefault()`)이라
+  서버가 어느 시간대로 뜨든 값이 사실과 일치한다. `Asia/Seoul`을 하드코딩하지 않는다.
+- 서버가 만드는 값(`LocalDateTime.now()`, DB에서 읽은 `LocalDateTime` 컬럼)은 응답
+  경계에서 `ServerTime.toOffset(...)`으로 변환한다. 엔티티·서비스 내부는 여전히
+  `LocalDateTime`이다 — 오프셋은 응답에만 실린다.
+- SSE의 `ItemStartedDto.endedTime`, `SoftCloseExtendedDto.endedTime`은 REST의
+  `endAt`과 반드시 같은 포맷이다. 프론트가 같은 필드로 합쳐 쓰기 때문에, 한쪽만
+  바뀌면 소프트클로즈 연장 수신 시 카운트다운이 튄다.
+- 프론트는 오프셋이 있으므로 서버 TZ와 무관하게 `new Date(iso)`를 그대로 쓴다.
+  날짜 표시(`formatDate`/`formatTime`)는 보는 사람의 로컬 시간대로 그린다 — 이건
+  의도한 동작이고 바꾸지 않는다.
+- 기기 시계 자체가 틀어진 경우의 카운트다운 보정은 별도 이슈다. 이 계약은
+  서버·클라이언트 시간대가 다른 경우만 다룬다.
+
 ## 페이지네이션
 
 **cursor 방식으로 확정됐다.** `CursorPageResponse`가 이미 구현돼 있다.
