@@ -1,11 +1,11 @@
 package com.hot6ix.upbid.domain.sse.dto;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 public record SoftCloseExtendedDto(
         Long itemId,
         String itemName,
         int extendSeconds,
-        LocalDateTime endedTime
+        OffsetDateTime endedTime
 ) {
 }

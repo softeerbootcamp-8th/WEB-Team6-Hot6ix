@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.sse.dto.ItemClosingSoonDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
 import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
@@ -80,7 +81,7 @@ class DomainEventSseListenerTest {
         domainEventSseListener.on(RoomClosed.of(ROOM_ID, "승민의 경매방", OCCURRED_AT));
 
         assertThat(sentDto("ROOM_CLOSED"))
-                .isEqualTo(new RoomClosedDto("승민의 경매방", OCCURRED_AT));
+                .isEqualTo(new RoomClosedDto("승민의 경매방", ServerTime.toOffset(OCCURRED_AT)));
     }
 
     @Test

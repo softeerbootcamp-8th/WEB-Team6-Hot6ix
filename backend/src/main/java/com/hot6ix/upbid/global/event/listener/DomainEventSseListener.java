@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
 import com.hot6ix.upbid.domain.sse.dto.RoomUpdatedDto;
 import com.hot6ix.upbid.domain.sse.dto.SoftCloseExtendedDto;
 import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.EventType;
 import com.hot6ix.upbid.global.event.message.EventMessages;
@@ -75,19 +76,19 @@ public class DomainEventSseListener {
     private Object toDto(DomainEvent event) {
         return switch (event) {
 
-            case RoomClosed e -> new RoomClosedDto(e.roomTitle(), e.occurredAt());
+            case RoomClosed e -> new RoomClosedDto(e.roomTitle(), ServerTime.toOffset(e.occurredAt()));
             // 편성·설정 변경은 "다시 읽어라"는 신호다. 이벤트 피드에는 쌓이지 않는다.
             case RoomUpdated e -> new RoomUpdatedDto();
             case ItemAdded e -> new ItemAddedDto(e.addedCount());
             case ItemRemoved e -> new ItemRemovedDto(e.itemId());
-            case ItemStarted e -> new ItemStartedDto(e.itemId(), e.itemName(), e.endAt());
+            case ItemStarted e -> new ItemStartedDto(e.itemId(), e.itemName(), ServerTime.toOffset(e.endAt()));
             // remainingSeconds는 방마다 다른 트리거 값이라 화면이 이 값으로 문구를 만든다.
             case ItemClosingSoon e ->
                     new ItemClosingSoonDto(e.itemId(), e.itemName(), e.remainingSeconds());
             case BidPlaced e -> new BidPlacedDto(e.itemId(), e.itemName(), e.bidPrice(), e.bidderNickname());
             // endAt은 연장이 반영된 마감 시각이라 화면이 이 값으로 카운트다운을 다시 맞춘다.
             case SoftCloseExtended e ->
-                    new SoftCloseExtendedDto(e.itemId(), e.itemName(), e.extendSeconds(), e.endAt());
+                    new SoftCloseExtendedDto(e.itemId(), e.itemName(), e.extendSeconds(), ServerTime.toOffset(e.endAt()));
             case ItemEnded e -> new ItemEndedDto(e.itemId(), e.itemName(), e.finalPrice(), e.winnerNickname());
             // 유찰도 낙찰과 같은 DTO로 내보낸다. 낙찰가·낙찰자가 없다는 뜻으로 null이 간다.
             case ItemPassed e -> new ItemEndedDto(e.itemId(), e.itemName(), null, null);
