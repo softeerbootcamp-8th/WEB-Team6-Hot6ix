@@ -14,6 +14,7 @@ import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
 import { GuestNotice } from '@/features/live/components/live-shell'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { LiveItemList } from '@/features/live/components/live-item-list'
+import { RoomRuleChips } from '@/features/live/components/room-rule-chips'
 import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
 import { cn } from '@/lib/utils'
 import type {
@@ -151,7 +152,9 @@ export function MobileLiveView({
             <p className="truncate text-[16px] font-bold text-foreground">
               {room.title}
             </p>
+            {/* 누가 파는 방인지. 링크만 받고 들어온 사람에게는 이게 첫 단서다. */}
             <p className="mt-0.5 truncate text-[12px] font-medium text-neutral-tertiary">
+              {room.sellerName ? `${room.sellerName} · ` : ''}
               {participantCount ?? room.participantCount}명 참여 중
             </p>
           </div>
@@ -242,6 +245,9 @@ export function MobileLiveView({
 
         <main className="flex min-h-0 flex-1 flex-col px-4 pt-4">
           {isGuest && <GuestNotice redirectTo={`/rooms/${room.id}`} />}
+
+          {/* 좁아서 헤더에 못 넣는다. 목록 바로 위 한 줄로 둔다. */}
+          <RoomRuleChips room={room} className="shrink-0 pb-3" />
 
           {/*
            * 데스크톱과 같은 목록을 쓴다. 진행 중만 보여주면 시작 전·종료 물품을

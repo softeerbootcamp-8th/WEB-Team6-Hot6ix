@@ -11,10 +11,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
-import com.hot6ix.upbid.global.event.payload.ItemEnded;
-import com.hot6ix.upbid.global.event.payload.ItemPassed;
-import com.hot6ix.upbid.global.event.payload.ItemStarted;
-import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -28,16 +24,17 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.test.util.ReflectionTestUtils;
 
+/**
+ * 예약을 메모리에 담고 실행하는 부분만 본다. 어떤 이벤트에 예약을 걸고 취소하는지는
+ * {@link AuctionCloseScheduleListener}가 정하므로 {@code AuctionCloseScheduleListenerTest}가 맡는다.
+ */
 @ExtendWith(MockitoExtension.class)
-class AuctionCloseSchedulerTest {
+class InMemoryAuctionCloseSchedulerTest {
 
-    private static final Long ROOM_ID = 10L;
     private static final Long ITEM_ID = 30L;
-    private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 8, 2, 21, 0);
     private static final LocalDateTime END_AT = LocalDateTime.of(2026, 8, 2, 21, 10);
     /** Soft Close로 30초 밀린 마감 시각. */
     private static final LocalDateTime EXTENDED_END_AT = END_AT.plusSeconds(30);
@@ -49,15 +46,15 @@ class AuctionCloseSchedulerTest {
     private AuctionItemCloseService auctionItemCloseService;
 
     @InjectMocks
-    private AuctionCloseScheduler auctionCloseScheduler;
+    private InMemoryAuctionCloseScheduler auctionCloseScheduler;
 
     @Test
-    @DisplayName("시작 이벤트를 받으면 마감 시각에 예약한다")
+    @DisplayName("받은 마감 시각에 예약한다")
     void schedulesAtEndAt() {
 
         givenScheduledFuture();
 
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
 
         ArgumentCaptor<Instant> captor = ArgumentCaptor.forClass(Instant.class);
         verify(taskScheduler).schedule(any(Runnable.class), captor.capture());
@@ -66,24 +63,12 @@ class AuctionCloseSchedulerTest {
     }
 
     @Test
-    @DisplayName("예약 등록이 실패해도 시작 요청까지 실패시키지 않는다")
-    void swallowsScheduleFailure() {
-
-        when(taskScheduler.schedule(any(Runnable.class), any(Instant.class)))
-                .thenThrow(new TaskRejectedException("스케줄러가 내려가는 중"));
-
-        assertThatCode(() -> auctionCloseScheduler.on(itemStarted()))
-                .as("커밋 뒤에 도는 리스너라, 여기서 던지면 이미 시작된 물품인데 시작 API가 실패한다")
-                .doesNotThrowAnyException();
-    }
-
-    @Test
     @DisplayName("예약된 작업이 실행되면 그 물품의 마감을 위임한다")
     void delegatesToCloseService() {
 
         givenScheduledFuture();
         givenClosed();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
 
         scheduledTask().run();
 
@@ -95,7 +80,7 @@ class AuctionCloseSchedulerTest {
     void swallowsFailure() {
 
         givenScheduledFuture();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
         doThrow(new IllegalStateException("DB 연결 끊김"))
                 .when(auctionItemCloseService).closeIfDue(ITEM_ID);
 
@@ -112,7 +97,7 @@ class AuctionCloseSchedulerTest {
 
         givenScheduledFuture();
         givenClosed();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
         assertThat(schedules()).containsKey(ITEM_ID);
 
         scheduledTask().run();
@@ -140,27 +125,11 @@ class AuctionCloseSchedulerTest {
     }
 
     @Test
-    @DisplayName("Soft Close 연장을 받으면 밀린 마감 시각으로 예약을 갈아 끼운다")
-    void reschedulesOnSoftCloseExtended() {
-
-        givenScheduledFuture();
-
-        auctionCloseScheduler.on(SoftCloseExtended.of(
-                ROOM_ID, ITEM_ID, "한정판 피규어", 30, EXTENDED_END_AT, END_AT));
-
-        ArgumentCaptor<Instant> captor = ArgumentCaptor.forClass(Instant.class);
-        verify(taskScheduler).schedule(any(Runnable.class), captor.capture());
-
-        assertThat(captor.getValue())
-                .isEqualTo(EXTENDED_END_AT.atZone(ZoneId.systemDefault()).toInstant());
-    }
-
-    @Test
     @DisplayName("아직 마감 시각이 아니라는 답을 받으면 그 시각으로 다시 예약한다")
     void reschedulesWhenNotDueYet() {
 
         givenScheduledFuture();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
         when(auctionItemCloseService.closeIfDue(ITEM_ID)).thenReturn(Optional.of(EXTENDED_END_AT));
 
         // 캡처를 먼저 해둔다. 실행하면 재예약이 일어나 schedule 호출이 두 번이 된다.
@@ -177,50 +146,32 @@ class AuctionCloseSchedulerTest {
     }
 
     @Test
-    @DisplayName("낙찰로 마감되면 남은 예약을 취소한다")
-    void cancelsScheduleOnItemEnded() {
+    @DisplayName("취소하면 걸려 있던 예약을 끊고 핸들도 버린다")
+    void cancelsSchedule() {
 
         ScheduledFuture<?> schedule = givenScheduledFuture();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
 
-        auctionCloseScheduler.on(ItemEnded.of(ROOM_ID, ITEM_ID, "한정판 피규어", 12_000L, "한기", END_AT));
+        auctionCloseScheduler.cancel(ITEM_ID);
 
         verify(schedule).cancel(false);
         assertThat(schedules())
-                .as("방 종료로 먼저 닫힌 물품의 예약이 남으면 방 길이만큼 핸들이 메모리에 머문다")
+                .as("먼저 닫힌 물품의 예약이 남으면 마감 시각까지 핸들이 메모리에 머문다")
                 .isEmpty();
     }
 
     @Test
-    @DisplayName("유찰로 마감돼도 남은 예약을 취소한다")
-    void cancelsScheduleOnItemPassed() {
-
-        ScheduledFuture<?> schedule = givenScheduledFuture();
-        auctionCloseScheduler.on(itemStarted());
-
-        auctionCloseScheduler.on(ItemPassed.of(ROOM_ID, ITEM_ID, "한정판 피규어", END_AT));
-
-        verify(schedule).cancel(false);
-        assertThat(schedules()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("예약이 스스로 실행돼 마감한 경우에는 취소할 대상이 없다")
+    @DisplayName("예약이 스스로 실행돼 마감한 뒤에 취소하면 아무 일도 하지 않는다")
     void cancelIsNoopAfterRun() {
 
         givenScheduledFuture();
         givenClosed();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
         scheduledTask().run();
 
-        assertThatCode(() -> auctionCloseScheduler.on(
-                ItemPassed.of(ROOM_ID, ITEM_ID, "한정판 피규어", END_AT)))
+        assertThatCode(() -> auctionCloseScheduler.cancel(ITEM_ID))
                 .as("실행이 시작된 예약은 이미 핸들을 버린 뒤라 취소가 겉돌아야 한다")
                 .doesNotThrowAnyException();
-    }
-
-    private ItemStarted itemStarted() {
-        return ItemStarted.of(ROOM_ID, ITEM_ID, "한정판 피규어", STARTED_AT, END_AT);
     }
 
     /**

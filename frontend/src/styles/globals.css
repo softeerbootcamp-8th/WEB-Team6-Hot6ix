@@ -317,6 +317,11 @@
  * 새 이벤트가 들어온 직후에만 옅은 브랜드색이 깔렸다가 천천히 빠진다.
  * 줄이 그냥 나타나기만 하면 어느 줄이 새로 온 건지 알 수 없다.
  * 깜빡임으로 읽히지 않도록 사라지는 쪽을 길게(1.4s) 잡았다.
+ *
+ * **줄 자신이 아니라 덮개(`::after`)에 건다.** 줄에 직접 걸면 `both` 로 끝나는
+ * 이 애니메이션이 마지막 프레임의 `transparent` 를 줄에 고정시켜서, 이벤트
+ * 종류별 배경색(`resolveEventTone` 의 `row`)이 영영 가려진다. 실시간으로 들어온
+ * 줄만 색이 빠져 있고 새로고침하면 돌아오는 증상이 여기서 나왔다.
  */
 @keyframes event-highlight {
   0% {
@@ -354,9 +359,18 @@
  * 처음 그릴 때는 이 클래스가 붙지 않아 목록 전체가 물드는 일은 없다.
  */
 @utility animate-event {
-  animation:
-    event-in 360ms var(--ease-out-soft) both,
-    event-highlight 1400ms var(--ease-in-out-soft) 120ms both;
+  position: relative;
+  animation: event-in 360ms var(--ease-out-soft) both;
+
+  /* 밝아지는 층. 줄 배경 위에 얹혔다 걷힌다. */
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    animation: event-highlight 1400ms var(--ease-in-out-soft) 120ms both;
+  }
 }
 
 /*

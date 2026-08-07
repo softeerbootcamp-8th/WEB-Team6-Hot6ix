@@ -6,12 +6,15 @@ import { useEffect, useState } from 'react'
  * **이 값으로 경매 종료를 확정하지 않는다.** 서버가 마감을 판정하고, 여기는
  * 표시용일 뿐이다. 0 이 되어도 서버 이벤트가 오기 전까지는 마감으로 다루지
  * 않는다.
+ *
+ * `endsAt` 이 `null` 이면 0 이다. 시작 전 물품이 그렇고, 이 경우 부르는 쪽이
+ * 카운트다운 대신 "시작 전"을 그려야 한다.
  */
-export function useCountdown(endsAt: string): number {
+export function useCountdown(endsAt: string | null): number {
   // 파싱에 실패하면 NaN이 아니라 0으로 떨어뜨린다 — 그래야 아래 setInterval이
   // 첫 tick에서 곧바로 정리된다. NaN이면 next === 0이 영원히 거짓이라 타이머가
   // 안 멈춘다.
-  const rawTarget = new Date(endsAt).getTime()
+  const rawTarget = endsAt === null ? 0 : new Date(endsAt).getTime()
   const target = Number.isNaN(rawTarget) ? 0 : rawTarget
 
   const [remaining, setRemaining] = useState(() =>

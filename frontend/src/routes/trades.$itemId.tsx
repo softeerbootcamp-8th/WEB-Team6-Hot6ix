@@ -673,7 +673,7 @@ function TradeDetailPage() {
 
               {/* 열 폭이 좁아지면 표가 깨지므로 가로 스크롤로 흘린다. */}
               <div className="mt-4 hidden min-h-0 overflow-x-auto md:block">
-                <div className={isSeller ? 'min-w-[680px]' : 'min-w-[560px]'}>
+                <div className={isSeller ? 'min-w-[750px]' : 'min-w-[560px]'}>
                   <div
                     className={cn(
                       'grid h-10 items-center rounded-[12px] bg-[#f4f7fc] pr-6 pl-4 text-[12px] font-semibold text-neutral-tertiary',
@@ -755,7 +755,7 @@ function TradeDetailPage() {
                               </span>
                             ))}
 
-                          <span className="text-[14px] font-extrabold tabular-nums text-foreground">
+                          <span className="text-[14px] font-extrabold whitespace-nowrap tabular-nums text-foreground">
                             {formatWon(candidate.bidAmount)}
                           </span>
 
@@ -838,7 +838,12 @@ function TradeDetailPage() {
  * 표 열 폭. Figma 값(순위 28 / 입찰자 110 / 연락처 140 / 입찰가 90 /
  * 상태 116 / 처리 156)에 뒤쪽 여백을 더해 한 칸으로 묶었다.
  */
-const SELLER_COLS = 'grid-cols-[48px_minmax(110px,1fr)_150px_100px_124px_156px]'
+/*
+ * 입찰가 열은 억 단위까지 한 줄로 들어갈 만큼 잡는다. 100px 이던 시절에는
+ * "1,234,567,890원" 이 옆 칸을 밀고 잘렸다. 연락처는 `010-0000-0000` 이 최대라
+ * 폭을 줄여서 그만큼을 내줬다.
+ */
+const SELLER_COLS = 'grid-cols-[48px_minmax(110px,1fr)_130px_140px_124px_156px]'
 const BUYER_COLS = 'grid-cols-[84px_minmax(150px,1fr)_210px_166px]'
 
 /**

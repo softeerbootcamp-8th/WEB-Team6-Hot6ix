@@ -40,10 +40,14 @@ export function RoomCard({ room }: { room: RoomCardData }) {
 
   return (
     <li className="rounded-2xl border bg-card p-4">
-      <div className="flex gap-4">
+      {/*
+        모바일은 카드 폭이 좁아 썸네일을 한 단계 줄이고 사이 여백을 넓힌다.
+        124 + 16 이면 오른쪽 글자 칸이 눌려 제목이 금방 잘렸다.
+      */}
+      <div className="flex gap-5 sm:gap-4">
         <ProductThumbnail
           src={room.imageUrl}
-          className="flex size-[124px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-fill text-neutral-muted sm:size-[136px]"
+          className="flex size-[104px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-fill text-neutral-muted sm:size-[136px]"
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
