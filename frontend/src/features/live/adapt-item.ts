@@ -132,9 +132,9 @@ export function toAuctionItemDetail(
      */
     topBidderNickname: leaderboard[0]?.nickname ?? null,
     /*
-     * 서버는 오프셋 없는 LocalDateTime 을 준다. 서버와 브라우저의 시간대가
-     * 다르면 카운트다운이 통째로 어긋난다. 지금은 둘 다 KST 라 맞지만,
-     * 배포 서버가 UTC 로 돌면 여기서 티가 난다.
+     * 서버는 타임존 오프셋이 붙은 문자열을 준다(예: "...+09:00", 이슈 #183).
+     * `new Date()` 가 오프셋을 그대로 읽으므로 서버·브라우저 시간대가 달라도
+     * 카운트다운이 맞는다.
      */
     endsAt: dto.endAt ?? fallback.endsAt,
     /*

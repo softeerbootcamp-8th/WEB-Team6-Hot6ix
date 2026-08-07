@@ -8,7 +8,11 @@ import { useEffect, useState } from 'react'
  * 않는다.
  */
 export function useCountdown(endsAt: string): number {
-  const target = new Date(endsAt).getTime()
+  // 파싱에 실패하면 NaN이 아니라 0으로 떨어뜨린다 — 그래야 아래 setInterval이
+  // 첫 tick에서 곧바로 정리된다. NaN이면 next === 0이 영원히 거짓이라 타이머가
+  // 안 멈춘다.
+  const rawTarget = new Date(endsAt).getTime()
+  const target = Number.isNaN(rawTarget) ? 0 : rawTarget
 
   const [remaining, setRemaining] = useState(() =>
     Math.max(0, Math.floor((target - Date.now()) / 1000)),

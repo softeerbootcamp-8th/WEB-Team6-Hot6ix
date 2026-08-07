@@ -74,7 +74,7 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
     role: 'SELLER',
     itemCount: 2,
     participantCount: 41,
-    closedAt: '2026-07-18',
+    closedAt: closedOn('2026-07-18'),
   },
   {
     id: 4,
@@ -84,7 +84,7 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
     role: 'BUYER',
     itemCount: 5,
     participantCount: 213,
-    closedAt: '2026-06-20',
+    closedAt: closedOn('2026-06-20'),
   },
   {
     id: 5,
@@ -94,7 +94,7 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
     role: 'BUYER',
     itemCount: 3,
     participantCount: 88,
-    closedAt: '2026-06-02',
+    closedAt: closedOn('2026-06-02'),
   },
   {
     id: 7,
@@ -114,7 +114,7 @@ export const MOCK_ROOMS: AuctionRoomSummary[] = [
     role: 'SELLER',
     itemCount: 4,
     participantCount: 57,
-    closedAt: '2026-05-11',
+    closedAt: closedOn('2026-05-11'),
   },
 ]
 
@@ -880,7 +880,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '슬리브 포함 · 상태 A급',
     productUrl: 'https://example.com/photocard',
     status: 'IN_AUCTION',
-    createdAt: '2026-07-28',
+    createdAt: closedOn('2026-07-28'),
   },
   {
     id: 2,
@@ -889,7 +889,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '초동 특전 · 미개봉',
     productUrl: 'https://example.com/mini-album',
     status: 'IN_AUCTION',
-    createdAt: '2026-07-28',
+    createdAt: closedOn('2026-07-28'),
   },
   {
     id: 3,
@@ -898,7 +898,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '럭키드로우 당첨분',
     productUrl: 'https://example.com/hologram',
     status: 'IN_AUCTION',
-    createdAt: '2026-07-27',
+    createdAt: closedOn('2026-07-27'),
   },
   {
     id: 4,
@@ -907,7 +907,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '작동 확인 완료 · 케이스 포함',
     productUrl: 'https://example.com/film-camera',
     status: 'UNSOLD',
-    createdAt: '2026-07-10',
+    createdAt: closedOn('2026-07-10'),
   },
   {
     id: 5,
@@ -916,7 +916,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '곰팡이 없음 · 헬리코이드 부드러움',
     productUrl: 'https://example.com/film-lens',
     status: 'SOLD',
-    createdAt: '2026-07-10',
+    createdAt: closedOn('2026-07-10'),
   },
   {
     id: 6,
@@ -925,7 +925,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '95 사이즈 · 드라이 완료',
     productUrl: 'https://example.com/trench-coat',
     status: 'SOLD',
-    createdAt: '2026-05-02',
+    createdAt: closedOn('2026-05-02'),
   },
   {
     id: 7,
@@ -934,7 +934,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '오버핏 · 보풀 없음',
     productUrl: 'https://example.com/knit-cardigan',
     status: 'SOLD',
-    createdAt: '2026-05-02',
+    createdAt: closedOn('2026-05-02'),
   },
   {
     id: 8,
@@ -943,7 +943,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '스크래치 적음 · 스트랩 조절 가능',
     productUrl: 'https://example.com/leather-bag',
     status: 'UNSOLD',
-    createdAt: '2026-05-01',
+    createdAt: closedOn('2026-05-01'),
   },
   {
     id: 9,
@@ -952,7 +952,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '250mm · 세탁 완료',
     productUrl: 'https://example.com/canvas-sneakers',
     status: 'SOLD',
-    createdAt: '2026-05-01',
+    createdAt: closedOn('2026-05-01'),
   },
   {
     id: 10,
@@ -961,7 +961,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '270mm · 미착용 · 박스 포함',
     productUrl: 'https://example.com/running-shoes',
     status: 'DRAFT',
-    createdAt: '2026-08-01',
+    createdAt: closedOn('2026-08-01'),
   },
   {
     id: 11,
@@ -970,7 +970,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '적축 · 키캡 세트 포함',
     productUrl: 'https://example.com/keyboard',
     status: 'DRAFT',
-    createdAt: '2026-07-30',
+    createdAt: closedOn('2026-07-30'),
   },
   {
     id: 12,
@@ -979,7 +979,7 @@ export const MOCK_PRODUCTS: Product[] = [
     description: '충전 케이스 포함 · 배터리 정상',
     productUrl: 'https://example.com/earbuds',
     status: 'DRAFT',
-    createdAt: '2026-07-25',
+    createdAt: closedOn('2026-07-25'),
   },
 ]
 
@@ -1007,7 +1007,7 @@ export const MOCK_TRADES: TradeSummary[] = [
     amount: 45000,
     partnerNickname: '원기 셀러',
     partnerPhone: '010-2345-6789',
-    closedAt: '2026-08-03',
+    closedAt: closedOn('2026-08-03'),
   },
   {
     id: 2,
@@ -1022,7 +1022,7 @@ export const MOCK_TRADES: TradeSummary[] = [
     amount: 38000,
     partnerNickname: '우재',
     partnerPhone: '010-3456-7890',
-    closedAt: '2026-07-18',
+    closedAt: closedOn('2026-07-18'),
   },
   {
     id: 3,
@@ -1037,7 +1037,7 @@ export const MOCK_TRADES: TradeSummary[] = [
     amount: 0,
     partnerNickname: '유효한 낙찰자 없음',
     partnerPhone: '-',
-    closedAt: '2026-07-18',
+    closedAt: closedOn('2026-07-18'),
   },
   {
     id: 4,
@@ -1051,7 +1051,7 @@ export const MOCK_TRADES: TradeSummary[] = [
     amount: 78000,
     partnerNickname: '한기 셀러',
     partnerPhone: '010-4567-8901',
-    closedAt: '2026-06-20',
+    closedAt: closedOn('2026-06-20'),
   },
   {
     id: 5,
@@ -1065,7 +1065,7 @@ export const MOCK_TRADES: TradeSummary[] = [
     amount: 31000,
     partnerNickname: '서지 셀러',
     partnerPhone: '010-2345-6789',
-    closedAt: '2026-06-02',
+    closedAt: closedOn('2026-06-02'),
   },
   {
     id: 6,
@@ -1080,7 +1080,7 @@ export const MOCK_TRADES: TradeSummary[] = [
     amount: 45000,
     partnerNickname: '코트러버',
     partnerPhone: '010-5678-9012',
-    closedAt: '2026-05-11',
+    closedAt: closedOn('2026-05-11'),
   },
   {
     id: 7,
@@ -1095,7 +1095,7 @@ export const MOCK_TRADES: TradeSummary[] = [
     amount: 23000,
     partnerNickname: '니트홀릭',
     partnerPhone: '010-6789-0123',
-    closedAt: '2026-05-11',
+    closedAt: closedOn('2026-05-11'),
   },
   {
     id: 8,
@@ -1110,7 +1110,7 @@ export const MOCK_TRADES: TradeSummary[] = [
     amount: 0,
     partnerNickname: '유효한 낙찰자 없음',
     partnerPhone: '-',
-    closedAt: '2026-05-11',
+    closedAt: closedOn('2026-05-11'),
   },
   {
     id: 9,
@@ -1125,7 +1125,7 @@ export const MOCK_TRADES: TradeSummary[] = [
     amount: 31000,
     partnerNickname: '데일리슈',
     partnerPhone: '010-7890-1234',
-    closedAt: '2026-05-11',
+    closedAt: closedOn('2026-05-11'),
   },
 ]
 
