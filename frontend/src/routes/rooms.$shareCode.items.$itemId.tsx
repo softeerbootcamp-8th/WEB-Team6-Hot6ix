@@ -138,7 +138,7 @@ function AuctionItemPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'START',
-              message: `${payload.itemName} 경매가 시작됐어요`,
+              message: '경매가 시작됐어요',
             },
           ])
           setOverride((prev) => ({
@@ -155,7 +155,7 @@ function AuctionItemPage() {
               id: eventId,
               at: new Date().toISOString(),
               kind: 'CLOSE',
-              message: `${payload.itemName} 마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
+              message: `마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
               emphasized: true,
             },
           ])
@@ -169,7 +169,6 @@ function AuctionItemPage() {
               at: new Date().toISOString(),
               kind: 'BID',
               message: `${payload.bidderNickname}님이 ${formatWon(payload.bidPrice)} 입찰`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -207,7 +206,6 @@ function AuctionItemPage() {
               at: new Date().toISOString(),
               kind: 'EXTEND',
               message: `마감 직전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -225,16 +223,13 @@ function AuctionItemPage() {
             {
               id: eventId,
               at: new Date().toISOString(),
-              kind: 'CLOSE',
-              message: payload.winnerNickname
-                ? `${payload.itemName} 낙찰 확정`
-                : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
-              // 유찰이면 둘 다 null 이라 낙찰 줄을 붙이지 않는다.
-              ...(payload.winnerNickname &&
-                payload.finalPrice !== null && {
-                  subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
-                  emphasized: true,
-                }),
+              // 낙찰가·낙찰자를 보조 줄로 빼지 않고 입찰 문구와 같은 결로 한 줄에 담는다.
+              kind: payload.winnerNickname ? 'WIN' : 'CLOSE',
+              message:
+                payload.winnerNickname && payload.finalPrice !== null
+                  ? `${payload.winnerNickname}님이 ${formatWon(payload.finalPrice)}에 낙찰`
+                  : '경매 종료 · 낙찰자 없음',
+              emphasized: true,
             },
           ])
           setOverride((prev) => ({
@@ -307,7 +302,6 @@ function AuctionItemPage() {
         at: new Date().toISOString(),
         kind: 'BID' as const,
         message: `${nickname}님이 ${formatWon(next)} 입찰`,
-        subtitle: item.name,
       },
     ])
 

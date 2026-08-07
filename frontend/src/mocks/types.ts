@@ -97,7 +97,13 @@ export interface AuctionRoomDetail {
 export interface RoomEvent {
   id: number
   at: string
-  kind: 'BID' | 'START' | 'CLOSE' | 'EXTEND' | 'REJECT'
+  /**
+   * `WIN` 은 낙찰 확정, `CLOSE` 는 마감 임박과 유찰이다.
+   *
+   * 예전에는 둘 다 `CLOSE` 로 두고 `subtitle`(낙찰가·낙찰자) 유무로 갈랐다.
+   * 그러다 보니 낙찰만 문구가 두 줄이 되어 다른 이벤트와 결이 달랐다.
+   */
+  kind: 'BID' | 'START' | 'CLOSE' | 'WIN' | 'EXTEND' | 'REJECT'
   message: string
   /**
    * 어느 물품의 이벤트인지. 물품 상세가 자기 로그만 골라낼 때 쓴다.
@@ -107,8 +113,17 @@ export interface RoomEvent {
    * 서로 섞이거나 아예 안 보였다.
    */
   itemId?: number
-  /** 물품명이나 금액·닉네임 같은 보조 설명 */
-  subtitle?: string
+  /**
+   * 어느 물품 이야기인지. 피드가 문구 위에 이름표로 올린다.
+   *
+   * 문구에 `{물품명} 경매가 시작됐어요` 처럼 섞어 쓰지 않는다. 종류마다 물품이
+   * 문구 안에 있기도 없기도 하면(입찰은 `홍길동님이 8만원 입찰`) 물품이 여러
+   * 개인 방에서 어떤 이벤트는 대상을 알 수 없다. 문구는 "무슨 일"만 적고
+   * "어느 물품"은 항상 이 필드가 맡는다.
+   *
+   * 물품 하나만 다루는 화면(물품 상세)은 이름표를 그리지 않는다.
+   */
+  itemName?: string
   /** 마감 임박·연장처럼 눈에 띄어야 하는 이벤트 */
   emphasized?: boolean
 }
