@@ -35,6 +35,10 @@ spring:
         default_batch_fetch_size: 100
     open-in-view: false
 
+logging:
+  pattern:
+    correlation: "%correlationId{traceId(8)}"
+
 server:
   forward-headers-strategy: framework
   servlet:
