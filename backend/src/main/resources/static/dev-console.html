@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UpBid 개발 콘솔</title>
+<style>
+  :root {
+    --blue:      #2f6bed;
+    --blue-dark: #1f52c9;
+    --blue-soft: #eaf0fe;
+    --green:     #12855a;
+    --green-soft:#e3f6ec;
+    --amber:     #a86a00;
+    --amber-soft:#fdf2dc;
+    --red:       #c23b30;
+    --red-soft:  #fdeceb;
+    --ink:       #16192a;
+    --ink-2:     #4a5068;
+    --ink-3:     #838aa3;
+    --line:      #e4e7f0;
+    --bg:        #f6f7fb;
+    --radius:    12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code, .mono { font-family: 'SFMono-Regular', ui-monospace, Consolas, monospace; }
+
+  /* ── 헤더 ─────────────────────────────────────────────── */
+  header {
+    background: #fff;
+    border-bottom: 1px solid var(--line);
+    padding: 0 28px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    height: 60px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .logo { font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+  .logo span { color: var(--blue); }
+  .tabs { display: flex; gap: 4px; margin-left: 8px; }
+  .tab {
+    padding: 7px 16px;
+    border-radius: 9px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-3);
+    cursor: pointer;
+    border: 0;
+    background: none;
+    font-family: inherit;
+  }
+  .tab:hover { background: var(--bg); color: var(--ink-2); }
+  .tab.on { background: var(--blue-soft); color: var(--blue); }
+
+  .room-chip {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+  .room-chip .code {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 5px 11px;
+    font-size: 12.5px;
+    color: var(--ink);
+  }
+  .room-chip.live .code { background: var(--green-soft); border-color: #b6e4cc; color: var(--green); font-weight: 600; }
+
+  /* ── 레이아웃 ─────────────────────────────────────────── */
+  .page { display: none; padding: 24px 28px 40px; max-width: 1560px; margin: 0 auto; }
+  .page.on { display: block; }
+  .cols { display: grid; grid-template-columns: minmax(430px, 520px) 1fr; gap: 20px; align-items: start; }
+
+  .lead {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .lead .big { font-size: 15px; font-weight: 700; }
+  .lead .sub { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+  .lead .spacer { margin-left: auto; }
+
+  /* ── 스텝 ─────────────────────────────────────────────── */
+  .step {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+    overflow: hidden;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .step.now { border-color: #b9ccfa; box-shadow: 0 2px 14px rgba(47,107,237,.10); }
+  .step.done { background: #fcfdfe; }
+  .step.locked { opacity: .55; }
+
+  .step-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .step.locked .step-head { cursor: not-allowed; }
+
+  .num {
+    width: 25px; height: 25px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    font-size: 12.5px; font-weight: 700;
+    background: #eef0f6; color: var(--ink-3);
+    flex-shrink: 0;
+  }
+  .step.now  .num { background: var(--blue); color: #fff; }
+  .step.done .num { background: var(--green); color: #fff; }
+
+  .step-title { font-weight: 650; font-size: 14.5px; }
+  .step-note { font-size: 12.5px; color: var(--ink-3); margin-top: 1px; }
+  .step.done .step-note { color: var(--green); }
+  .chev { margin-left: auto; color: var(--ink-3); font-size: 12px; transition: transform .15s; }
+  .step.open .chev { transform: rotate(180deg); }
+
+  .step-body { display: none; padding: 4px 18px 18px; }
+  .step.open .step-body { display: block; }
+
+  .why {
+    background: var(--bg);
+    border-radius: 9px;
+    padding: 10px 13px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    margin-bottom: 14px;
+    line-height: 1.6;
+  }
+  .why b { color: var(--ink); font-weight: 650; }
+
+  /* ── 입력 ─────────────────────────────────────────────── */
+  .field { margin-bottom: 12px; }
+  .field > label { display: block; font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 5px; }
+  .field .tip { font-weight: 400; color: var(--ink-3); margin-left: 6px; }
+  .field input, .field select {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--ink);
+    background: #fff;
+  }
+  .field input:focus, .field select:focus { outline: 2px solid var(--blue-soft); border-color: var(--blue); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    padding: 7px 13px;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .chip:hover { border-color: #b9ccfa; }
+  .chip.on { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* ── 버튼 ─────────────────────────────────────────────── */
+  button.act {
+    width: 100%;
+    padding: 11px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--blue);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 650;
+    font-family: inherit;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  button.act:hover:not(:disabled) { background: var(--blue-dark); }
+  button.act:disabled { background: #c5cad8; cursor: not-allowed; }
+  button.act.stop { background: var(--red); }
+  button.act.stop:hover:not(:disabled) { background: #9e2f26; }
+  button.act.sub { background: #eef1f8; color: var(--ink-2); }
+  button.act.sub:hover:not(:disabled) { background: #e3e7f2; }
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .hintline { font-size: 12px; color: var(--ink-3); text-align: center; margin-top: 8px; }
+
+  .or {
+    display: flex; align-items: center; gap: 10px;
+    margin: 14px 0 12px; font-size: 12px; color: var(--ink-3);
+  }
+  .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+
+  /* ── 현황 ─────────────────────────────────────────────── */
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .card-head {
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 650; font-size: 14px;
+  }
+  .card-head .muted { font-weight: 400; font-size: 12.5px; color: var(--ink-3); margin-left: auto; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .stat { padding: 15px 18px; border-right: 1px solid var(--line); }
+  .stat:last-child { border-right: 0; }
+  .stat .k { font-size: 11.5px; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+  .stat .v { font-size: 21px; font-weight: 700; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .stat .v.dim { color: var(--ink-3); font-weight: 500; font-size: 16px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 10px 18px; text-align: left; border-bottom: 1px solid #f0f2f8; font-size: 13.5px; }
+  th { font-size: 11.5px; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; background: #fbfcfe; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  /* 스텝 번호 배지가 .num 을 이미 쓰고 있다. 표 숫자 열에 같은 이름을 주면 셀이
+     width:25px + border-radius:50% 를 그대로 받아 동그라미로 찌그러진다. */
+  th.money, td.money { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* 열 폭은 내용에 맡긴다. %로 못 박으면 크롬이 숫자 열을 min-content 밑으로 눌러서
+     "14,000원" 이 옆 칸을 침범한다 (실측: 필요 75px 인데 36px 로 잘렸다). */
+  .pill { display: inline-block; font-size: 11.5px; padding: 3px 9px; border-radius: 20px; font-weight: 650; }
+  .pill.READY       { background: #eef0f6; color: var(--ink-3); }
+  .pill.IN_PROGRESS { background: var(--green-soft); color: var(--green); }
+  .pill.SOLD        { background: var(--blue-soft); color: var(--blue); }
+  .pill.FAILED      { background: var(--red-soft); color: var(--red); }
+  .empty { padding: 34px 18px; text-align: center; color: var(--ink-3); font-size: 13.5px; }
+
+  .links { display: flex; gap: 8px; padding: 13px 18px; flex-wrap: wrap; }
+  .links a {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 13px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    text-decoration: none;
+    color: var(--ink-2);
+    font-size: 13px;
+    font-weight: 600;
+    background: #fff;
+  }
+  .links a:hover { border-color: #b9ccfa; color: var(--blue); }
+  .links a.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .links a.primary:hover { background: var(--blue-dark); color: #fff; }
+
+  /* ── 로그 ─────────────────────────────────────────────── */
+  #log {
+    background: #14161f;
+    color: #cfd4e4;
+    padding: 14px 18px;
+    font-size: 12px;
+    line-height: 1.75;
+    max-height: 260px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  #log .t { color: #626a85; }
+  #log .ok { color: #64e0a3; }
+  #log .no { color: #ff9d95; }
+  #log .warn { color: #ffcd71; }
+  #log .dim { color: #838aa3; }
+  #log:empty::after { content: '아직 아무 일도 없습니다.'; color: #626a85; }
+
+  /* ── 부하 테스트 탭 ───────────────────────────────────── */
+  .scen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .scen {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .scen:hover { border-color: #b9ccfa; }
+  .scen.on { border-color: var(--blue); box-shadow: 0 2px 14px rgba(47,107,237,.12); }
+  .scen .tag { font-size: 11px; font-weight: 700; color: var(--blue); letter-spacing: .5px; }
+  .scen h3 { font-size: 15px; font-weight: 700; margin: 4px 0 8px; }
+  .scen dl { font-size: 12.5px; color: var(--ink-2); line-height: 1.7; }
+  .scen dt { display: inline; font-weight: 650; color: var(--ink-3); }
+  .scen dd { display: inline; }
+  .scen dd::after { content: ''; display: block; }
+
+  .cmd {
+    background: #14161f;
+    color: #d8dce8;
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-size: 13.5px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .cmd .text { flex: 1; word-break: break-all; }
+  .cmd .text .flag { color: #7fb3ff; }
+  .cmd button {
+    background: #2c3040; color: #cfd4e4; border: 0;
+    padding: 8px 15px; border-radius: 8px; font-size: 13px; font-weight: 650;
+    cursor: pointer; font-family: inherit; flex-shrink: 0;
+  }
+  .cmd button:hover { background: #3a3f54; }
+  .cmd button.copied { background: var(--green); color: #fff; }
+
+  .answer {
+    background: var(--amber-soft);
+    border: 1px solid #f2ddb0;
+    border-radius: 10px;
+    padding: 12px 15px;
+    font-size: 13px;
+    color: #6b4700;
+    margin-top: 14px;
+    line-height: 1.65;
+  }
+  .answer b { font-weight: 700; }
+
+  .ladder { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+  /* 실행 진행 */
+  .runbar { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #c5cad8; flex-shrink: 0; }
+  .dot.on { background: var(--green); animation: pulse 1.4s infinite; }
+  .dot.err { background: var(--red); }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+  .runbar .state { font-weight: 650; font-size: 14px; }
+  .runbar .elapsed { margin-left: auto; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  .steps { display: flex; gap: 4px; padding: 0 18px 14px; }
+  .steps .s {
+    flex: 1; height: 5px; border-radius: 3px; background: #e8ebf3;
+  }
+  .steps .s.done { background: var(--green); }
+  .steps .s.now  { background: var(--blue); animation: pulse 1.4s infinite; }
+
+  .offline {
+    background: var(--amber-soft); border: 1px solid #f2ddb0; border-radius: 10px;
+    padding: 13px 16px; font-size: 13px; color: #6b4700; line-height: 1.7;
+  }
+  .offline code { background: rgba(0,0,0,.06); padding: 2px 6px; border-radius: 5px; }
+
+  .res-table { max-height: 320px; overflow: auto; }
+  .res-table th { position: sticky; top: 0; z-index: 1; }
+  .res-table td, .res-table th { padding: 8px 12px; font-size: 12.5px; white-space: nowrap; }
+  .note-sm { font-size: 12.5px; color: var(--ink-3); margin-top: 10px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Up<span>Bid</span> 개발 콘솔</div>
+  <div class="tabs">
+    <button class="tab on" data-page="demo">화면 확인</button>
+    <button class="tab" data-page="perf">부하 테스트</button>
+  </div>
+  <div class="room-chip" id="room-chip">
+    <span>경매방</span><span class="code" id="room-code">아직 없음</span>
+  </div>
+</header>
+
+<!-- ══════════════ 화면 확인 ══════════════ -->
+<div class="page on" id="page-demo">
+  <div class="lead">
+    <div>
+      <div class="big" id="lead-title">1번부터 순서대로 누르면 됩니다</div>
+      <div class="sub" id="lead-sub">방을 만들고 참여자를 붙인 뒤 입찰을 흘리면, 실제 경매방 화면이 살아 움직입니다.</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="act sub" style="width:auto;padding:9px 16px" id="btn-reset">처음부터</button>
+  </div>
+
+  <div class="cols">
+    <div>
+      <!-- 1 -->
+      <div class="step now open" id="step-1">
+        <div class="step-head">
+          <div class="num">1</div>
+          <div>
+            <div class="step-title">경매방과 물품 만들기</div>
+            <div class="step-note" id="note-1">판매자 계정과 방, 물품을 한 번에 만듭니다</div>
+          </div>
+          <div class="chev">▾</div>
+        </div>
+        <div class="step-body">
+          <div class="why">
+            판매자 하나(<b>seller</b>)로 로그인해 방을 만들고 물품을 답니다.
+            <b>이미 만든 방이 있으면</b> 아래에 공유 코드를 붙여 넣어 이어서 쓰면 됩니다.
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label>물품 수</label>
+              <input id="f-items" type="number" value="4" min="1" max="50">
+            </div>
+            <div class="field">
+              <label>시작가 <span class="tip">원</span></label>
+              <input id="f-price" type="number" value="10000" min="1" step="1000">
+            </div>
+            <div class="field">
+              <label>입찰 단위 <span class="tip">이 값씩 오릅니다</span></label>
+              <input id="f-unit" type="number" value="1000" min="1" step="1000">
+            </div>
+            <div class="field">
+              <label>Soft Close <span class="tip">초</span></label>
+              <input id="f-soft" type="number" value="60" min="60" max="3600" step="60">
+            </div>
+          </div>
+          <div class="note-sm" style="margin:-2px 0 12px">
+            Soft Close는 <b>마감 N초 전에 입찰이 들어오면 N초 연장</b>하는 규칙입니다. 60초가 하한입니다.
+          </div>
+          <button class="act" id="btn-create">경매방 만들기</button>
+
+          <div class="or">또는</div>
+          <div class="field">
+            <label>이미 만든 방의 공유 코드</label>
+            <input id="f-share" placeholder="예: gZTp9Wa0YwIcPuOl">
+          </div>
+          <button class="act sub" id="btn-attach">그 방에 이어서 쓰기</button>
+        </div>
+      </div>
+
+      <!-- 2 -->
+      <div class="step locked" id="step-2">
+        <div class="step-head">
+          <div class="num">2</div>
+          <div>
+            <div class="step-title">참여자 만들기</div>
+            <div class="step-note" id="note-2">입찰하려면 약관 동의가 된 회원이 필요합니다</div>
+          </div>
+          <div class="chev">▾</div>
+        </div>
+        <div class="step-body">
+          <div class="why">
+            회원을 N명 만들고 각자 이 방 약관에 동의시킵니다. 이 행이 없으면 입찰이
+            전부 <b>TERMS_NOT_AGREED</b>로 거절됩니다. <b>4번에서 쓸 입찰자 수보다 많아야 합니다.</b>
+          </div>
+          <div class="field">
+            <label>인원 수</label>
+            <div class="chips" style="margin-bottom:8px">
+              <button class="chip" data-target="f-buyers" data-value="5">5명</button>
+              <button class="chip on" data-target="f-buyers" data-value="10">10명</button>
+              <button class="chip" data-target="f-buyers" data-value="30">30명</button>
+            </div>
+            <input id="f-buyers" type="number" value="10" min="1" max="200">
+          </div>
+          <button class="act" id="btn-buyers">참여자 만들고 약관 동의</button>
+          <div class="hintline">한 명씩 순서대로 처리해서 30명이면 10초쯤 걸립니다</div>
+        </div>
+      </div>
+
+      <!-- 3 -->
+      <div class="step locked" id="step-3">
+        <div class="step-head">
+          <div class="num">3</div>
+          <div>
+            <div class="step-title">물품 시작하기</div>
+            <div class="step-note" id="note-3">시작해야 입찰을 받습니다</div>
+          </div>
+          <div class="chev">▾</div>
+        </div>
+        <div class="step-body">
+          <div class="why">
+            물품을 진행중으로 바꿉니다. 첫 물품이 시작되면 방도 <b>LIVE</b>가 됩니다.
+            <b>한 방에서 동시에 3개까지</b>만 진행할 수 있습니다(서비스 규칙).
+          </div>
+          <div class="field">
+            <label>무엇을 시작할까요</label>
+            <select id="f-start-target"><option value="all">시작 전인 물품 전부</option></select>
+          </div>
+          <div class="field">
+            <label>경매 시간 <span class="tip">분</span></label>
+            <div class="chips" style="margin-bottom:8px">
+              <button class="chip" data-target="f-duration" data-value="1">1분 · 마감까지 보기</button>
+              <button class="chip on" data-target="f-duration" data-value="30">30분 · 여유있게</button>
+            </div>
+            <input id="f-duration" type="number" value="30" min="1" max="720">
+          </div>
+          <div class="note-sm" style="margin:-4px 0 12px">
+            <b>1분으로 두면 Soft Close 연장과 마감 연출까지</b> 눈으로 볼 수 있습니다.
+          </div>
+          <button class="act" id="btn-start">시작</button>
+        </div>
+      </div>
+
+      <!-- 4 -->
+      <div class="step locked" id="step-4">
+        <div class="step-head">
+          <div class="num">4</div>
+          <div>
+            <div class="step-title">입찰 흘리기</div>
+            <div class="step-note" id="note-4">화면이 실시간으로 움직입니다</div>
+          </div>
+          <div class="chev">▾</div>
+        </div>
+        <div class="step-body">
+          <div class="why">
+            참여자가 번갈아 입찰합니다. 금액은 현재가를 읽어서 <b>단위만큼 올려</b> 보냅니다.
+            경매방 화면을 다른 탭에 띄워 놓고 시작하면 이벤트 피드와 리더보드가 움직이는 게 보입니다.
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label>입찰자 수 <span class="tip">돌아가며</span></label>
+              <input id="f-bidders" type="number" value="5" min="1">
+            </div>
+            <div class="field">
+              <label>간격 <span class="tip">초</span></label>
+              <input id="f-interval" type="number" value="2" min="0.2" step="0.1">
+            </div>
+          </div>
+          <div class="field">
+            <label>어느 물품에</label>
+            <select id="f-bid-target"><option value="random">진행중인 것 아무거나</option></select>
+          </div>
+          <div class="btn-row">
+            <button class="act" id="btn-bid">입찰 시작</button>
+            <button class="act stop" id="btn-bid-stop" disabled>정지</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5 -->
+      <div class="step locked" id="step-5">
+        <div class="step-head">
+          <div class="num">5</div>
+          <div>
+            <div class="step-title">동시 입찰 검증</div>
+            <div class="step-note" id="note-5">여러 명이 같은 순간에 입찰하면 어떻게 되나</div>
+          </div>
+          <div class="chev">▾</div>
+        </div>
+        <div class="step-body">
+          <div class="why">
+            <b>4번의 입찰 흘리기는 진짜 동시가 아닙니다.</b> 브라우저는 세션 쿠키를 하나만 들 수 있어서
+            계정을 갈아타며 <b>순차로</b> 흉내 낸 것이라 락 경합이 아예 안 생깁니다.
+            여기서는 콘솔 서버가 사람마다 접속을 따로 만들고 <b>정확히 같은 순간에</b> 쏩니다.
+            부하가 아니라 정합성을 보는 것이라 인원이 적어도 됩니다.
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label>동시에 쏠 인원</label>
+              <input id="f-cc-bidders" type="number" value="10" min="2" max="50">
+            </div>
+            <div class="field">
+              <label>대상 물품</label>
+              <select id="f-cc-target"></select>
+            </div>
+          </div>
+          <div class="field">
+            <label>금액</label>
+            <div class="chips">
+              <button class="chip on" data-cc="same">전원 같은 금액</button>
+              <button class="chip" data-cc="ladder">서로 다른 금액</button>
+            </div>
+            <div class="note-sm" style="margin-top:6px">
+              <b>같은 금액</b>이면 딱 한 명만 접수돼야 정상입니다. <b>다른 금액</b>이면 가장 높은
+              사람이 1위가 되고 현재가가 그 값이어야 합니다.
+            </div>
+          </div>
+          <button class="act" id="btn-cc">동시에 쏘기</button>
+          <div id="cc-result" style="margin-top:14px"></div>
+        </div>
+      </div>
+
+      <!-- 6 -->
+      <div class="step locked" id="step-6">
+        <div class="step-head">
+          <div class="num">6</div>
+          <div>
+            <div class="step-title">방 종료 <span style="font-weight:400;color:var(--ink-3);font-size:12.5px">(선택)</span></div>
+            <div class="step-note">종료 화면과 낙찰 결과를 보고 싶을 때</div>
+          </div>
+          <div class="chev">▾</div>
+        </div>
+        <div class="step-body">
+          <div class="why">진행중인 물품이 있으면 함께 마감됩니다. <b>되돌릴 수 없습니다.</b></div>
+          <button class="act stop" id="btn-close">방 종료</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="links" id="links">
+          <a href="#" id="link-room" class="primary">경매방 화면 열기 ↗</a>
+          <a href="http://localhost:15173/seller/rooms" target="_blank">판매자 화면 ↗</a>
+          <a href="/sse-test.html" target="_blank">SSE 이벤트 ↗</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="stats">
+          <div class="stat"><div class="k">물품</div><div class="v dim" id="s-items">-</div></div>
+          <div class="stat"><div class="k">진행중</div><div class="v dim" id="s-live">-</div></div>
+          <div class="stat"><div class="k">참여자</div><div class="v dim" id="s-buyers">-</div></div>
+          <div class="stat"><div class="k">입찰</div><div class="v dim" id="s-bids">-</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">물품 현황 <span class="muted" id="tick">2초마다 갱신</span></div>
+        <table>
+          <thead><tr><th>물품</th><th>상태</th><th class="money">현재가</th><th>1위</th><th>마감</th></tr></thead>
+          <tbody id="tbody"><tr><td colspan="5" class="empty">1번에서 경매방을 먼저 만들어 주세요</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-head">기록</div>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ 부하 테스트 ══════════════ -->
+<div class="page" id="page-perf">
+  <div class="lead">
+    <div>
+      <div class="big">재고 싶은 것을 고르면 명령을 만들어 드립니다</div>
+      <div class="sub">복사해서 터미널에 붙여 넣으면 됩니다. 컨테이너 기동부터 결과 저장까지 한 번에 끝납니다.</div>
+    </div>
+  </div>
+
+  <div class="scen-grid" id="scens"></div>
+
+  <div class="cols">
+    <div>
+      <div class="card">
+        <div class="card-head">값 조절</div>
+        <div style="padding:16px 18px">
+          <div class="field" id="knob-vus">
+            <label>동시 사용자 수 <span class="tip">계단을 하나씩 올려 갑니다</span></label>
+            <div class="ladder" id="ladder"></div>
+            <input id="p-vus" type="number" value="40" min="1" style="margin-top:8px">
+          </div>
+          <div class="field" id="knob-items">
+            <label>물품 수 <span class="tip">락이 겹치는지를 가릅니다</span></label>
+            <input id="p-items" type="number" value="1" min="1" max="50">
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label>DB 커넥션 풀 <span class="tip">기본 10</span></label>
+              <input id="p-pool" type="number" value="10" min="1">
+            </div>
+            <div class="field">
+              <label>배경 SSE 접속</label>
+              <input id="p-sse" type="number" value="0" min="0">
+            </div>
+          </div>
+          <div class="field">
+            <label>측정할 사람 <span class="tip">결과에 남습니다</span></label>
+            <input id="p-who" placeholder="이름">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-head">터미널에 붙여 넣으세요 <span class="muted"><code>backend/</code> 에서</span></div>
+        <div style="padding:16px 18px">
+          <div class="cmd">
+            <div class="text mono" id="cmd-text"></div>
+            <button id="btn-copy">복사</button>
+          </div>
+          <div class="answer" id="cmd-answer"></div>
+
+          <div id="runner-off" class="offline" style="margin-top:14px; display:none">
+            <b>실행기가 꺼져 있습니다.</b> 지금은 위 명령을 복사해서 터미널에 붙여 넣어야 합니다.<br><br>
+            버튼으로 돌리려면 Finder 에서 아래 파일을 <b>더블클릭</b>하세요. 한 번 켜 두면
+            그 뒤로는 이 화면에서 [실행]만 누르면 됩니다. (터미널 창이 뜨지만 아무것도 안 쳐도 됩니다.)
+            <div style="margin-top:8px"><code>backend/perf/부하테스트-콘솔 켜기.command</code></div>
+            <div style="margin-top:6px; font-size:12px">
+              켜지면 이 안내가 사라지고 [실행] 버튼이 나타납니다. 8초마다 확인합니다.
+            </div>
+          </div>
+
+          <div id="runner-on" style="margin-top:14px; display:none">
+            <div class="btn-row">
+              <button class="act" id="btn-run">이 조건으로 실행</button>
+              <button class="act stop" id="btn-run-stop" disabled>정지</button>
+            </div>
+            <div class="hintline">컨테이너 기동부터 결과 저장까지 4~5분 걸립니다</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="run-card" style="display:none">
+        <div class="runbar">
+          <span class="dot" id="run-dot"></span>
+          <span class="state" id="run-state">준비</span>
+          <span class="elapsed" id="run-elapsed"></span>
+        </div>
+        <div class="steps" id="run-steps"></div>
+        <div class="links" id="run-links" style="padding-top:0"></div>
+        <div id="run-log" style="background:#14161f;color:#cfd4e4;padding:14px 18px;font-size:12px;line-height:1.7;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          쌓인 결과
+          <span class="muted" id="res-note">results/index.csv · 실행이 끝날 때마다 한 줄씩</span>
+        </div>
+        <div class="res-table">
+          <table><thead id="res-head"></thead><tbody id="res-body">
+            <tr><td class="empty">아직 실행한 측정이 없습니다</td></tr>
+          </tbody></table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">읽는 법</div>
+        <div style="padding:4px 18px 16px">
+          <div class="note-sm">
+            <b>판정 규칙은 하나입니다.</b> 부하를 두 배 올렸는데 처리량이 <b>1.2배도 안 오르는 첫 줄</b>이
+            한계입니다. 단, 그 줄에서 k6 CPU가 100%에 가까우면 부하 발생기가 먼저 막힌 것이라 보류합니다.
+          </div>
+          <table style="margin-top:12px">
+            <thead><tr><th>결과에서 보이는 것</th><th>범인</th></tr></thead>
+            <tbody>
+              <tr><td><code>hikari_pending_max</code> &gt; 0</td><td>커넥션 부족이거나, 락을 기다리며 커넥션을 붙잡음</td></tr>
+              <tr><td><code>tomcat_busy_max</code>가 200 근처</td><td>톰캣 스레드 고갈</td></tr>
+              <tr><td>힙이 GC 후에도 안 내려감</td><td>메모리</td></tr>
+              <tr><td><b>넷 다 여유로운데 안 오름</b></td><td><b>락 대기.</b> 자원은 노는데 한 줄로 선 상태</td></tr>
+            </tbody>
+          </table>
+          <div class="note-sm" style="margin-top:12px">
+            자세한 건 <code>backend/perf/README.md</code> 를 봅니다.
+            결과는 <code>backend/perf/results/{실행이름}/</code> 에 폴더로 쌓이고,
+            위 표는 그중 <code>index.csv</code> 를 읽은 것입니다.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 브라우저가 못 하는 것 ────────────────────────────────────────────
+// 이 콘솔의 "여러 명"은 dev-login 으로 계정을 갈아타며 **순차로** 흉내 낸 것이다.
+// 브라우저는 오리진당 세션 쿠키를 하나만 들고 있고 SESSION 이 httpOnly 라 JS 가 직접
+// 붙일 수 없기 때문이다. 그래서 화면 연출은 똑같이 보이지만 진짜 동시 입찰(락 경합)은
+// 아니다. SSE 동시 접속도 HTTP/1.1 에서 브라우저가 오리진당 6개로 막는다.
+//
+// 그건 부하 테스트 탭이 만들어 주는 k6 명령이 맡는다.
+// ────────────────────────────────────────────────────────────────
+const API = '/api/v1'
+const el = (id) => document.getElementById(id)
+
+const room = { shareCode: null, roomId: null, unit: null }
+let items = []
+let buyerCount = 0
+let bidCount = 0
+let bidTimer = null
+let bidderTurn = 0
+
+// ── 로그 ────────────────────────────────────────────────────────────
+function log(text, kind = '') {
+  const time = new Date().toTimeString().slice(0, 8)
+  const line = document.createElement('div')
+  line.innerHTML = `<span class="t">${time}</span>  <span class="${kind}"></span>`
+  line.lastChild.textContent = text
+  el('log').appendChild(line)
+  el('log').scrollTop = el('log').scrollHeight
+}
+
+// ── API ─────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const res = await fetch(API + path, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+
+  let json = null
+  try { json = await res.json() } catch (e) { /* 본문 없는 응답 */ }
+
+  if (!res.ok || (json && json.success === false)) {
+    const error = new Error((json && json.message) || `HTTP ${res.status}`)
+    error.code = json && json.code
+    throw error
+  }
+  return json ? json.data : null
+}
+
+const loginAs = (key) => api('POST', `/auth/dev-login?key=${encodeURIComponent(key)}`)
+
+// ── 스텝 상태 ────────────────────────────────────────────────────────
+// 잠긴 단계는 열리지 않는다. "지금 무엇을 할 차례인지"가 화면에 하나만 보이게 한다.
+function setStep(n, state, note) {
+  const step = el(`step-${n}`)
+  step.classList.remove('now', 'done', 'locked')
+  step.classList.add(state)
+
+  if (state === 'now') step.classList.add('open')
+  if (state === 'done') step.classList.remove('open')
+  if (state === 'locked') step.classList.remove('open')
+
+  if (note) el(`note-${n}`) && (el(`note-${n}`).textContent = note)
+}
+
+function lead(title, sub) {
+  el('lead-title').textContent = title
+  el('lead-sub').textContent = sub
+}
+
+for (const step of document.querySelectorAll('.step')) {
+  step.querySelector('.step-head').onclick = () => {
+    if (step.classList.contains('locked')) return
+    step.classList.toggle('open')
+  }
+}
+
+// 숫자 칩 → 입력칸
+for (const chip of document.querySelectorAll('.chip')) {
+  chip.onclick = () => {
+    el(chip.dataset.target).value = chip.dataset.value
+    for (const sibling of chip.parentElement.children) sibling.classList.remove('on')
+    chip.classList.add('on')
+    if (chip.dataset.target === 'p-vus') buildCommand()
+  }
+}
+
+// 탭
+for (const tab of document.querySelectorAll('.tab')) {
+  tab.onclick = () => {
+    for (const t of document.querySelectorAll('.tab')) t.classList.remove('on')
+    for (const p of document.querySelectorAll('.page')) p.classList.remove('on')
+    tab.classList.add('on')
+    el(`page-${tab.dataset.page}`).classList.add('on')
+  }
+}
+
+// ── 방이 생겼을 때 ───────────────────────────────────────────────────
+function onRoomReady(shareCode, roomId, unit) {
+  room.shareCode = shareCode
+  room.roomId = roomId
+  room.unit = unit
+
+  el('room-code').textContent = shareCode
+  el('room-chip').classList.add('live')
+  el('link-room').href = `http://localhost:15173/rooms/${shareCode}`
+  el('link-room').target = '_blank'
+
+  setStep(1, 'done', `${shareCode} · 입찰 단위 ${unit.toLocaleString()}원`)
+  setStep(2, 'now')
+  setStep(3, 'locked')
+  setStep(4, 'locked')
+  setStep(5, 'locked')
+  setStep(6, 'locked')
+  lead('2번 — 참여자를 만들 차례입니다', '약관에 동의한 회원이 없으면 입찰이 전부 거절됩니다.')
+
+  refresh()
+}
+
+// ── 1. 방 만들기 ─────────────────────────────────────────────────────
+el('btn-create').onclick = async () => {
+  const button = el('btn-create')
+  button.disabled = true
+  button.textContent = '만드는 중...'
+
+  try {
+    const count = Number(el('f-items').value)
+    const price = Number(el('f-price').value)
+    const unit = Number(el('f-unit').value)
+    const soft = Number(el('f-soft').value)
+
+    await loginAs('seller')
+
+    try {
+      await api('POST', '/seller-profiles', { storeName: '개발용 상점' })
+    } catch (e) { /* 이미 있으면 그대로 쓴다 */ }
+
+    const created = await api('POST', '/auction-rooms', {
+      name: '개발용 경매방',
+      bidIncrement: unit,
+      softCloseTriggerSeconds: soft,
+      softCloseExtendSeconds: soft,
+    })
+    log(`경매방을 만들었습니다 · ${created.shareCode}`, 'ok')
+
+    const productIds = []
+    for (let i = 1; i <= count; i++) {
+      const product = await api('POST', '/products', {
+        name: `개발용 상품-${i}`, description: '콘솔에서 만든 상품',
+      })
+      productIds.push(product.productId)
+    }
+
+    const bulk = await api('POST', `/auction-rooms/${created.auctionRoomId}/auction-items/bulk`, {
+      items: productIds.map((productId) => ({ productId, startingPrice: price })),
+    })
+    log(`물품 ${bulk.added.length}개를 담았습니다`, 'ok')
+
+    onRoomReady(created.shareCode, created.auctionRoomId, unit)
+  } catch (e) {
+    log(`경매방 만들기 실패 — ${e.message}`, 'no')
+  } finally {
+    button.disabled = false
+    button.textContent = '경매방 만들기'
+  }
+}
+
+el('btn-attach').onclick = async () => {
+  const shareCode = el('f-share').value.trim()
+  if (!shareCode) { log('공유 코드를 입력해 주세요', 'warn'); return }
+
+  try {
+    await loginAs('seller')
+    const found = await api('GET', `/auction-rooms/share/${shareCode}`)
+    log(`${found.name} 에 이어 붙었습니다`, 'ok')
+    onRoomReady(found.shareCode, found.auctionRoomId, found.bidIncrement)
+  } catch (e) {
+    log(`이어 붙기 실패 — ${e.message}`, 'no')
+  }
+}
+
+// ── 2. 참여자 ────────────────────────────────────────────────────────
+el('btn-buyers').onclick = async () => {
+  const button = el('btn-buyers')
+  const count = Number(el('f-buyers').value)
+  button.disabled = true
+
+  let done = 0
+  try {
+    for (let i = 1; i <= count; i++) {
+      button.textContent = `${i} / ${count} 명...`
+      await loginAs(`bidder-${i}`)
+      await api('POST', `/auction-rooms/share/${room.shareCode}/agreement`)
+      done++
+    }
+    buyerCount = Math.max(buyerCount, done)
+    log(`참여자 ${done}명이 약관에 동의했습니다`, 'ok')
+
+    setStep(2, 'done', `${buyerCount}명 준비됨`)
+    setStep(3, 'now')
+    lead('3번 — 물품을 시작할 차례입니다', '시작해야 입찰을 받습니다. 첫 물품이 시작되면 방이 LIVE가 됩니다.')
+  } catch (e) {
+    log(`참여자 만들기 실패 (${done}명까지 됨) — ${e.message}`, 'no')
+  } finally {
+    await loginAs('seller')   // 판매자 조작을 이어 하려면 세션을 되돌려야 한다
+    button.disabled = false
+    button.textContent = '참여자 만들고 약관 동의'
+    refresh()
+  }
+}
+
+// ── 3. 물품 시작 ─────────────────────────────────────────────────────
+el('btn-start').onclick = async () => {
+  const button = el('btn-start')
+  button.disabled = true
+
+  try {
+    await loginAs('seller')
+
+    const choice = el('f-start-target').value
+    const targets = choice === 'all'
+      ? items.filter((i) => i.status === 'READY').map((i) => i.auctionItemId)
+      : [Number(choice)]
+
+    if (targets.length === 0) { log('시작할 물품이 없습니다', 'warn'); return }
+
+    const minutes = Number(el('f-duration').value)
+    let started = 0
+
+    for (const itemId of targets) {
+      try {
+        await api('POST', `/auction-items/${itemId}/start`, { durationMinutes: minutes })
+        started++
+      } catch (e) {
+        // 방당 동시 3개 제한에 걸리는 게 대부분이다. 서비스 규칙이라 정상이다.
+        log(`물품 ${itemId} 시작 안 됨 — ${e.message}`, 'warn')
+      }
+    }
+
+    if (started > 0) {
+      log(`물품 ${started}개를 시작했습니다 (${minutes}분)`, 'ok')
+      setStep(3, 'done', `${started}개 진행중 · ${minutes}분`)
+      setStep(4, 'now')
+      setStep(5, 'now')
+      setStep(6, 'now')
+      el('step-5').classList.remove('open')
+      el('step-6').classList.remove('open')
+      lead('4번 — 이제 입찰을 흘려 보세요', '경매방 화면을 다른 탭에 띄워 놓고 시작하면 실시간으로 움직입니다.')
+    }
+    await refresh()
+  } finally {
+    button.disabled = false
+  }
+}
+
+// ── 4. 입찰 흘리기 ───────────────────────────────────────────────────
+el('btn-bid').onclick = () => {
+  if (bidTimer) return
+
+  const bidders = Number(el('f-bidders').value)
+  if (bidders > buyerCount && buyerCount > 0) {
+    log(`입찰자 ${bidders}명인데 참여자는 ${buyerCount}명입니다. 2번에서 더 만들어 주세요`, 'warn')
+  }
+
+  el('btn-bid').disabled = true
+  el('btn-bid-stop').disabled = false
+  bidderTurn = 0
+
+  const ms = Math.max(200, Number(el('f-interval').value) * 1000)
+  bidTimer = setInterval(placeOneBid, ms)
+
+  log(`입찰을 흘립니다 · ${bidders}명이 ${el('f-interval').value}초 간격으로`, 'ok')
+  placeOneBid()
+}
+
+el('btn-bid-stop').onclick = () => stopBidding('정지했습니다')
+
+function stopBidding(reason) {
+  if (!bidTimer) return
+  clearInterval(bidTimer)
+  bidTimer = null
+  el('btn-bid').disabled = false
+  el('btn-bid-stop').disabled = true
+  log(`입찰 흘리기 ${reason}`, 'warn')
+}
+
+async function placeOneBid() {
+  const live = items.filter((i) => i.status === 'IN_PROGRESS')
+  if (live.length === 0) { stopBidding('중단 — 진행중인 물품이 없습니다'); return }
+
+  const choice = el('f-bid-target').value
+  const item = choice === 'random'
+    ? live[Math.floor(Math.random() * live.length)]
+    : live.find((i) => i.auctionItemId === Number(choice))
+
+  if (!item) { stopBidding('중단 — 고른 물품이 진행중이 아닙니다'); return }
+
+  // 같은 사람이 연달아 넣으면 ALREADY_TOP_BIDDER 로 거절되므로 돌려 가며 쓴다.
+  const bidders = Math.max(1, Number(el('f-bidders').value))
+  const bidder = (bidderTurn++ % bidders) + 1
+
+  // 첫 입찰은 시작가와 같아야 하고 그다음부터는 현재가 + 단위다.
+  // currentPrice 는 입찰이 없으면 시작가와 같으므로 리더보드가 비었는지로 가른다.
+  const amount = item.leaderboard.length === 0 ? item.currentPrice : item.currentPrice + room.unit
+
+  try {
+    await loginAs(`bidder-${bidder}`)
+    await api('POST', `/auction-items/${item.auctionItemId}/bids`, { amount })
+    bidCount++
+    log(`bidder-${bidder} → ${item.productName} ${amount.toLocaleString()}원`, 'ok')
+  } catch (e) {
+    if (e.code === 7008) {
+      log(`bidder-${bidder} 는 약관 동의가 없습니다. 2번을 ${bidders}명 이상으로 다시 돌려 주세요`, 'no')
+      stopBidding('중단 — 참여자가 모자랍니다')
+      return
+    }
+    log(`bidder-${bidder} 거절 — ${e.message}`, 'dim')
+  }
+
+  refresh()
+}
+
+
+// ── 5. 동시 입찰 검증 ────────────────────────────────────────────────
+// 브라우저가 못 하는 일이라 콘솔 서버에 맡긴다. 서버가 사람마다 접속을 따로 만들고
+// 스레드 배리어로 같은 순간에 쏜 뒤, 결과가 규칙에 맞는지 넷을 확인해 준다.
+let ccSameAmount = true
+
+for (const chip of document.querySelectorAll('[data-cc]')) {
+  chip.onclick = () => {
+    ccSameAmount = chip.dataset.cc === 'same'
+    for (const c of chip.parentElement.children) c.classList.remove('on')
+    chip.classList.add('on')
+  }
+}
+
+el('btn-cc').onclick = async () => {
+  const button = el('btn-cc')
+  const itemId = Number(el('f-cc-target').value)
+
+  if (!itemId) { alert('진행중인 물품을 먼저 고르세요') ; return }
+  if (!runnerUp) {
+    alert('콘솔 서버가 꺼져 있습니다. backend/perf/부하테스트-콘솔 켜기.command 를 더블클릭하세요.')
+    return
+  }
+
+  button.disabled = true
+  button.textContent = '쏘는 중...'
+  el('cc-result').innerHTML = ''
+
+  try {
+    const res = await fetch(`${RUNNER}/concurrent-bid`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        shareCode: room.shareCode,
+        itemId,
+        bidders: Number(el('f-cc-bidders').value),
+        sameAmount: ccSameAmount,
+        unit: room.unit,
+      }),
+    })
+    const r = await res.json()
+
+    if (r.error) { el('cc-result').innerHTML = `<div class="offline">${r.error}</div>`; return }
+
+    const outcomes = Object.entries(r.outcomes)
+      .map(([k, v]) => `<tr><td>${k}</td><td class="money">${v}건</td></tr>`).join('')
+
+    const checks = r.checks.map((c) =>
+      `<tr><td>${c.ok ? '✅' : '❌'} ${c.name}</td></tr>`).join('')
+
+    const fastest = r.detail.slice(0, 5).map((d) =>
+      `<tr><td>${d.who}</td><td class="money">${d.amount.toLocaleString()}원</td>` +
+      `<td>${d.status}${d.code ? ' · ' + d.code : ''}</td><td class="money">${d.ms}ms</td></tr>`).join('')
+
+    el('cc-result').innerHTML = `
+      <div class="${r.allOk ? 'answer' : 'offline'}" style="margin-bottom:12px">
+        <b>${r.allOk ? '규칙대로 동작했습니다' : '규칙이 깨졌습니다 — 이건 발견입니다'}</b><br>
+        ${r.bidders}명이 ${r.mode} ${r.baseAmount.toLocaleString()}원부터 쐈고,
+        <b>${r.accepted}명이 접수</b>됐습니다. 최종 현재가 ${(r.finalPrice || 0).toLocaleString()}원,
+        1위 ${r.finalLeader || '-'}.
+      </div>
+      <table><tbody>${checks}</tbody></table>
+      <div style="height:10px"></div>
+      <table><thead><tr><th>결과</th><th class="money">건수</th></tr></thead>
+             <tbody>${outcomes}</tbody></table>
+      <div style="height:10px"></div>
+      <table><thead><tr><th>가장 빨리 끝난 다섯</th><th class="money">금액</th><th>응답</th><th class="money">시간</th></tr></thead>
+             <tbody>${fastest}</tbody></table>`
+
+    log(`동시 입찰 ${r.bidders}명 → 접수 ${r.accepted}건, 검증 ${r.allOk ? '통과' : '실패'}`,
+        r.allOk ? 'ok' : 'no')
+    refresh()
+  } catch (e) {
+    el('cc-result').innerHTML = `<div class="offline">콘솔 서버에 닿지 못했습니다 — ${e.message}</div>`
+  } finally {
+    button.disabled = false
+    button.textContent = '동시에 쏘기'
+  }
+}
+
+// ── 6. 방 종료 ───────────────────────────────────────────────────────
+el('btn-close').onclick = async () => {
+  try {
+    stopBidding('중단 — 방을 종료합니다')
+    await loginAs('seller')
+    await api('POST', `/auction-rooms/${room.roomId}/close`)
+    log('방을 종료했습니다', 'ok')
+    setStep(6, 'done', '종료됨')
+    lead('방이 종료됐습니다', '경매방 화면에서 낙찰 결과를 확인할 수 있습니다.')
+    refresh()
+  } catch (e) {
+    log(`방 종료 실패 — ${e.message}`, 'no')
+  }
+}
+
+el('btn-reset').onclick = () => {
+  stopBidding('중단')
+  room.shareCode = null; room.roomId = null
+  items = []; buyerCount = 0; bidCount = 0
+  el('room-code').textContent = '아직 없음'
+  el('room-chip').classList.remove('live')
+  setStep(1, 'now'); el('step-1').classList.add('open')
+  for (const n of [2, 3, 4, 5, 6]) setStep(n, 'locked')
+  el('note-1').textContent = '판매자 계정과 방, 물품을 한 번에 만듭니다'
+  el('tbody').innerHTML = '<tr><td colspan="5" class="empty">1번에서 경매방을 먼저 만들어 주세요</td></tr>'
+  for (const id of ['s-items', 's-live', 's-buyers', 's-bids']) {
+    el(id).textContent = '-'; el(id).classList.add('dim')
+  }
+  lead('1번부터 순서대로 누르면 됩니다', '방을 만들고 참여자를 붙인 뒤 입찰을 흘리면, 실제 경매방 화면이 살아 움직입니다.')
+  log('처음부터 다시 시작합니다', 'dim')
+}
+
+// ── 현황 ─────────────────────────────────────────────────────────────
+async function refresh() {
+  if (!room.shareCode) return
+
+  try {
+    items = await api('GET', `/auction-rooms/share/${room.shareCode}/auction-items`)
+  } catch (e) { return }
+
+  const live = items.filter((i) => i.status === 'IN_PROGRESS').length
+  setStat('s-items', items.length)
+  setStat('s-live', live)
+  setStat('s-buyers', buyerCount)
+  setStat('s-bids', bidCount)
+
+  el('tbody').innerHTML = items.length === 0
+    ? '<tr><td colspan="5" class="empty">물품이 없습니다</td></tr>'
+    : items.map((item) => {
+        const top = item.leaderboard.length > 0 ? item.leaderboard[0].nickname : '<span style="color:var(--ink-3)">-</span>'
+        const endAt = item.endAt ? item.endAt.replace('T', ' ').slice(5, 16) : '<span style="color:var(--ink-3)">-</span>'
+        return `<tr>
+          <td>${item.productName}</td>
+          <td><span class="pill ${item.status}">${label(item.status)}</span></td>
+          <td class="money">${item.currentPrice.toLocaleString()}원</td>
+          <td>${top}</td>
+          <td>${endAt}</td>
+        </tr>`
+      }).join('')
+
+  fillSelects()
+}
+
+function setStat(id, value) {
+  el(id).textContent = value
+  el(id).classList.toggle('dim', !value)
+}
+
+const label = (status) => ({
+  READY: '시작 전', IN_PROGRESS: '진행 중', SOLD: '낙찰', FAILED: '유찰',
+}[status] || status)
+
+/** 물품이 바뀌면 선택 상자도 따라간다. 고르고 있던 값은 유지한다. */
+function fillSelects() {
+  for (const [id, first, value, filter] of [
+    ['f-start-target', '시작 전인 물품 전부', 'all', (i) => i.status === 'READY'],
+    ['f-bid-target', '진행중인 것 아무거나', 'random', (i) => i.status === 'IN_PROGRESS'],
+    ['f-cc-target', '진행중인 물품을 고르세요', '', (i) => i.status === 'IN_PROGRESS'],
+  ]) {
+    const select = el(id)
+    const keep = select.value
+    select.innerHTML = `<option value="${value}">${first}</option>` +
+      items.filter(filter).map((i) => `<option value="${i.auctionItemId}">${i.productName}</option>`).join('')
+    if ([...select.options].some((o) => o.value === keep)) select.value = keep
+  }
+}
+
+setInterval(refresh, 2000)
+
+// ══════════════ 부하 테스트 탭 ══════════════
+const SCENARIOS = [
+  { key: 's1', scenario: 1, tag: '시나리오 1', name: '한 물품에 몰기',
+    raise: '물품 1개에 입찰자를 올립니다',
+    breaks: '물품 행 락이 커밋까지 유지돼 한 줄로 섭니다',
+    watch: 'upbid_bid_lock_wait p95',
+    items: 1, sse: 0, vusKnob: true,
+    answer: '한 물품에 <b>몇 명까지 몰리면 처리량이 안 오르는지</b>를 봅니다. 자원 넷이 다 여유로운데 안 오르면 그게 락 직렬화입니다.' },
+  { key: 's2', scenario: 2, tag: '시나리오 2', name: '물품 분산 (1의 대조군)',
+    raise: '계단은 1과 같게 두고 물품만 20개로 흩습니다',
+    breaks: '락이 안 겹치는 대신 커넥션 풀이나 스레드가 마릅니다',
+    watch: 'hikaricp_connections_pending',
+    items: 20, sse: 0, vusKnob: true,
+    answer: '<b>1번과 나란히 놓고 봅니다.</b> 물품을 흩었더니 처리량이 오르면 범인은 락이고, 그대로면 락이 아니라 다른 데가 막힌 것입니다.' },
+  { key: 's3', scenario: 3, tag: '시나리오 3', name: 'SSE 동시 접속',
+    raise: '접속 수를 올립니다 (회원이 필요 없습니다)',
+    breaks: 'emitter가 힙에 쌓이고, heartbeat가 마감 예약과 스레드 풀을 나눠 씁니다',
+    watch: 'upbid_sse_connections, 힙, heartbeat p95',
+    items: 1, sse: 0, vusKnob: true,
+    answer: '<b>접속 몇 개까지 버티는지</b>와 접속당 메모리를 봅니다. 톰캣 스레드가 접속 수만큼 오르면 async가 안 걸린 것이고 그 자체가 발견입니다.' },
+  { key: 's4', scenario: 4, tag: '시나리오 4', name: '동시 마감',
+    raise: '같은 시각에 닫히는 물품 수를 올립니다',
+    breaks: '마감 예약이 스레드 풀을 공유하고, 마감도 같은 행 락을 잡습니다',
+    watch: 'upbid_auction_close_delay p95',
+    items: 20, sse: 0, vusKnob: false,
+    answer: '올리는 값이 사람 수가 아니라 <b>물품 수</b>입니다. 마감이 얼마나 밀리는지를 봅니다.' },
+  { key: 's5', scenario: 1, tag: '시나리오 5', name: '겹쳐서 재기',
+    raise: '입찰과 SSE 접속을 동시에 겁니다',
+    breaks: '입찰 처리한 스레드가 방 전원에게 SSE를 다 쏘고 나서 응답합니다',
+    watch: 'upbid_sse_broadcast p95, 처리량 하락폭',
+    items: 1, sse: 800, vusKnob: true,
+    answer: '<b>브로드캐스트가 입찰 처리량을 얼마나 깎는지</b>를 봅니다 (#234). 마지막에 한 번 재는 조합입니다.' },
+  { key: 's0', scenario: 0, tag: '먼저 이것부터', name: '부하 발생기 한계',
+    raise: '/actuator/health 에 같은 계단을 겁니다',
+    breaks: 'DB도 락도 안 탑니다. 여기서 막히면 서버가 아니라 노트북이 한계입니다',
+    watch: 'k6 CPU',
+    items: 1, sse: 0, vusKnob: true,
+    answer: '<b>시나리오보다 먼저 돌립니다.</b> 여기서 처리량이 평평해지는 지점 위쪽 숫자는 전원이 안 믿기로 했습니다.' },
+]
+
+let picked = SCENARIOS[0]
+
+el('scens').innerHTML = SCENARIOS.map((s) => `
+  <div class="scen ${s.key === 's1' ? 'on' : ''}" data-key="${s.key}">
+    <div class="tag">${s.tag}</div>
+    <h3>${s.name}</h3>
+    <dl>
+      <dt>올리는 값</dt> <dd>${s.raise}</dd>
+      <dt>무너질 곳</dt> <dd>${s.breaks}</dd>
+      <dt>볼 지표</dt> <dd><code>${s.watch}</code></dd>
+    </dl>
+  </div>`).join('')
+
+for (const card of document.querySelectorAll('.scen')) {
+  card.onclick = () => {
+    for (const c of document.querySelectorAll('.scen')) c.classList.remove('on')
+    card.classList.add('on')
+    picked = SCENARIOS.find((s) => s.key === card.dataset.key)
+    el('p-items').value = picked.items
+    el('p-sse').value = picked.sse
+    el('knob-vus').style.display = picked.vusKnob ? '' : 'none'
+    buildCommand()
+  }
+}
+
+el('ladder').innerHTML = [10, 20, 40, 80, 160].map((v) =>
+  `<button class="chip ${v === 40 ? 'on' : ''}" data-target="p-vus" data-value="${v}">${v}</button>`).join('')
+
+for (const chip of el('ladder').children) {
+  chip.onclick = () => {
+    el('p-vus').value = chip.dataset.value
+    for (const c of el('ladder').children) c.classList.remove('on')
+    chip.classList.add('on')
+    buildCommand()
+  }
+}
+
+for (const id of ['p-vus', 'p-items', 'p-pool', 'p-sse', 'p-who']) {
+  el(id).oninput = buildCommand
+}
+
+function buildCommand() {
+  const parts = [['--scenario', picked.scenario]]
+
+  if (picked.vusKnob) parts.push(['--vus', el('p-vus').value])
+  parts.push(['--items', el('p-items').value])
+
+  if (Number(el('p-pool').value) !== 10) parts.push(['--pool', el('p-pool').value])
+  if (Number(el('p-sse').value) > 0) parts.push(['--sse', el('p-sse').value])
+
+  // 입찰하는 시나리오만 회원이 필요하고, run.sh 가 VU 보다 적으면 막는다.
+  if ([1, 2].includes(picked.scenario)) {
+    const need = Number(el('p-vus').value)
+    if (need > 200) parts.push(['--users', need])
+  }
+  if (el('p-who').value.trim()) parts.push(['--who', el('p-who').value.trim()])
+
+  el('cmd-text').innerHTML = './perf/run.sh ' +
+    parts.map(([flag, value]) => `<span class="flag">${flag}</span> ${value}`).join(' ')
+
+  el('cmd-answer').innerHTML = `<b>이 실행이 답하는 질문</b><br>${picked.answer}`
+}
+
+// ══════════════ 실행 (콘솔 서버가 떠 있을 때만) ══════════════
+// 브라우저는 셸을 못 돌린다. perf/console-server.py 가 대신 run.sh 를 실행하고
+// 진행 상황을 돌려준다. 안 띄워져 있으면 명령 복사만 되는 상태로 남는다.
+const RUNNER = 'http://localhost:18099'
+
+let runnerUp = false
+let logCursor = 0
+let pollTimer = null
+
+async function checkRunner() {
+  try {
+    const res = await fetch(`${RUNNER}/health`, { signal: AbortSignal.timeout(1200) })
+    runnerUp = res.ok
+  } catch (e) {
+    runnerUp = false
+  }
+  el('runner-on').style.display = runnerUp ? '' : 'none'
+  el('runner-off').style.display = runnerUp ? 'none' : ''
+  if (runnerUp) loadResults()
+}
+
+el('btn-run').onclick = async () => {
+  const body = {
+    scenario: picked.scenario,
+    vus: Number(el('p-vus').value),
+    items: Number(el('p-items').value),
+    pool: Number(el('p-pool').value),
+    sse: Number(el('p-sse').value),
+    who: el('p-who').value,
+    // 입찰 시나리오는 회원이 VU 보다 많아야 한다. run.sh 가 적으면 막는다.
+    users: Math.max(200, Number(el('p-vus').value) + 20),
+  }
+
+  try {
+    const res = await fetch(`${RUNNER}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const json = await res.json()
+
+    if (!res.ok) {
+      alert(json.error || '실행하지 못했습니다')
+      return
+    }
+
+    logCursor = 0
+    el('run-log').textContent = ''
+    el('run-card').style.display = ''
+    el('btn-run').disabled = true
+    el('btn-run-stop').disabled = false
+    startPolling()
+  } catch (e) {
+    alert('콘솔 서버에 닿지 못했습니다. python3 perf/console-server.py 가 떠 있는지 봅니다.')
+  }
+}
+
+el('btn-run-stop').onclick = async () => {
+  await fetch(`${RUNNER}/stop`, { method: 'POST' })
+}
+
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = setInterval(pollRun, 1000)
+  pollRun()
+}
+
+async function pollRun() {
+  let s
+  try {
+    s = await (await fetch(`${RUNNER}/status?since=${logCursor}`)).json()
+  } catch (e) { return }
+
+  if (s.lines.length > 0) {
+    el('run-log').textContent += s.lines.join('\n') + '\n'
+    el('run-log').scrollTop = el('run-log').scrollHeight
+    logCursor = s.totalLines
+  }
+
+  const mm = String(Math.floor(s.elapsed / 60)).padStart(2, '0')
+  const ss = String(s.elapsed % 60).padStart(2, '0')
+  el('run-elapsed').textContent = `${mm}:${ss}`
+
+  const dot = el('run-dot')
+  dot.className = 'dot' + (s.running ? ' on' : (s.exitCode ? ' err' : ''))
+
+  el('run-state').textContent = s.running
+    ? (s.step ? `${s.stepNo}/${s.stepTotal} · ${s.step}` : '시작하는 중')
+    : (s.exitCode === null ? '준비' : (s.exitCode === 0 ? '끝났습니다' : `실패 (종료 코드 ${s.exitCode})`))
+
+  el('run-steps').innerHTML = Array.from({ length: s.stepTotal || 8 }, (_, i) => {
+    const n = i + 1
+    const cls = n < s.stepNo ? 'done' : (n === s.stepNo && s.running ? 'now' : (n <= s.stepNo ? 'done' : ''))
+    return `<div class="s ${cls}"></div>`
+  }).join('')
+
+  if (!s.running && pollTimer) {
+    clearInterval(pollTimer); pollTimer = null
+    el('btn-run').disabled = false
+    el('btn-run-stop').disabled = true
+    loadResults()
+    showGrafanaLink()
+  }
+}
+
+/** run.sh 가 마지막에 찍는 그라파나 주소를 로그에서 뽑아 버튼으로 만든다. */
+function showGrafanaLink() {
+  const text = el('run-log').textContent
+  const found = text.match(/https?:\/\/localhost:\d+\/d\/upbid-perf\?[^\s]+/)
+  const holder = el('run-links')
+
+  holder.innerHTML = found
+    ? `<a class="primary" href="${found[0]}" target="_blank">이 실행의 그래프 보기 ↗</a>`
+    : ''
+}
+
+/** index.csv 를 읽어 계단을 표로 보여준다. 실행이 끝날 때마다 한 줄이 는다. */
+async function loadResults() {
+  let data
+  try {
+    data = await (await fetch(`${RUNNER}/results`)).json()
+  } catch (e) { return }
+
+  if (!data.rows || data.rows.length === 0) {
+    el('res-head').innerHTML = ''
+    el('res-body').innerHTML = '<tr><td class="empty">아직 실행한 측정이 없습니다</td></tr>'
+    return
+  }
+
+  // 칸이 27개라 다 보여주면 못 읽는다. 판정에 쓰는 것만 고른다.
+  const want = ['run_id', 'scenario', 'vus', 'pool', 'items', 'sse',
+                'rps', 'p95_ms', 'tomcat_busy_max', 'hikari_pending_max',
+                'lock_wait_p95_ms', 'k6_cpu_max', 'bottleneck']
+  const label = { run_id: '실행', scenario: '시나', vus: 'VU', pool: '풀', items: '물품', sse: 'SSE',
+                  rps: '처리량', p95_ms: 'p95(ms)', tomcat_busy_max: '스레드',
+                  hikari_pending_max: 'pending', lock_wait_p95_ms: '락대기(ms)',
+                  k6_cpu_max: 'k6 CPU', bottleneck: '판정' }
+
+  const idx = want.map((key) => data.header.indexOf(key)).filter((i) => i >= 0)
+
+  el('res-head').innerHTML = '<tr>' +
+    idx.map((i) => `<th>${label[data.header[i]] || data.header[i]}</th>`).join('') + '</tr>'
+
+  el('res-body').innerHTML = data.rows.map((row) =>
+    '<tr>' + idx.map((i) => {
+      const v = row[i] || ''
+      // 실행 이름은 길어서 앞의 시각만 남긴다
+      return `<td>${data.header[i] === 'run_id' ? v.split('_')[0] : v}</td>`
+    }).join('') + '</tr>').join('')
+
+  el('res-note').textContent = `results/index.csv · ${data.rows.length}줄`
+}
+
+checkRunner()
+setInterval(checkRunner, 8000)
+
+el('btn-copy').onclick = async () => {
+  const button = el('btn-copy')
+  await navigator.clipboard.writeText(el('cmd-text').textContent)
+  button.textContent = '복사됨'
+  button.classList.add('copied')
+  setTimeout(() => { button.textContent = '복사'; button.classList.remove('copied') }, 1400)
+}
+
+buildCommand()
+log('local 프로파일로 앱이 떠 있어야 합니다. 1번부터 눌러 주세요.', 'dim')
+</script>
+</body>
+</html>
