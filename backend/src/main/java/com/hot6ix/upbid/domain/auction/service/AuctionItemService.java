@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.service;
 
+import com.hot6ix.upbid.domain.auction.config.AuctionProperties;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
@@ -36,21 +37,16 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@EnableConfigurationProperties(AuctionProperties.class)
 @Transactional(readOnly = true)
 public class AuctionItemService {
-
-    /**
-     * 한 경매방에서 동시에 진행할 수 있는 물품 수(기능명세 D002). DB 제약으로는 표현할 수 없어
-     * {@link #start}의 경매방 행 락이 이 규칙을 지탱한다 — 물품을 진행중으로 바꾸는 코드가
-     * 그 락을 거치지 않으면 제한이 조용히 뚫린다.
-     */
-    private static final int MAX_IN_PROGRESS_PER_ROOM = 3;
 
     /** 화면이 상위 3명만 그린다({@code leaderboard-rows.tsx}). 클라이언트가 정하게 두지 않는다. */
     private static final int LEADERBOARD_SIZE = 3;
@@ -63,6 +59,14 @@ public class AuctionItemService {
     private final SellerProfileRepository sellerProfileRepository;
     private final DomainEventPublisher domainEventPublisher;
     private final BidRepository bidRepository;
+    /**
+     * 방당 동시 진행 물품 수({@link AuctionProperties#maxInProgressPerRoom})를 읽으려고 둔다.
+     * 기본값 3이 서비스 규칙이고, 값으로 열어 둔 것은 <b>부하 측정 때문이다</b>. 락이 안 겹치는
+     * 대조군(물품 20개를 동시에 진행)을 만들려면 이 제한을 넘겨야 하는데, 그러자고 방을 일곱 개로
+     * 쪼개면 약관 동의가 방 단위라 시딩과 부하 스크립트가 함께 복잡해진다. perf 프로파일에서만
+     * 올리고 local·prod는 3 그대로다.
+     */
+    private final AuctionProperties auctionProperties;
 
     /**
      * 경매방의 물품 목록을 상태 우선 순서로 조회한다. 물품마다 상위
@@ -411,7 +415,7 @@ public class AuctionItemService {
             throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_READY);
         }
 
-        if (countInProgress(auctionRoom) >= MAX_IN_PROGRESS_PER_ROOM) {
+        if (countInProgress(auctionRoom) >= auctionProperties.maxInProgressPerRoom()) {
             throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_START_LIMIT_EXCEEDED);
         }
     }

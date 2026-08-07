@@ -55,11 +55,13 @@ oauth:
     user-info-uri: https://kapi.kakao.com/v2/user/me
 
 # 값 자체는 지금까지 코드에 상수로 박혀 있던 것과 같다. 밖으로 뺀 이유는 부하 측정에서
-# 이 둘이 대조 실험의 변수이기 때문이다 — 값 하나만 바꿔 재려면 재빌드 없이 바꿀 수 있어야 한다.
+# 이 셋이 대조 실험의 변수이기 때문이다 — 값 하나만 바꿔 재려면 재빌드 없이 바꿀 수 있어야 한다.
 upbid:
   sse:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
+  auction:
+    max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:3}
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:15173}

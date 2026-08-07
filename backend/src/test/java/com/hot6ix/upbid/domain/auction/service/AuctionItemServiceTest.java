@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auction.config.AuctionProperties;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
@@ -53,6 +54,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -86,6 +88,13 @@ class AuctionItemServiceTest {
 
     @Mock
     private DomainEventPublisher domainEventPublisher;
+
+    /**
+     * 방당 동시 진행 물품 수는 이제 설정값이라 주입해야 한다. 서비스 규칙과 같은 3을 준다 —
+     * perf 프로파일만 이 값을 올리므로, 기본 동작을 보는 이 테스트는 3으로 고정한다.
+     */
+    @Spy
+    private AuctionProperties auctionProperties = new AuctionProperties(3);
 
     @InjectMocks
     private AuctionItemService auctionItemService;
