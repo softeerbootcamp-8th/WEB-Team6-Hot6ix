@@ -1,4 +1,7 @@
 logging:
   level:
+    # 자주 발생하는 정상 동작(SSE 연결·종료, 마감 건너뜀 등)은 debug로 남긴다.
+    # prod는 info라 조용하고, 개발 중에는 여기서 그 흐름을 그대로 본다.
+    com.hot6ix.upbid: debug
     org.hibernate.SQL: debug
     org.hibernate.orm.jdbc.bind: trace
