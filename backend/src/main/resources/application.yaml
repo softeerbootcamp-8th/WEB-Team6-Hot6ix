@@ -55,7 +55,7 @@ oauth:
     user-info-uri: https://kapi.kakao.com/v2/user/me
 
 app:
-  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  frontend-url: ${FRONTEND_URL:http://localhost:15173}
   onboarding-session-timeout: ${ONBOARDING_SESSION_TIMEOUT:10m}
   alert:
     slack:

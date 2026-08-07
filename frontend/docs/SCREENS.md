@@ -160,7 +160,7 @@ cd frontend && pnpm install && pnpm dev
 
 ### 순서
 
-1. 백엔드를 `localhost:8080` 에 띄운다.
+1. 백엔드를 `localhost:18000` 에 띄운다.
 2. `pnpm api:gen` → `src/api/generated` 에 TanStack Query 훅·타입이 생긴다.
 3. 화면에서 `MOCK_*` import 를 생성된 훅으로 바꾼다.
 4. `src/mocks/types.ts` 대신 `@/api/generated/model` 타입을 쓴다.

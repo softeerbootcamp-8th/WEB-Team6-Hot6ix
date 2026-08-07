@@ -1,3 +1,14 @@
+# 로컬 개발 포트는 18xxx 대역을 쓴다.
+#
+# 8080 과 5173 은 다른 프로젝트가 자주 쓰는 포트라, 이미 뭔가 떠 있으면 앱이 아예 안 뜬다.
+# base(application.yaml)가 아니라 여기 두는 이유는 운영 컨테이너 때문이다 — deploy 의
+# compose 가 8080:8080 으로 매핑하고 있어서, base 를 바꾸면 운영이 조용히 깨진다.
+server:
+  port: ${SERVER_PORT:18000}
+
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:15173}
+
 logging:
   level:
     org.hibernate.SQL: debug

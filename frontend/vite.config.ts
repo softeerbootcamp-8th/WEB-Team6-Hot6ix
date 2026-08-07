@@ -23,15 +23,19 @@ export default defineConfig({
     },
   },
   server: {
+    // 8080·5173 은 다른 프로젝트가 자주 쓰는 포트라, 이미 뭔가 떠 있으면 vite 가 조용히
+    // 다른 포트로 밀리거나 백엔드가 아예 안 뜬다. 개발 환경은 18xxx 대역으로 모았다.
+    port: 15173,
+    strictPort: true,
     // dev 에서 /api 요청을 백엔드로 프록시 → 동일 출처가 되어 CORS 불필요.
     // (axios baseURL 은 비워두어 상대경로로 호출)
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:18000',
         changeOrigin: true,
       },
       '/test': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:18000',
         changeOrigin: true,
       },
     },

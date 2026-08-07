@@ -15,7 +15,7 @@ corepack enable            # pnpm 이 없다면
 cd frontend
 pnpm install
 cp .env.example .env.local
-pnpm dev                   # http://localhost:5173
+pnpm dev                   # http://localhost:15173
 ```
 
 백엔드 없이도 화면은 전부 돕니다(목업 데이터). API 를 붙일 때만 백엔드가 필요합니다.
@@ -59,7 +59,7 @@ pnpm format && pnpm lint && pnpm build
 ### 흐름
 
 ```
-백엔드(springdoc)  →  http://localhost:8080/v3/api-docs (OpenAPI JSON)
+백엔드(springdoc)  →  http://localhost:18000/v3/api-docs (OpenAPI JSON)
         ↓ pnpm api:gen
 src/api/generated/<tag>/<tag>.ts   TanStack Query 훅
 src/api/generated/model/           요청·응답 타입
@@ -71,7 +71,7 @@ src/api/mutator/custom-instance.ts  baseURL·인증·개발용 지연/실패
 
 ```bash
 # 1. 백엔드를 8080 으로 띄운다 (springdoc 활성 상태여야 함)
-curl http://localhost:8080/v3/api-docs | head   # 200 이면 준비 완료
+curl http://localhost:18000/v3/api-docs | head   # 200 이면 준비 완료
 
 # 2. 생성
 pnpm api:gen

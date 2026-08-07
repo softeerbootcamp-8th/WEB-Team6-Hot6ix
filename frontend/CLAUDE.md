@@ -125,8 +125,8 @@ src/
 
 ## API 흐름
 
-1. 백엔드(springdoc)를 `http://localhost:8080` 에서 기동한다.
-2. `pnpm api:gen` → `http://localhost:8080/v3/api-docs` 를 읽어 `src/api/generated`
+1. 백엔드(springdoc)를 `http://localhost:18000` 에서 기동한다.
+2. `pnpm api:gen` → `http://localhost:18000/v3/api-docs` 를 읽어 `src/api/generated`
    에 TanStack Query 훅과 타입 생성.
 3. 컴포넌트에서 생성된 훅을 그대로 사용 (직접 axios 호출 금지).
 4. 모든 요청은 `src/api/mutator/custom-instance.ts` 를 통과한다
