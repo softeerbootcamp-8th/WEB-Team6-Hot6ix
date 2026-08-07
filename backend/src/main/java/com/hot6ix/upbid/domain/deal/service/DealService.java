@@ -20,6 +20,7 @@ import com.hot6ix.upbid.domain.deal.repository.DealSummaryProjection;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.util.List;
 import java.util.Map;
@@ -167,7 +168,7 @@ public class DealService {
                 deal.getAmount(),
                 deal.getPartnerNickname(),
                 deal.getSellerProfileId(),
-                deal.getClosedAt());
+                ServerTime.toOffset(deal.getClosedAt()));
     }
 
     private boolean isSeller(DealSummaryProjection deal) {

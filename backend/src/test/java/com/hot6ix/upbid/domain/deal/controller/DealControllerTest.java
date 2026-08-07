@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.deal.dto.response.DealSummaryResponseDto;
 import com.hot6ix.upbid.domain.deal.entity.DealItemStatus;
 import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.domain.deal.service.DealService;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import java.time.LocalDateTime;
@@ -38,7 +39,7 @@ class DealControllerTest extends AbstractControllerTest {
                 "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/products/1/photocard.png",
                 "승민상점 경매방",
                 DealRole.SELLER, DealItemStatus.IN_PROGRESS, 15_000L, "원기", 4L,
-                LocalDateTime.of(2026, 7, 29, 21, 0));
+                ServerTime.toOffset(LocalDateTime.of(2026, 7, 29, 21, 0)));
         when(dealService.getDeals(LOGIN_USER_ID)).thenReturn(List.of(deal));
 
         mockMvc.perform(get(URL))
@@ -64,7 +65,7 @@ class DealControllerTest extends AbstractControllerTest {
                 "https://upbid-bucket.s3.ap-northeast-2.amazonaws.com/products/1/photocard.png",
                 "승민상점 경매방",
                 DealRole.BUYER, DealItemStatus.COMPLETED, 13_000L, "승민", 4L,
-                LocalDateTime.of(2026, 7, 29, 21, 0));
+                ServerTime.toOffset(LocalDateTime.of(2026, 7, 29, 21, 0)));
         when(dealService.getDeals(LOGIN_USER_ID)).thenReturn(List.of(deal));
 
         mockMvc.perform(get(URL))

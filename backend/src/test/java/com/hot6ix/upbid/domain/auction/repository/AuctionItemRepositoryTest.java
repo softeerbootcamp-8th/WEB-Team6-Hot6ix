@@ -12,6 +12,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import jakarta.persistence.LockModeType;
@@ -175,7 +176,7 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(detail.currentPrice()).isEqualTo(12_000L);
         assertThat(detail.bidIncrement()).isEqualTo(1_000L);
         assertThat(detail.status()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
-        assertThat(detail.endAt()).isEqualTo(LocalDateTime.of(2026, 7, 29, 21, 0));
+        assertThat(detail.endAt()).isEqualTo(ServerTime.toOffset(LocalDateTime.of(2026, 7, 29, 21, 0)));
     }
 
     @Test

@@ -32,6 +32,7 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.payload.ItemAdded;
 import com.hot6ix.upbid.global.event.payload.ItemRemoved;
@@ -935,7 +936,7 @@ class AuctionItemServiceTest {
         assertThat(auctionItem.getTotalExtensionSeconds()).isZero();
 
         assertThat(response.status()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
-        assertThat(response.endAt()).isEqualTo(auctionItem.getEndAt());
+        assertThat(response.endAt()).isEqualTo(ServerTime.toOffset(auctionItem.getEndAt()));
     }
 
     @Test

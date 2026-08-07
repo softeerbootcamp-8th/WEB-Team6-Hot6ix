@@ -2,7 +2,7 @@ package com.hot6ix.upbid.domain.deal.dto.response;
 
 import com.hot6ix.upbid.domain.deal.entity.DealItemStatus;
 import com.hot6ix.upbid.domain.deal.entity.DealRole;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 거래 내역 한 줄.
@@ -30,6 +30,6 @@ public record DealSummaryResponseDto(
         Long amount,
         String partnerNickname,
         Long sellerProfileId,
-        LocalDateTime closedAt
+        OffsetDateTime closedAt
 ) {
 }

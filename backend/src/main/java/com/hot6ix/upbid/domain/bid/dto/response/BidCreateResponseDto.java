@@ -1,13 +1,14 @@
 package com.hot6ix.upbid.domain.bid.dto.response;
 
 import com.hot6ix.upbid.domain.bid.entity.Bid;
-import java.time.LocalDateTime;
+import com.hot6ix.upbid.global.common.ServerTime;
+import java.time.OffsetDateTime;
 
 public record BidCreateResponseDto(
         Long bidId,
         Long auctionItemId,
         Long amount,
-        LocalDateTime acceptedAt
+        OffsetDateTime acceptedAt
 ) {
 
     /**
@@ -19,6 +20,6 @@ public record BidCreateResponseDto(
                 bid.getBidId(),
                 bid.getAuctionItem().getAuctionItemId(),
                 bid.getAmount(),
-                bid.getAcceptedAt());
+                ServerTime.toOffset(bid.getAcceptedAt()));
     }
 }

@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.auction.repository.AuctionItemPredicates;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
 import com.hot6ix.upbid.domain.product.entity.QProduct;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
@@ -50,7 +51,8 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
         return rows.stream()
                 .map(row -> new ProductSummaryResponseDto(
                         row.get(product.productId), row.get(product.name), row.get(product.imageUrl),
-                        ProductListingStatus.valueOf(row.get(derivedStatusName)), row.get(isUnsoldExpr), row.get(product.createdAt)))
+                        ProductListingStatus.valueOf(row.get(derivedStatusName)), row.get(isUnsoldExpr),
+                        ServerTime.toOffset(row.get(product.createdAt))))
                 .toList();
     }
 

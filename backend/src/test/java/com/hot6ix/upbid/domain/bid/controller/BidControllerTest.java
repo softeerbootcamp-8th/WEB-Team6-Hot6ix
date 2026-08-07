@@ -12,6 +12,7 @@ import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
 import com.hot6ix.upbid.domain.bid.service.BidService;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
@@ -33,7 +34,7 @@ class BidControllerTest extends AbstractControllerTest {
     private BidService bidService;
 
     private BidCreateResponseDto response() {
-        return new BidCreateResponseDto(100L, 2L, 15_000L, LocalDateTime.of(2026, 7, 30, 21, 0));
+        return new BidCreateResponseDto(100L, 2L, 15_000L, ServerTime.toOffset(LocalDateTime.of(2026, 7, 30, 21, 0)));
     }
 
     @Test

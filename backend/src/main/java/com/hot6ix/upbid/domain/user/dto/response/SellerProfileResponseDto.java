@@ -1,7 +1,8 @@
 package com.hot6ix.upbid.domain.user.dto.response;
 
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
-import java.time.LocalDateTime;
+import com.hot6ix.upbid.global.common.ServerTime;
+import java.time.OffsetDateTime;
 import lombok.Builder;
 
 @Builder
@@ -12,7 +13,7 @@ public record SellerProfileResponseDto(
         String snsUrl,
         String storePhoneNumber,
         String storeDescription,
-        LocalDateTime createdAt
+        OffsetDateTime createdAt
 ) {
     public static SellerProfileResponseDto from(SellerProfile sellerProfile) {
         return SellerProfileResponseDto.builder()
@@ -22,7 +23,7 @@ public record SellerProfileResponseDto(
                 .snsUrl(sellerProfile.getSnsUrl())
                 .storePhoneNumber(sellerProfile.getStorePhoneNumber())
                 .storeDescription(sellerProfile.getStoreDescription())
-                .createdAt(sellerProfile.getCreatedAt())
+                .createdAt(ServerTime.toOffset(sellerProfile.getCreatedAt()))
                 .build();
     }
 }

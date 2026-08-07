@@ -20,6 +20,7 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.payload.RoomClosed;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
@@ -77,7 +78,7 @@ class AuctionRoomCloseServiceTest {
         assertThat(response.status()).isEqualTo(AuctionRoomStatus.CLOSED);
         assertThat(response.closedAt())
                 .as("종료 화면이 '종료 {날짜}'를 그리는 값이라 응답에 실려야 한다")
-                .isEqualTo(auctionRoom.getClosedAt());
+                .isEqualTo(ServerTime.toOffset(auctionRoom.getClosedAt()));
     }
 
     @Test

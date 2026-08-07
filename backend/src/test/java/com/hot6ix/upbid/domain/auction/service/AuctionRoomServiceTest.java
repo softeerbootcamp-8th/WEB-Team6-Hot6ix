@@ -32,6 +32,7 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.payload.RoomUpdated;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
@@ -616,7 +617,7 @@ class AuctionRoomServiceTest {
                 .status(status)
                 .role(AuctionRoomRole.SELLER)
                 .storeName("승민상점")
-                .createdAt(LocalDateTime.of(2026, 8, 3, 12, 0))
+                .createdAt(ServerTime.toOffset(LocalDateTime.of(2026, 8, 3, 12, 0)))
                 .itemCount(2L)
                 .build();
     }

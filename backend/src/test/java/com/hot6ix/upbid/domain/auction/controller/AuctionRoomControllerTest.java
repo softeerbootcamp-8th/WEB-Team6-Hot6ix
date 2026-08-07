@@ -29,6 +29,7 @@ import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
+import com.hot6ix.upbid.global.common.ServerTime;
 import com.hot6ix.upbid.global.response.CursorPageResponse;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
 import java.time.LocalDateTime;
@@ -551,7 +552,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .status(AuctionRoomStatus.OPEN)
                 .role(AuctionRoomRole.BUYER)
                 .storeName("승민상점")
-                .createdAt(LocalDateTime.of(2026, 8, 3, 12, 0))
+                .createdAt(ServerTime.toOffset(LocalDateTime.of(2026, 8, 3, 12, 0)))
                 .itemCount(2L)
                 .participantCount(12L)
                 .build();
@@ -682,7 +683,7 @@ class AuctionRoomControllerTest extends AbstractControllerTest {
                 .name("승민의 경매방")
                 .status(AuctionRoomStatus.CLOSED)
                 .sellerStoreName("승민상점")
-                .closedAt(LocalDateTime.of(2026, 8, 4, 21, 30))
+                .closedAt(ServerTime.toOffset(LocalDateTime.of(2026, 8, 4, 21, 30)))
                 .build();
     }
 }

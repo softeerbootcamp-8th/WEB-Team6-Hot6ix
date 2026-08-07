@@ -3,7 +3,9 @@ package com.hot6ix.upbid.domain.auction.dto.response;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.product.entity.Product;
+import com.hot6ix.upbid.global.common.ServerTime;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -20,16 +22,16 @@ public record AuctionItemDetailResponseDto(
         Long currentPrice,
         Long bidIncrement,
         AuctionItemStatus status,
-        LocalDateTime endAt,
+        OffsetDateTime endAt,
         List<LeaderboardEntryResponseDto> leaderboard
 ) {
-    /** 쿼리 전용 생성자. 리더보드는 Service가 나중에 붙인다. */
+    /** 쿼리 전용 생성자. JPQL이 바인딩하는 타입이라 파라미터는 LocalDateTime 그대로 둔다. */
     public AuctionItemDetailResponseDto(
             Long auctionItemId, Long auctionRoomId, String productName, String description,
             String imageUrl, String referenceUrl, Long startingPrice, Long currentPrice,
             Long bidIncrement, AuctionItemStatus status, LocalDateTime endAt) {
         this(auctionItemId, auctionRoomId, productName, description, imageUrl, referenceUrl,
-                startingPrice, currentPrice, bidIncrement, status, endAt, List.of());
+                startingPrice, currentPrice, bidIncrement, status, ServerTime.toOffset(endAt), List.of());
     }
 
     /**
@@ -53,7 +55,7 @@ public record AuctionItemDetailResponseDto(
                 auctionItem.getCurrentPrice(),
                 auctionItem.getBidIncrement(),
                 auctionItem.getStatus(),
-                auctionItem.getEndAt(),
+                ServerTime.toOffset(auctionItem.getEndAt()),
                 List.of());
     }
 

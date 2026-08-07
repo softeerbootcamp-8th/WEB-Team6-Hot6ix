@@ -2,7 +2,8 @@ package com.hot6ix.upbid.domain.auction.dto.response;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
-import java.time.LocalDateTime;
+import com.hot6ix.upbid.global.common.ServerTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -21,7 +22,7 @@ public record AuctionRoomResultResponseDto(
         String name,
         String sellerStoreName,
         AuctionRoomStatus status,
-        LocalDateTime closedAt,
+        OffsetDateTime closedAt,
         List<AuctionItemResultResponseDto> items
 ) {
     public static AuctionRoomResultResponseDto of(
@@ -32,7 +33,7 @@ public record AuctionRoomResultResponseDto(
                 auctionRoom.getName(),
                 auctionRoom.getSellerProfile().getStoreName(),
                 auctionRoom.getStatus(),
-                auctionRoom.getClosedAt(),
+                ServerTime.toOffset(auctionRoom.getClosedAt()),
                 items);
     }
 }
