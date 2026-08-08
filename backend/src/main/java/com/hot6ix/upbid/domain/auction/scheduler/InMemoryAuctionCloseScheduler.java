@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import lombok.RequiredArgsConstructor;
@@ -84,29 +85,38 @@ public class InMemoryAuctionCloseScheduler implements AuctionCloseScheduler {
      *
      * <p>예외를 삼키는 것은 스케줄러 스레드에서 예외가 올라가면 그 스레드에 걸린 다른 예약까지
      * 함께 죽기 때문이다. <b>재시도는 하지 않는다</b> — 실패한 물품은 다음 서버 기동의 복구가
-     * 맡고, 서버가 살아 있는 채로 실패하면 그대로 닫히지 않은 채 남는다.
+     * 맡고, 서버가 살아 있는 채로 실패하면 그대로 닫히지 않은 채 남는다. 삼키더라도 건수는
+     * 남긴다.
      */
     private void close(Long auctionItemId) {
 
         schedules.remove(auctionItemId);
         LocalDateTime scheduledFor = scheduledEndAts.remove(auctionItemId);
 
-        try {
-            logDelay(auctionItemId, scheduledFor);
+        // 마감을 부르기 전에 잰다. 여기까지가 늦게 깨어난 시간이고 락 대기는 duration 이 맡는다.
+        logDelay(auctionItemId, scheduledFor);
 
-            auctionItemCloseService.closeIfDue(auctionItemId)
+        try {
+            auctionCloseMetrics
+                    .recordCloseDuration(
+                            () -> auctionItemCloseService.closeIfDue(auctionItemId),
+                            Optional::isPresent)
                     .ifPresent(rescheduleAt -> schedule(auctionItemId, rescheduleAt));
         } catch (Exception e) {
+            auctionCloseMetrics.recordFailure(e);
             log.error("물품 마감 실패: itemId={}", auctionItemId, e);
         }
     }
 
     /**
-     * 예약한 시각보다 실제 실행이 얼마나 늦었는지 남긴다. 스케줄러 스레드가 모자라거나 마감이
-     * 행 락을 기다리면 늦어지는데, 지금은 늦는지조차 알 수 없어 스레드 수를 정할 근거가 없다.
+     * 예약한 시각보다 실제 실행이 얼마나 늦게 시작됐는지 남긴다. 스케줄러 스레드가 모자라거나
+     * 큐가 밀리면 늦어진다.
      *
-     * <p>측정만 하고 아무것도 조정하지 않는다. 이 값으로 분포를 뽑아 스레드 수와 전용 스케줄러
-     * 분리 여부를 정하는 것은 별도 작업이다(이슈 #198).
+     * <p>마감이 행 락을 기다린 시간은 여기 안 들어간다. 이 메서드는 마감을 부르기 전에 불리고,
+     * 락 대기를 포함한 실행 시간은 {@code upbid.auction.close.duration}이 따로 잰다.
+     *
+     * <p>측정만 하고 아무것도 조정하지 않는다. 이 값으로 스레드 수와 전용 스케줄러 분리 여부를
+     * 정하는 것은 별도 작업이다(이슈 #198).
      *
      * <p>로그와 같은 값을 지표로도 내보낸다. 로그는 한 건씩 눈으로 보는 용도고, 지표는 마감
      * 물품 수를 올려 가며 p95가 어떻게 움직이는지 보는 용도다.
