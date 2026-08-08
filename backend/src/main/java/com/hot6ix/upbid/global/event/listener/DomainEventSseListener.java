@@ -2,6 +2,7 @@ package com.hot6ix.upbid.global.event.listener;
 
 import com.hot6ix.upbid.domain.sse.dto.BidPlacedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemAddedDto;
+import com.hot6ix.upbid.domain.sse.dto.ItemCloseAdvancedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemClosingSoonDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemRemovedDto;
@@ -15,6 +16,7 @@ import com.hot6ix.upbid.global.event.EventType;
 import com.hot6ix.upbid.global.event.message.EventMessages;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
 import com.hot6ix.upbid.global.event.payload.ItemAdded;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
@@ -88,6 +90,9 @@ public class DomainEventSseListener {
             // endAt은 연장이 반영된 마감 시각이라 화면이 이 값으로 카운트다운을 다시 맞춘다.
             case SoftCloseExtended e ->
                     new SoftCloseExtendedDto(e.itemId(), e.itemName(), e.extendSeconds(), e.endAt());
+            // 앞당김도 화면이 endAt으로 카운트다운을 다시 맞춘다. 방향만 반대다.
+            case ItemCloseAdvanced e ->
+                    new ItemCloseAdvancedDto(e.itemId(), e.itemName(), e.remainingSeconds(), e.endAt());
             case ItemEnded e -> new ItemEndedDto(e.itemId(), e.itemName(), e.finalPrice(), e.winnerNickname());
             // 유찰도 낙찰과 같은 DTO로 내보낸다. 낙찰가·낙찰자가 없다는 뜻으로 null이 간다.
             case ItemPassed e -> new ItemEndedDto(e.itemId(), e.itemName(), null, null);

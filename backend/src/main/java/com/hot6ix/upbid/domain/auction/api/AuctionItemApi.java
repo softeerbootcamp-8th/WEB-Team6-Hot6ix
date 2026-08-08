@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
@@ -19,7 +20,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-@Tag(name = "경매 물품", description = "입찰자용 경매 물품 조회 API와 판매자용 물품 추가·제외·시작 API")
+@Tag(name = "경매 물품",
+        description = "입찰자용 경매 물품 조회 API와 판매자용 물품 추가·제외·시작·마감 앞당기기 API")
 public interface AuctionItemApi {
 
     @Operation(
@@ -164,4 +166,31 @@ public interface AuctionItemApi {
             @PathVariable Long auctionItemId,
             @Parameter(hidden = true) @LoginUserId Long userId,
             @Valid @RequestBody AuctionItemStartRequestDto request);
+
+    @Operation(
+            summary = "물품 마감 앞당기기",
+            description = "소유자가 진행 중인 물품의 마감을 **Soft Close 연장 구간이 열리는 순간**"
+                    + "(지금 + 경매방의 softCloseTriggerSeconds)으로 앞당긴다. 라이브에서 반응이 없는 물품을 "
+                    + "빨리 넘길 때 쓴다.\n\n"
+                    + "**여기서 물품이 닫히지는 않는다.** 즉시 마감하지 않고 트리거만큼 남겨두는 것은 구매자에게 "
+                    + "얼마나 남았는지 알리기 위해서이며, 앞당긴 뒤에도 Soft Close는 그대로 적용돼 그 구간에 "
+                    + "입찰이 들어오면 마감이 다시 밀린다. 실제 마감은 새 마감 시각에 스케줄러가 한다.\n\n"
+                    + "**마감을 뒤로 밀지는 않는다.** 남은 시간이 이미 트리거보다 짧으면 앞당길 자리가 없어 409로 "
+                    + "거절한다. 경매방에 트리거 설정이 없으면 60초로 본다(생성 API가 허용하는 최소값). "
+                    + "물품이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다.\n\n"
+                    + "응답의 remainingSeconds는 앞당겨진 마감까지 남은 초이며 경매방의 트리거 값과 같다. "
+                    + "같은 내용이 ITEM_CLOSE_ADVANCED 이벤트로도 경매방 구독자에게 나간다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "앞당기기 성공"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
+            @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002), "
+                    + "물품이 없거나 본인 소유가 아님 (code 4001)"),
+            @ApiResponse(responseCode = "409", description = "진행 중인 물품이 아님 (code 4010), "
+                    + "이미 마감이 임박함 (code 4011)")
+    })
+    ResponseEntity<CommonResponse<AuctionItemCloseEarlyResponseDto>> closeEarly(
+            @Parameter(description = "마감을 앞당길 물품 ID", required = true)
+            @PathVariable Long auctionItemId,
+            @Parameter(hidden = true) @LoginUserId Long userId);
 }

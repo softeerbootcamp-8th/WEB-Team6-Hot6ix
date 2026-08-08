@@ -13,6 +13,7 @@
 export * from './auctionItemAddRequestDto';
 export * from './auctionItemBulkAddRequestDto';
 export * from './auctionItemBulkAddResponseDto';
+export * from './auctionItemCloseEarlyResponseDto';
 export * from './auctionItemDealStatusResponseDto';
 export * from './auctionItemDealStatusResponseDtoDealStatus';
 export * from './auctionItemDetailResponseDto';
@@ -37,6 +38,7 @@ export * from './auctionRoomUpdateRequestDto';
 export * from './bidCreateRequestDto';
 export * from './bidCreateResponseDto';
 export * from './commonResponseAuctionItemBulkAddResponseDto';
+export * from './commonResponseAuctionItemCloseEarlyResponseDto';
 export * from './commonResponseAuctionItemDetailResponseDto';
 export * from './commonResponseAuctionRoomCountsResponseDto';
 export * from './commonResponseAuctionRoomDealStatusResponseDto';

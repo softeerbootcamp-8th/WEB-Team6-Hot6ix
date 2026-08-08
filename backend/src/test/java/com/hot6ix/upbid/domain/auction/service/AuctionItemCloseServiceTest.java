@@ -1,23 +1,30 @@
 package com.hot6ix.upbid.domain.auction.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
+import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
+import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.event.DomainEvent;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
+import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -35,9 +42,14 @@ class AuctionItemCloseServiceTest {
     private static final Long ROOM_ID = 10L;
     private static final Long ITEM_ID = 30L;
     private static final Long BIDDER_ID = 40L;
+    private static final Long USER_ID = 50L;
+    private static final Long SELLER_PROFILE_ID = 60L;
 
     @Mock
     private AuctionItemRepository auctionItemRepository;
+
+    @Mock
+    private SellerProfileRepository sellerProfileRepository;
 
     @Mock
     private DomainEventPublisher domainEventPublisher;
@@ -162,6 +174,105 @@ class AuctionItemCloseServiceTest {
                 .isEqualTo(AuctionItemStatus.FAILED);
     }
 
+    @Test
+    @DisplayName("마감을 앞당기면 지금부터 트리거 초 뒤로 밀리고 ItemCloseAdvanced가 발행된다")
+    void closeEarlyAdvancesEndAt() {
+
+        LocalDateTime before = LocalDateTime.now();
+        AuctionItem auctionItem =
+                givenOwnedItem(AuctionItemStatus.IN_PROGRESS, before.plusMinutes(10));
+
+        AuctionItemCloseEarlyResponseDto response =
+                auctionItemCloseService.closeEarly(USER_ID, ITEM_ID);
+
+        int trigger = AuctionItem.DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS;
+        assertThat(response.remainingSeconds()).isEqualTo(trigger);
+        assertThat(response.endAt())
+                .isEqualTo(auctionItem.getEndAt())
+                .isBetween(before.plusSeconds(trigger), LocalDateTime.now().plusSeconds(trigger));
+        assertThat(auctionItem.getStatus())
+                .as("앞당기기는 마감 시각만 옮긴다. 닫는 것은 새 시각에 깨어난 예약이다")
+                .isEqualTo(AuctionItemStatus.IN_PROGRESS);
+        assertThat(publishedEvent()).isInstanceOfSatisfying(ItemCloseAdvanced.class, event -> {
+            assertThat(event.roomId()).isEqualTo(ROOM_ID);
+            assertThat(event.itemId()).isEqualTo(ITEM_ID);
+            assertThat(event.itemName()).isEqualTo("한정판 피규어");
+            assertThat(event.remainingSeconds()).isEqualTo(trigger);
+            assertThat(event.endAt()).isEqualTo(response.endAt());
+        });
+    }
+
+    @Test
+    @DisplayName("남의 방 물품은 마감을 앞당길 수 없고 물품이 없을 때와 같은 응답을 준다")
+    void closeEarlyRejectsOtherSellersItem() {
+
+        givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().plusMinutes(10));
+        givenSellerProfile(SELLER_PROFILE_ID + 1);
+
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
+        verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("진행 중이 아닌 물품은 마감을 앞당길 수 없다")
+    void closeEarlyRejectsNotInProgressItem() {
+
+        givenOwnedItem(AuctionItemStatus.READY, null);
+
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_IN_PROGRESS);
+        verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("이미 마감이 임박했으면 거절하고 마감 시각을 그대로 둔다")
+    void closeEarlyRejectsAlreadyClosingSoonItem() {
+
+        LocalDateTime endAt = LocalDateTime.now().plusSeconds(10);
+        AuctionItem auctionItem = givenOwnedItem(AuctionItemStatus.IN_PROGRESS, endAt);
+
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_ALREADY_CLOSING_SOON);
+        assertThat(auctionItem.getEndAt())
+                .as("받아주면 앞당기기가 오히려 마감을 뒤로 민다")
+                .isEqualTo(endAt);
+        verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("판매자 프로필이 없으면 마감을 앞당길 수 없다")
+    void closeEarlyRequiresSellerProfile() {
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+    }
+
+    /** 앞당기기는 요청자를 보므로 물품 락과 판매자 프로필 조회를 함께 준비한다. */
+    private AuctionItem givenOwnedItem(AuctionItemStatus status, LocalDateTime endAt) {
+        AuctionItem auctionItem = givenLockedItem(status, endAt);
+        givenSellerProfile(SELLER_PROFILE_ID);
+        return auctionItem;
+    }
+
+    private void givenSellerProfile(Long sellerProfileId) {
+        SellerProfile sellerProfile = newSellerProfile();
+        ReflectionTestUtils.setField(sellerProfile, "sellerProfileId", sellerProfileId);
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                .thenReturn(Optional.of(sellerProfile));
+    }
+
     private DomainEvent publishedEvent() {
         ArgumentCaptor<DomainEvent> captor = ArgumentCaptor.forClass(DomainEvent.class);
         verify(domainEventPublisher).publish(captor.capture());
@@ -214,10 +325,12 @@ class AuctionItemCloseServiceTest {
     }
 
     private SellerProfile newSellerProfile() {
-        return SellerProfile.builder()
+        SellerProfile sellerProfile = SellerProfile.builder()
                 .user(user("승민"))
                 .storeName("승민 스토어")
                 .build();
+        ReflectionTestUtils.setField(sellerProfile, "sellerProfileId", SELLER_PROFILE_ID);
+        return sellerProfile;
     }
 
     private User user(String nickname) {
