@@ -7,8 +7,9 @@
 // 대조가 아니게 된다.
 
 import http from 'k6/http'
+import exec from 'k6/execution'
 import { Counter } from 'k6/metrics'
-import { BASE, ITEM_IDS, START_PRICE, BID_UNIT, VUS, agree, authHeaders, ensureSession } from './common.js'
+import { BASE, ITEM_IDS, START_PRICE, BID_UNIT, agree, authHeaders, ensureSession } from './common.js'
 
 // ── 왜 상태 코드로 세면 안 되는가 ────────────────────────────────────
 // 입찰 거절이 전부 409 다. BID_AMOUNT_TOO_LOW(7004)도 409, CONCURRENT_BID_CONFLICT(7006)도
@@ -52,8 +53,16 @@ export function bidOnce(itemIds = ITEM_IDS) {
   // 금액 규칙이 두 개라 아무 숫자나 보내면 전부 INVALID_BID_UNIT 으로 거절된다.
   //   (1) 시작가 + 단위 x N 위에 있어야 한다
   //   (2) 현재가 + 단위 이상이어야 한다
-  // VU 수만큼 건너뛰며 올리면 VU 끼리 같은 금액을 안 쓰고, 반복이 돌수록 현재가를 따라간다.
-  const amount = START_PRICE + BID_UNIT * (__ITER * VUS + __VU)
+  //
+  // 번호를 __ITER 로 매기면 안 된다. 그건 VU 마다 따로 도는 카운터라서, VU 가 늘수록 빠른 VU 와
+  // 느린 VU 의 진도 차이가 벌어지고 뒤처진 VU 는 자기 번호가 현재가를 영영 못 넘어 계속 거절된다.
+  // 실측으로 VU 10 은 접수율 98% 인데 VU 80 은 0.5% 였다. 같은 시험이 아니게 되어 계단을
+  // 나란히 못 놓는다.
+  //
+  // iterationInTest 는 VU 를 통틀어 0, 1, 2 로 이어지는 번호라 그 격차가 안 생긴다.
+  // 접수율이 VU 에 따라 내려가기는 하는데, 그건 한 물품에 사람이 몰리면 실제로 그런 것이라
+  // 인공물이 아니다.
+  const amount = START_PRICE + BID_UNIT * (exec.scenario.iterationInTest + 1)
 
   const res = http.post(`${BASE}/auction-items/${itemId}/bids`, JSON.stringify({ amount }), {
     headers: authHeaders({ 'Content-Type': 'application/json' }),
