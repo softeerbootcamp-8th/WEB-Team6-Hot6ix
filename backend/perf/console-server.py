@@ -115,11 +115,12 @@ def build_command(body):
             value = default
         return max(low, min(high, value))
 
-    # run.sh 의 case 문이 0~4 만 받는다. 5 를 보내면 컨테이너 기동과 시딩을 다 하고 나서
-    # "모르는 시나리오" 로 죽는다. 여기서 먼저 막는다.
-    scenario = num("scenario", 1, 0, 4)
+    # run.sh 의 case 문이 받는 범위와 같아야 한다. 벗어난 값을 보내면 컨테이너 기동과
+    # 시딩을 다 하고 나서 "모르는 시나리오" 로 죽는다. 여기서 먼저 막는다.
+    scenario = num("scenario", 1, 0, 5)
     args = ["./perf/run.sh", "--scenario", str(scenario)]
 
+    # 4 는 올리는 값이 사람 수가 아니라 물품 수라 --vus 를 안 보낸다.
     if scenario != 4:
         args += ["--vus", str(num("vus", 40, 1, 5000))]
 
@@ -162,6 +163,9 @@ def build_command(body):
     who = re.sub(r"[^0-9A-Za-z가-힣_-]", "", str(body.get("who", ""))[:20])
     if who:
         args += ["--who", who]
+
+    if body.get("virtualThreads"):
+        args.append("--virtual-threads")
 
     if body.get("skipBuild"):
         args.append("--skip-build")

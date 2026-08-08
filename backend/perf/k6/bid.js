@@ -31,7 +31,13 @@ export function setupCheck() {
   }
 }
 
-export function bidOnce() {
+/**
+ * 입찰할 물품 목록을 밖에서 받는다.
+ *
+ * 시나리오 6(마감 + 입찰)은 시딩을 `--start none` 으로 하기 때문에 ITEM_IDS 가 비어 있고,
+ * 물품은 CLOSE_ITEM_IDS 에 담겨 온다. 기본값을 두어 시나리오 1·2 는 그대로 쓴다.
+ */
+export function bidOnce(itemIds = ITEM_IDS) {
   // VU 마다 회원 하나. 세션이 없을 때만 로그인하고 약관에 동의한다.
   // __ITER === 0 으로 판단하면 안 된다 — 쿠키 항아리가 반복마다 비워져서 두 번째 반복부터
   // 401 이 된다 (common.js 의 ensureSession 설명 참고).
@@ -39,7 +45,7 @@ export function bidOnce() {
     agree()
   }
 
-  const itemId = ITEM_IDS[Math.floor(Math.random() * ITEM_IDS.length)]
+  const itemId = itemIds[Math.floor(Math.random() * itemIds.length)]
 
   // 격자 위의 금액을 매 반복 올린다.
   //

@@ -913,6 +913,11 @@
             <div class="f mono">--items</div>
             <input id="p-items" type="number" min="1" max="50" value="1">
           </div>
+          <div class="knob off" id="knob-vus">
+            <div class="k">입찰자 수 <small>마감이 닫히는 동안 계속 입찰할 사람 수</small></div>
+            <div class="f mono">--vus</div>
+            <input id="p-vus" type="number" min="1" max="5000" value="40">
+          </div>
           <div class="knob">
             <div class="k">DB 커넥션 풀 <small>줄여서 다시 재면 커넥션이 범인인지 갈립니다</small></div>
             <div class="f mono">--pool</div>
@@ -947,6 +952,11 @@
             <div class="k">앱 힙 상한 <small>비우면 기본값. 예: 512m</small></div>
             <div class="f mono">--xmx</div>
             <input id="p-xmx" type="text" placeholder="비움">
+          </div>
+          <div class="knob flag">
+            <div class="k">가상 스레드 <small>스케줄러만이 아니라 <b>톰캣도 함께</b> 바뀝니다. 결과에 그렇게 적힙니다</small></div>
+            <div class="f mono">--virtual-threads</div>
+            <input id="p-virtual" type="checkbox">
           </div>
           <div class="knob flag">
             <div class="k">jar 를 다시 안 만들기 <small>같은 커밋으로 계단만 올릴 때 빌드 시간을 아낍니다</small></div>
@@ -1087,13 +1097,13 @@
               <tr><td>동시 사용자</td><td>가짜 사용자를 몇 명 만들어 붙였는지</td><td>내가 정한 값입니다</td></tr>
               <tr><td>물품 수</td><td>입찰이 한 물품에 몰리는지 흩어지는지</td><td>내가 정한 값입니다</td></tr>
               <tr><td>DB 커넥션</td><td>서버가 DB에 동시에 열어 두는 연결 개수</td><td>내가 정한 값입니다 (기본 10)</td></tr>
-              <tr><td><b>처리량 (건/초)</b></td><td>서버가 1초에 처리한 요청 수</td><td><b>클수록 좋습니다.</b> 판정의 주인공</td></tr>
+              <tr><td><b>처리량 (건/초)</b></td><td>서버가 1초에 처리한 요청 수</td><td><b>클수록 좋습니다.</b> 이 값으로 한계를 정합니다</td></tr>
               <tr><td><b>배율</b></td><td>같은 조건에서 직전 계단 대비 처리량이 몇 배인지</td><td><b>1.2배 미만이면 거기가 한계입니다</b></td></tr>
               <tr><td>응답 p95 (ms)</td><td>100번 중 95번은 이 시간 안에 끝났다</td><td>작을수록 좋습니다. 체감 속도</td></tr>
               <tr><td>서버 스레드 (최대)</td><td>톰캣이 동시에 쓴 스레드 수</td><td>200에 붙으면 스레드가 마른 것</td></tr>
               <tr><td>DB 연결 대기 (최대)</td><td>연결을 못 받고 줄 선 스레드 수</td><td><b>0이 정상.</b> 0보다 크면 풀이 마른 것</td></tr>
               <tr><td>락 대기 p95 (ms)</td><td>입찰이 물품 순서를 기다린 시간</td><td>커지면 입찰이 한 줄로 선 것</td></tr>
-              <tr><td>부하 발생기 CPU (%)</td><td>가짜 사용자를 만드는 쪽(k6)이 쓴 CPU</td><td><b>100에 가까우면 그 줄은 버립니다</b></td></tr>
+              <tr><td>부하 발생기 CPU (%)</td><td>가짜 사용자를 만드는 쪽(k6)이 쓴 CPU</td><td><b>100에 가까우면 서버가 아니라 내 노트북 한계라 그 줄은 못 씁니다</b></td></tr>
               <tr><td>판정</td><td>병목이 어디였는지</td><td><b>사람이 직접 적는 칸입니다</b> (note.md)</td></tr>
             </tbody>
           </table>
@@ -1691,7 +1701,7 @@ const SCENARIOS = [
     key: 's3', scenario: 3, tag: '3번', name: '실시간 접속 동시 연결',
     main: 'sse', items: 1, sse: 0,
     one: '경매방을 열어 둔 사람이 늘 때입니다. 접속 몇 개까지 버티는지와 접속 하나에 메모리가 얼마나 드는지를 봅니다.',
-    answer: '<b>접속 몇 개까지 버티는지</b>를 봅니다. 서버 스레드가 접속 수만큼 따라 오르면 비동기가 안 걸린 것이라 그 자체가 발견입니다.',
+    answer: '<b>접속 몇 개까지 버티는지</b>를 봅니다. 서버 스레드가 접속 수만큼 따라 오르면 비동기가 안 걸린 것이라 그것도 같이 봅니다.',
     detail: [
       ['어느 기능', '경매방 화면이 <b>새로고침 없이 갱신되는 것</b> (SSE)'],
       ['올리는 값', '동시 실시간 접속 수. 로그인이 필요 없습니다'],
@@ -1721,6 +1731,18 @@ const SCENARIOS = [
       ['올리는 값', '동시 사용자 수. 배경 실시간 접속은 800으로 고정해 둡니다'],
       ['왜 느려지나', '입찰을 처리한 스레드가 방에 있는 전원에게 알림을 다 쏘고 나서야 응답합니다'],
       ['볼 지표', '알림을 쏜 시간 (<code>upbid_sse_broadcast</code>)과 1번 대비 처리량 하락폭'],
+    ],
+  },
+  {
+    key: 's6', scenario: 5, tag: '6번', name: '마감 + 입찰 겹치기',
+    main: 'items', items: 20, sse: 0,
+    one: '물품이 닫히는 순간에도 입찰이 계속 들어옵니다. <b>4번이 못 만드는 상황</b>이라 스케줄러 값을 정하려면 이게 필요합니다.',
+    answer: '4번은 입찰이 없어서 마감끼리 부딪히지 않고, 그래서 스레드 수를 바꿔도 그래프가 평평합니다. 여기서는 <b>마감이 입찰의 물품 락을 기다리며 스레드를 붙잡습니다.</b> 그때 스케줄러 대기열이 쌓이는지, heartbeat가 밀리는지를 봅니다.',
+    detail: [
+      ['어느 기능', '경매 시간이 끝나는 순간의 <b>경매방 전체</b>'],
+      ['올리는 값', '<b>동시에 닫히는 물품 수</b>. 입찰자 수는 세부 조정에서 따로 정합니다'],
+      ['왜 느려지나', '마감이 입찰과 같은 물품 행을 잠그려고 기다리는 동안 스케줄러 스레드와 커넥션이 함께 묶입니다'],
+      ['볼 지표', '마감 소요 시간(<code>upbid_auction_close_duration</code>)과 스케줄러 대기열(<code>executor_queued_tasks</code>)'],
     ],
   },
 ]
@@ -1830,6 +1852,8 @@ function renderLadder() {
   // 물품 수가 계단 그 자체인 시나리오에서는 세부 조정의 물품 수를 숨긴다.
   // 같은 값을 두 군데서 만지게 두면 어느 쪽이 이겼는지 알 수 없다.
   el('knob-items').classList.toggle('off', picked.main === 'items')
+  // 계단이 물품 수인데 입찰도 하는 시나리오에서만 사람 수를 따로 받는다.
+  el('knob-vus').classList.toggle('off', !(picked.main === 'items' && picked.scenario === 5))
 }
 
 /** 지금 화면의 값. 시나리오가 정하는 값과 사람이 만진 값을 여기서 합친다. */
@@ -1837,14 +1861,18 @@ function knobs() {
   const main = Number(el('p-main').value) || MAIN[picked.main].def
   const isItemLadder = picked.main === 'items'
 
-  const vus = isItemLadder ? null : main
   const items = isItemLadder ? main : (Number(el('p-items').value) || picked.items)
+
+  // 4번만 사람 수가 아예 없다. 6번은 계단이 물품 수지만 입찰자도 있어야 락이 걸린다.
+  const vus = picked.scenario === 4
+    ? null
+    : (isItemLadder ? (Number(el('p-vus').value) || 40) : main)
 
   // 입찰하는 시나리오는 회원이 동시 사용자보다 많아야 한다. 모자라면 남는 사람은 약관
   // 동의가 없어서 전부 거절되고, run.sh 가 아예 시작을 막는다. 그래서 자동으로 올리되
   // 몰래 올리지 않는다 — 올렸으면 세부 조정의 그 줄이 파래지고 아래에 이유가 뜬다.
   const typedUsers = Number(el('p-users').value) || 200
-  const needUsers = [1, 2].includes(picked.scenario) && vus ? vus + 20 : 0
+  const needUsers = [1, 2, 5].includes(picked.scenario) && vus ? vus + 20 : 0
   const users = Math.max(typedUsers, needUsers)
 
   return {
@@ -1856,6 +1884,7 @@ function knobs() {
     schedulerPool: Number(el('p-sched').value) || 4,
     heartbeatMs: Number(el('p-hb').value) || 30000,
     xmx: el('p-xmx').value.trim(),
+    virtualThreads: el('p-virtual').checked,
     skipBuild: el('p-skip').checked,
     who: el('p-who').value.trim(),
     usersBumped: users > typedUsers,
@@ -1884,6 +1913,7 @@ function localCommand(k) {
   if (k.heartbeatMs !== 30000) parts.push('--heartbeat-ms', k.heartbeatMs)
   if (k.xmx) parts.push('--xmx', k.xmx)
   if (k.who) parts.push('--who', k.who)
+  if (k.virtualThreads) parts.push('--virtual-threads')
   if (k.skipBuild) parts.push('--skip-build')
 
   return parts.join(' ')
@@ -1916,6 +1946,7 @@ function syncPerf() {
     ['p-sched', '4', true],
     ['p-hb', '30000', true],
     ['p-xmx', '', true],
+    ['p-vus', '40', picked.main === 'items' && picked.scenario === 5],
   ]
 
   let changed = 0
@@ -1927,9 +1958,11 @@ function syncPerf() {
     if (isChanged) changed += 1
   }
 
-  const skipNode = el('p-skip').closest('.knob')
-  skipNode.classList.toggle('changed', el('p-skip').checked)
-  if (el('p-skip').checked) changed += 1
+  for (const id of ['p-skip', 'p-virtual']) {
+    const on = el(id).checked
+    el(id).closest('.knob').classList.toggle('changed', on)
+    if (on) changed += 1
+  }
 
   // 회원 수를 자동으로 올렸으면 그 줄도 바뀐 것으로 보여준다. 안 그러면 명령에는
   // --users 가 붙었는데 화면에서는 아무것도 안 바뀐 것처럼 보인다.
@@ -1975,7 +2008,8 @@ function syncPerf() {
 }
 
 for (const id of ['p-main', 'p-items', 'p-pool', 'p-sse', 'p-users',
-                  'p-duration', 'p-sched', 'p-hb', 'p-xmx', 'p-who', 'p-skip']) {
+                  'p-duration', 'p-sched', 'p-hb', 'p-xmx', 'p-who', 'p-skip',
+                  'p-vus', 'p-virtual']) {
   el(id).oninput = syncPerf
   el(id).onchange = syncPerf
 }
@@ -1996,6 +2030,8 @@ el('btn-perf-reset').onclick = () => {
   el('p-hb').value = 30000
   el('p-xmx').value = ''
   el('p-skip').checked = false
+  el('p-virtual').checked = false
+  el('p-vus').value = 40
   el('adv').open = false
   el('run-panel').style.display = 'none'
 
@@ -2544,7 +2580,7 @@ async function loadResults() {
 
         // 부하 발생기가 한계면 그 줄의 배율은 서버 판정에 못 쓴다.
         if (cpu !== null && cpu >= 90) {
-          return `<td class="ratio" title="${title} · 부하 발생기 CPU ${cpu}%">${text} 보류</td>`
+          return `<td class="ratio" title="${title} · 부하 발생기 CPU ${cpu}%">${text} (못 씀)</td>`
         }
         return `<td class="ratio ${ratio.value < 1.2 ? 'cap' : 'ok'}" title="${title}">`
           + `${text}${ratio.value < 1.2 ? ' ← 한계' : ''}</td>`

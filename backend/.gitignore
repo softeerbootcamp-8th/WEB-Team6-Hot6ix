@@ -215,3 +215,6 @@ perf/results/*
 
 # 측정 실행 잠금 (run.sh 가 만들고 지운다)
 perf/.run.lock/
+
+# console-server.py 를 테스트에서 import 하면 생긴다
+perf/__pycache__/

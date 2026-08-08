@@ -33,6 +33,8 @@ WARMUP=30
 WHO="${PERF_WHO:-$(whoami)}"
 JAVA_OPTS=""
 SKIP_BUILD=0
+VIRTUAL_THREADS=false
+BID_ITEMS=0
 
 # perf 는 측정용 포트를 따로 쓴다. 개발 백엔드(8080)나 프론트(5173)와 안 겹치게 한다.
 # 겹치면 측정을 시작하는 순간 개발 환경이 죽고, 프론트가 조용히 perf 앱에 붙는다.
@@ -45,7 +47,8 @@ usage() {
   cat <<'USAGE'
 사용법: run.sh [옵션]
 
-  --scenario N       0=부하 발생기 한계, 1~4=시나리오 (기본 1)
+  --scenario N       0=부하 발생기 한계, 1~5=시나리오 (기본 1)
+                     5 는 마감과 입찰을 겹친다. --items 로 마감할 물품 수를 준다
   --vus N            가상 사용자 수. 계단은 10/20/40/80/160 (기본 40)
   --items N          물품 수. 시나리오 1은 1, 2는 20 (기본 1)
   --sse N            같이 붙여 둘 SSE 접속 수. 5번(겹쳐 재기)에서 쓴다 (기본 0)
@@ -56,6 +59,9 @@ usage() {
   --scheduler-pool N spring.task.scheduling.pool.size (기본 4)
   --heartbeat-ms N   SSE heartbeat 주기 (기본 30000)
   --xmx SIZE         앱 힙 상한. 예: 512m
+  --virtual-threads  가상 스레드를 켠다. **톰캣도 함께 바뀐다**(전역 스위치)
+  --bid-items N      시나리오 5 에서 입찰을 넣을 물품 수. 나머지는 마감 대상이 된다
+                     (기본: 절반. 전부에 입찰하면 Soft Close 로 안 닫힌다)
 
   --duration D       측정 길이 (기본 3m)
   --warmup N         워밍업 초 (기본 30)
@@ -80,6 +86,8 @@ while [ $# -gt 0 ]; do
     --scheduler-pool) SCHEDULER_POOL="$2"; shift 2 ;;
     --heartbeat-ms) HEARTBEAT_MS="$2"; shift 2 ;;
     --xmx) JAVA_OPTS="-Xmx$2"; shift 2 ;;
+    --virtual-threads) VIRTUAL_THREADS=true; shift ;;
+    --bid-items) BID_ITEMS="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
     --who) WHO="$2"; shift 2 ;;
@@ -183,8 +191,14 @@ preflight() {
   #   0 (capacity)  /actuator/health 만 때린다
   #   3 (SSE)       subscribe 가 @GuestAllowed 라 로그인도 약관 동의도 필요 없다
   #   4 (동시 마감)  판매자 한 명만 쓴다
+  # 시나리오 5 는 물품을 입찰용과 마감용으로 나눈다. 하나뿐이면 나눌 수가 없다.
+  if [ "$SCENARIO" = "5" ] && [ "$ITEMS" -lt 2 ] 2>/dev/null; then
+    echo "※ 시나리오 5 는 --items 가 2 이상이어야 한다. 입찰용과 마감용으로 나누기 때문이다." >&2
+    exit 1
+  fi
+
   case "$SCENARIO" in
-    1|2)
+    1|2|5)
       if [ "$USERS" -lt "$VUS" ] 2>/dev/null; then
         echo "※ 시딩할 회원(${USERS})이 VU(${VUS})보다 적다. 남는 VU 는 약관 동의가 없어" >&2
         echo "  전부 TERMS_NOT_AGREED 로 거절된다. --users 를 올린다." >&2
@@ -231,6 +245,7 @@ export DB_POOL_SIZE="$POOL"
 export SCHEDULER_POOL_SIZE="$SCHEDULER_POOL"
 export SSE_HEARTBEAT_MS="$HEARTBEAT_MS"
 export APP_JAVA_OPTS="$JAVA_OPTS"
+export VIRTUAL_THREADS
 
 # 일회성 컨테이너(docker compose run 으로 띄운 k6)는 down 이 안 지운다. 설계가 그렇다.
 # 안 지우면 직전 실행의 배경 SSE 가 새 앱에 그대로 붙어서, 이번 줄의 접속 수와 스레드가
@@ -317,7 +332,7 @@ done
 echo "[4/8] 시딩"
 SEED_ENV="$RESULT_DIR/seed.env"
 SEED_START="all"
-[ "$SCENARIO" = "4" ] && SEED_START="none"
+case "$SCENARIO" in 4|5) SEED_START="none" ;; esac
 
 BASE_URL="$APP_URL/api/v1" "$PERF_DIR/seed.sh" \
   --users "$USERS" --items "$ITEMS" \
@@ -344,7 +359,9 @@ for _ in $(seq 1 10); do
                 http_server_requests_seconds_bucket \
                 upbid_sse_connections upbid_sse_rooms \
                 upbid_bid_lock_wait_seconds_bucket \
-                upbid_auction_close_delay_seconds_bucket; do
+                upbid_auction_close_delay_seconds_bucket \
+                upbid_auction_close_duration_seconds_bucket \
+                executor_queued_tasks; do
     # 파이프를 쓰면 안 된다. grep -q 는 일치를 찾자마자 끝나는데, 그러면 앞 명령이
     # SIGPIPE 로 죽고 set -o pipefail 이 그걸 파이프라인 실패로 본다. 그래서 출력 앞쪽에
     # 있는 지표만 "없다"고 나온다 (실측으로 한참 헤맸다). here-string 은 파이프가 아니다.
@@ -405,7 +422,8 @@ case "$SCENARIO" in
   2) SCRIPT="scenario2.js" ;;
   3) SCRIPT="scenario3.js" ;;
   4) SCRIPT="scenario4.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO" >&2; exit 1 ;;
+  5) SCRIPT="scenario5.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~5)" >&2; exit 1 ;;
 esac
 
 WINDOW_START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -433,9 +451,10 @@ disown "$CPU_SAMPLER" 2>/dev/null || true
 set +e
 VUS="$VUS" DURATION="$DURATION" RUN_ID="$RUN_ID" \
 SHARE_CODE="$SHARE_CODE" ITEM_IDS="$ITEM_IDS" CLOSE_ITEM_IDS="$CLOSE_ITEM_IDS" \
+BID_ITEMS="$BID_ITEMS" \
 START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
   "${COMPOSE[@]}" run --rm \
-    -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS \
+    -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
     -e START_PRICE -e BID_UNIT \
     k6 run -o experimental-prometheus-rw "/scripts/$SCRIPT" \
     2>&1 | tee "$RESULT_DIR/k6.log"
@@ -490,8 +509,12 @@ delta() {
 
 # 구간 전체를 하나의 histogram_quantile 로 계산한다.
 # 5초마다 찍힌 p95 점들을 평균 내는 것은 수학적으로 틀리므로 그래프를 눈으로 읽어 적지 않는다.
+quantile_of() {
+  promq "histogram_quantile($2, sum by (le) ($(delta "$1"))) * 1000"
+}
+
 p95_of() {
-  promq "histogram_quantile(0.95, sum by (le) ($(delta "$1"))) * 1000"
+  quantile_of "$1" 0.95
 }
 
 RPS="$(promq "sum($(delta "http_server_requests_seconds_count{$NOT_ACTUATOR}")) / $WINDOW_SECONDS")"
@@ -506,6 +529,20 @@ CLOSE_DELAY_P95_MS="$(p95_of "upbid_auction_close_delay_seconds_bucket{$RUN}")"
 SSE_HEARTBEAT_P95_MS="$(p95_of "upbid_sse_heartbeat_seconds_bucket{$RUN}")"
 SSE_BROADCAST_P95_MS="$(p95_of "upbid_sse_broadcast_seconds_bucket{$RUN}")"
 SSE_CONN_MAX="$(promq "max(max_over_time(upbid_sse_connections{$RUN}[$W]))")"
+
+# 마감은 p95 만으로 부족하다. 한 건이라도 크게 튀면 스레드가 그만큼 묶이므로 최대값을 같이 본다.
+CLOSE_DELAY_P50_MS="$(quantile_of "upbid_auction_close_delay_seconds_bucket{$RUN}" 0.50)"
+CLOSE_DELAY_MAX_MS="$(promq "max(max_over_time(upbid_auction_close_delay_seconds_max{$RUN}[$W])) * 1000")"
+# 락을 기다린 시간이 여기 잡힌다. 실제로 닫은 마감만 본다(재예약은 result 로 갈라 둔다).
+CLOSE_DURATION_P95_MS="$(quantile_of "upbid_auction_close_duration_seconds_bucket{$RUN, result=\"closed\"}" 0.95)"
+# 실패가 0인 실행에서는 시계열이 아예 없다. or vector(0) 으로 받지 않으면 NaN 이 된다.
+CLOSE_FAILURES="$(promq "sum($(delta "upbid_auction_close_failures_total{$RUN}")) or vector(0)")"
+
+# 스케줄러 일꾼. Boot 가 ThreadPoolTaskScheduler 를 자동으로 계측해 줘서 직접 만들 게 없었다.
+# 가상 스레드를 켜면 SimpleAsyncTaskScheduler 로 바뀌어 풀도 큐도 없어지므로 여기는 NaN 이 된다.
+SCHED="$RUN, name=\"taskScheduler\""
+SCHED_ACTIVE_MAX="$(promq "max(max_over_time(executor_active_threads{$SCHED}[$W]))")"
+SCHED_QUEUED_MAX="$(promq "max(max_over_time(executor_queued_tasks{$SCHED}[$W]))")"
 GC_PAUSE_MS_PER_S="$(promq "sum($(delta "jvm_gc_pause_seconds_sum{$RUN}")) / $WINDOW_SECONDS * 1000")"
 
 # 입찰 결과는 k6 요약에서 읽는다.
@@ -553,6 +590,12 @@ CLOSE_DELAY_P95_MS="$(round "$CLOSE_DELAY_P95_MS" 0)"
 SSE_HEARTBEAT_P95_MS="$(round "$SSE_HEARTBEAT_P95_MS" 0)"
 SSE_BROADCAST_P95_MS="$(round "$SSE_BROADCAST_P95_MS" 0)"
 SSE_CONN_MAX="$(round "$SSE_CONN_MAX" 0)"
+CLOSE_DELAY_P50_MS="$(round "$CLOSE_DELAY_P50_MS" 0)"
+CLOSE_DELAY_MAX_MS="$(round "$CLOSE_DELAY_MAX_MS" 0)"
+CLOSE_DURATION_P95_MS="$(round "$CLOSE_DURATION_P95_MS" 0)"
+CLOSE_FAILURES="$(round "$CLOSE_FAILURES" 0)"
+SCHED_ACTIVE_MAX="$(round "$SCHED_ACTIVE_MAX" 0)"
+SCHED_QUEUED_MAX="$(round "$SCHED_QUEUED_MAX" 0)"
 GC_PAUSE_MS_PER_S="$(round "$GC_PAUSE_MS_PER_S" 1)"
 K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
 
@@ -598,14 +641,16 @@ jq -n \
   --argjson scenario "$SCENARIO" --argjson vus "$VUS" --argjson pool "$POOL" \
   --argjson items "$ITEMS" --argjson sse "$SSE" --argjson users "$USERS" \
   --argjson heartbeat_ms "$HEARTBEAT_MS" --argjson scheduler_pool "$SCHEDULER_POOL" \
+  --arg virtual_threads "$VIRTUAL_THREADS" --arg xmx "$JAVA_OPTS" \
   --argjson window_seconds "$WINDOW_SECONDS" \
   '{run_id:$run_id, scenario:$scenario, commit:$commit, dirty:($dirty=="true"), who:$who,
     params:{vus:$vus, pool_size:$pool, items:$items, sse:$sse, users:$users,
-            heartbeat_ms:$heartbeat_ms, scheduler_pool:$scheduler_pool},
+            heartbeat_ms:$heartbeat_ms, scheduler_pool:$scheduler_pool,
+            virtual_threads:($virtual_threads=="true"), xmx:$xmx},
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,scenario,vus,pool,items,sse,throughput_req_per_s,p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,close_delay_p95_ms,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,scenario,vus,pool,items,sse,throughput_req_per_s,p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -630,17 +675,32 @@ if [ ! -f "$INDEX" ]; then
 fi
 
 # bottleneck 과 note 는 비워 둔다. 사람이 채우는 칸이 이 둘뿐이다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
   "$RUN_ID" "$WHO" "$COMMIT" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
-  "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" "$CLOSE_DELAY_P95_MS" \
+  "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" \
+  "$CLOSE_DELAY_P50_MS" "$CLOSE_DELAY_P95_MS" "$CLOSE_DELAY_MAX_MS" \
+  "$CLOSE_DURATION_P95_MS" "$CLOSE_FAILURES" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
-  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" \
+  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$VIRTUAL_THREADS" \
+  "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" \
   >>"$INDEX"
 
 # var-run 을 박아야 이 실행의 시계열만 보인다. 안 붙이면 대시보드가 여태 돌린 실행을
 # 전부 겹쳐 그려서, 계단 하나를 보려는데 다른 계단이 같이 나온다.
 GRAFANA_LINK="$GRAFANA_URL/d/upbid-perf?var-run=$RUN_ID&from=${WINDOW_START_EPOCH}000&to=${WINDOW_END_EPOCH}000"
+
+# 가상 스레드는 전역 스위치라 톰캣도 함께 바뀐다. 이 단서를 안 적으면 나중에 이 숫자를
+# 스케줄러 근거로 잘못 쓴다. 스케줄러가 SimpleAsyncTaskScheduler 로 바뀌어 풀도 큐도
+# 없어지므로 sched_* 열은 NaN 이 되는데, 그것도 정상이라고 적어 둔다.
+VIRTUAL_THREADS_NOTE=""
+if [ "$VIRTUAL_THREADS" = "true" ]; then
+  VIRTUAL_THREADS_NOTE="> **가상 스레드를 켜고 잰 숫자다.** 스케줄러뿐 아니라 톰캣도 함께 바뀌었으므로
+> \"스케줄러에 가상 스레드를 쓴 효과\"가 아니라 \"앱 전체에 쓴 효과\"로 읽는다.
+> 스케줄러 일꾼/대기열이 NaN 인 것도 정상이다 (풀도 큐도 없는 구현으로 바뀐다).
+
+"
+fi
 
 cat >"$RESULT_DIR/note.md" <<EOF
 # $RUN_ID
@@ -657,7 +717,10 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 커넥션 획득 p95 | ${CONN_ACQUIRE_P95_MS} ms |
 | 힙 max | ${HEAP_MB_MAX} MB |
 | 락 대기 p95 | ${LOCK_WAIT_P95_MS} ms |
-| 마감 지연 p95 | ${CLOSE_DELAY_P95_MS} ms |
+| 마감 지연 p50 / p95 / 최대 | ${CLOSE_DELAY_P50_MS} / ${CLOSE_DELAY_P95_MS} / ${CLOSE_DELAY_MAX_MS} ms |
+| 마감 소요 p95 (락 대기 포함) | ${CLOSE_DURATION_P95_MS} ms |
+| 마감 실패 | ${CLOSE_FAILURES} 건 |
+| 스케줄러 일꾼 / 대기열 max | ${SCHED_ACTIVE_MAX} / ${SCHED_QUEUED_MAX} |
 | SSE 접속 max | ${SSE_CONN_MAX} |
 | SSE heartbeat p95 | ${SSE_HEARTBEAT_P95_MS} ms |
 | SSE broadcast p95 | ${SSE_BROADCAST_P95_MS} ms |
@@ -670,7 +733,7 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 그 밖의 거절 (401·403 등) | ${REJECTED_OTHER} ← 0이어야 한다. 크면 세팅이 잘못된 것 |
 | 실패 (5xx·타임아웃) | ${FAILED_5XX} |
 
-## 판정
+${VIRTUAL_THREADS_NOTE}## 판정
 
 판정:  Y / N / ?  —
        (직전 계단 대비 처리량이 몇 배인지, 그때 자원 넷이 어땠는지)
