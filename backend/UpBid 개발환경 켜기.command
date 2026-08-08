@@ -17,7 +17,7 @@ cd "$(dirname "$0")" || exit 1
 BACKEND_DIR="$(pwd)"
 FRONTEND_DIR="$(cd .. && pwd)/frontend"
 
-APP_PORT="${SERVER_PORT:-18000}"
+APP_PORT="${SERVER_PORT:-8080}"
 GRAFANA_PORT="${PERF_GRAFANA_PORT:-13000}"
 
 # 앱 로그를 이 창에 흘리면서 파일로도 남긴다. 개발 콘솔이 이 파일을 읽어서
@@ -105,7 +105,7 @@ echo "  [4/5] 프론트"
 if command -v pnpm >/dev/null 2>&1 && [ -d "$FRONTEND_DIR/node_modules" ]; then
   (cd "$FRONTEND_DIR" && pnpm dev >/tmp/upbid-frontend.log 2>&1) &
   FRONT_PID=$!
-  echo "        http://localhost:15173 (로그: /tmp/upbid-frontend.log)"
+  echo "        http://localhost:5173 (로그: /tmp/upbid-frontend.log)"
 else
   echo "        건너뜁니다 (pnpm 이 없거나 pnpm install 을 아직 안 했습니다)"
   echo "        경매방 화면을 보려면 frontend/ 에서 pnpm install 을 한 번 하세요"

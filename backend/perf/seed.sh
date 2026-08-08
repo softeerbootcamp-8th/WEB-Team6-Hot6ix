@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-BASE="${BASE_URL:-http://localhost:18000/api/v1}"
+BASE="${BASE_URL:-http://localhost:8080/api/v1}"
 USERS=200
 ITEMS=20
 START_PRICE=10000
@@ -42,7 +42,7 @@ usage() {
   --start all|none   물품을 시작할지 (기본 all). 시나리오 4는 none 으로 두고 k6 가 시작한다
   --duration-min N   시작할 때 줄 경매 시간(분). 기본 720 = 12시간, 측정 중에 안 닫히게
   --out FILE         결과를 shell 변수로 적을 파일
-  --base URL         API 주소 (기본 http://localhost:18000/api/v1 = 개발 앱)
+  --base URL         API 주소 (기본 http://localhost:8080/api/v1 = 개발 앱)
 USAGE
 }
 

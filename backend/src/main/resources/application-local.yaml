@@ -1,13 +1,14 @@
-# 로컬 개발 포트는 18xxx 대역을 쓴다.
+# 개발 포트는 8080, 프론트는 5173 이다. IntelliJ 실행 버튼이 기본으로 쓰는 값이라 옮기지
+# 않는다. 겹치면 안 되는 건 부하 측정 환경 쪽이라 그쪽만 18xxx 대역으로 떨어뜨렸다
+# (perf/README.md 의 "포트" 절).
 #
-# 8080 과 5173 은 다른 프로젝트가 자주 쓰는 포트라, 이미 뭔가 떠 있으면 앱이 아예 안 뜬다.
 # base(application.yaml)가 아니라 여기 두는 이유는 운영 컨테이너 때문이다 — deploy 의
 # compose 가 8080:8080 으로 매핑하고 있어서, base 를 바꾸면 운영이 조용히 깨진다.
 server:
-  port: ${SERVER_PORT:18000}
+  port: ${SERVER_PORT:8080}
 
 app:
-  frontend-url: ${FRONTEND_URL:http://localhost:15173}
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
 
 logging:
   level:

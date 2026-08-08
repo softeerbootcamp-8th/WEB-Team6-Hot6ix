@@ -557,7 +557,7 @@
     <div>
       <div class="sec-title">화면 확인</div>
       <div class="sec-sub">
-        지금 띄워 둔 <b>개발 서버</b> <code>:18000</code> 을 씁니다. 여기서 만든 경매방과 입찰은
+        지금 띄워 둔 <b>개발 서버</b> <code>:8080</code> 을 씁니다. 여기서 만든 경매방과 입찰은
         <b>그대로 남습니다.</b> 화면이 실제로 움직이는 걸 눈으로 볼 때 씁니다.
       </div>
     </div>
@@ -783,7 +783,7 @@
       <div class="card">
         <div class="links" id="links">
           <a href="#" id="link-room" class="primary">경매방 화면 열기 ↗</a>
-          <a href="http://localhost:15173/seller/rooms" target="_blank">판매자 화면 ↗</a>
+          <a href="http://localhost:5173/seller/rooms" target="_blank">판매자 화면 ↗</a>
           <a href="/sse-test.html" target="_blank">SSE 이벤트 ↗</a>
         </div>
       </div>
@@ -854,7 +854,7 @@
     </div>
     <div class="step-body">
       <div class="why">
-        <b>측정용 서버를 따로 띄웁니다.</b> 지금 보고 있는 개발 서버(<code>:18000</code>)와 거기 만들어 둔
+        <b>측정용 서버를 따로 띄웁니다.</b> 지금 보고 있는 개발 서버(<code>:8080</code>)와 거기 만들어 둔
         경매방은 건드리지 않습니다. 측정용은 CPU와 메모리를 고정해 두기 때문에, 팀원끼리 잰 숫자를
         나란히 놓고 볼 수 있습니다.
       </div>
@@ -1236,7 +1236,7 @@ function onRoomReady(shareCode, roomId, unit) {
 
   el('room-code').textContent = shareCode
   el('room-chip').classList.add('live')
-  el('link-room').href = `http://localhost:15173/rooms/${shareCode}`
+  el('link-room').href = `http://localhost:5173/rooms/${shareCode}`
   el('link-room').target = '_blank'
 
   setStep(1, 'done', `${shareCode} · 입찰 단위 ${unit.toLocaleString()}원`)

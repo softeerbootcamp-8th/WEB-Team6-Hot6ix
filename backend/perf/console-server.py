@@ -3,7 +3,7 @@
 
     python3 perf/console-server.py        # 18099 포트
 
-브라우저는 셸을 못 돌린다. 그래서 콘솔 화면(:18000/dev-console.html)이 여기로 요청을 보내면
+브라우저는 셸을 못 돌린다. 그래서 콘솔 화면(:8080/dev-console.html)이 여기로 요청을 보내면
 이 서버가 run.sh 를 실행하고, 진행 상황과 결과를 돌려준다.
 
 왜 스프링 앱에 안 넣었나
@@ -35,7 +35,7 @@ RESULTS_DIR = PERF_DIR / "results"
 
 PORT = int(os.environ.get("PERF_CONSOLE_PORT", "18099"))
 
-# 콘솔 화면은 스프링 앱(:18000)이 서빙하므로 출처가 다르다. 개발용이라 로컬만 허용한다.
+# 콘솔 화면은 스프링 앱(:8080)이 서빙하므로 출처가 다르다. 개발용이라 로컬만 허용한다.
 ALLOWED_ORIGIN_PATTERN = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
 
 # run.sh 가 찍는 단계 표시. "[3/8] 기동 대기" 에서 3 과 문구를 뽑는다.
@@ -381,7 +381,7 @@ def read_server_log(which, tail):
 # 여기서는 쿠키 항아리를 N개 따로 들고, 스레드 배리어로 **같은 순간에** 쏜다.
 # 부하가 목적이 아니라 정합성 확인이 목적이라 N 이 작아도 된다.
 
-APP_BASE = os.environ.get("PERF_APP_BASE", "http://localhost:18000") + "/api/v1"
+APP_BASE = os.environ.get("PERF_APP_BASE", "http://localhost:8080") + "/api/v1"
 
 
 def _client():
@@ -631,7 +631,7 @@ def main():
 
     print(f"부하 테스트 콘솔 서버가 http://localhost:{PORT} 에서 돕니다.")
     print(f"  실행 위치: {BACKEND_DIR}")
-    print(f"  개발 콘솔: http://localhost:18000/dev-console.html 의 [부하 테스트] 탭")
+    print(f"  개발 콘솔: http://localhost:8080/dev-console.html 의 [부하 테스트] 탭")
     print("  Ctrl+C 로 끕니다.")
 
     try:

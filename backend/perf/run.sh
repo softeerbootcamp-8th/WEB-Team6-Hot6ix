@@ -34,7 +34,7 @@ WHO="${PERF_WHO:-$(whoami)}"
 JAVA_OPTS=""
 SKIP_BUILD=0
 
-# perf 는 측정용 포트를 따로 쓴다. 개발 백엔드(18000)나 프론트(15173)와 안 겹치게 한다.
+# perf 는 측정용 포트를 따로 쓴다. 개발 백엔드(8080)나 프론트(5173)와 안 겹치게 한다.
 # 겹치면 측정을 시작하는 순간 개발 환경이 죽고, 프론트가 조용히 perf 앱에 붙는다.
 PERF_HTTP_PORT="${PERF_HTTP_PORT:-18080}"
 PERF_PROM_PORT="${PERF_PROM_PORT:-19090}"
@@ -63,7 +63,7 @@ usage() {
   --skip-build       jar 를 다시 안 만든다. 같은 커밋으로 계단만 올릴 때
   --port N           perf nginx 를 띄울 호스트 포트 (기본 18080)
 
-측정용 포트는 개발 백엔드(18000)나 프론트(15173)와 겹치지 않는다.
+측정용 포트는 개발 백엔드(8080)나 프론트(5173)와 겹치지 않는다.
   nginx 18080   Prometheus 19090   Grafana 13000
 환경변수 PERF_HTTP_PORT / PERF_PROM_PORT / PERF_GRAFANA_PORT 로도 바꿀 수 있다.
 USAGE

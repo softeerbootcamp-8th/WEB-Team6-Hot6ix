@@ -15,7 +15,7 @@ echo
 echo "  이 창은 켜 둔 채로 두세요. 끄면 실행이 멈춥니다."
 echo "  브라우저에서 아래를 엽니다."
 echo
-echo "    http://localhost:18000/dev-console.html"
+echo "    http://localhost:8080/dev-console.html"
 echo
 echo "  [부하 테스트] 탭에서 [이 조건으로 실행] 을 누르면 됩니다."
 echo "════════════════════════════════════════════════"
