@@ -114,12 +114,28 @@ public class RoomSseManager {
                 .add(emitter);
     }
 
+    /**
+     * 연결 하나를 걷어내고, 그 방의 마지막 연결이었으면 방 자체를 지운다.
+     *
+     * <p>방을 안 지우면 {@code upbid.sse.rooms}가 "지금 연결이 붙어 있는 방 수"가 아니라
+     * "한 번이라도 연결이 있었던 방 수"가 되어 한 번 오른 뒤 영영 안 내려온다(실측으로 확인).
+     * 빈 Set 도 방마다 하나씩 계속 쌓인다.
+     *
+     * <p><b>{@code get} → {@code isEmpty} → {@code remove} 로 나눠 쓰면 안 된다.</b> 비었는지
+     * 확인한 뒤 지우기 전에 다른 스레드가 그 방에 새로 붙으면, 그 연결이 든 Set 을 통째로
+     * 버려서 방금 붙은 사람이 아무 이벤트도 못 받는다. {@code compute} 는 키 하나에 대해
+     * 원자적이라 그 틈이 없다.
+     */
     private void unregister(Long roomId, SseEmitter emitter) {
-        Set<SseEmitter> emitters = roomEmitters.get(roomId);
+        roomEmitters.compute(roomId, (id, emitters) -> {
+            if (emitters == null) {
+                return null;
+            }
 
-        if (emitters != null) {
             emitters.remove(emitter);
-        }
+
+            return emitters.isEmpty() ? null : emitters;
+        });
     }
 
     private void broadcastParticipantCount(Long roomId) {

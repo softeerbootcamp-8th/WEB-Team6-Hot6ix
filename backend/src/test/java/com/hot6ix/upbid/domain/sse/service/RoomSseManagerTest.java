@@ -178,6 +178,37 @@ class RoomSseManagerTest {
     }
 
     @Test
+    @DisplayName("마지막 구독이 빠지면 방 수 지표도 0으로 내려간다")
+    void reportsZeroRoomsAfterLastSubscriberLeaves() {
+
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RoomSseManager manager = new RoomSseManager(
+                new SseProperties(30_000L, EMITTER_TIMEOUT_MS), new SseMetrics(registry));
+
+        // 게이지는 @PostConstruct 에서 붙는다. 직접 생성한 객체에서는 안 불리므로 여기서 부른다.
+        manager.bindMetrics();
+
+        SseEmitter first = manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
+        SseEmitter second = manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
+
+        assertThat(rooms(registry)).isEqualTo(1);
+
+        // 연결이 끊긴 상태를 만들고 heartbeat 로 걷어내게 한다.
+        first.complete();
+        second.complete();
+        manager.sendHeartbeat();
+
+        assertThat(manager.getParticipantCount(ROOM_ID)).isZero();
+        assertThat(rooms(registry))
+                .as("방을 안 지우면 한 번 오른 뒤 영영 안 내려온다")
+                .isZero();
+    }
+
+    private static double rooms(SimpleMeterRegistry registry) {
+        return registry.get("upbid.sse.rooms").gauge().value();
+    }
+
+    @Test
     @DisplayName("구독한 emitter 를 그대로 돌려준다")
     void returnsRegisteredEmitters() {
 
