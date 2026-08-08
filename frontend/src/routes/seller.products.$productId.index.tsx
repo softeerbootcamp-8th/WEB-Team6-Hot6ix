@@ -273,7 +273,7 @@ function SellerProductDetailPage() {
                   queryKey: getGetListQueryKey(),
                 })
                 toast.success('상품을 삭제했어요')
-                void navigate({ to: '/seller/products' })
+                void navigate({ to: '/seller' })
               },
               onError: (deleteError) => {
                 const { title, description } =

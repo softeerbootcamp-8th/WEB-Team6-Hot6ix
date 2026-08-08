@@ -21,9 +21,10 @@ keyword?: string;
  */
 status?: GetListStatus;
 /**
- * 이전 페이지 마지막 상품의 productId, 없으면 첫 페이지
+ * 0부터 세는 페이지 번호, 기본값 0
+ * @minimum 0
  */
-cursor?: number;
+page?: number;
 /**
  * 페이지 크기, 기본값 20
  * @minimum 1

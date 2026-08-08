@@ -45,7 +45,7 @@ function SellerProductNewPage() {
                     queryKey: getGetListQueryKey(),
                   })
                   toast.success('상품을 등록했어요')
-                  void navigate({ to: '/seller/products' })
+                  void navigate({ to: '/seller' })
                 },
                 onError: (error) => {
                   const { title, description } = toProductErrorMessage(error)

@@ -9,13 +9,12 @@
 **그 외 환경**: 카카오 로그인 후 발급된 SESSION 쿠키가 자동으로 포함됩니다.
  * OpenAPI spec version: v1
  */
-import type { CursorPageResponseProductSummaryResponseDto } from './cursorPageResponseProductSummaryResponseDto';
-import type { ValidationError } from './validationError';
+import type { ProductSummaryResponseDto } from './productSummaryResponseDto';
 
-export interface CommonResponseCursorPageResponseProductSummaryResponseDto {
-  success?: boolean;
-  data?: CursorPageResponseProductSummaryResponseDto;
-  code?: number;
-  message?: string;
-  errors?: ValidationError[];
+export interface PageResponseProductSummaryResponseDto {
+  content?: ProductSummaryResponseDto[];
+  page?: number;
+  size?: number;
+  totalElements?: number;
+  totalPages?: number;
 }

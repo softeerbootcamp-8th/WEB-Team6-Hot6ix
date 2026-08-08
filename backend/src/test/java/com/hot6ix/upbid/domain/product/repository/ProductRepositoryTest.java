@@ -11,6 +11,7 @@ import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -29,6 +30,7 @@ import org.springframework.boot.jpa.test.autoconfigure.AutoConfigureTestEntityMa
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -199,7 +201,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         newProduct(sellerProfile, "미등록상품");
 
         List<ProductSummaryResponseDto> results =
-                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::status)
                 .containsExactly(ProductListingStatus.UNREGISTERED);
@@ -227,7 +229,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         List<ProductSummaryResponseDto> results =
-                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null).getContent();
 
         assertThat(results)
                 .filteredOn(r -> r.productId().equals(ready.getProductId()))
@@ -262,7 +264,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         List<ProductSummaryResponseDto> results =
-                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::status)
                 .containsExactly(ProductListingStatus.UNREGISTERED);
@@ -280,7 +282,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         List<ProductSummaryResponseDto> results =
-                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::status)
                 .containsExactly(ProductListingStatus.UNREGISTERED);
@@ -299,7 +301,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         List<ProductSummaryResponseDto> results =
-                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::status)
                 .containsExactly(ProductListingStatus.UNREGISTERED);
@@ -318,7 +320,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         List<ProductSummaryResponseDto> results =
-                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::status)
                 .containsExactly(ProductListingStatus.ENDED);
@@ -349,7 +351,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         List<ProductSummaryResponseDto> results = productRepository.search(
-                sellerProfile.getSellerProfileId(), null, ProductListingStatus.UNREGISTERED, null, null);
+                sellerProfile.getSellerProfileId(), null, ProductListingStatus.UNREGISTERED, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::productId)
                 .containsExactlyInAnyOrder(
@@ -371,7 +373,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         List<ProductSummaryResponseDto> results = productRepository.search(
-                sellerProfile.getSellerProfileId(), null, ProductListingStatus.ENDED, null, null);
+                sellerProfile.getSellerProfileId(), null, ProductListingStatus.ENDED, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::productId)
                 .containsExactly(ended.getProductId());
@@ -416,7 +418,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         entityManager.flush();
 
         List<ProductSummaryResponseDto> results = productRepository.search(
-                sellerProfile.getSellerProfileId(), null, ProductListingStatus.READY, null, null);
+                sellerProfile.getSellerProfileId(), null, ProductListingStatus.READY, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::productId)
                 .containsExactly(ready.getProductId());
@@ -431,15 +433,15 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         newProduct(sellerProfile, "키보드");
 
         List<ProductSummaryResponseDto> results =
-                productRepository.search(sellerProfile.getSellerProfileId(), "노트북", null, null, null);
+                productRepository.search(sellerProfile.getSellerProfileId(), "노트북", null, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::productId)
                 .containsExactly(notebook.getProductId());
     }
 
     @Test
-    @DisplayName("productId 최신순으로 정렬되고, cursor보다 작은 productId만 조회된다")
-    void search_ordersByProductIdDescWithCursor() {
+    @DisplayName("productId 최신순으로 정렬되고, page를 넘기면 그 다음 구간이 나온다")
+    void search_ordersByProductIdDescAcrossPages() {
 
         SellerProfile sellerProfile = newSellerProfile("seller10@hot6ix.com");
         Product first = newProduct(sellerProfile, "상품1");
@@ -447,31 +449,109 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         Product third = newProduct(sellerProfile, "상품3");
 
         List<ProductSummaryResponseDto> all =
-                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null);
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, null).getContent();
 
         assertThat(all).extracting(ProductSummaryResponseDto::productId)
                 .containsExactly(third.getProductId(), second.getProductId(), first.getProductId());
 
-        List<ProductSummaryResponseDto> afterThird = productRepository.search(
-                sellerProfile.getSellerProfileId(), null, null, third.getProductId(), null);
+        // 한 페이지 2건이면 1페이지(0-based)에는 가장 오래된 한 건만 남는다.
+        Page<ProductSummaryResponseDto> secondPage =
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, 1, 2);
 
-        assertThat(afterThird).extracting(ProductSummaryResponseDto::productId)
+        assertThat(secondPage.getContent()).extracting(ProductSummaryResponseDto::productId)
+                .containsExactly(first.getProductId());
+    }
+
+    @Test
+    @DisplayName("오래된 순으로 정렬하면 먼저 등록한 상품이 앞에 오고, 쪽을 넘겨도 순서가 이어진다")
+    void search_ordersByProductIdAscWhenOldestFirst() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller22@hot6ix.com");
+        Product first = newProduct(sellerProfile, "상품1");
+        Product second = newProduct(sellerProfile, "상품2");
+        Product third = newProduct(sellerProfile, "상품3");
+
+        List<ProductSummaryResponseDto> all = productRepository.search(
+                sellerProfile.getSellerProfileId(), null, null,
+                ProductSortType.OLDEST, null, null).getContent();
+
+        assertThat(all).extracting(ProductSummaryResponseDto::productId)
+                .containsExactly(first.getProductId(), second.getProductId(), third.getProductId());
+
+        // 한 페이지 2건이면 1페이지(0-based)에는 가장 최근 한 건만 남는다.
+        Page<ProductSummaryResponseDto> secondPage = productRepository.search(
+                sellerProfile.getSellerProfileId(), null, null,
+                ProductSortType.OLDEST, 1, 2);
+
+        assertThat(secondPage.getContent()).extracting(ProductSummaryResponseDto::productId)
+                .containsExactly(third.getProductId());
+    }
+
+    @Test
+    @DisplayName("정렬을 생략하면 최신순이다")
+    void search_defaultsToLatestWhenSortOmitted() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller23@hot6ix.com");
+        Product first = newProduct(sellerProfile, "상품1");
+        Product second = newProduct(sellerProfile, "상품2");
+
+        List<ProductSummaryResponseDto> results = productRepository.search(
+                sellerProfile.getSellerProfileId(), null, null, null, null, null).getContent();
+
+        assertThat(results).extracting(ProductSummaryResponseDto::productId)
                 .containsExactly(second.getProductId(), first.getProductId());
     }
 
     @Test
-    @DisplayName("size를 지정하면 실제로 size+1건까지만 조회된다")
-    void search_limitsBySizePlusOne() {
+    @DisplayName("size만큼만 담고 전체 개수와 전체 페이지 수를 함께 준다")
+    void search_reportsTotalsForRequestedSize() {
 
         SellerProfile sellerProfile = newSellerProfile("seller14@hot6ix.com");
         newProduct(sellerProfile, "상품A");
         newProduct(sellerProfile, "상품B");
         newProduct(sellerProfile, "상품C");
 
-        List<ProductSummaryResponseDto> results =
-                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, 1);
+        Page<ProductSummaryResponseDto> page =
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, null, 2);
 
-        assertThat(results).hasSize(2);
+        assertThat(page.getContent()).hasSize(2);
+        assertThat(page.getTotalElements()).isEqualTo(3);
+        assertThat(page.getTotalPages()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("전체 페이지 수를 넘는 page는 빈 목록이지만 전체 개수는 그대로 준다")
+    void search_pageBeyondRangeIsEmptyButKeepsTotals() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller20@hot6ix.com");
+        newProduct(sellerProfile, "상품D");
+        newProduct(sellerProfile, "상품E");
+
+        Page<ProductSummaryResponseDto> page =
+                productRepository.search(sellerProfile.getSellerProfileId(), null, null, 5, 2);
+
+        assertThat(page.getContent()).isEmpty();
+        assertThat(page.getTotalElements()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("전체 개수는 필터를 적용한 뒤의 개수다 — 목록과 어긋나면 페이지 수가 틀린다")
+    void search_totalElementsRespectsFilter() {
+
+        SellerProfile sellerProfile = newSellerProfile("seller21@hot6ix.com");
+        AuctionRoom room = newAuctionRoom(sellerProfile);
+
+        newProduct(sellerProfile, "미등록상품3");
+        newProduct(sellerProfile, "미등록상품4");
+        Product ready = newProduct(sellerProfile, "대기상품3");
+        newAuctionItem(room, ready, AuctionItemStatus.READY);
+        entityManager.flush();
+
+        Page<ProductSummaryResponseDto> page = productRepository.search(
+                sellerProfile.getSellerProfileId(), null, ProductListingStatus.READY, null, 1);
+
+        assertThat(page.getTotalElements()).isEqualTo(1);
+        assertThat(page.getTotalPages()).isEqualTo(1);
     }
 
     @Test
@@ -488,7 +568,7 @@ class ProductRepositoryTest extends AbstractMySqlContainerTest {
         newProduct(other, "타인상품");
 
         List<ProductSummaryResponseDto> results =
-                productRepository.search(owner.getSellerProfileId(), null, null, null, null);
+                productRepository.search(owner.getSellerProfileId(), null, null, null, null).getContent();
 
         assertThat(results).extracting(ProductSummaryResponseDto::productId)
                 .containsExactly(visible.getProductId());

@@ -29,6 +29,9 @@ export interface PickedItem {
   startingPrice: number
 }
 
+/** "더 보기"를 누를 때마다 이만큼씩 더 받는다. */
+const PICK_PAGE_SIZE = 20
+
 /**
  * 물품 추가 (Figma `WEB-09 · 판매자 · 경매방 생성 / 물품 추가 참고`, 713:3965).
  *
@@ -88,11 +91,20 @@ export function ItemPickerModal({
    */
   const [mode, setMode] = useState<'pick' | 'create'>('pick')
 
+  /*
+   * 모달 안에서는 페이지 번호 대신 "더 보기"로 이어 본다 — 고르는 중에 쪽을 옮기면
+   * 방금 체크한 게 시야에서 사라진다. 서버가 offset 페이지네이션이라 다음 쪽을 붙이는
+   * 대신 첫 쪽의 크기를 키운다. 목록이 통째로 다시 오지만 고른 값은 별도 state 라
+   * 영향받지 않고, `keepPreviousData` 덕에 받는 동안 화면도 그대로다.
+   */
+  const [size, setSize] = useState(PICK_PAGE_SIZE)
+
   useEffect(() => {
     if (!open) return
 
     setKeyword('')
     setMode('pick')
+    setSize(PICK_PAGE_SIZE)
     setSelected(
       initialItemsRef.current.map((item) => ({
         productId: item.productId,
@@ -103,23 +115,22 @@ export function ItemPickerModal({
     )
   }, [open])
 
-  const {
-    products,
-    isPending,
-    isError,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-  } = useProductList({
-    // 이미 경매에 올라간 상품은 서버가 거절하므로 처음부터 안 보여준다.
-    status: 'UNREGISTERED',
-    keyword: debouncedKeyword || undefined,
-  })
+  const { products, totalElements, isPending, isError, isFetching } =
+    useProductList({
+      // 이미 경매에 올라간 상품은 서버가 거절하므로 처음부터 안 보여준다.
+      status: 'UNREGISTERED',
+      keyword: debouncedKeyword || undefined,
+      page: 0,
+      size,
+    })
 
   const visible = useMemo(
     () => products.filter((product) => product.productId != null),
     [products],
   )
+
+  /** 서버가 센 전체 개수와 지금 받은 줄 수를 비교한다. */
+  const hasMore = visible.length < totalElements
 
   // 되돌리기는 여는 쪽 effect 가 맡는다. 여기서 비우면 닫히는 순간 목록이
   // 사라지는 게 보인다.
@@ -233,9 +244,8 @@ export function ItemPickerModal({
 
               <div className="mt-4 flex shrink-0 items-center justify-between gap-3">
                 <p className="text-[13px] font-bold text-neutral-secondary">
-                  {/* 커서 페이지네이션이라 전체 개수를 모른다. 더 있으면 "+"로 적는다. */}
-                  등록 상품 {visible.length}
-                  {hasNextPage ? '+' : ''}개
+                  {/* 화면에 몇 줄 받았는지가 아니라 서버가 센 전체 개수다. */}
+                  등록 상품 {totalElements}개
                 </p>
                 <button
                   type="button"
@@ -370,15 +380,15 @@ export function ItemPickerModal({
                     )
                   })}
 
-                  {hasNextPage && (
+                  {hasMore && (
                     <li>
                       <button
                         type="button"
-                        disabled={isFetchingNextPage}
-                        onClick={() => void fetchNextPage()}
+                        disabled={isFetching}
+                        onClick={() => setSize((prev) => prev + PICK_PAGE_SIZE)}
                         className="ease-soft h-12 w-full rounded-[14px] border bg-card text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-[0.99] disabled:opacity-50"
                       >
-                        {isFetchingNextPage ? '불러오는 중…' : '더 보기'}
+                        {isFetching ? '불러오는 중…' : '더 보기'}
                       </button>
                     </li>
                   )}
