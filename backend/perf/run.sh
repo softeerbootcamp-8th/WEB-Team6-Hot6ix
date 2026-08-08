@@ -583,6 +583,16 @@ fi
 
 REJECTED_4XX=$((REJECTED_AMOUNT + REJECTED_ALREADY_TOP + REJECTED_CLOSED + CONCURRENT_CONFLICT + REJECTED_OTHER))
 
+# 계단을 올리면 워크로드 구성 자체가 바뀐다. 금액 격자 위에서 도착 순서가 섞이면 "역대 최고"
+# 갱신만 접수되므로, VU 가 늘수록 접수 비율이 떨어지고 싼 거절이 늘어난다.
+# 실측: vus 20 에서 1.04%, vus 40 에서 0.61% 였고 접수 건수는 6159 -> 3217 로 반토막이었다.
+# 총 처리량만 보면 0.86배라 "약간 하락"으로 읽히는데, 실제로 한 일은 절반이다.
+ACCEPTED_PER_S="$(awk -v a="$ACCEPTED" -v w="$WINDOW_SECONDS" 'BEGIN { printf "%.1f", (w > 0 ? a / w : 0) }')"
+
+# k6 가 클라이언트에서 본 p95. 서버 p95 와 나란히 두면 서로 검산이 된다.
+# 둘이 벌어지면 그 차이가 네트워크와 부하 발생기 몫이라, 그 자체가 신호다.
+K6_P95_MS="$(jq -r '.metrics.http_req_duration.values["p(95)"] // "NaN"' "$RESULT_DIR/summary.json" 2>/dev/null || echo NaN)"
+
 K6_CPU_MAX="$(sort -g "$CPU_LOG" 2>/dev/null | tail -1)"
 K6_CPU_MAX="${K6_CPU_MAX:-NaN}"
 
@@ -613,6 +623,7 @@ SCHED_ACTIVE_MAX="$(round "$SCHED_ACTIVE_MAX" 0)"
 SCHED_QUEUED_MAX="$(round "$SCHED_QUEUED_MAX" 0)"
 GC_PAUSE_MS_PER_S="$(round "$GC_PAUSE_MS_PER_S" 1)"
 K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
+K6_P95_MS="$(round "$K6_P95_MS" 0)"
 
 # 그래프를 나중에 다시 그릴 수 있게 원본 시계열도 남긴다.
 # 숫자 몇 개만 남기면 "이 계단은 왜 이렇지"를 되짚을 수 없다.
@@ -665,7 +676,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,scenario,vus,pool,items,sse,throughput_req_per_s,p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -690,9 +701,9 @@ if [ ! -f "$INDEX" ]; then
 fi
 
 # bottleneck 과 note 는 비워 둔다. 사람이 채우는 칸이 이 둘뿐이다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
   "$RUN_ID" "$WHO" "$COMMIT" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
-  "$RPS" "$P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
+  "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" \
   "$CLOSE_DELAY_P50_MS" "$CLOSE_DELAY_P95_MS" "$CLOSE_DELAY_MAX_MS" \
   "$CLOSE_DURATION_P95_MS" "$CLOSE_FAILURES" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
@@ -725,8 +736,9 @@ cat >"$RESULT_DIR/note.md" <<EOF
 
 | | |
 |---|---|
-| 처리량 | ${RPS} req/s |
-| p95 | ${P95_MS} ms |
+| 처리량 (주인공 요청만) | ${RPS} req/s |
+| **접수 처리량** | **${ACCEPTED_PER_S} 건/s** ← 계단 비교는 이 값으로 |
+| p95 (서버 / k6) | ${P95_MS} / ${K6_P95_MS} ms |
 | 톰캣 스레드 max | ${TOMCAT_BUSY_MAX} |
 | 커넥션 active / pending max | ${HIKARI_ACTIVE_MAX} / ${HIKARI_PENDING_MAX} |
 | 커넥션 획득 p95 | ${CONN_ACQUIRE_P95_MS} ms |
