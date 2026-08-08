@@ -243,9 +243,34 @@ cleanup_oneoff() {
 }
 
 cleanup_oneoff
-"${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
+
+# down 이 아니라 이 셋만 지운다.
+#
+# down 은 프로젝트를 통째로 내리므로 Prometheus 와 Grafana 까지 걷어간다. 그 둘은 런처가
+# 미리 띄워 두는 것이라(측정 전에 :13000 을 열어도 연결 거부가 안 나게 하려고), 여기서
+# 내렸다가 아래 up 전에 실행이 죽으면 **그래프가 사라진 채로 안 돌아온다.** 런처는 이미
+# 지나갔으니 다시 안 띄운다. 실제로 겪었다 — 2/8 단계에서 정지시킨 실행 하나 때문에
+# 그 뒤로 계속 :13000 이 연결 거부였다.
+#
+# -v 는 **익명 볼륨만** 지운다. mysql 이미지가 /var/lib/mysql 을 볼륨으로 선언해서 컨테이너
+# 마다 익명 볼륨이 하나씩 생기는데, -v 가 없으면 실행할 때마다 그게 하나씩 떠돌며 쌓인다
+# (실측: rm 뒤 dangling 볼륨이 1 늘었고, -v 를 붙이니 안 늘었다).
+#
+# 팀 금지 명령인 `down -v` 와는 다르다. 저건 프로젝트의 named 볼륨까지 지워서 로컬 DB 가
+# 날아가는 명령이고, 이건 여기 적은 세 서비스의 익명 볼륨만 건드린다. 측정용 DB 는 매 실행
+# 비우는 게 목적이라 지워도 되는 것이고, named 볼륨인 prometheus-data 와 다른 프로젝트의
+# 개발용 DB 볼륨은 그대로 남는 것을 확인했다.
+"${COMPOSE[@]}" rm -sfv nginx app mysql >/dev/null 2>&1 || true
 UP_AT="$(date +%s)"
 "${COMPOSE[@]}" up -d --build nginx app mysql prometheus grafana
+
+# Prometheus 가 실행 사이에 살아남게 됐으므로 설정 파일을 다시 읽게 한다.
+#
+# 예전에는 down 이 매번 컨테이너를 새로 만들어서 prometheus.yml 수정이 저절로 반영됐다.
+# 이제는 안 그러므로, 파일만 고치고 "왜 안 먹지" 하는 새 함정이 생긴다. Prometheus 는
+# SIGHUP 으로 설정을 다시 읽는다(--web.enable-lifecycle 을 안 켰으므로 /-/reload 는 없다).
+# 방금 새로 만들어졌으면 그냥 한 번 더 읽는 것이라 아무 일도 안 일어난다.
+"${COMPOSE[@]}" kill -s SIGHUP prometheus >/dev/null 2>&1 || true
 
 echo "[3/8] 기동 대기"
 for _ in $(seq 1 120); do
