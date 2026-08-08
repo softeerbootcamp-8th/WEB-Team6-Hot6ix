@@ -2,8 +2,11 @@ package com.hot6ix.upbid.domain.bid.service;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 입찰 계측만 아는 객체.
@@ -27,19 +30,60 @@ public class BidMetrics {
      */
     private final Timer lockWait;
 
+    /**
+     * 락을 잡고 있던 시간. 기다린 시간만 재면 줄이 길어서 오래 걸린 것인지 앞사람이 오래
+     * 잡고 있어서인지 못 가른다. 앞쪽이면 요청을 흩어서 풀리고 뒤쪽이면 안 풀린다.
+     *
+     * <p>{@link #lockWait}과 같은 이유로 생성자에서 미리 만든다.
+     */
+    private final Timer lockHold;
+
     public BidMetrics(MeterRegistry registry) {
         this.lockWait = registry.timer("upbid.bid.lock.wait");
+        this.lockHold = registry.timer("upbid.bid.lock.hold");
     }
 
     /**
-     * 물품 행 락을 잡는 동안 걸린 시간을 잰다.
+     * 물품 행 락을 잡는 동안 걸린 시간을 잰다. 락을 잡고 나면 {@link #lockHold} 측정을 이어서
+     * 시작한다.
      *
-     * <p><b>예외가 나도 기록한다</b>({@code Timer.record}가 내부에서 try/finally를 돈다).
-     * 그게 중요한 이유는 실패한 요청이야말로 가장 오래 기다린 요청이기 때문이다. 락 획득이
-     * {@code innodb_lock_wait_timeout}에 걸린 요청을 빼고 세면 경합이 심해질수록 p95가 오히려
-     * 낮게 나오는데, 경합이 극단으로 가는 지점이 정확히 우리가 보려는 곳이다.
+     * <p><b>예외가 나도 대기 시간은 기록한다</b>({@code Timer.record}가 내부에서 try/finally를
+     * 돈다). 그게 중요한 이유는 실패한 요청이야말로 가장 오래 기다린 요청이기 때문이다. 락
+     * 획득이 {@code innodb_lock_wait_timeout}에 걸린 요청을 빼고 세면 경합이 심해질수록 p95가
+     * 오히려 낮게 나오는데, 경합이 극단으로 가는 지점이 정확히 우리가 보려는 곳이다.
      */
     public <T> T recordLockWait(Supplier<T> lockedRead) {
-        return lockWait.record(lockedRead);
+
+        T locked = lockWait.record(lockedRead);
+
+        // 예외로 끝나면 락이 없으므로 여기까지 오지 않는다.
+        startLockHold();
+
+        return locked;
+    }
+
+    /**
+     * 락을 잡은 지금부터 <b>트랜잭션이 끝날 때까지</b>를 잰다.
+     *
+     * <p>행 락은 커밋 시점에 풀리는데 커밋은 {@code @Transactional} 프록시가 메서드 밖에서
+     * 한다. 그래서 "락 획득 ~ 메서드 리턴"만 재면 커밋에 걸린 시간이 빠진다. 트랜잭션 동기화를
+     * 걸어 {@code afterCompletion}에서 기록하면 실제로 락이 풀리는 시점까지 들어온다.
+     *
+     * <p>트랜잭션 밖에서 불리면 잴 수가 없어 그냥 넘어간다. 그런 호출은 락도 안 잡는다.
+     */
+    private void startLockHold() {
+
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+
+        long acquiredAt = System.nanoTime();
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                lockHold.record(System.nanoTime() - acquiredAt, TimeUnit.NANOSECONDS);
+            }
+        });
     }
 }
