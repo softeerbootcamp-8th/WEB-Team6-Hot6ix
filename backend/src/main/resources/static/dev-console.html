@@ -51,23 +51,11 @@
   }
   .logo { font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
   .logo span { color: var(--blue); }
-  .tabs { display: flex; gap: 4px; margin-left: 8px; }
-  .tab {
-    padding: 7px 16px;
-    border-radius: 9px;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--ink-3);
-    cursor: pointer;
-    border: 0;
-    background: none;
-    font-family: inherit;
-  }
-  .tab:hover { background: var(--bg); color: var(--ink-2); }
-  .tab.on { background: var(--blue-soft); color: var(--blue); }
 
+  /* 두 구역의 상태를 헤더에 늘 띄운다. 탭을 없앴으니 "지금 뭐가 돌아가는지"는
+     스크롤 위치와 무관하게 한 자리에서 보여야 한다. */
+  .topstat { margin-left: auto; display: flex; align-items: center; gap: 14px; }
   .room-chip {
-    margin-left: auto;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -83,10 +71,44 @@
     color: var(--ink);
   }
   .room-chip.live .code { background: var(--green-soft); border-color: #b6e4cc; color: var(--green); font-weight: 600; }
+  .room-chip.busy .code { background: var(--blue-soft); border-color: #b9ccfa; color: var(--blue); font-weight: 600; }
+
+  /* 탭 대신 그 자리로 데려다 주는 링크. 누르면 그 구역으로 스크롤한다. */
+  .jump { display: flex; gap: 4px; margin-left: 8px; }
+  .jump a {
+    padding: 7px 16px; border-radius: 9px; font-size: 14px; font-weight: 600;
+    color: var(--ink-3); text-decoration: none;
+  }
+  .jump a:hover { background: var(--bg); color: var(--ink-2); }
+
+  /* ── 구역 ────────────────────────────────────────────────
+     한 페이지에 둘을 얹었으므로 어디서부터 다른 이야기인지가 보여야 한다.
+     특히 둘은 서로 다른 서버를 보기 때문에 그 경계가 흐려지면 안 된다. */
+  .section-head {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 0 0 16px;
+    max-width: 1080px;
+  }
+  .section-head .bar { width: 4px; align-self: stretch; border-radius: 3px; background: var(--blue); flex-shrink: 0; }
+  .section-head .sec-title { font-size: 19px; font-weight: 700; letter-spacing: -0.3px; }
+  .section-head .sec-sub { font-size: 13px; color: var(--ink-2); margin-top: 3px; line-height: 1.6; }
+  .section-head .sec-sub code {
+    background: #eef0f6; padding: 1px 6px; border-radius: 5px; font-size: 12px;
+  }
+
+  /* 헤더가 sticky 라 앵커로 뛰면 제목이 가린다. */
+  .anchor { scroll-margin-top: 76px; }
+
+  .boundary {
+    max-width: 1560px; margin: 0 auto;
+    padding: 10px 28px 26px;
+  }
+  .boundary hr { border: 0; border-top: 1px dashed #d7dbe8; margin: 0 0 26px; }
 
   /* ── 레이아웃 ─────────────────────────────────────────── */
-  .page { display: none; padding: 24px 28px 40px; max-width: 1560px; margin: 0 auto; }
-  .page.on { display: block; }
+  /* 탭을 없앴다. 두 구역이 한 페이지에 위아래로 놓인다. */
+  .page { display: block; padding: 0 28px 40px; max-width: 1560px; margin: 0 auto; }
+  .page:first-of-type { padding-top: 24px; }
   .cols { display: grid; grid-template-columns: minmax(430px, 520px) 1fr; gap: 20px; align-items: start; }
   /* grid 칸의 기본 min-width 가 auto 라, 안에 든 결과 표(칸이 많고 줄바꿈을 막아 둔다)가
      칸을 통째로 밀어내서 페이지가 가로로 넘친다. 0 으로 눌러야 표만 안에서 스크롤한다. */
@@ -378,23 +400,168 @@
   .res-table th { position: sticky; top: 0; z-index: 1; }
   .res-table td, .res-table th { padding: 8px 12px; font-size: 12.5px; white-space: nowrap; }
   .note-sm { font-size: 12.5px; color: var(--ink-3); margin-top: 10px; line-height: 1.6; }
+
+  /* ── 부하 테스트: 스텝 흐름 ───────────────────────────────
+     화면 확인 탭과 같은 문법(번호 스텝, 지금 것만 펼침)을 쓴다. 한 번 배우면 둘 다 쓴다. */
+  /* 왼쪽 끝은 위쪽 화면 확인 구역과 맞춘다. 가운데 정렬하면 두 구역의 시작점이
+     어긋나서 같은 페이지가 아닌 것처럼 보인다. */
+  .perf-flow { max-width: 1080px; }
+
+  /* 시나리오 카드에는 제목과 한 줄만 둔다. 나머지는 고른 뒤 아래에서 펼친다.
+     여섯 장이 각각 네 줄씩 달고 있으면 고르기 전에 읽을 글이 화면 하나를 넘는다. */
+  .scen .one { font-size: 12.5px; color: var(--ink-2); line-height: 1.55; }
+  .scen .first {
+    display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 700;
+    background: var(--amber-soft); color: var(--amber); padding: 2px 7px; border-radius: 20px;
+  }
+
+  /* 접히는 설명. 실행 버튼에 닿기까지 읽어야 할 글을 없애려고 설명을 전부 여기 넣는다. */
+  details.more { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 11px; }
+  details.more > summary {
+    cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--ink-3);
+    list-style: none; display: flex; align-items: center; gap: 7px;
+  }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary::before { content: '▸'; font-size: 10px; transition: transform .15s; }
+  details.more[open] > summary::before { transform: rotate(90deg); }
+  details.more > summary:hover { color: var(--ink-2); }
+  details.more .inner { padding-top: 11px; }
+  .badge {
+    margin-left: auto; font-size: 11px; font-weight: 700;
+    background: var(--blue-soft); color: var(--blue); padding: 2px 9px; border-radius: 20px;
+  }
+  .badge:empty { display: none; }
+
+  /* 세부 조정 한 줄 = 라벨 + run.sh 플래그 + 입력칸.
+     플래그를 나란히 적어야 화면에서 만진 값과 명령의 플래그가 1:1 로 보인다. */
+  .knob { display: grid; grid-template-columns: 1fr 128px 92px; align-items: center; gap: 10px; padding: 8px 0; }
+  .knob + .knob { border-top: 1px dashed #eef0f6; }
+  .knob .k { font-size: 12.5px; font-weight: 600; color: var(--ink-2); }
+  .knob .k small { display: block; font-weight: 400; color: var(--ink-3); font-size: 11.5px; line-height: 1.45; }
+  .knob .f { font-size: 12px; color: var(--ink-3); }
+  .knob input[type=number], .knob input[type=text] {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--line);
+    border-radius: 8px; font-size: 13px; font-family: inherit; color: var(--ink);
+  }
+  .knob.changed .f { color: var(--blue); font-weight: 700; }
+  .knob.changed input { border-color: #b9ccfa; background: #fbfcff; }
+  .knob.off { display: none; }
+  .knob.flag { grid-template-columns: 1fr 128px 92px; }
+  .knob.flag input[type=checkbox] { width: 16px; height: 16px; }
+
+  /* 실행 중 8단계 */
+  .runsteps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 20px; }
+  .rstep { display: flex; align-items: center; gap: 9px; padding: 5px 0; font-size: 13px; color: var(--ink-3); }
+  .rstep .mark {
+    width: 17px; height: 17px; border-radius: 50%; flex-shrink: 0;
+    display: grid; place-items: center; font-size: 10px; font-weight: 700;
+    background: #eef0f6; color: var(--ink-3);
+  }
+  .rstep .est { margin-left: auto; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .rstep.done { color: var(--ink-2); }
+  .rstep.done .mark { background: var(--green); color: #fff; }
+  .rstep.now { color: var(--ink); font-weight: 650; }
+  .rstep.now .mark { background: var(--blue); color: #fff; animation: pulse 1.4s infinite; }
+
+  /* 돌아가는 동안의 지표 */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .tile { padding: 12px 14px; border-right: 1px solid var(--line); }
+  .tile:last-child { border-right: 0; }
+  .tile .k { font-size: 11.5px; color: var(--ink-3); font-weight: 600; }
+  .tile .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; line-height: 1.2; }
+  .tile .u { font-size: 11.5px; color: var(--ink-3); }
+  /* 아직 값이 없는 것과 0인 것을 다르게 그린다. 같게 그리면 "정상이라 0"과
+     "아직 안 나옴"이 구분되지 않아서, 멀쩡한 실행을 고장으로 읽게 된다. */
+  .tile.wait .v { color: var(--ink-3); font-size: 15px; font-weight: 500; }
+  .tile.bad .v { color: var(--red); }
+  .tile.good .v { color: var(--green); }
+
+  /* ── 로그 창 ──────────────────────────────────────────────
+     셋을 한 자리에서 본다. 측정 진행(run.sh), 측정용 앱, 개발 앱.
+     무엇이 잘못됐는지는 대개 로그에 적혀 있는데, 화면에서 몇 걸음 떨어져 있으면 안 보게 된다. */
+  .logbox { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-top: 16px; }
+  .logbar {
+    display: flex; align-items: center; gap: 4px;
+    padding: 8px 10px; background: #fbfcfe; border-bottom: 1px solid var(--line);
+  }
+  .logtab {
+    padding: 5px 12px; border-radius: 7px; border: 0; background: none;
+    font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-3); cursor: pointer;
+  }
+  .logtab:hover { background: #eef0f6; color: var(--ink-2); }
+  .logtab.on { background: var(--ink); color: #fff; }
+  .logbar .hint { margin-left: auto; font-size: 11.5px; color: var(--ink-3); }
+  .logbar .foot {
+    margin-left: 10px; padding: 5px 10px; border: 1px solid var(--line); background: #fff;
+    border-radius: 7px; font-family: inherit; font-size: 11.5px; color: var(--ink-2); cursor: pointer;
+  }
+  .logbar .foot:hover { border-color: #b9ccfa; color: var(--blue); }
+  .logbar .foot.off { visibility: hidden; }
+
+  .logview {
+    background: #14161f; color: #cfd4e4;
+    padding: 12px 16px;
+    font-family: 'SFMono-Regular', ui-monospace, Consolas, monospace;
+    font-size: 12px; line-height: 1.65;
+    max-height: 340px; overflow: auto;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  /* 눈으로 훑을 때 단계와 문제만 튀어나오게 한다. 전부 같은 회색이면 78줄 안에서
+     `※ 경고` 한 줄을 못 찾는다.
+     이름에 l- 을 붙인다. 접두사가 없으면 로그 한 줄이 .step 을 받는데, 그건 위저드
+     카드의 클래스라 흰 배경과 테두리, 12px 바깥 여백이 로그 줄에 씌워진다(실측). */
+  .logview .l-step { color: #7fb3ff; font-weight: 700; }
+  .logview .l-head { color: #ffffff; font-weight: 700; }
+  .logview .l-warn { color: #ffcd71; }
+  .logview .l-err  { color: #ff9d95; font-weight: 600; }
+  .logview .l-ok   { color: #64e0a3; }
+  .logview .l-dim  { color: #7c849f; }
+  .logview .l-note { color: #626a85; font-style: italic; }
+  .logview:empty::after { content: '아직 아무 일도 없습니다.'; color: #626a85; }
+
+  /* 결과 표 */
+  td.ratio { font-weight: 700; font-variant-numeric: tabular-nums; }
+  td.ratio.cap { color: var(--red); }
+  td.ratio.ok { color: var(--green); }
+  tr.unusable { opacity: .5; }
+  .verdict {
+    background: var(--green-soft); border: 1px solid #b6e4cc; border-radius: 10px;
+    padding: 12px 15px; font-size: 13px; color: #0d6444; line-height: 1.65; margin-bottom: 14px;
+  }
+  .verdict.warn { background: var(--amber-soft); border-color: #f2ddb0; color: #6b4700; }
+  .verdict.bad { background: var(--red-soft); border-color: #f4c6c1; color: #8f2b22; }
 </style>
 </head>
 <body>
 
 <header>
   <div class="logo">Up<span>Bid</span> 개발 콘솔</div>
-  <div class="tabs">
-    <button class="tab on" data-page="demo">화면 확인</button>
-    <button class="tab" data-page="perf">부하 테스트</button>
-  </div>
-  <div class="room-chip" id="room-chip">
-    <span>경매방</span><span class="code" id="room-code">아직 없음</span>
+  <nav class="jump">
+    <a href="#sec-demo">화면 확인</a>
+    <a href="#sec-perf">부하 테스트</a>
+  </nav>
+  <div class="topstat">
+    <div class="room-chip" id="room-chip">
+      <span>개발 경매방</span><span class="code" id="room-code">아직 없음</span>
+    </div>
+    <div class="room-chip" id="perf-chip">
+      <span>측정</span><span class="code" id="perf-code">안 돌고 있음</span>
+    </div>
   </div>
 </header>
 
 <!-- ══════════════ 화면 확인 ══════════════ -->
-<div class="page on" id="page-demo">
+<div class="page" id="page-demo">
+  <div class="section-head anchor" id="sec-demo">
+    <div class="bar"></div>
+    <div>
+      <div class="sec-title">화면 확인</div>
+      <div class="sec-sub">
+        지금 띄워 둔 <b>개발 서버</b> <code>:18000</code> 을 씁니다. 여기서 만든 경매방과 입찰은
+        <b>그대로 남습니다.</b> 화면이 실제로 움직이는 걸 눈으로 볼 때 씁니다.
+      </div>
+    </div>
+  </div>
   <div class="lead">
     <div>
       <div class="big" id="lead-title">1번부터 순서대로 누르면 됩니다</div>
@@ -646,163 +813,254 @@
   </div>
 </div>
 
+<!-- ══════════════ 구역 경계 ══════════════ -->
+<!-- 위아래가 서로 다른 서버를 본다. 이 경계가 흐려지면 "측정을 돌렸더니 내 경매방이
+     사라졌다"로 읽게 된다. 실제로는 측정용 DB만 비워지는데도 그렇다. -->
+<div class="boundary"><hr></div>
+
 <!-- ══════════════ 부하 테스트 ══════════════ -->
 <div class="page" id="page-perf">
+ <div class="perf-flow">
+
+  <div class="section-head anchor" id="sec-perf" style="padding-left:0">
+    <div class="bar" style="background:var(--amber)"></div>
+    <div>
+      <div class="sec-title">부하 테스트</div>
+      <div class="sec-sub">
+        도커로 <b>따로 띄우는 측정용 서버</b>를 씁니다. 위의 개발 서버와 경매방은 건드리지 않습니다.
+        측정용은 실행할 때마다 <b>제 DB를 비우고</b> 자기 방을 새로 만듭니다.
+      </div>
+    </div>
+  </div>
+
   <div class="lead">
     <div>
-      <div class="big">시나리오를 고르고 [이 조건으로 실행]을 누르면 됩니다</div>
-      <div class="sub">서버가 몇 명까지 버티는지 재고, 어디서 느려지는지를 찾습니다. 한 번에 4~5분 걸립니다.</div>
+      <div class="big" id="perf-lead-title">무엇을 잴지부터 고르면 됩니다</div>
+      <div class="sub" id="perf-lead-sub">무엇을 잴지 고르고, 얼마나 세게 걸지 정하고, 실행합니다. 한 번에 4~5분 걸립니다.</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="act sub" style="width:auto;padding:9px 16px" id="btn-perf-reset">처음부터</button>
+  </div>
+
+  <!-- 1 ─────────────────────────────────────────────────────────── -->
+  <div class="step now open" id="pstep-1">
+    <div class="step-head">
+      <div class="num">1</div>
+      <div>
+        <div class="step-title">무엇을 잴지 고르기</div>
+        <div class="step-note" id="pnote-1">고르면 무엇을 알게 되는지 아래에 나옵니다</div>
+      </div>
+      <div class="chev">▾</div>
+    </div>
+    <div class="step-body">
+      <div class="why">
+        <b>측정용 서버를 따로 띄웁니다.</b> 지금 보고 있는 개발 서버(<code>:18000</code>)와 거기 만들어 둔
+        경매방은 건드리지 않습니다. 측정용은 CPU와 메모리를 고정해 두기 때문에, 팀원끼리 잰 숫자를
+        나란히 놓고 볼 수 있습니다.
+      </div>
+
+      <div class="scen-grid" id="scens"></div>
+
+      <div class="answer" id="scen-answer"></div>
+
+      <details class="more" id="scen-more" style="display:none">
+        <summary>이 시나리오를 더 자세히</summary>
+        <div class="inner">
+          <table id="scen-detail"></table>
+        </div>
+      </details>
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:18px">
-    <div class="card-head">누르면 무슨 일이 일어나나</div>
-    <div style="padding:14px 18px">
-      <div class="note-sm">
-        <b>측정용 서버를 따로 띄웁니다.</b> 지금 보고 있는 개발 서버(<code>:18000</code>)는 안 건드립니다.
-        측정용은 CPU와 메모리를 고정해 두기 때문에, 팀원끼리 잰 숫자를 나란히 놓고 볼 수 있습니다.
+  <!-- 2 ─────────────────────────────────────────────────────────── -->
+  <div class="step locked" id="pstep-2">
+    <div class="step-head">
+      <div class="num">2</div>
+      <div>
+        <div class="step-title">얼마나 세게 걸지</div>
+        <div class="step-note" id="pnote-2">계단을 한 칸씩 올려 갑니다</div>
       </div>
-      <table style="margin-top:12px">
-        <thead><tr><th></th><th>무슨 일이</th></tr></thead>
-        <tbody>
-          <tr><td>1</td><td>측정용 서버와 DB, 그래프 도구를 도커로 띄웁니다 (처음 한 번은 내려받느라 더 걸립니다)</td></tr>
-          <tr><td>2</td><td><b>측정용 DB를 싹 비우고</b> 판매자와 경매방, 물품, 입찰자를 새로 만듭니다</td></tr>
-          <tr><td>3</td><td>가짜 사용자를 정한 수만큼 붙여서 3분 동안 입찰을 보냅니다</td></tr>
-          <tr><td>4</td><td>그동안 서버에서 긁어모은 숫자를 정리해 <b>결과 폴더와 <code>index.csv</code> 한 줄</b>로 남깁니다</td></tr>
-        </tbody>
-      </table>
-      <div class="note-sm" style="margin-top:12px">
-        끝나면 아래 <b>"쌓인 결과"</b> 표에 한 줄이 늘고, 그래프 링크가 같이 뜹니다.
-        <b>개발 환경에서 만들어 둔 경매방은 그대로 남습니다.</b>
+      <div class="chev">▾</div>
+    </div>
+    <div class="step-body">
+      <div class="why">
+        <b>한 번에 하나만 올립니다.</b> 두 값을 같이 바꾸면 처리량이 왜 안 올랐는지 가릴 수 없습니다.
+        같은 조건으로 계단만 올려 가며 여러 번 재고, 그 줄들을 4번에서 나란히 놓고 봅니다.
+      </div>
+
+      <div class="field">
+        <label id="ladder-label">동시 사용자 수</label>
+        <div class="ladder" id="ladder"></div>
+        <input id="p-main" type="number" value="40" min="1" style="margin-top:8px">
+        <div class="note-sm" id="ladder-help"></div>
+      </div>
+
+      <div class="field">
+        <label>측정한 사람 <span class="tip">결과 표에 남습니다</span></label>
+        <input id="p-who" placeholder="이름">
+      </div>
+
+      <details class="more" id="adv">
+        <summary>세부 조정 — 대조 실험할 때만 만집니다 <span class="badge" id="adv-badge"></span></summary>
+        <div class="inner">
+          <div class="note-sm" style="margin:0 0 8px">
+            확인 실험은 <b>값을 하나만</b> 바꿉니다. 가운데가 <code>run.sh</code>에 붙는 플래그이고,
+            바꾼 줄은 파랗게 표시됩니다.
+          </div>
+
+          <div class="knob" id="knob-items">
+            <div class="k">물품 수 <small>입찰이 한 물품에 몰리는지 흩어지는지를 가릅니다</small></div>
+            <div class="f mono">--items</div>
+            <input id="p-items" type="number" min="1" max="50" value="1">
+          </div>
+          <div class="knob">
+            <div class="k">DB 커넥션 풀 <small>줄여서 다시 재면 커넥션이 범인인지 갈립니다</small></div>
+            <div class="f mono">--pool</div>
+            <input id="p-pool" type="number" min="1" max="200" value="10">
+          </div>
+          <div class="knob">
+            <div class="k">배경 실시간 접속 <small>입찰과 겹쳐 재는 5번이 쓰는 값입니다</small></div>
+            <div class="f mono">--sse</div>
+            <input id="p-sse" type="number" min="0" max="5000" value="0">
+          </div>
+          <div class="knob">
+            <div class="k">시딩할 회원 수 <small>동시 사용자보다 많아야 합니다. 모자라면 남는 사람의 입찰이 전부 거절됩니다</small></div>
+            <div class="f mono">--users</div>
+            <input id="p-users" type="number" min="1" max="2000" value="200">
+          </div>
+          <div class="knob">
+            <div class="k">측정 길이 <small>초. 기본 180초</small></div>
+            <div class="f mono">--duration</div>
+            <input id="p-duration" type="number" min="10" max="3600" value="180">
+          </div>
+          <div class="knob">
+            <div class="k">스케줄러 스레드 <small>물품 마감 예약과 heartbeat가 나눠 씁니다</small></div>
+            <div class="f mono">--scheduler-pool</div>
+            <input id="p-sched" type="number" min="1" max="64" value="4">
+          </div>
+          <div class="knob">
+            <div class="k">SSE heartbeat <small>ms. heartbeat가 마감을 밀어내는지 볼 때 줄입니다</small></div>
+            <div class="f mono">--heartbeat-ms</div>
+            <input id="p-hb" type="number" min="1000" max="600000" value="30000">
+          </div>
+          <div class="knob">
+            <div class="k">앱 힙 상한 <small>비우면 기본값. 예: 512m</small></div>
+            <div class="f mono">--xmx</div>
+            <input id="p-xmx" type="text" placeholder="비움">
+          </div>
+          <div class="knob flag">
+            <div class="k">jar 를 다시 안 만들기 <small>같은 커밋으로 계단만 올릴 때 빌드 시간을 아낍니다</small></div>
+            <div class="f mono">--skip-build</div>
+            <input id="p-skip" type="checkbox">
+          </div>
+        </div>
+      </details>
+
+      <div style="margin-top:18px">
+        <div style="font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:7px">실행될 명령</div>
+        <div class="cmd">
+          <div class="text mono" id="cmd-text"></div>
+          <button id="btn-copy">복사</button>
+        </div>
+        <div class="note-sm">
+          3번의 버튼이 <b>이 명령을 그대로</b> 돌립니다. 터미널에서 직접 돌려도 결과가 같습니다
+          (<code>backend/</code> 폴더에서 실행합니다).
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="scen-grid" id="scens"></div>
-
-  <div class="cols">
-    <div>
-      <div class="card">
-        <div class="card-head">값 조절</div>
-        <div style="padding:16px 18px">
-          <div class="field" id="knob-vus">
-            <label>동시 사용자 수 <span class="tip">계단을 하나씩 올려 갑니다</span></label>
-            <div class="ladder" id="ladder"></div>
-            <input id="p-vus" type="number" value="40" min="1" style="margin-top:8px">
-          </div>
-          <div class="field" id="knob-items">
-            <label>물품 수 <span class="tip">락이 겹치는지를 가릅니다</span></label>
-            <input id="p-items" type="number" value="1" min="1" max="50">
-          </div>
-          <div class="grid2">
-            <div class="field">
-              <label>DB 커넥션 풀 <span class="tip">기본 10</span></label>
-              <input id="p-pool" type="number" value="10" min="1">
-            </div>
-            <div class="field">
-              <label>배경 SSE 접속</label>
-              <input id="p-sse" type="number" value="0" min="0">
-            </div>
-          </div>
-          <div class="field">
-            <label>측정할 사람 <span class="tip">결과에 남습니다</span></label>
-            <input id="p-who" placeholder="이름">
-          </div>
-        </div>
+  <!-- 3 ─────────────────────────────────────────────────────────── -->
+  <div class="step locked" id="pstep-3">
+    <div class="step-head">
+      <div class="num">3</div>
+      <div>
+        <div class="step-title">실행하고 지켜보기</div>
+        <div class="step-note" id="pnote-3">한 번에 4~5분 걸립니다</div>
       </div>
+      <div class="chev">▾</div>
     </div>
-
-    <div>
-      <div class="card">
-        <div class="card-head">실행 <span class="muted">아래 버튼만 누르면 됩니다</span></div>
-        <div style="padding:16px 18px">
-          <div class="answer" id="cmd-answer"></div>
-
-          <details style="margin-top:14px">
-            <summary style="cursor:pointer; font-size:12.5px; color:var(--ink-3)">
-              터미널로 돌리고 싶을 때 쓰는 명령 (안 눌러도 됩니다)
-            </summary>
-            <div class="cmd" style="margin-top:8px">
-              <div class="text mono" id="cmd-text"></div>
-              <button id="btn-copy">복사</button>
-            </div>
-            <div style="font-size:12px; color:var(--ink-3); margin-top:6px">
-              <code>backend/</code> 폴더에서 실행합니다. 버튼으로 돌리는 것과 결과가 같습니다.
-            </div>
-          </details>
-
-          <div id="runner-off" class="offline" style="margin-top:14px; display:none">
-            <b>실행기가 꺼져 있습니다.</b> 지금은 위 명령을 복사해서 터미널에 붙여 넣어야 합니다.<br><br>
-            버튼으로 돌리려면 Finder 에서 아래 파일을 <b>더블클릭</b>하세요. 한 번 켜 두면
-            그 뒤로는 이 화면에서 [실행]만 누르면 됩니다. (터미널 창이 뜨지만 아무것도 안 쳐도 됩니다.)
-            <div style="margin-top:8px"><code>backend/perf/부하테스트-콘솔 켜기.command</code></div>
-            <div style="margin-top:6px; font-size:12px">
-              켜지면 이 안내가 사라지고 [실행] 버튼이 나타납니다. 8초마다 확인합니다.
-            </div>
-          </div>
-
-          <div id="runner-on" style="margin-top:14px; display:none">
-            <div class="btn-row">
-              <button class="act" id="btn-run">이 조건으로 실행</button>
-              <button class="act stop" id="btn-run-stop" disabled>정지</button>
-            </div>
-            <div class="hintline">컨테이너 기동부터 결과 저장까지 4~5분 걸립니다</div>
-          </div>
-        </div>
+    <div class="step-body">
+      <div id="runner-off" class="offline" style="display:none;margin-bottom:14px">
+        <b>실행기가 꺼져 있습니다.</b> 2번의 명령을 복사해 터미널에 붙여 넣으면 지금도 잴 수 있습니다.<br><br>
+        버튼으로 돌리려면 Finder 에서 아래 파일을 <b>더블클릭</b>하세요. 한 번 켜 두면 그 뒤로는
+        이 화면에서 누르기만 하면 됩니다. (터미널 창이 뜨지만 아무것도 안 쳐도 됩니다.)
+        <div style="margin-top:8px"><code>backend/perf/부하테스트-콘솔 켜기.command</code></div>
+        <div style="margin-top:6px;font-size:12px">8초마다 다시 확인합니다.</div>
       </div>
 
-      <div class="card" id="run-card" style="display:none">
-        <div class="runbar">
+      <div id="runner-on" style="display:none">
+        <div class="btn-row">
+          <button class="act" id="btn-run">이 조건으로 실행</button>
+          <button class="act stop" id="btn-run-stop" disabled>정지</button>
+        </div>
+        <div class="hintline" id="run-hint">측정용 DB를 비우고 처음부터 만듭니다. 개발용 경매방은 그대로 남습니다</div>
+      </div>
+
+      <div id="run-panel" style="display:none;margin-top:16px">
+        <div class="runbar" style="border:1px solid var(--line);border-radius:10px 10px 0 0;border-bottom:0">
           <span class="dot" id="run-dot"></span>
           <span class="state" id="run-state">준비</span>
           <span class="elapsed" id="run-elapsed"></span>
         </div>
-        <div class="steps" id="run-steps"></div>
-        <div class="links" id="run-links" style="padding-top:0"></div>
-        <div id="run-log" style="background:#14161f;color:#cfd4e4;padding:14px 18px;font-size:12px;line-height:1.7;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all"></div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          쌓인 결과
-          <span class="muted" id="res-note">results/index.csv · 실행이 끝날 때마다 한 줄씩</span>
+        <div style="border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;padding:12px 16px">
+          <div class="runsteps" id="runsteps"></div>
         </div>
-        <div class="res-table">
-          <table><thead id="res-head"></thead><tbody id="res-body">
-            <tr><td class="empty">아직 실행한 측정이 없습니다</td></tr>
-          </tbody></table>
-        </div>
-      </div>
 
-      <div class="card">
-        <div class="card-head">위 표의 칸이 각각 무슨 뜻인가</div>
-        <div style="padding:4px 18px 16px">
-          <table style="margin-top:8px">
-            <thead><tr><th>칸</th><th>뜻</th><th>어떻게 보나</th></tr></thead>
-            <tbody>
-              <tr><td>동시 사용자</td><td>가짜 사용자를 몇 명 만들어 붙였는지</td><td>내가 정한 값입니다</td></tr>
-              <tr><td>물품 수</td><td>입찰이 한 물품에 몰리는지 흩어지는지</td><td>내가 정한 값입니다</td></tr>
-              <tr><td>DB 커넥션</td><td>서버가 DB에 동시에 열어 두는 연결 개수</td><td>내가 정한 값입니다 (기본 10)</td></tr>
-              <tr><td>실시간 접속</td><td>재는 동안 배경에 붙여 둔 SSE 연결 수</td><td>내가 정한 값입니다</td></tr>
-              <tr><td><b>처리량 (건/초)</b></td><td>서버가 1초에 처리한 요청 수</td><td><b>클수록 좋습니다.</b> 판정의 주인공</td></tr>
-              <tr><td><b>응답 p95 (ms)</b></td><td>100번 중 95번은 이 시간 안에 끝났다</td><td>작을수록 좋습니다. 체감 속도</td></tr>
-              <tr><td>서버 스레드 (최대)</td><td>톰캣이 동시에 쓴 스레드 수</td><td>200에 붙으면 스레드가 마른 것</td></tr>
-              <tr><td>DB 연결 대기 (최대)</td><td>연결을 못 받고 줄 선 스레드 수</td><td><b>0이 정상.</b> 0보다 크면 풀이 마른 것</td></tr>
-              <tr><td>락 대기 p95 (ms)</td><td>입찰이 물품 행 락을 기다린 시간</td><td>커지면 입찰이 한 줄로 선 것</td></tr>
-              <tr><td>부하 발생기 CPU (%)</td><td>가짜 사용자를 만드는 쪽(k6)이 쓴 CPU</td><td><b>100에 가까우면 그 줄은 버립니다</b></td></tr>
-              <tr><td>판정</td><td>병목이 어디였는지</td><td><b>사람이 직접 적는 칸입니다</b></td></tr>
-            </tbody>
-          </table>
+        <div style="margin-top:16px">
+          <div style="font-size:12.5px;font-weight:600;color:var(--ink-3);margin-bottom:7px">
+            지금 서버가 어떤지 <span style="font-weight:400">· 최근 30초를 2초마다 다시 읽습니다</span>
+          </div>
+          <div class="tiles" id="tiles"></div>
+          <div class="note-sm" id="tiles-note"></div>
         </div>
-      </div>
 
-      <div class="card">
-        <div class="card-head">그래서 한계를 어떻게 정하나</div>
-        <div style="padding:4px 18px 16px">
-          <div class="note-sm">
-            <b>규칙은 하나입니다.</b> 동시 사용자를 두 배 올렸는데 처리량이 <b>1.2배도 안 오르는 첫 줄</b>,
-            거기가 한계입니다. 단 그 줄에서 부하 발생기 CPU가 100%에 가까우면 서버가 아니라 내 노트북이
-            먼저 힘에 부친 것이라 그 줄은 못 씁니다.
+        <div class="links" id="run-links" style="padding-left:0;padding-right:0"></div>
+
+        <div class="logbox">
+          <div class="logbar">
+            <button class="logtab on" data-log="run">측정 진행</button>
+            <button class="logtab" data-log="perf">측정용 서버</button>
+            <button class="logtab" data-log="dev">개발 서버</button>
+            <span class="hint" id="log-hint"></span>
+            <button class="foot off" id="btn-log-bottom">↓ 맨 아래로</button>
+          </div>
+          <div class="logview" id="run-log"></div>
+          <div class="logview" id="srv-log" style="display:none"></div>
+        </div>
+        <div class="note-sm" id="log-note"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 ─────────────────────────────────────────────────────────── -->
+  <div class="step locked" id="pstep-4">
+    <div class="step-head">
+      <div class="num">4</div>
+      <div>
+        <div class="step-title">결과 읽기</div>
+        <div class="step-note" id="pnote-4">실행이 끝날 때마다 한 줄씩 쌓입니다</div>
+      </div>
+      <div class="chev">▾</div>
+    </div>
+    <div class="step-body">
+      <div id="verdict-box"></div>
+
+      <div class="res-table">
+        <table><thead id="res-head"></thead><tbody id="res-body">
+          <tr><td class="empty">아직 실행한 측정이 없습니다</td></tr>
+        </tbody></table>
+      </div>
+      <div class="note-sm" id="res-note">results/index.csv</div>
+
+      <details class="more">
+        <summary>배율이 무엇이고 어디가 한계인가</summary>
+        <div class="inner">
+          <div class="note-sm" style="margin:0">
+            <b>규칙은 하나입니다.</b> 부하를 두 배 올렸는데 처리량이 <b>1.2배도 안 오르는 첫 줄</b>,
+            거기가 한계입니다. 표의 <b>배율</b> 칸이 직전 계단 대비 몇 배인지를 자동으로 계산한 것이라
+            그 칸이 빨개지는 줄을 찾으면 됩니다. 단 그 줄에서 <b>부하 발생기 CPU가 100%에 가까우면</b>
+            서버가 아니라 내 노트북이 먼저 힘에 부친 것이라 그 줄은 못 씁니다.
           </div>
           <table style="margin-top:12px">
             <thead><tr><th>그 줄에서 이게 보이면</th><th>병목은 여기입니다</th></tr></thead>
@@ -813,16 +1071,41 @@
               <tr><td><b>넷 다 여유로운데 처리량이 안 오름</b></td><td><b>락 대기.</b> 자원은 노는데 입찰이 한 줄로 선 상태</td></tr>
             </tbody>
           </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">결과가 어디에 남나</div>
-        <div style="padding:4px 18px 16px">
           <div class="note-sm">
+            <b>거절은 실패가 아닙니다.</b> 이미 최고 입찰자거나 금액이 모자라 거절된 것은 규칙대로 동작한
+            것입니다. 진짜 실패는 5xx와 응답 없음뿐입니다.
+          </div>
+        </div>
+      </details>
+
+      <details class="more">
+        <summary>표의 칸이 각각 무슨 뜻인가</summary>
+        <div class="inner">
+          <table>
+            <thead><tr><th>칸</th><th>뜻</th><th>어떻게 보나</th></tr></thead>
+            <tbody>
+              <tr><td>동시 사용자</td><td>가짜 사용자를 몇 명 만들어 붙였는지</td><td>내가 정한 값입니다</td></tr>
+              <tr><td>물품 수</td><td>입찰이 한 물품에 몰리는지 흩어지는지</td><td>내가 정한 값입니다</td></tr>
+              <tr><td>DB 커넥션</td><td>서버가 DB에 동시에 열어 두는 연결 개수</td><td>내가 정한 값입니다 (기본 10)</td></tr>
+              <tr><td><b>처리량 (건/초)</b></td><td>서버가 1초에 처리한 요청 수</td><td><b>클수록 좋습니다.</b> 판정의 주인공</td></tr>
+              <tr><td><b>배율</b></td><td>같은 조건에서 직전 계단 대비 처리량이 몇 배인지</td><td><b>1.2배 미만이면 거기가 한계입니다</b></td></tr>
+              <tr><td>응답 p95 (ms)</td><td>100번 중 95번은 이 시간 안에 끝났다</td><td>작을수록 좋습니다. 체감 속도</td></tr>
+              <tr><td>서버 스레드 (최대)</td><td>톰캣이 동시에 쓴 스레드 수</td><td>200에 붙으면 스레드가 마른 것</td></tr>
+              <tr><td>DB 연결 대기 (최대)</td><td>연결을 못 받고 줄 선 스레드 수</td><td><b>0이 정상.</b> 0보다 크면 풀이 마른 것</td></tr>
+              <tr><td>락 대기 p95 (ms)</td><td>입찰이 물품 순서를 기다린 시간</td><td>커지면 입찰이 한 줄로 선 것</td></tr>
+              <tr><td>부하 발생기 CPU (%)</td><td>가짜 사용자를 만드는 쪽(k6)이 쓴 CPU</td><td><b>100에 가까우면 그 줄은 버립니다</b></td></tr>
+              <tr><td>판정</td><td>병목이 어디였는지</td><td><b>사람이 직접 적는 칸입니다</b> (note.md)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      <details class="more">
+        <summary>결과가 어디에 남나</summary>
+        <div class="inner">
+          <div class="note-sm" style="margin:0">
             실행 한 번에 <b>폴더 하나</b>가 생기고, 동시에 <b><code>index.csv</code>에 한 줄</b>이 붙습니다.
-            위의 "쌓인 결과" 표가 그 <code>index.csv</code>를 그대로 읽은 것입니다.
-            <b>한 줄 = 측정 한 번</b>이라 동시 사용자를 올려 가며 5번 재면 5줄이 됩니다.
+            위 표가 그 <code>index.csv</code>를 그대로 읽은 것입니다.
           </div>
           <table style="margin-top:12px">
             <thead><tr><th>어디에</th><th>무엇이</th></tr></thead>
@@ -831,19 +1114,21 @@
               <tr><td><code>results/{실행이름}/note.md</code></td><td>사람이 읽는 요약. 판정을 적는 빈칸이 있습니다</td></tr>
               <tr><td><code>results/{실행이름}/metrics.csv</code></td><td>그래프의 원본 숫자</td></tr>
               <tr><td><code>results/{실행이름}/summary.json</code></td><td>접수와 거절, 실패 건수</td></tr>
-              <tr><td>Grafana <code>:13000</code></td><td>같은 숫자를 그래프로. <b>측정을 돌리기 전에는 비어 있는 게 정상입니다</b>. 실행이 끝나면 이번 것만 보이는 링크가 아래에 뜹니다</td></tr>
+              <tr><td><code>results/{실행이름}/k6.log</code></td><td>부하 발생기가 찍은 로그</td></tr>
+              <tr><td>Grafana <code>:13000</code></td><td>같은 숫자를 그래프로. 실행이 끝나면 3번에 <b>이번 것만 보이는 링크</b>가 뜹니다</td></tr>
             </tbody>
           </table>
-          <div class="note-sm" style="margin-top:12px">
-            <b>결과 폴더는 git에 안 올라갑니다.</b> 각자 노트북에만 남으니 팀에 공유할 때는 노션에 올려 주세요.
+          <div class="note-sm">
+            <b>결과 폴더는 git에 안 올라갑니다.</b> 각자 노트북에만 남으니 팀에 공유할 때는 노션에 올립니다.
             더 자세한 건 <code>backend/perf/README.md</code>에 있습니다.
           </div>
         </div>
-      </div>
+      </details>
     </div>
   </div>
-</div>
 
+ </div>
+</div>
 <script>
 // ── 브라우저가 못 하는 것 ────────────────────────────────────────────
 // 이 콘솔의 "여러 명"은 dev-login 으로 계정을 갈아타며 **순차로** 흉내 낸 것이다.
@@ -920,24 +1205,27 @@ for (const step of document.querySelectorAll('.step')) {
   }
 }
 
-// 숫자 칩 → 입력칸
-for (const chip of document.querySelectorAll('.chip')) {
+// 숫자 칩 → 입력칸 (화면 확인 탭 전용).
+//
+// 부하 테스트 탭의 계단 칩은 여기서 안 잡는다. 그쪽은 시나리오에 따라 칩을 다시 그리므로
+// 이 반복문이 도는 시점에 아직 없고, renderLadder 가 만들면서 제 손으로 onclick 을 단다.
+for (const chip of document.querySelectorAll('.chip[data-target]')) {
   chip.onclick = () => {
     el(chip.dataset.target).value = chip.dataset.value
     for (const sibling of chip.parentElement.children) sibling.classList.remove('on')
     chip.classList.add('on')
-    if (chip.dataset.target === 'p-vus') buildCommand()
   }
 }
 
-// 탭
-for (const tab of document.querySelectorAll('.tab')) {
-  tab.onclick = () => {
-    for (const t of document.querySelectorAll('.tab')) t.classList.remove('on')
-    for (const p of document.querySelectorAll('.page')) p.classList.remove('on')
-    tab.classList.add('on')
-    el(`page-${tab.dataset.page}`).classList.add('on')
-  }
+/**
+ * 헤더의 측정 상태 칩.
+ *
+ * 두 구역을 한 페이지에 얹으면서 탭이 없어졌다. 부하 테스트 구역까지 스크롤하지 않아도
+ * 측정이 도는지는 알아야 하므로, 진행 상황을 헤더에 계속 띄운다.
+ */
+function perfChip(text, busy) {
+  el('perf-code').textContent = text
+  el('perf-chip').classList.toggle('busy', !!busy)
 }
 
 // ── 방이 생겼을 때 ───────────────────────────────────────────────────
@@ -1335,291 +1623,362 @@ function fillSelects() {
 setInterval(refresh, 2000)
 
 // ══════════════ 부하 테스트 탭 ══════════════
-// where  = 우리 서비스의 어느 화면, 어느 기능인지. 이게 없으면 무엇을 재는 건지 안 와닿는다.
-// watch  = 볼 지표. 원본 이름(upbid_bid_lock_wait)만 적으면 처음 보는 사람이 못 읽으니 말로 쓰고
-//          괄호에 원본 이름을 붙인다. Grafana 패널에서 그 이름으로 찾을 수 있어야 하기 때문이다.
+// 화면 확인 탭과 같은 문법으로 짠다. 번호 스텝, 지금 것만 펼침, 잠긴 것은 안 열림.
+// 한 번 배우면 두 탭을 같이 쓸 수 있어야 한다.
+//
+// 시나리오 하나에 붙는 글은 셋으로 나눈다. 고르기 전에 읽어야 할 글을 한 줄로 줄이려는 것이다.
+//   one    카드에 보이는 한 줄
+//   answer 고른 뒤 보이는 "이 실행이 답하는 질문"
+//   detail [더 자세히] 안에 접어 두는 표. 지표의 원본 이름을 여기 적는다 —
+//          Grafana 패널에서 그 이름으로 찾아야 하기 때문이다.
+const RUNNER = 'http://localhost:18099'
+
+// 계단이 올리는 값이 시나리오마다 다르다. 사람 수를 올리는 게 아닌 시나리오가 있는데,
+// 그걸 화면이 말해 주지 않으면 "동시 사용자"를 올리고 아무 일도 안 일어난다고 읽는다.
+const MAIN = {
+  vus: {
+    flag: '--vus', label: '동시 사용자 수', ladder: [10, 20, 40, 80, 160], def: 40,
+    help: '가짜 사용자를 몇 명 붙일지입니다. 한 계단씩 올려 가며 여러 번 재고, 그 줄들을 4번에서 나란히 봅니다.',
+  },
+  sse: {
+    flag: '--vus', label: '동시 실시간 접속 수', ladder: [50, 100, 200, 400, 800], def: 200,
+    help: '경매방을 열어 둔 사람 수입니다. 로그인이 필요 없어서 <b>회원 수는 안 올려도 됩니다</b>.',
+  },
+  items: {
+    flag: '--items', label: '동시에 닫히는 물품 수', ladder: [5, 10, 20, 50], def: 20,
+    help: '이 시나리오만 사람 수가 아니라 <b>물품 수</b>를 올립니다. 같은 시각에 닫히는 물품이 늘 때 마감이 밀리는지를 봅니다.',
+  },
+}
+
 const SCENARIOS = [
-  { key: 's1', scenario: 1, tag: '시나리오 1', name: '한 물품 입찰 경합',
-    where: '경매방 화면의 <b>[입찰하기]</b> 버튼',
-    raise: '물품 1개에 입찰자 수를 올립니다',
-    breaks: '한 물품에 입찰이 몰리면 DB가 한 명씩 순서대로 처리합니다',
-    watch: '입찰이 순서를 기다린 시간 (<code>upbid_bid_lock_wait</code>)',
-    items: 1, sse: 0, vusKnob: true,
-    answer: '인기 물품 하나에 사람이 몰리는 상황입니다. <b>몇 명까지 몰리면 처리량이 안 오르는지</b>를 봅니다. 자원이 넷 다 여유로운데 안 오르면 그게 순서 대기입니다.' },
-  { key: 's2', scenario: 2, tag: '시나리오 2', name: '여러 물품에 분산 (1의 비교군)',
-    where: '같은 <b>[입찰하기]</b>인데 물품이 여러 개인 경매방',
-    raise: '사람 수는 1과 똑같이 두고 물품만 20개로 흩습니다',
-    breaks: '순서 대기는 안 생기는 대신 DB 커넥션이나 서버 스레드가 마릅니다',
-    watch: 'DB 연결 대기 (<code>hikaricp_connections_pending</code>)',
-    items: 20, sse: 0, vusKnob: true,
-    answer: '<b>1번과 나란히 놓고 봅니다.</b> 물품을 흩었더니 처리량이 오르면 범인은 순서 대기이고, 그대로면 다른 데가 막힌 것입니다. 이것만 따로 보면 의미가 없습니다.' },
-  { key: 's3', scenario: 3, tag: '시나리오 3', name: '실시간 접속 동시 연결',
-    where: '경매방 화면이 <b>새로고침 없이 갱신되는 것</b> (SSE)',
-    raise: '실시간 접속 수를 올립니다 (회원이 필요 없습니다)',
-    breaks: '접속 하나마다 서버가 메모리를 붙들고, 30초마다 전원에게 신호를 보냅니다',
-    watch: '접속 수와 메모리 (<code>upbid_sse_connections</code>)',
-    items: 1, sse: 0, vusKnob: true,
-    answer: '경매방을 열어 둔 사람이 늘 때를 재는 것입니다. <b>접속 몇 개까지 버티는지</b>와 접속 하나에 메모리가 얼마나 드는지를 봅니다.' },
-  { key: 's4', scenario: 4, tag: '시나리오 4', name: '동시 마감',
-    where: '경매 시간이 끝나 <b>낙찰자가 정해지는 것</b>',
-    raise: '올리는 값이 사람 수가 아니라 <b>물품 수</b>입니다',
-    breaks: '마감도 입찰과 같은 물품을 붙잡기 때문에 서로 기다립니다',
-    watch: '마감이 예정보다 늦은 시간 (<code>upbid_auction_close_delay</code>)',
-    items: 20, sse: 0, vusKnob: false,
-    answer: '여러 물품이 한꺼번에 닫힐 때를 재는 것입니다. <b>마감이 예정 시각보다 얼마나 밀리는지</b>를 봅니다. 밀리면 낙찰 안내도 그만큼 늦습니다.' },
-  { key: 's5', scenario: 1, tag: '시나리오 5', name: '입찰 + 실시간 접속 동시',
-    where: '경매방 화면 <b>전체</b> (실제로 쓰이는 모습에 가장 가깝습니다)',
-    raise: '입찰과 실시간 접속을 같이 겁니다',
-    breaks: '입찰을 처리한 스레드가 방에 있는 전원에게 알림을 다 쏘고 나서야 응답합니다',
-    watch: '알림을 쏜 시간과 처리량 하락폭 (<code>upbid_sse_broadcast</code>)',
-    items: 1, sse: 800, vusKnob: true,
-    answer: '보는 사람이 많을수록 입찰이 느려지는지를 봅니다 (#234). 1번과 처리량을 비교하면 <b>실시간 알림이 입찰을 얼마나 깎는지</b>가 나옵니다. 마지막에 한 번 재는 조합입니다.' },
-  { key: 's0', scenario: 0, tag: '먼저 이것부터', name: '내 노트북 한계 재기',
-    where: '서비스 기능이 아닙니다. <b>측정 도구 자체를 재는 것</b>입니다',
-    raise: '아무 일도 안 하는 주소에 같은 부하를 겁니다',
-    breaks: 'DB도 안 타고 순서 대기도 없습니다. 여기서 막히면 서버가 아니라 내 노트북이 한계입니다',
-    watch: '부하 발생기 CPU',
-    items: 1, sse: 0, vusKnob: true,
-    answer: '<b>다른 시나리오보다 먼저 한 번 돌립니다.</b> 여기서 처리량이 평평해지는 지점보다 위의 숫자는 서버 성능이 아니라 내 노트북 한계라서, 전원이 안 믿기로 한 값입니다.' },
+  {
+    key: 's0', scenario: 0, tag: '0번', name: '내 노트북 한계 재기', first: true,
+    main: 'vus', items: 1, sse: 0,
+    one: '아무 일도 안 하는 주소에 같은 부하를 겁니다. <b>여기서 막히면 서버가 아니라 내 노트북이 한계</b>입니다.',
+    answer: '<b>다른 시나리오보다 먼저 한 번 돌립니다.</b> 여기서 처리량이 평평해지는 지점보다 위의 숫자는 서버 성능이 아니라 내 노트북 한계라서, 전원이 안 믿기로 한 값입니다.',
+    detail: [
+      ['어느 기능', '서비스 기능이 아닙니다. <b>측정 도구 자체를 재는 것</b>입니다'],
+      ['올리는 값', '동시 사용자 수'],
+      ['왜 느려지나', 'DB도 안 타고 순서 대기도 없습니다. 그런데도 안 오르면 부하를 만드는 쪽이 먼저 막힌 것입니다'],
+      ['볼 지표', '부하 발생기 CPU (<code>k6_cpu_max</code>)'],
+    ],
+  },
+  {
+    key: 's1', scenario: 1, tag: '1번', name: '한 물품 입찰 경합',
+    main: 'vus', items: 1, sse: 0,
+    one: '인기 물품 하나에 사람이 몰리는 상황입니다. 몇 명까지 몰리면 처리량이 안 오르는지를 봅니다.',
+    answer: '<b>몇 명까지 몰리면 처리량이 안 오르는지</b>를 봅니다. 자원이 넷 다 여유로운데 안 오르면 그게 순서 대기입니다. 2번과 반드시 짝으로 재세요.',
+    detail: [
+      ['어느 기능', '경매방 화면의 <b>[입찰하기]</b> 버튼'],
+      ['올리는 값', '물품 1개에 붙는 입찰자 수'],
+      ['왜 느려지나', '한 물품에 입찰이 몰리면 DB가 행을 잠가서 한 명씩 순서대로 처리합니다'],
+      ['볼 지표', '입찰이 순서를 기다린 시간 (<code>upbid_bid_lock_wait</code>)'],
+    ],
+  },
+  {
+    key: 's2', scenario: 2, tag: '2번', name: '여러 물품에 분산', pairWith: '1번',
+    main: 'vus', items: 20, sse: 0,
+    one: '1번과 사람 수는 같고 물품만 20개로 흩습니다. <b>1번의 비교군</b>이라 혼자 재면 뜻이 없습니다.',
+    answer: '<b>1번과 나란히 놓고 봅니다.</b> 물품을 흩었더니 처리량이 오르면 범인은 순서 대기이고, 그대로면 다른 데가 막힌 것입니다. 같은 계단으로 1번을 먼저 재 두세요.',
+    detail: [
+      ['어느 기능', '같은 <b>[입찰하기]</b>인데 물품이 여러 개인 경매방'],
+      ['올리는 값', '동시 사용자 수 (1번과 같은 계단으로 둡니다)'],
+      ['왜 느려지나', '순서 대기는 안 생기는 대신 DB 커넥션이나 서버 스레드가 마릅니다'],
+      ['볼 지표', 'DB 연결 대기 (<code>hikaricp_connections_pending</code>)'],
+    ],
+  },
+  {
+    key: 's3', scenario: 3, tag: '3번', name: '실시간 접속 동시 연결',
+    main: 'sse', items: 1, sse: 0,
+    one: '경매방을 열어 둔 사람이 늘 때입니다. 접속 몇 개까지 버티는지와 접속 하나에 메모리가 얼마나 드는지를 봅니다.',
+    answer: '<b>접속 몇 개까지 버티는지</b>를 봅니다. 서버 스레드가 접속 수만큼 따라 오르면 비동기가 안 걸린 것이라 그 자체가 발견입니다.',
+    detail: [
+      ['어느 기능', '경매방 화면이 <b>새로고침 없이 갱신되는 것</b> (SSE)'],
+      ['올리는 값', '동시 실시간 접속 수. 로그인이 필요 없습니다'],
+      ['왜 느려지나', '접속 하나마다 서버가 메모리를 붙들고, 30초마다 전원에게 신호를 보냅니다'],
+      ['볼 지표', '접속 수와 메모리 (<code>upbid_sse_connections</code>)'],
+    ],
+  },
+  {
+    key: 's4', scenario: 4, tag: '4번', name: '동시 마감',
+    main: 'items', items: 20, sse: 0,
+    one: '여러 물품이 한꺼번에 닫힐 때입니다. <b>올리는 값이 사람 수가 아니라 물품 수</b>입니다.',
+    answer: '<b>마감이 예정 시각보다 얼마나 밀리는지</b>를 봅니다. 밀리면 낙찰 안내도 그만큼 늦습니다. 이 시나리오는 사람 수를 올려도 아무 일도 안 일어납니다.',
+    detail: [
+      ['어느 기능', '경매 시간이 끝나 <b>낙찰자가 정해지는 것</b>'],
+      ['올리는 값', '<b>동시에 닫히는 물품 수</b> (사람 수가 아닙니다)'],
+      ['왜 느려지나', '마감 예약이 스케줄러 스레드를 나눠 쓰고, 마감도 입찰과 같은 물품 행을 잠급니다'],
+      ['볼 지표', '마감이 예정보다 늦은 시간 (<code>upbid_auction_close_delay</code>)'],
+    ],
+  },
+  {
+    key: 's5', scenario: 1, tag: '5번', name: '입찰 + 실시간 접속 동시',
+    main: 'vus', items: 1, sse: 800,
+    one: '실제로 쓰이는 모습에 가장 가깝습니다. 보는 사람이 많을수록 입찰이 느려지는지를 봅니다.',
+    answer: '1번과 처리량을 비교하면 <b>실시간 알림이 입찰을 얼마나 깎는지</b>가 나옵니다 (#234). 1번을 같은 계단으로 재 둔 뒤 마지막에 한 번 재는 조합입니다.',
+    detail: [
+      ['어느 기능', '경매방 화면 <b>전체</b>'],
+      ['올리는 값', '동시 사용자 수. 배경 실시간 접속은 800으로 고정해 둡니다'],
+      ['왜 느려지나', '입찰을 처리한 스레드가 방에 있는 전원에게 알림을 다 쏘고 나서야 응답합니다'],
+      ['볼 지표', '알림을 쏜 시간 (<code>upbid_sse_broadcast</code>)과 1번 대비 처리량 하락폭'],
+    ],
+  },
+]
+
+// run.sh 가 찍는 8단계. 이름을 미리 보여줘야 "지금 어디쯤이고 얼마나 남았는지"를 안다.
+// run.sh 가 실제로 찍는 문구가 오면 그걸로 덮어쓴다.
+const RUN_STEPS = [
+  { name: 'jar 빌드', est: '~40초' },
+  { name: '컨테이너 재기동 (DB 초기화)', est: '~40초' },
+  { name: '기동 대기', est: '~30초' },
+  { name: '시딩', est: '~20초' },
+  { name: '배경 실시간 접속', est: '없으면 건너뜀' },
+  { name: '워밍업', est: '30초' },
+  { name: 'k6 부하', est: '' },
+  { name: '값 뽑기', est: '~15초' },
 ]
 
 let picked = SCENARIOS[0]
+let lastLive = {}
+let grafanaLink = null
 
+// 아직 아무것도 안 골랐는지. 고르기 전에는 2번의 요약이나 명령을 그리지 않는다.
+// 안 그러면 고른 적도 없는 시나리오의 값("동시 사용자 수 40")이 2번에 떠 있게 된다.
+let hasPicked = false
+
+// ── 스텝 ────────────────────────────────────────────────────────────
+// 화면 확인 탭의 setStep 과 같은 규칙이지만 id 가 pstep-N 이라 따로 둔다.
+// 한 함수로 합치면 두 탭의 스텝이 서로를 잠근다.
+function setPerfStep(n, state) {
+  const step = el(`pstep-${n}`)
+  step.classList.remove('now', 'done', 'locked')
+
+  if (state) step.classList.add(state)
+  if (state === 'now') step.classList.add('open')
+  if (state !== 'now') step.classList.remove('open')
+}
+
+function perfNote(n, text) {
+  el(`pnote-${n}`).innerHTML = text
+}
+
+function perfLead(title, sub) {
+  el('perf-lead-title').textContent = title
+  el('perf-lead-sub').innerHTML = sub
+}
+
+// ── 1. 시나리오 고르기 ───────────────────────────────────────────────
 el('scens').innerHTML = SCENARIOS.map((s) => `
-  <div class="scen ${s.key === 's1' ? 'on' : ''}" data-key="${s.key}">
-    <div class="tag">${s.tag}</div>
+  <div class="scen" data-key="${s.key}">
+    <div class="tag">${s.tag}${s.first ? '<span class="first">먼저 이것부터</span>' : ''}</div>
     <h3>${s.name}</h3>
-    <dl>
-      <dt>어느 기능</dt> <dd>${s.where}</dd>
-      <dt>올리는 값</dt> <dd>${s.raise}</dd>
-      <dt>왜 느려지나</dt> <dd>${s.breaks}</dd>
-      <dt>볼 지표</dt> <dd>${s.watch}</dd>
-    </dl>
+    <div class="one">${s.one}</div>
   </div>`).join('')
 
-for (const card of document.querySelectorAll('.scen')) {
-  card.onclick = () => {
-    for (const c of document.querySelectorAll('.scen')) c.classList.remove('on')
-    card.classList.add('on')
-    picked = SCENARIOS.find((s) => s.key === card.dataset.key)
+for (const card of document.querySelectorAll('#scens .scen')) {
+  card.onclick = () => pickScenario(card.dataset.key)
+}
+
+function pickScenario(key, keepKnobs) {
+  picked = SCENARIOS.find((s) => s.key === key) || SCENARIOS[0]
+  hasPicked = true
+  el('scen-more').style.display = ''
+
+  for (const c of document.querySelectorAll('#scens .scen')) {
+    c.classList.toggle('on', c.dataset.key === picked.key)
+  }
+
+  el('scen-answer').innerHTML = `<b>이 실행이 답하는 질문</b><br>${picked.answer}`
+  el('scen-detail').innerHTML = picked.detail
+    .map(([term, text]) => `<tr><th style="width:96px">${term}</th><td>${text}</td></tr>`).join('')
+
+  // 시나리오를 바꾸면 그 시나리오의 기본값으로 되돌린다. 앞 시나리오에서 만진 값이 남아
+  // 있으면 "기본값으로 쟀다"고 생각한 줄이 실제로는 다른 조건이 된다.
+  if (!keepKnobs) {
+    el('p-main').value = MAIN[picked.main].def
     el('p-items').value = picked.items
     el('p-sse').value = picked.sse
-    el('knob-vus').style.display = picked.vusKnob ? '' : 'none'
-    buildCommand()
-  }
-}
-
-el('ladder').innerHTML = [10, 20, 40, 80, 160].map((v) =>
-  `<button class="chip ${v === 40 ? 'on' : ''}" data-target="p-vus" data-value="${v}">${v}</button>`).join('')
-
-for (const chip of el('ladder').children) {
-  chip.onclick = () => {
-    el('p-vus').value = chip.dataset.value
-    for (const c of el('ladder').children) c.classList.remove('on')
-    chip.classList.add('on')
-    buildCommand()
-  }
-}
-
-for (const id of ['p-vus', 'p-items', 'p-pool', 'p-sse', 'p-who']) {
-  el(id).oninput = buildCommand
-}
-
-function buildCommand() {
-  const parts = [['--scenario', picked.scenario]]
-
-  if (picked.vusKnob) parts.push(['--vus', el('p-vus').value])
-  parts.push(['--items', el('p-items').value])
-
-  if (Number(el('p-pool').value) !== 10) parts.push(['--pool', el('p-pool').value])
-  if (Number(el('p-sse').value) > 0) parts.push(['--sse', el('p-sse').value])
-
-  // 입찰하는 시나리오만 회원이 필요하고, run.sh 가 VU 보다 적으면 막는다.
-  if ([1, 2].includes(picked.scenario)) {
-    const need = Number(el('p-vus').value)
-    if (need > 200) parts.push(['--users', need])
-  }
-  if (el('p-who').value.trim()) parts.push(['--who', el('p-who').value.trim()])
-
-  el('cmd-text').innerHTML = './perf/run.sh ' +
-    parts.map(([flag, value]) => `<span class="flag">${flag}</span> ${value}`).join(' ')
-
-  el('cmd-answer').innerHTML = `<b>이 실행이 답하는 질문</b><br>${picked.answer}`
-}
-
-// ══════════════ 실행 (콘솔 서버가 떠 있을 때만) ══════════════
-// 브라우저는 셸을 못 돌린다. perf/console-server.py 가 대신 run.sh 를 실행하고
-// 진행 상황을 돌려준다. 안 띄워져 있으면 명령 복사만 되는 상태로 남는다.
-const RUNNER = 'http://localhost:18099'
-
-let runnerUp = false
-let logCursor = 0
-let pollTimer = null
-
-async function checkRunner() {
-  try {
-    const res = await fetch(`${RUNNER}/health`, { signal: AbortSignal.timeout(1200) })
-    runnerUp = res.ok
-  } catch (e) {
-    runnerUp = false
-  }
-  el('runner-on').style.display = runnerUp ? '' : 'none'
-  el('runner-off').style.display = runnerUp ? 'none' : ''
-  if (runnerUp) loadResults()
-}
-
-el('btn-run').onclick = async () => {
-  const body = {
-    scenario: picked.scenario,
-    vus: Number(el('p-vus').value),
-    items: Number(el('p-items').value),
-    pool: Number(el('p-pool').value),
-    sse: Number(el('p-sse').value),
-    who: el('p-who').value,
-    // 입찰 시나리오는 회원이 VU 보다 많아야 한다. run.sh 가 적으면 막는다.
-    users: Math.max(200, Number(el('p-vus').value) + 20),
   }
 
-  try {
-    const res = await fetch(`${RUNNER}/run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const json = await res.json()
+  renderLadder()
+  syncPerf()
 
-    if (!res.ok) {
-      alert(json.error || '실행하지 못했습니다')
-      return
+  setPerfStep(1, 'done')
+  setPerfStep(2, 'now')
+  setPerfStep(3, '')
+  perfNote(1, `${picked.tag} · ${picked.name}`)
+  perfLead('2번 — 얼마나 세게 걸지 정할 차례입니다', '기본값 그대로 3번을 눌러도 됩니다. 계단을 올려 가며 여러 번 재는 게 목적입니다.')
+  loadResults()
+}
+
+// ── 2. 세기 정하기 ───────────────────────────────────────────────────
+function renderLadder() {
+  const main = MAIN[picked.main]
+
+  el('ladder-label').textContent = main.label
+  el('ladder-help').innerHTML = main.help
+  el('ladder').innerHTML = main.ladder
+    .map((v) => `<button class="chip" data-value="${v}">${v}</button>`).join('')
+
+  for (const chip of el('ladder').children) {
+    chip.onclick = () => {
+      el('p-main').value = chip.dataset.value
+      syncPerf()
     }
+  }
 
-    logCursor = 0
-    el('run-log').textContent = ''
-    el('run-card').style.display = ''
-    el('btn-run').disabled = true
-    el('btn-run-stop').disabled = false
-    startPolling()
-  } catch (e) {
-    alert('콘솔 서버에 닿지 못했습니다. python3 perf/console-server.py 가 떠 있는지 봅니다.')
+  // 물품 수가 계단 그 자체인 시나리오에서는 세부 조정의 물품 수를 숨긴다.
+  // 같은 값을 두 군데서 만지게 두면 어느 쪽이 이겼는지 알 수 없다.
+  el('knob-items').classList.toggle('off', picked.main === 'items')
+}
+
+/** 지금 화면의 값. 시나리오가 정하는 값과 사람이 만진 값을 여기서 합친다. */
+function knobs() {
+  const main = Number(el('p-main').value) || MAIN[picked.main].def
+  const isItemLadder = picked.main === 'items'
+
+  const vus = isItemLadder ? null : main
+  const items = isItemLadder ? main : (Number(el('p-items').value) || picked.items)
+
+  // 입찰하는 시나리오는 회원이 동시 사용자보다 많아야 한다. 모자라면 남는 사람은 약관
+  // 동의가 없어서 전부 거절되고, run.sh 가 아예 시작을 막는다. 그래서 자동으로 올리되
+  // 몰래 올리지 않는다 — 올렸으면 세부 조정의 그 줄이 파래지고 아래에 이유가 뜬다.
+  const typedUsers = Number(el('p-users').value) || 200
+  const needUsers = [1, 2].includes(picked.scenario) && vus ? vus + 20 : 0
+  const users = Math.max(typedUsers, needUsers)
+
+  return {
+    scenario: picked.scenario,
+    vus, items, users,
+    pool: Number(el('p-pool').value) || 10,
+    sse: Number(el('p-sse').value) || 0,
+    durationSeconds: Number(el('p-duration').value) || 180,
+    schedulerPool: Number(el('p-sched').value) || 4,
+    heartbeatMs: Number(el('p-hb').value) || 30000,
+    xmx: el('p-xmx').value.trim(),
+    skipBuild: el('p-skip').checked,
+    who: el('p-who').value.trim(),
+    usersBumped: users > typedUsers,
   }
 }
 
-el('btn-run-stop').onclick = async () => {
-  await fetch(`${RUNNER}/stop`, { method: 'POST' })
+/**
+ * 실행기가 꺼져 있을 때 쓰는 명령 조립.
+ *
+ * 실행기가 켜져 있으면 이걸 안 쓰고 콘솔 서버의 /preview 가 준 문자열을 보여준다.
+ * 조립 규칙이 두 군데면 화면에 적힌 명령과 실제로 도는 명령이 조용히 달라지기 때문이다.
+ * 꺼져 있을 때는 사람이 이 문자열을 직접 터미널에 붙여 넣으므로 이게 곧 실제 명령이다.
+ * (규칙 원본은 perf/console-server.py 의 build_command 다.)
+ */
+function localCommand(k) {
+  const parts = ['./perf/run.sh', '--scenario', k.scenario]
+
+  if (k.scenario !== 4) parts.push('--vus', k.vus)
+  parts.push('--items', k.items)
+
+  if (k.pool !== 10) parts.push('--pool', k.pool)
+  if (k.sse > 0) parts.push('--sse', k.sse)
+  if (k.users !== 200) parts.push('--users', k.users)
+  if (k.durationSeconds !== 180) parts.push('--duration', `${k.durationSeconds}s`)
+  if (k.schedulerPool !== 4) parts.push('--scheduler-pool', k.schedulerPool)
+  if (k.heartbeatMs !== 30000) parts.push('--heartbeat-ms', k.heartbeatMs)
+  if (k.xmx) parts.push('--xmx', k.xmx)
+  if (k.who) parts.push('--who', k.who)
+  if (k.skipBuild) parts.push('--skip-build')
+
+  return parts.join(' ')
 }
 
-function startPolling() {
-  if (pollTimer) return
-  pollTimer = setInterval(pollRun, 1000)
-  pollRun()
+function paintCommand(text) {
+  el('cmd-text').innerHTML = text
+    .split(' ')
+    .map((word) => (word.startsWith('--') ? `<span class="flag">${word}</span>` : word))
+    .join(' ')
 }
 
-async function pollRun() {
-  let s
-  try {
-    s = await (await fetch(`${RUNNER}/status?since=${logCursor}`)).json()
-  } catch (e) { return }
+let previewTimer = null
 
-  if (s.lines.length > 0) {
-    el('run-log').textContent += s.lines.join('\n') + '\n'
-    el('run-log').scrollTop = el('run-log').scrollHeight
-    logCursor = s.totalLines
+/** 화면의 값이 바뀔 때마다 부르는 곳. 표시와 명령과 스텝 요약을 한 번에 맞춘다. */
+function syncPerf() {
+  if (!hasPicked) return
+
+  const k = knobs()
+  const main = MAIN[picked.main]
+
+  // 기본값에서 벗어난 줄을 파랗게 하고 개수를 배지로 올린다.
+  // 접어 두면 잊기 때문이다 — 접힌 채로 "기본값이겠지" 하고 잰 줄이 제일 위험하다.
+  const diffs = [
+    ['p-items', String(picked.items), picked.main !== 'items'],
+    ['p-pool', '10', true],
+    ['p-sse', String(picked.sse), true],
+    ['p-users', '200', true],
+    ['p-duration', '180', true],
+    ['p-sched', '4', true],
+    ['p-hb', '30000', true],
+    ['p-xmx', '', true],
+  ]
+
+  let changed = 0
+
+  for (const [id, base, counts] of diffs) {
+    const node = el(id)
+    const isChanged = counts && node.value.trim() !== base
+    node.closest('.knob').classList.toggle('changed', isChanged)
+    if (isChanged) changed += 1
   }
 
-  const mm = String(Math.floor(s.elapsed / 60)).padStart(2, '0')
-  const ss = String(s.elapsed % 60).padStart(2, '0')
-  el('run-elapsed').textContent = `${mm}:${ss}`
+  const skipNode = el('p-skip').closest('.knob')
+  skipNode.classList.toggle('changed', el('p-skip').checked)
+  if (el('p-skip').checked) changed += 1
 
-  const dot = el('run-dot')
-  dot.className = 'dot' + (s.running ? ' on' : (s.exitCode ? ' err' : ''))
+  // 회원 수를 자동으로 올렸으면 그 줄도 바뀐 것으로 보여준다. 안 그러면 명령에는
+  // --users 가 붙었는데 화면에서는 아무것도 안 바뀐 것처럼 보인다.
+  if (k.usersBumped) {
+    el('p-users').closest('.knob').classList.add('changed')
+  }
 
-  el('run-state').textContent = s.running
-    ? (s.step ? `${s.stepNo}/${s.stepTotal} · ${s.step}` : '시작하는 중')
-    : (s.exitCode === null ? '준비' : (s.exitCode === 0 ? '끝났습니다' : `실패 (종료 코드 ${s.exitCode})`))
+  el('adv-badge').textContent = changed > 0 ? `${changed}개 바꿈` : ''
 
-  el('run-steps').innerHTML = Array.from({ length: s.stepTotal || 8 }, (_, i) => {
-    const n = i + 1
-    const cls = n < s.stepNo ? 'done' : (n === s.stepNo && s.running ? 'now' : (n <= s.stepNo ? 'done' : ''))
-    return `<div class="s ${cls}"></div>`
-  }).join('')
+  perfNote(2, `${main.label} <b>${k.vus === null ? k.items : k.vus}</b>`
+    + (changed > 0 ? ` · 세부 조정 ${changed}개 바꿈` : ''))
 
-  if (!s.running && pollTimer) {
-    clearInterval(pollTimer); pollTimer = null
-    el('btn-run').disabled = false
-    el('btn-run-stop').disabled = true
-    loadResults()
-    showGrafanaLink()
+  el('ladder-help').innerHTML = main.help
+    + (k.usersBumped
+      ? `<br><b style="color:var(--blue)">동시 사용자가 많아서 시딩할 회원을 ${k.users}명으로 올렸습니다.</b>`
+        + ' 회원이 모자라면 남는 사람의 입찰이 전부 거절돼서 잰 숫자가 뜻을 잃습니다.'
+      : '')
+
+  for (const chip of el('ladder').children) {
+    chip.classList.toggle('on', chip.dataset.value === String(k.vus === null ? k.items : k.vus))
+  }
+
+  RUN_STEPS[6].est = `${k.durationSeconds}초`
+
+  // 실행기가 켜져 있으면 명령의 원본은 서버다. 화면에서 값을 만질 때마다 치면
+  // 요청이 쏟아지므로 조금 모았다가 한 번 친다.
+  paintCommand(localCommand(k))
+
+  if (runnerUp) {
+    clearTimeout(previewTimer)
+    previewTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${RUNNER}/preview`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(k),
+        })
+        const json = await res.json()
+        if (json.command) paintCommand(json.command)
+      } catch (e) { /* 꺼졌으면 위에서 그린 것을 그대로 둔다 */ }
+    }, 250)
   }
 }
 
-/** run.sh 가 마지막에 찍는 그라파나 주소를 로그에서 뽑아 버튼으로 만든다. */
-function showGrafanaLink() {
-  const text = el('run-log').textContent
-  const found = text.match(/https?:\/\/localhost:\d+\/d\/upbid-perf\?[^\s]+/)
-  const holder = el('run-links')
-
-  holder.innerHTML = found
-    ? `<a class="primary" href="${found[0]}" target="_blank">이 실행의 그래프 보기 ↗</a>`
-    : ''
+for (const id of ['p-main', 'p-items', 'p-pool', 'p-sse', 'p-users',
+                  'p-duration', 'p-sched', 'p-hb', 'p-xmx', 'p-who', 'p-skip']) {
+  el(id).oninput = syncPerf
+  el(id).onchange = syncPerf
 }
-
-/** index.csv 를 읽어 계단을 표로 보여준다. 실행이 끝날 때마다 한 줄이 는다. */
-async function loadResults() {
-  let data
-  try {
-    data = await (await fetch(`${RUNNER}/results`)).json()
-  } catch (e) { return }
-
-  if (!data.rows || data.rows.length === 0) {
-    el('res-head').innerHTML = ''
-    el('res-body').innerHTML = '<tr><td class="empty">아직 실행한 측정이 없습니다</td></tr>'
-    return
-  }
-
-  // 칸이 28개라 다 보여주면 못 읽는다. 판정에 쓰는 것만 고른다.
-  // 이름은 index.csv 의 영문 헤더를 그대로 풀어 쓴 것이라, 파일을 열어도 같은 칸을 찾을 수 있다.
-  const want = ['run_id', 'scenario', 'vus', 'pool', 'items', 'sse',
-                'throughput_req_per_s', 'p95_ms', 'tomcat_busy_max', 'hikari_pending_max',
-                'lock_wait_p95_ms', 'k6_cpu_max', 'bottleneck']
-  const label = {
-    run_id: '언제',
-    scenario: '시나리오',
-    vus: '동시 사용자',
-    pool: 'DB 커넥션',
-    items: '물품 수',
-    sse: '실시간 접속',
-    throughput_req_per_s: '처리량 (건/초)',
-    p95_ms: '응답 p95 (ms)',
-    tomcat_busy_max: '서버 스레드 (최대)',
-    hikari_pending_max: 'DB 연결 대기 (최대)',
-    lock_wait_p95_ms: '락 대기 p95 (ms)',
-    k6_cpu_max: '부하 발생기 CPU (%)',
-    bottleneck: '판정 (직접 적기)',
-  }
-
-  // 옛 index.csv 는 칸 이름이 달라서 몇 개가 안 잡힌다. 그냥 빼고 그리면 표에서 조용히
-  // 사라져서 "처리량이 왜 없지"가 되므로, 무엇이 빠졌는지 화면에 말해 준다.
-  const missing = want.filter((key) => data.header.indexOf(key) < 0)
-  const idx = want.map((key) => data.header.indexOf(key)).filter((i) => i >= 0)
-
-  el('res-head').innerHTML = '<tr>' +
-    idx.map((i) => `<th>${label[data.header[i]] || data.header[i]}</th>`).join('') + '</tr>'
-
-  el('res-body').innerHTML = data.rows.map((row) =>
-    '<tr>' + idx.map((i) => {
-      const v = row[i] || ''
-      // 실행 이름은 길어서 앞의 시각만 남긴다
-      return `<td>${data.header[i] === 'run_id' ? v.split('_')[0] : v}</td>`
-    }).join('') + '</tr>').join('')
-
-  el('res-note').innerHTML = missing.length === 0
-    ? `results/index.csv, ${data.rows.length}줄`
-    : `<b style="color:var(--red)">옛 형식입니다.</b> ${missing.map((k) => label[k]).join(', ')} 칸이 없습니다.`
-      + ' 다음 실행 때 옛 파일을 옆으로 옮기고 새로 시작합니다'
-}
-
-checkRunner()
-setInterval(checkRunner, 8000)
 
 el('btn-copy').onclick = async () => {
   const button = el('btn-copy')
@@ -1629,7 +1988,640 @@ el('btn-copy').onclick = async () => {
   setTimeout(() => { button.textContent = '복사'; button.classList.remove('copied') }, 1400)
 }
 
-buildCommand()
+el('btn-perf-reset').onclick = () => {
+  el('p-pool').value = 10
+  el('p-users').value = 200
+  el('p-duration').value = 180
+  el('p-sched').value = 4
+  el('p-hb').value = 30000
+  el('p-xmx').value = ''
+  el('p-skip').checked = false
+  el('adv').open = false
+  el('run-panel').style.display = 'none'
+
+  resetPerf()
+  loadResults()
+}
+
+// ── 3. 실행 ─────────────────────────────────────────────────────────
+// 브라우저는 셸을 못 돌린다. perf/console-server.py 가 대신 run.sh 를 실행하고 진행 상황을
+// 돌려준다. 안 띄워져 있으면 2번의 명령을 복사해 쓰는 상태로 남는다.
+let runnerUp = false
+let logCursor = 0
+let pollTimer = null
+let liveTimer = null
+
+async function checkRunner() {
+  const was = runnerUp
+
+  try {
+    const res = await fetch(`${RUNNER}/health`, { signal: AbortSignal.timeout(1200) })
+    runnerUp = res.ok
+  } catch (e) {
+    runnerUp = false
+  }
+
+  el('runner-on').style.display = runnerUp ? '' : 'none'
+  el('runner-off').style.display = runnerUp ? 'none' : ''
+
+  // 돌고 있는 중에는 pollRun 이 칩을 매초 갱신하므로 여기서 덮지 않는다.
+  if (!runnerUp) perfChip('실행기 꺼짐', false)
+  else if (!pollTimer) perfChip('안 돌고 있음', false)
+
+  if (runnerUp && !was) {
+    syncPerf()
+    loadResults()
+    restoreRun()
+  }
+}
+
+/**
+ * 실행 이름에서 조건을 되읽는다.
+ *
+ * run.sh 가 이름에 파라미터를 박아 둔다 ({@code 2026-08-08T00-50_s1_vus40_pool10_items1_sse0}).
+ * 그래서 새로고침한 뒤에도 "지금 무엇을 어떤 조건으로 재고 있는지"를 화면이 되살릴 수 있다.
+ * 이게 없으면 진행 막대만 돌고 조건 칸은 기본값이라, 화면과 실제로 도는 것이 어긋난다.
+ */
+function scenarioFromRunId(runId) {
+  const m = /_s(\d+)_vus(\d+)_pool(\d+)_items(\d+)_sse(\d+)/.exec(runId || '')
+  if (!m) return null
+
+  const [, scenario, vus, pool, items, sse] = m.map(Number)
+
+  // 5번은 시나리오 1로 돌아가므로 이름만으로는 1번과 같다. 배경 접속 수로 가른다.
+  const key = scenario === 1 && sse > 0 ? 's5'
+    : (SCENARIOS.find((s) => s.scenario === scenario && s.key !== 's5') || {}).key
+
+  return key ? { key, vus, pool, items, sse } : null
+}
+
+/**
+ * 새로고침해도 돌고 있는 측정을 다시 붙잡는다.
+ *
+ * 예전에는 실행 카드가 실행 버튼을 눌러야 나타나서, 재는 도중에 새로고침하면 아무것도
+ * 안 도는 것처럼 보였다. 측정 하나가 4~5분이라 그 사이에 새로고침할 일이 실제로 생긴다.
+ *
+ * <b>끝난 실행은 복원하지 않는다.</b> 콘솔 서버는 마지막 실행을 메모리에 계속 들고 있어서,
+ * 어제 정지시킨 실행 하나 때문에 오늘 새로 연 화면이 고르지도 않은 채 4번까지 가 있게 된다
+ * (실측으로 걸렸다). 끝난 실행의 숫자는 4번의 결과 표에 이미 있다.
+ */
+async function restoreRun() {
+  let s
+
+  try {
+    s = await (await fetch(`${RUNNER}/status?since=0`)).json()
+  } catch (e) { return }
+
+  if (!s.running) return
+
+  // 무엇을 재는 중인지 화면에 되살린다. 조건까지 맞춰 놔야 진행 막대 옆의 값이 거짓말을 안 한다.
+  const restored = scenarioFromRunId(s.runId)
+
+  if (restored) {
+    pickScenario(restored.key, true)
+    el('p-main').value = restored.key === 's4' ? restored.items : restored.vus
+    el('p-items').value = restored.items
+    el('p-pool').value = restored.pool
+    el('p-sse').value = restored.sse
+    syncPerf()
+  }
+
+  logCursor = 0
+  grafanaLink = null
+  el('run-log').textContent = ''
+  el('run-panel').style.display = ''
+
+  setPerfStep(1, 'done')
+  setPerfStep(2, 'done')
+  setPerfStep(3, 'now')
+
+  el('btn-run').disabled = true
+  el('btn-run-stop').disabled = false
+  perfLead('3번 — 재는 중입니다',
+    '이 화면을 닫아도 측정은 계속됩니다. 다시 열면 진행 상황을 다시 붙잡습니다.')
+  startPolling()
+}
+
+el('btn-run').onclick = async () => {
+  const k = knobs()
+
+  try {
+    const res = await fetch(`${RUNNER}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(k),
+    })
+    const json = await res.json()
+
+    if (!res.ok) {
+      alert(json.error || '실행하지 못했습니다')
+      return
+    }
+
+    logCursor = 0
+    lastLive = {}
+    grafanaLink = null
+    el('run-log').textContent = ''
+    el('run-links').innerHTML = ''
+    el('run-panel').style.display = ''
+    el('btn-run').disabled = true
+    el('btn-run-stop').disabled = false
+
+    setPerfStep(2, 'done')
+    setPerfStep(3, 'now')
+    perfLead('3번 — 재는 중입니다', '창을 닫아도 측정은 계속됩니다. 다시 열면 이 화면이 진행 상황을 다시 붙잡습니다.')
+    startPolling()
+  } catch (e) {
+    alert('콘솔 서버에 닿지 못했습니다. perf/부하테스트-콘솔 켜기.command 가 떠 있는지 봅니다.')
+  }
+}
+
+el('btn-run-stop').onclick = async () => {
+  if (!confirm('지금 돌고 있는 측정을 멈춥니다. 이 줄은 결과 표에 안 남습니다.')) return
+  await fetch(`${RUNNER}/stop`, { method: 'POST' })
+}
+
+function startPolling() {
+  if (!pollTimer) {
+    pollTimer = setInterval(pollRun, 1000)
+    pollRun()
+  }
+  if (!liveTimer) {
+    liveTimer = setInterval(pollLive, 2000)
+    pollLive()
+  }
+}
+
+function stopPolling() {
+  clearInterval(pollTimer); pollTimer = null
+  clearInterval(liveTimer); liveTimer = null
+}
+
+async function pollRun() {
+  let s
+
+  try {
+    s = await (await fetch(`${RUNNER}/status?since=${logCursor}`)).json()
+  } catch (e) { return }
+
+  paintRun(s)
+
+  if (!s.running) {
+    stopPolling()
+    el('btn-run').disabled = false
+    el('btn-run-stop').disabled = true
+
+    setPerfStep(3, 'done')
+    setPerfStep(4, 'now')
+    perfLead('4번 — 결과를 읽을 차례입니다',
+      '계단을 한 칸 올려 다시 재고, 배율이 1.2배 밑으로 떨어지는 첫 줄을 찾습니다.')
+    showGrafanaLink()
+    loadResults()
+  }
+}
+
+function paintRun(s) {
+  if (s.lines && s.lines.length > 0) {
+    renderLog(el('run-log'), s.lines, runLineClass, false)
+    logCursor = s.totalLines
+
+    // 그라파나 주소는 흘러갈 때 붙잡아 둔다. 나중에 화면 글자에서 다시 긁으면
+    // 줄이 <div> 로 나뉘어 있어서 다음 줄과 이어 붙은 채로 잡힌다.
+    for (const line of s.lines) {
+      const found = line.match(/https?:\/\/localhost:\d+\/d\/upbid-perf\?\S+/)
+      if (found) grafanaLink = found[0]
+    }
+
+    if (logSource === 'run') el('log-hint').textContent = `${s.totalLines}줄`
+  }
+
+  const mm = String(Math.floor(s.elapsed / 60)).padStart(2, '0')
+  const ss = String(s.elapsed % 60).padStart(2, '0')
+  el('run-elapsed').textContent = `${mm}:${ss}`
+
+  el('run-dot').className = 'dot' + (s.running ? ' on' : (s.exitCode ? ' err' : ''))
+
+  const state = s.running
+    ? '돌고 있습니다'
+    : (s.exitCode === null ? '준비' : (s.exitCode === 0 ? '끝났습니다' : `실패 (종료 코드 ${s.exitCode})`))
+
+  el('run-state').textContent = state
+  perfNote(3, s.running ? `${state} · ${mm}:${ss}` : state)
+  perfChip(s.running ? `${s.stepNo}/${s.stepTotal} · ${mm}:${ss}` : state, s.running)
+
+  // 8단계를 이름과 함께 그린다. run.sh 가 실제로 찍은 문구가 있으면 그 단계만 덮어쓴다.
+  el('runsteps').innerHTML = RUN_STEPS.map((step, i) => {
+    const n = i + 1
+    const done = n < s.stepNo || (!s.running && s.exitCode === 0)
+    const now = n === s.stepNo && s.running
+    const name = now && s.step ? s.step : step.name
+
+    return `<div class="rstep ${done ? 'done' : (now ? 'now' : '')}">
+      <span class="mark">${done ? '✓' : n}</span>
+      <span>${name}</span>
+      <span class="est">${done ? '' : step.est}</span>
+    </div>`
+  }).join('')
+}
+
+// ── 돌아가는 동안의 지표 ──────────────────────────────────────────────
+// 콘솔 서버가 Prometheus 에서 읽어다 준다. 브라우저가 직접 치지 않는 이유는
+// console-server.py 의 read_live 주석에 적어 뒀다.
+//
+// 이 값은 최근 30초라 run.sh 가 마지막에 내는 결과(구간 전체를 한 번에 계산)와 조금 다르다.
+// 그게 정상이고, 여기 값은 "지금 어떤지"를 보라고 있는 것이다.
+const TILE_SETS = {
+  default: ['throughput', 'p95Ms', 'hikariPending', 'lockWaitP95Ms'],
+  s3: ['sseConnections', 'p95Ms', 'tomcatBusy', 'hikariPending'],
+  s4: ['throughput', 'p95Ms', 'tomcatBusy', 'hikariPending'],
+}
+
+const TILE_SPEC = {
+  throughput: { k: '처리량', u: '건/초', digits: 0 },
+  p95Ms: { k: '응답 p95', u: 'ms', digits: 0 },
+  hikariPending: { k: 'DB 연결 대기', u: '0이 정상', digits: 0, bad: (v) => v > 0 },
+  lockWaitP95Ms: { k: '락 대기 p95', u: 'ms', digits: 0 },
+  tomcatBusy: { k: '서버 스레드', u: '200이 한계', digits: 0, bad: (v) => v >= 180 },
+  sseConnections: { k: '실시간 접속', u: '개', digits: 0 },
+}
+
+function tileKeys() {
+  if (picked.key === 's3') return TILE_SETS.s3
+  if (picked.key === 's4') return TILE_SETS.s4
+  return TILE_SETS.default
+}
+
+async function pollLive() {
+  let data
+
+  try {
+    data = await (await fetch(`${RUNNER}/live`)).json()
+  } catch (e) { return }
+
+  // 값이 null 로 온 지표는 직전 값을 지우지 않는다. Prometheus 가 한 번 못 긁었다고
+  // 숫자가 깜빡이면 읽을 수가 없다.
+  for (const [key, value] of Object.entries(data.metrics || {})) {
+    if (value !== null && value !== undefined) lastLive[key] = value
+  }
+
+  paintTiles()
+}
+
+function paintTiles() {
+  el('tiles').innerHTML = tileKeys().map((key) => {
+    const spec = TILE_SPEC[key]
+    const value = lastLive[key]
+
+    if (value === undefined) {
+      return `<div class="tile wait"><div class="k">${spec.k}</div>
+        <div class="v">아직</div><div class="u">부하가 시작되면 나옵니다</div></div>`
+    }
+
+    const isBad = spec.bad ? spec.bad(value) : false
+
+    return `<div class="tile ${isBad ? 'bad' : ''}"><div class="k">${spec.k}</div>
+      <div class="v">${value.toFixed(spec.digits)}</div><div class="u">${spec.u}</div></div>`
+  }).join('')
+
+  el('tiles-note').innerHTML = Object.keys(lastLive).length === 0
+    ? '측정용 서버가 뜨고 부하가 시작되면 숫자가 채워집니다 (보통 2분쯤 뒤).'
+    : ''
+}
+
+paintTiles()
+
+/** run.sh 가 마지막에 찍는 그라파나 주소를 버튼으로 만든다. paintRun 이 흘러갈 때 붙잡아 둔 값이다. */
+function showGrafanaLink() {
+  el('run-links').innerHTML = grafanaLink
+    ? `<a class="primary" href="${grafanaLink}" target="_blank">이 실행의 그래프 보기 ↗</a>`
+      + '<a href="http://localhost:13000" target="_blank">Grafana 전체 ↗</a>'
+    : ''
+}
+
+// ── 로그 창 ──────────────────────────────────────────────────────────
+// 셋을 한 자리에서 본다. 측정 진행(run.sh), 측정용 앱(도커), 개발 앱(런처가 남기는 파일).
+// 앞의 둘은 이 콘솔이 처음부터 알고 있었고, 개발 앱 로그는 런처가 파일로도 흘려 줘야
+// 읽을 수 있다 (UpBid 개발환경 켜기.command 의 APP_LOG).
+let logSource = 'run'
+let srvTimer = null
+let lastSrvText = null
+
+/** run.sh 출력 한 줄의 성격. 전부 같은 회색이면 수십 줄에서 경고 한 줄을 못 찾는다. */
+function runLineClass(text) {
+  if (/^\[\d+\/\d+\]/.test(text)) return 'l-step'
+  if (/^═══/.test(text)) return 'l-head'
+  if (/^※/.test(text)) return 'l-warn'
+  if (/실패|안 떴다|못 한다|못 했|Exception|ERROR|Error:/.test(text)) return 'l-err'
+  if (/^──/.test(text)) return 'l-note'
+  if (/^\[seed\]/.test(text)) return 'l-dim'
+  if (/끝났습니다|준비됨|붙은 접속/.test(text)) return 'l-ok'
+  return ''
+}
+
+/** 스프링 로그 한 줄. 레벨만 본다. */
+function srvLineClass(text) {
+  if (/\bERROR\b/.test(text)) return 'l-err'
+  if (/\bWARN\b/.test(text)) return 'l-warn'
+  if (/\bINFO\b/.test(text)) return ''
+  return 'l-dim'
+}
+
+const atBottom = (node) => node.scrollHeight - node.scrollTop - node.clientHeight < 24
+
+/**
+ * 로그를 그린다.
+ *
+ * 맨 아래를 보고 있을 때만 따라 내려간다. 위로 올려 뭔가 읽고 있는데 새 줄이 올 때마다
+ * 끌려 내려가면 읽을 수가 없다.
+ */
+function renderLog(node, lines, classify, replace) {
+  const stick = atBottom(node)
+
+  if (replace) node.textContent = ''
+
+  const chunk = document.createDocumentFragment()
+
+  for (const text of lines) {
+    const line = document.createElement('div')
+    line.className = classify(text)
+    line.textContent = text
+    chunk.appendChild(line)
+  }
+
+  node.appendChild(chunk)
+
+  if (stick) node.scrollTop = node.scrollHeight
+  updateLogFoot()
+}
+
+function currentLogNode() {
+  return logSource === 'run' ? el('run-log') : el('srv-log')
+}
+
+function updateLogFoot() {
+  el('btn-log-bottom').classList.toggle('off', atBottom(currentLogNode()))
+}
+
+for (const tab of document.querySelectorAll('.logtab')) {
+  tab.onclick = () => {
+    for (const t of document.querySelectorAll('.logtab')) t.classList.remove('on')
+    tab.classList.add('on')
+
+    logSource = tab.dataset.log
+    const isRun = logSource === 'run'
+
+    el('run-log').style.display = isRun ? '' : 'none'
+    el('srv-log').style.display = isRun ? 'none' : ''
+    el('log-note').textContent = ''
+
+    clearInterval(srvTimer)
+    srvTimer = null
+    lastSrvText = null
+
+    if (isRun) {
+      el('log-hint').textContent = 'run.sh 가 찍는 것을 그대로 보여줍니다'
+    } else {
+      el('srv-log').textContent = ''
+      el('log-hint').textContent = '읽는 중…'
+      pollServerLog()
+      srvTimer = setInterval(pollServerLog, 3000)
+    }
+
+    updateLogFoot()
+  }
+}
+
+async function pollServerLog() {
+  if (logSource === 'run') return
+
+  let data
+
+  try {
+    data = await (await fetch(`${RUNNER}/serverlog?which=${logSource}&tail=300`)).json()
+  } catch (e) {
+    el('log-hint').textContent = '실행기가 꺼져 있어 못 읽습니다'
+    return
+  }
+
+  const lines = data.lines || []
+  const joined = lines.join('\n')
+
+  // 안 바뀌었으면 다시 그리지 않는다. 3초마다 통째로 갈아 끼우면 글자를 못 고른다.
+  if (joined !== lastSrvText) {
+    lastSrvText = joined
+    renderLog(el('srv-log'), lines, srvLineClass, true)
+  }
+
+  el('log-hint').textContent = `${lines.length}줄 · 3초마다 갱신`
+  el('log-note').textContent = data.note || ''
+}
+
+el('btn-log-bottom').onclick = () => {
+  const node = currentLogNode()
+  node.scrollTop = node.scrollHeight
+  updateLogFoot()
+}
+
+for (const id of ['run-log', 'srv-log']) el(id).onscroll = updateLogFoot
+
+el('log-hint').textContent = 'run.sh 가 찍는 것을 그대로 보여줍니다'
+
+// ── 4. 결과 읽기 ─────────────────────────────────────────────────────
+// 칸이 28개라 다 보여주면 못 읽는다. 판정에 쓰는 것만 고르고, 배율 칸을 하나 만들어 붙인다.
+//
+// 배율을 화면이 계산하는 이유: 판정 규칙이 "두 배 올렸는데 1.2배도 안 오르는 첫 줄"인데
+// 표에 절대값만 있으면 사람이 매번 암산해야 한다. 그 계산이 판정의 전부라 자동으로 한다.
+const RES_COLUMNS = [
+  ['run_id', '언제'],
+  ['scenario', '시나리오'],
+  ['vus', '동시 사용자'],
+  ['items', '물품 수'],
+  ['pool', 'DB 커넥션'],
+  ['sse', '실시간 접속'],
+  ['throughput_req_per_s', '처리량 (건/초)'],
+  ['__ratio', '배율'],
+  ['p95_ms', '응답 p95 (ms)'],
+  ['tomcat_busy_max', '서버 스레드 (최대)'],
+  ['hikari_pending_max', 'DB 연결 대기 (최대)'],
+  ['lock_wait_p95_ms', '락 대기 p95 (ms)'],
+  ['k6_cpu_max', '부하 발생기 CPU (%)'],
+  ['bottleneck', '판정 (직접 적기)'],
+]
+
+/**
+ * 같은 조건끼리 묶어 직전 계단 대비 배율을 붙인다.
+ *
+ * 묶는 기준에서 계단 값 자체는 빼야 한다. 시나리오 4는 계단이 물품 수라 묶는 기준도 달라진다.
+ * 안 그러면 모든 줄이 저마다 다른 그룹이 되어 배율이 하나도 안 나온다.
+ */
+function attachRatio(header, rows) {
+  const at = (row, key) => {
+    const i = header.indexOf(key)
+    return i < 0 ? '' : (row[i] || '')
+  }
+  const asNumber = (row, key) => {
+    const value = parseFloat(at(row, key))
+    return Number.isFinite(value) ? value : null
+  }
+
+  const groups = new Map()
+
+  for (const row of rows) {
+    const isClose = at(row, 'scenario') === '4'
+    const key = isClose
+      ? ['4', at(row, 'pool'), at(row, 'sse')].join('|')
+      : [at(row, 'scenario'), at(row, 'pool'), at(row, 'items'), at(row, 'sse')].join('|')
+
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(row)
+  }
+
+  const ratios = new Map()
+
+  for (const group of groups.values()) {
+    const isClose = at(group[0], 'scenario') === '4'
+    const step = (row) => asNumber(row, isClose ? 'items' : 'vus') || 0
+
+    const ordered = group.slice().sort((a, b) => step(a) - step(b))
+
+    for (let i = 1; i < ordered.length; i += 1) {
+      const now = asNumber(ordered[i], 'throughput_req_per_s')
+      const before = asNumber(ordered[i - 1], 'throughput_req_per_s')
+
+      if (now === null || before === null || before <= 0 || now < 0) continue
+
+      ratios.set(ordered[i], {
+        value: now / before,
+        from: step(ordered[i - 1]),
+        to: step(ordered[i]),
+      })
+    }
+  }
+
+  return { ratios, at, asNumber }
+}
+
+async function loadResults() {
+  let data
+
+  try {
+    data = await (await fetch(`${RUNNER}/results`)).json()
+  } catch (e) { return }
+
+  if (!data.rows || data.rows.length === 0) {
+    el('res-head').innerHTML = ''
+    el('res-body').innerHTML = '<tr><td class="empty">아직 실행한 측정이 없습니다. 3번에서 한 번 돌려 보세요</td></tr>'
+    el('verdict-box').innerHTML = ''
+    perfNote(4, '아직 쌓인 결과가 없습니다')
+    return
+  }
+
+  // 지난 실행이 있으면 4번을 열어 둔다. 아직 한 번도 안 돌렸을 때만 잠가서, 잠금이
+  // "여긴 볼 게 없다"는 뜻으로만 쓰이게 한다.
+  if (el('pstep-4').classList.contains('locked')) setPerfStep(4, '')
+
+  const { ratios, at, asNumber } = attachRatio(data.header, data.rows)
+
+  const shown = RES_COLUMNS.filter(([key]) => key === '__ratio' || data.header.indexOf(key) >= 0)
+  const missing = RES_COLUMNS.filter(([key]) => key !== '__ratio' && data.header.indexOf(key) < 0)
+
+  el('res-head').innerHTML = '<tr>' + shown.map(([, label]) => `<th>${label}</th>`).join('') + '</tr>'
+
+  el('res-body').innerHTML = data.rows.map((row) => {
+    const throughput = asNumber(row, 'throughput_req_per_s')
+    // 처리량이 안 나왔거나 음수인 줄은 못 쓴다. run.sh 가 meta.json 에 aborted 로 남기지만
+    // index.csv 에는 그 표시가 없어서, 여기서 걸러 주지 않으면 멀쩡한 줄처럼 섞인다.
+    const unusable = throughput === null || throughput < 0
+    const cpu = asNumber(row, 'k6_cpu_max')
+    const ratio = ratios.get(row)
+
+    const cells = shown.map(([key]) => {
+      if (key === '__ratio') {
+        if (!ratio) return '<td>-</td>'
+
+        const text = `${ratio.value.toFixed(2)}배`
+        const title = `${ratio.from} → ${ratio.to}`
+
+        // 부하 발생기가 한계면 그 줄의 배율은 서버 판정에 못 쓴다.
+        if (cpu !== null && cpu >= 90) {
+          return `<td class="ratio" title="${title} · 부하 발생기 CPU ${cpu}%">${text} 보류</td>`
+        }
+        return `<td class="ratio ${ratio.value < 1.2 ? 'cap' : 'ok'}" title="${title}">`
+          + `${text}${ratio.value < 1.2 ? ' ← 한계' : ''}</td>`
+      }
+
+      const value = at(row, key)
+      return `<td>${key === 'run_id' ? value.split('_')[0] : value}</td>`
+    })
+
+    return `<tr class="${unusable ? 'unusable' : ''}" ${unusable ? 'title="처리량이 안 나온 줄입니다. 다시 재세요"' : ''}>`
+      + cells.join('') + '</tr>'
+  }).join('')
+
+  el('res-note').innerHTML = missing.length === 0
+    ? `results/index.csv · ${data.rows.length}줄. <b>판정 칸은 결과 폴더의 note.md 에 적습니다.</b>`
+    : `<b style="color:var(--red)">옛 형식입니다.</b> ${missing.map(([, label]) => label).join(', ')} 칸이 없습니다.`
+      + ' 다음 실행 때 옛 파일을 옆으로 옮기고 새로 시작합니다'
+
+  perfNote(4, `${data.rows.length}줄 쌓임`)
+
+  // 가장 최근 줄을 한 문장으로 읽어 준다. 표를 읽는 법을 몰라도 다음에 뭘 할지는 알게 한다.
+  const latest = data.rows[0]
+  const latestRatio = ratios.get(latest)
+  const throughput = asNumber(latest, 'throughput_req_per_s')
+  const cpu = asNumber(latest, 'k6_cpu_max')
+
+  let box = ''
+
+  if (throughput === null || throughput < 0) {
+    box = '<div class="verdict bad"><b>이 줄은 못 씁니다.</b> 처리량이 안 나왔습니다.'
+      + ' 구간 앞뒤가 다른 컨테이너를 본 경우라 같은 조건으로 한 번 더 재세요.</div>'
+  } else if (cpu !== null && cpu >= 90) {
+    box = `<div class="verdict warn"><b>부하 발생기가 먼저 힘에 부쳤습니다</b> (CPU ${cpu}%).`
+      + ' 이 줄의 숫자는 서버 한계가 아닙니다. Docker Desktop 의 CPU 를 올리거나 이 계단 위쪽은 안 믿기로 합니다.</div>'
+  } else if (latestRatio && latestRatio.value < 1.2) {
+    box = `<div class="verdict bad"><b>여기가 한계로 보입니다.</b> ${latestRatio.from} → ${latestRatio.to} 로 올렸는데`
+      + ` 처리량이 ${latestRatio.value.toFixed(2)}배밖에 안 올랐습니다 (${throughput} 건/초).`
+      + ' 이 줄에서 DB 연결 대기와 서버 스레드를 보고 병목이 어디인지 적으세요.</div>'
+  } else if (latestRatio) {
+    box = `<div class="verdict"><b>아직 여유가 있습니다.</b> ${latestRatio.from} → ${latestRatio.to} 로 올렸더니`
+      + ` 처리량이 ${latestRatio.value.toFixed(2)}배가 됐습니다 (${throughput} 건/초). 계단을 한 칸 더 올려 보세요.</div>`
+  } else {
+    box = `<div class="verdict warn"><b>비교할 줄이 아직 없습니다.</b> 처리량 ${throughput} 건/초.`
+      + ' 같은 조건에서 계단만 한 칸 올려 한 번 더 재면 배율이 나옵니다.</div>'
+  }
+
+  el('verdict-box').innerHTML = box
+}
+
+// ── 시작 ────────────────────────────────────────────────────────────
+// 일부러 아무것도 안 고른 채로 연다. 하나를 미리 골라 두면 1번 스텝이 "고르세요"라고
+// 하면서 이미 골라져 있어서 말이 안 되고, 무엇을 재는지 모른 채 실행까지 가게 된다.
+function resetPerf() {
+  el('scen-answer').innerHTML =
+    '<b>위에서 하나 고르세요.</b> 고르면 이 자리에 그 실행이 무엇을 답해 주는지 나옵니다.'
+  el('scen-detail').innerHTML = ''
+  el('scen-more').style.display = 'none'
+  hasPicked = false
+
+  for (const c of document.querySelectorAll('#scens .scen')) c.classList.remove('on')
+
+  setPerfStep(1, 'now')
+  setPerfStep(2, 'locked')
+  setPerfStep(3, 'locked')
+  setPerfStep(4, 'locked')
+
+  perfNote(1, '고르면 무엇을 알게 되는지 아래에 나옵니다')
+  perfNote(2, '계단을 한 칸씩 올려 갑니다')
+  perfNote(3, '한 번에 4~5분 걸립니다')
+  perfLead('무엇을 잴지부터 고르면 됩니다',
+    '고르고, 얼마나 세게 걸지 정하고, 실행합니다. 한 번에 4~5분 걸립니다.')
+}
+
+resetPerf()
+loadResults()
+checkRunner()
+setInterval(checkRunner, 8000)
 log('local 프로파일로 앱이 떠 있어야 합니다. 1번부터 눌러 주세요.', 'dim')
 </script>
 </body>

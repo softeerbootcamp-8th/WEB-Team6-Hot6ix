@@ -20,6 +20,11 @@ FRONTEND_DIR="$(cd .. && pwd)/frontend"
 APP_PORT="${SERVER_PORT:-18000}"
 GRAFANA_PORT="${PERF_GRAFANA_PORT:-13000}"
 
+# 앱 로그를 이 창에 흘리면서 파일로도 남긴다. 개발 콘솔이 이 파일을 읽어서
+# 화면 안에 보여 준다 (perf/console-server.py 의 read_server_log).
+# 창을 찾아 들어가지 않고도 앱이 무슨 말을 하는지 볼 수 있어야 한다.
+APP_LOG="${UPBID_DEV_LOG:-/tmp/upbid-backend.log}"
+
 CONSOLE_PID=""
 FRONT_PID=""
 APP_PID=""
@@ -113,9 +118,15 @@ fi
 # 앱이 응답할 때까지 기다렸다가 주소를 찍는다.
 #
 # --console=plain 은 그 가짜 진행률 막대를 아예 없앤다. 로그는 그대로 보인다.
+#
+# 출력을 파일로도 흘리는데, 파이프(`| tee`)가 아니라 프로세스 치환을 쓴다. 파이프면
+# $! 가 tee 의 PID 가 되어서 아래 cleanup 의 kill 이 gradle 이 아니라 tee 를 죽인다.
+# 그러면 창을 닫아도 앱이 살아남아 포트를 붙들고, 다음에 켤 때 안 뜬다.
 echo "  [5/5] 백엔드 앱 — 뜨는 데 20초쯤 걸립니다"
+echo "        로그: $APP_LOG (개발 콘솔 화면에서도 볼 수 있습니다)"
 echo
-./gradlew bootRun --console=plain &
+: >"$APP_LOG"
+./gradlew bootRun --console=plain > >(tee "$APP_LOG") 2>&1 &
 APP_PID=$!
 
 READY=""

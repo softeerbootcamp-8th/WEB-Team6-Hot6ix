@@ -27,7 +27,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 PERF_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = PERF_DIR.parent
@@ -123,15 +123,41 @@ def build_command(body):
     if scenario != 4:
         args += ["--vus", str(num("vus", 40, 1, 5000))]
 
+    # 물품 수는 기본값이어도 붙인다. 시나리오 1과 2를 가르는 값이라 명령에 보여야 한다.
     args += ["--items", str(num("items", 1, 1, 50))]
-    args += ["--pool", str(num("pool", 10, 1, 200))]
+
+    # 나머지는 기본값이면 안 붙인다. 화면이 보여주는 "실행될 명령"과 실제로 도는 명령이
+    # 같아야 하는데, 안 바꾼 값까지 붙으면 무엇을 바꿨는지가 명령에서 안 보인다.
+    pool = num("pool", 10, 1, 200)
+    if pool != 10:
+        args += ["--pool", str(pool)]
 
     sse = num("sse", 0, 0, 5000)
     if sse:
         args += ["--sse", str(sse)]
 
-    args += ["--users", str(num("users", 200, 1, 2000))]
-    args += ["--duration", f"{num('durationSeconds', 180, 10, 3600)}s"]
+    users = num("users", 200, 1, 2000)
+    if users != 200:
+        args += ["--users", str(users)]
+
+    duration = num("durationSeconds", 180, 10, 3600)
+    if duration != 180:
+        args += ["--duration", f"{duration}s"]
+
+    # 아래 셋은 기본값이면 안 붙인다. 화면이 만들어 보여주는 명령과 실제로 도는 명령이
+    # 같아야 하는데, 안 바꾼 값까지 붙으면 "내가 뭘 바꿨더라"가 명령에서 안 보인다.
+    scheduler_pool = num("schedulerPool", 4, 1, 64)
+    if scheduler_pool != 4:
+        args += ["--scheduler-pool", str(scheduler_pool)]
+
+    heartbeat_ms = num("heartbeatMs", 30000, 1000, 600000)
+    if heartbeat_ms != 30000:
+        args += ["--heartbeat-ms", str(heartbeat_ms)]
+
+    # run.sh 가 "-Xmx$2" 로 조립하므로 크기 표기만 남긴다 (예: 512m).
+    xmx = re.sub(r"[^0-9kmgKMG]", "", str(body.get("xmx", ""))[:8])
+    if xmx:
+        args += ["--xmx", xmx]
 
     who = re.sub(r"[^0-9A-Za-z가-힣_-]", "", str(body.get("who", ""))[:20])
     if who:
@@ -208,6 +234,143 @@ def read_results(limit=40):
     rows = [l.split(",") for l in lines[1:]][-limit:]
     rows.reverse()          # 최근 실행이 위로
     return {"header": header, "rows": rows}
+
+
+# ══════════════ 돌아가는 동안의 지표 ══════════════
+# 브라우저가 Prometheus 를 직접 치지 않고 여기를 거친다. 이유가 둘이다.
+#
+#   1. 지금 실행의 라벨(run="...")을 콘솔 서버만 안다. run.sh 가 찍는 실행 이름을 로그에서
+#      뽑아 두기 때문이다. 브라우저가 직접 조립하면 실행 이름 규칙이 두 군데로 갈린다.
+#   2. PromQL 이 run.sh 와 화면으로 갈리면, 같은 실행인데 표의 숫자와 화면의 숫자가 달라
+#      보인다. 그러면 어느 쪽을 믿어야 하는지 알 수 없다.
+#
+# 다만 여기 쿼리는 run.sh 의 "값 뽑기"와 목적이 다르다. run.sh 는 구간 전체를 한 번에
+# 계산하고(5초마다 찍힌 p95 를 평균 내는 건 틀리므로 그게 옳다), 여기는 "지금 이 순간"을
+# 보여주는 것이라 최근 30초만 본다. 그래서 이 값과 최종 결과가 조금 다른 게 정상이다.
+
+PROM_URL = "http://localhost:" + os.environ.get("PERF_PROM_PORT", "19090")
+
+# run.sh 와 같은 제외 조건이다. 액추에이터 자신과 SSE 구독을 빼지 않으면, 끝나지 않는
+# 스트림이 끊길 때 수십 초짜리 응답 하나로 기록돼서 p95 가 통째로 그쪽으로 끌려간다.
+NOT_ACTUATOR = 'uri!="/actuator/prometheus", uri!~".*subscribe"'
+
+LIVE_QUERIES = {
+    "throughput": 'sum(rate(http_server_requests_seconds_count{{{run}, {skip}}}[30s]))',
+    "p95Ms": 'histogram_quantile(0.95, sum by (le) '
+             '(rate(http_server_requests_seconds_bucket{{{run}, {skip}}}[30s]))) * 1000',
+    "tomcatBusy": 'max(tomcat_threads_busy_threads{{{run}}})',
+    "hikariPending": 'max(hikaricp_connections_pending{{{run}}})',
+    "hikariActive": 'max(hikaricp_connections_active{{{run}}})',
+    "sseConnections": 'max(upbid_sse_connections{{{run}}})',
+    "lockWaitP95Ms": 'histogram_quantile(0.95, sum by (le) '
+                     '(rate(upbid_bid_lock_wait_seconds_bucket{{{run}}}[30s]))) * 1000',
+}
+
+
+def _prom(query):
+    """Prometheus 에 즉시 쿼리 하나. 못 읽으면 None 을 준다.
+
+    None 과 0 을 반드시 가른다. 화면이 "아직 안 나온 값"과 "0이었던 값"을 같게 그리면,
+    커넥션 대기가 0이라 정상인 상태와 Prometheus 가 아직 안 긁은 상태가 구분되지 않는다.
+    """
+    url = PROM_URL + "/api/v1/query?" + urlencode({"query": query})
+
+    try:
+        with urllib.request.urlopen(url, timeout=3) as response:
+            payload = json.loads(response.read() or b"{}")
+    except Exception:
+        return None
+
+    result = (payload.get("data") or {}).get("result") or []
+
+    if not result:
+        return None
+
+    try:
+        value = float(result[0]["value"][1])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+
+    # Prometheus 는 NaN 을 문자열 "NaN" 으로 준다. float() 는 받아 주지만 JSON 으로는
+    # 못 내보내고(json 이 NaN 을 뱉으면 JS 의 JSON.parse 가 죽는다) 뜻도 "값 없음"이다.
+    return None if value != value else value
+
+
+def read_live():
+    """지금 돌고 있는 실행의 최근 30초 지표. 실행 중이 아니거나 이름을 모르면 빈 값."""
+    run_id = current.run_id
+
+    if not run_id:
+        return {"runId": None, "metrics": {}}
+
+    labels = {"run": 'run="%s"' % run_id, "skip": NOT_ACTUATOR}
+
+    return {
+        "runId": run_id,
+        "metrics": {name: _prom(template.format(**labels))
+                    for name, template in LIVE_QUERIES.items()},
+    }
+
+
+# ══════════════ 서버 로그 ══════════════
+# 콘솔이 서버 로그를 직접 보여준다. 지금까지는 "앱이 무슨 말을 하는지" 보려면 런처를 띄운
+# 터미널 창을 찾아 들어가야 했고, 측정용 앱은 docker compose logs 를 손으로 쳐야 했다.
+# 무엇이 잘못됐는지는 대개 거기 적혀 있는데, 화면에서 세 걸음 떨어져 있으면 안 보게 된다.
+
+COMPOSE_FILE = str(PERF_DIR / "docker-compose.perf.yml")
+
+# 런처가 bootRun 출력을 여기로도 흘려 둔다 (UpBid 개발환경 켜기.command).
+DEV_APP_LOG = Path(os.environ.get("UPBID_DEV_LOG", "/tmp/upbid-backend.log"))
+
+# 통째로 읽지 않는다. 앱이 몇 시간 돌면 로그가 수십 MB 가 되는데 그걸 매번 읽어
+# 브라우저로 보내면 콘솔이 앱보다 무거워진다.
+TAIL_BYTES = 256 * 1024
+
+
+def _tail_file(path, tail):
+    size = path.stat().st_size
+
+    with path.open("rb") as handle:
+        handle.seek(max(0, size - TAIL_BYTES))
+        data = handle.read()
+
+    # 잘라 읽었으므로 첫 줄이 중간부터 시작할 수 있다. 그 줄은 버린다.
+    lines = data.decode("utf-8", "replace").splitlines()
+
+    if size > TAIL_BYTES and lines:
+        lines = lines[1:]
+
+    return lines[-tail:]
+
+
+def read_server_log(which, tail):
+    """개발 앱(파일) 또는 측정용 앱(도커)의 최근 로그."""
+    if which == "dev":
+        if not DEV_APP_LOG.exists():
+            return {"lines": [], "note":
+                    "%s 가 없습니다. 런처(UpBid 개발환경 켜기.command)로 앱을 띄우면 "
+                    "여기에 로그가 쌓입니다. 이미 띄워 두셨다면 런처를 한 번 다시 켜야 합니다."
+                    % DEV_APP_LOG}
+
+        return {"lines": _tail_file(DEV_APP_LOG, tail), "note": ""}
+
+    try:
+        done = subprocess.run(
+            ["docker", "compose", "-f", COMPOSE_FILE, "logs", "--no-color", "--tail", str(tail), "app"],
+            cwd=str(BACKEND_DIR), capture_output=True, text=True, timeout=15)
+    except Exception as e:
+        return {"lines": [], "note": "도커 로그를 못 읽었습니다: %s" % e}
+
+    lines = [l for l in (done.stdout or "").splitlines() if l.strip()]
+
+    if not lines:
+        return {"lines": [], "note":
+                "측정용 앱이 안 떠 있습니다. 측정을 한 번 돌리면 그때 뜨고, 여기에 로그가 나옵니다."
+                + (" (%s)" % done.stderr.strip() if done.stderr.strip() else "")}
+
+    return {"lines": lines, "note":
+            "perf 프로파일은 로그 수준이 warn 이라 평소에는 조용한 게 정상입니다. "
+            "재는 대상이 서비스가 아니라 로그 출력이 되면 안 되기 때문입니다."}
 
 
 # ══════════════ 동시 입찰 검증 ══════════════
@@ -409,6 +572,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/results":
             return self._json(read_results())
 
+        if path == "/live":
+            return self._json(read_live())
+
+        if path == "/serverlog":
+            params = parse_qs(query)
+            which = (params.get("which") or ["perf"])[0]
+
+            try:
+                tail = max(20, min(1000, int((params.get("tail") or ["300"])[0])))
+            except ValueError:
+                tail = 300
+
+            return self._json(read_server_log("dev" if which == "dev" else "perf", tail))
+
         return self._json({"error": "not found"}, 404)
 
     def do_POST(self):
@@ -420,6 +597,17 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(raw or b"{}")
         except json.JSONDecodeError:
             return self._json({"error": "본문이 JSON 이 아닙니다"}, 400)
+
+        # 화면이 "실행될 명령"으로 보여줄 문자열. 실제로 도는 것과 같아야 하므로
+        # 브라우저가 제 손으로 조립하지 않고 여기서 받아 간다. 조립 규칙이 두 군데로
+        # 갈리면 화면에 적힌 명령과 실제로 도는 명령이 조용히 달라진다.
+        #
+        # 실행기가 꺼져 있을 때는 브라우저가 제 손으로 조립한 것을 보여준다. 그때는
+        # 사람이 그 명령을 직접 터미널에 붙여 넣으므로 그게 곧 실제로 도는 명령이다.
+        if path == "/preview":
+            return self._json({
+                "command": " ".join(shlex.quote(a) for a in build_command(body)),
+            })
 
         if path == "/run":
             started, error = start_run(body)
