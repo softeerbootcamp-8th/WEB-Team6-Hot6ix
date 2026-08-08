@@ -5,10 +5,12 @@
 //
 // 같은 코드로 둘을 재야 대비가 의미를 갖는다. 두 스크립트로 갈라 쓰면 어느 날 한쪽만 고쳐서
 // 대조가 아니게 된다.
+//
+// 입찰 금액은 물품 상세를 읽어 현재가 + 단위로 만든다. 이유는 bidOnce 안에 적어 두었다.
 
 import http from 'k6/http'
 import { Counter } from 'k6/metrics'
-import { BASE, ITEM_IDS, START_PRICE, BID_UNIT, VUS, agree, authHeaders, ensureSession } from './common.js'
+import { BASE, ITEM_IDS, SHARE_CODE, agree, authHeaders, ensureSession } from './common.js'
 
 // ── 왜 상태 코드로 세면 안 되는가 ────────────────────────────────────
 // 입찰 거절이 전부 409 다. BID_AMOUNT_TOO_LOW(7004)도 409, CONCURRENT_BID_CONFLICT(7006)도
@@ -47,13 +49,36 @@ export function bidOnce(itemIds = ITEM_IDS) {
 
   const itemId = itemIds[Math.floor(Math.random() * itemIds.length)]
 
-  // 격자 위의 금액을 매 반복 올린다.
+  // ── 왜 현재가를 읽고 나서 입찰하는가 ──────────────────────────────
+  // 예전에는 VU 의 반복 횟수로 금액을 만들었다 (START_PRICE + BID_UNIT * (__ITER * VUS + __VU)).
+  // 그러면 접수되는 건 항상 그 순간 제일 높은 금액이고 그게 currentPrice 가 되므로, 나머지
+  // 전원이 그 아래로 떨어져 7004 로 거절된다. 실측으로 거절이 99.3 % 였다 (이슈 #246).
   //
-  // 금액 규칙이 두 개라 아무 숫자나 보내면 전부 INVALID_BID_UNIT 으로 거절된다.
-  //   (1) 시작가 + 단위 x N 위에 있어야 한다
-  //   (2) 현재가 + 단위 이상이어야 한다
-  // VU 수만큼 건너뛰며 올리면 VU 끼리 같은 금액을 안 쓰고, 반복이 돌수록 현재가를 따라간다.
-  const amount = START_PRICE + BID_UNIT * (__ITER * VUS + __VU)
+  // 그 상태에서는 락을 잡고 쓰기까지 가는 경로를 0.7 % 만 타므로, 재는 것이 "입찰 접수 성능"이
+  // 아니라 "입찰 거절 속도"가 된다.
+  //
+  // 실제 사용자는 화면의 현재가를 보고 그 위에 얹는다. 그래서 상세를 읽고 현재가 + 단위로 넣는다.
+  // 요청이 GET + POST 로 두 배가 되므로 판정은 throughput 이 아니라 accepted_per_s 로 한다.
+  // ─────────────────────────────────────────────────────────────────
+  const detail = http.get(
+    `${BASE}/auction-rooms/share/${SHARE_CODE}/auction-items/${itemId}`,
+    {
+      headers: authHeaders(),
+      // 전역 discardResponseBodies 를 여기서만 뒤집는다. 현재가를 읽어야 한다.
+      responseType: 'text',
+      tags: { name: 'item-detail' },
+    },
+  )
+
+  const item = itemOf(detail)
+
+  // 상세를 못 읽으면 금액을 만들 수 없다. 아무 값이나 보내면 그 요청이 거절 통계에 섞여
+  // 접수율을 흐린다. 이번 반복은 건너뛴다.
+  if (item === null) {
+    return detail
+  }
+
+  const amount = item.currentPrice + item.bidIncrement
 
   const res = http.post(`${BASE}/auction-items/${itemId}/bids`, JSON.stringify({ amount }), {
     headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -97,6 +122,30 @@ function countResult(res) {
 function errorCodeOf(res) {
   try {
     return res.json('code')
+  } catch (e) {
+    return null
+  }
+}
+
+/**
+ * 물품 상세에서 금액 계산에 필요한 둘만 꺼낸다.
+ *
+ * 200 이 아니거나 본문이 예상과 다르면 null 을 준다. 여기서 예외를 던지면 그 VU 의 반복이
+ * 통째로 중단되어 부하가 조용히 줄어든다.
+ */
+function itemOf(res) {
+  if (res.status !== 200) {
+    return null
+  }
+
+  try {
+    const data = res.json('data')
+
+    if (!data || typeof data.currentPrice !== 'number' || typeof data.bidIncrement !== 'number') {
+      return null
+    }
+
+    return data
   } catch (e) {
     return null
   }
