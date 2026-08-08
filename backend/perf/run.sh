@@ -494,6 +494,21 @@ W="${WINDOW_SECONDS}s"
 RUN="run=\"$RUN_ID\""
 NOT_ACTUATOR="$RUN, uri!=\"/actuator/prometheus\", uri!~\".*subscribe\""
 
+# 처리량과 p95 는 그 시나리오가 재려는 요청만 본다.
+#
+# 예전에는 액추에이터와 SSE 구독만 뺐다. 그러면 dev-login 과 약관 동의, 물품 시작이 전부
+# 섞인다. 시나리오 1 처럼 입찰이 40만 건인 실행에서는 0.2% 라 티가 안 나지만(실측: p95
+# 46.70 -> 46.56ms), 시나리오 4 는 전체 요청이 수십 건뿐이라 물품 시작이 처리량 그 자체가 된다.
+case "$SCENARIO" in
+  0)     MAIN_URI=', uri="/actuator/health"' ;;
+  1|2|5) MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/bids"' ;;
+  4)     MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/start"' ;;
+  # 3 은 SSE 구독이 주인공인데 끝나지 않는 스트림이라 응답 시간에 안 잡힌다. 그래서 안 좁힌다.
+  *)     MAIN_URI='' ;;
+esac
+
+MAIN="$NOT_ACTUATOR$MAIN_URI"
+
 # ── increase() 를 안 쓰는 이유 ──────────────────────────────────────
 # 마감 지연처럼 짧은 순간에 몰아서 찍히는 지표는 스크랩 한 번(5초) 사이에 값이 다 올라간다.
 # 그러면 구간 안의 첫 표본과 마지막 표본이 똑같아서 increase() 가 0을 준다.
@@ -517,8 +532,8 @@ p95_of() {
   quantile_of "$1" 0.95
 }
 
-RPS="$(promq "sum($(delta "http_server_requests_seconds_count{$NOT_ACTUATOR}")) / $WINDOW_SECONDS")"
-P95_MS="$(p95_of "http_server_requests_seconds_bucket{$NOT_ACTUATOR}")"
+RPS="$(promq "sum($(delta "http_server_requests_seconds_count{$MAIN}")) / $WINDOW_SECONDS")"
+P95_MS="$(p95_of "http_server_requests_seconds_bucket{$MAIN}")"
 TOMCAT_BUSY_MAX="$(promq "max(max_over_time(tomcat_threads_busy_threads{$RUN}[$W]))")"
 HIKARI_ACTIVE_MAX="$(promq "max(max_over_time(hikaricp_connections_active{$RUN}[$W]))")"
 HIKARI_PENDING_MAX="$(promq "max(max_over_time(hikaricp_connections_pending{$RUN}[$W]))")"
