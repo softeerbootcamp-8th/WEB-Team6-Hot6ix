@@ -157,14 +157,22 @@ acquire_lock() {
 }
 
 # trap 을 두 군데서 걸면 뒤엣것이 앞엣것을 덮어써서 잠금이 안 풀린다. 한 곳에 모은다.
+# 샘플러 둘 다 빈 값으로 시작해야 한다. set -u 라 아직 안 뜬 샘플러를 트랩이 참조하면 그
+# 자리에서 터지고, 그러면 아래 rm 까지 못 가서 잠금이 남는다.
 CPU_SAMPLER=""
+LOCK_SAMPLER=""
 cleanup() {
   # || true 가 없으면 이미 죽은 샘플러에 kill 이 실패하고, set -e 가 그걸 잡아서
   # 정상 종료인데도 종료 코드가 1 로 나간다 (실측으로 확인).
   if [ -n "$CPU_SAMPLER" ]; then
     kill "$CPU_SAMPLER" 2>/dev/null || true
-kill "$LOCK_SAMPLER" 2>/dev/null || true
   fi
+
+  # CPU 샘플러와 따로 본다. 락 샘플러가 뒤에 뜨므로 둘을 한 조건에 묶으면 안 죽는 경우가 생긴다.
+  if [ -n "$LOCK_SAMPLER" ]; then
+    kill "$LOCK_SAMPLER" 2>/dev/null || true
+  fi
+
   rm -rf "$LOCK_DIR"
   return 0
 }
@@ -419,6 +427,15 @@ if [ "$SWEEP_INDEX" = "on" ]; then
   echo "[4/8] idx_auction_items_status_end_at 만들기"
   mysql_query "CREATE INDEX idx_auction_items_status_end_at
                ON auction_items (status, end_at)" >/dev/null
+
+  # mysql_query 는 stderr 를 버리고 || true 로 끝나서, CREATE 가 실패해도 그냥 지나간다.
+  # 그러면 on 과 off 가 사실상 같은 실행이 되고 "인덱스를 넣어도 효과가 없다"는 틀린 결론이
+  # 나온다. 대조 실험은 한쪽이 조용히 안 걸리는 게 제일 나쁘므로 여기서 멈춘다.
+  if [ -z "$(mysql_query "SHOW INDEX FROM auction_items
+                          WHERE Key_name = 'idx_auction_items_status_end_at'")" ]; then
+    echo "인덱스가 안 만들어졌다. --sweep-index on 인데 off 와 같은 실행이 되므로 멈춘다." >&2
+    exit 1
+  fi
 fi
 
 # 마감 대상 조회가 실제로 어떻게 도는지 남긴다. 인덱스를 켠 실행과 끈 실행의 이 파일을
@@ -504,7 +521,7 @@ row_lock_status >"$RESULT_DIR/innodb_row_lock_before.txt"
 #
 # 입찰 경로는 물품·경매방·참여자·최고가를 각각 읽는데, 그중 하나가 락 안에 들어가 있으면
 # 왕복이 늘어난 만큼 락을 오래 잡는다. 응답 시간만 보면 그게 왕복 수 때문인지 락 대기
-# 때문인지 안 갈린다. Com_select 는 서버 전체 누적이라 구간 증가분을 입찰 성공 건수로
+# 때문인지 안 갈린다. Com_select 는 서버 전체 누적이라 구간 증가분을 입찰을 시도한 건수로
 # 나눠서 "입찰 한 건당 몇 번"으로 만든다.
 com_select() {
   mysql_query "SHOW GLOBAL STATUS LIKE 'Com_select'" | awk '{print $2}'
@@ -715,6 +732,10 @@ fi
 
 REJECTED_4XX=$((REJECTED_AMOUNT + REJECTED_ALREADY_TOP + REJECTED_CLOSED + CONCURRENT_CONFLICT + REJECTED_OTHER))
 
+# 거절된 입찰도 물품과 방과 참여자를 다 읽고 나서 거절된다. 그래서 SELECT 를 나눌 때 쓰는
+# 분모는 접수 건수가 아니라 시도 건수다.
+BID_ATTEMPTS=$((ACCEPTED + REJECTED_4XX + FAILED_5XX))
+
 # 계단을 올리면 워크로드 구성 자체가 바뀐다. 금액 격자 위에서 도착 순서가 섞이면 "역대 최고"
 # 갱신만 접수되므로, VU 가 늘수록 접수 비율이 떨어지고 싼 거절이 늘어난다.
 # 실측: vus 20 에서 1.04%, vus 40 에서 0.61% 였고 접수 건수는 6159 -> 3217 로 반토막이었다.
@@ -760,10 +781,14 @@ K6_P95_MS="$(round "$K6_P95_MS" 0)"
 
 # 입찰 한 건이 SELECT 를 몇 번 했는지. Com_select 는 서버 전체 누적이라 배경 SSE 나 시딩까지
 # 섞이지 않도록 k6 직전과 직후의 차이만 쓴다. 입찰이 하나도 안 붙은 실행은 나눌 수가 없다.
+#
+# 나누는 값이 접수 건수가 아니라 시도 건수여야 한다. 분자에는 거절된 입찰이 던진 SELECT 도
+# 들어 있어서, 접수로 나누면 접수 비율(계단에 따라 1% 안팎까지 떨어진다)의 역수만큼 부풀고
+# **VU 를 올리는 것만으로 이 값이 따라 올라간다.** 총 처리량에서 걷어낸 함정과 같은 것이다.
 SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER" \
-                      -v accepted="$ACCEPTED" \
-  'BEGIN { if (accepted + 0 <= 0 || after == "" || before == "") print "NaN";
-           else printf "%.1f\n", (after - before) / accepted }')"
+                      -v attempts="$BID_ATTEMPTS" \
+  'BEGIN { if (attempts + 0 <= 0 || after == "" || before == "") print "NaN";
+           else printf "%.1f\n", (after - before) / attempts }')"
 
 # 그래프를 나중에 다시 그릴 수 있게 원본 시계열도 남긴다.
 # 숫자 몇 개만 남기면 "이 계단은 왜 이렇지"를 되짚을 수 없다.
