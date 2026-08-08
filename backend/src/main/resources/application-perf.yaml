@@ -26,6 +26,17 @@ spring:
       pool:
         size: ${SCHEDULER_POOL_SIZE:4}
 
+  # 이건 스케줄러만 바꾸는 스위치가 아니다. **톰캣 커넥터까지 함께** 가상 스레드로 바뀐다.
+  # 그래서 켜고 잰 숫자는 "스케줄러에 가상 스레드를 쓴 효과"가 아니라 "앱 전체에 쓴 효과"다.
+  # 한 번에 하나만 바꾼다는 원칙에 어긋나지만 Boot 가 따로 켜는 방법을 안 준다.
+  # run.sh 가 이 값을 index.csv 에 적으므로, 나중에 어느 줄이 가상 스레드였는지는 알 수 있다.
+  #
+  # 켜면 TaskScheduler 빈이 ThreadPoolTaskScheduler 에서 SimpleAsyncTaskScheduler 로 바뀌어
+  # 큐가 없어지고 executor_queued_tasks{name="taskScheduler"} 시계열도 사라진다.
+  threads:
+    virtual:
+      enabled: ${VIRTUAL_THREADS:false}
+
 # 대조 실험에서 바꾸는 값들. run.sh 가 환경변수로 넘긴다.
 upbid:
   sse:
