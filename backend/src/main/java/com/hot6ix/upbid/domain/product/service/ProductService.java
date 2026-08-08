@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
@@ -13,7 +14,7 @@ import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import com.hot6ix.upbid.global.response.CursorPageResponse;
+import com.hot6ix.upbid.global.response.PageResponse;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -133,32 +134,30 @@ public class ProductService {
     }
 
     /**
-     * 로그인한 판매자 본인의 상품 목록을 productId 최신순으로 조회한다.
-     * 정렬 키를 productId로 고정해 커서가 안정적으로 동작하며, 상태는 정렬이 아니라
-     * 필터로만 쓰인다.
+     * 로그인한 판매자 본인의 상품 목록을 한 페이지 조회한다. 정렬은 등록 순서(productId)의
+     * 방향만 고르고, 상태는 정렬이 아니라 필터로만 쓰인다.
+     *
+     * <p>화면이 페이지 번호를 눌러 임의 페이지로 이동하고 "총 N개"를 그리므로 커서가 아니라
+     * offset 페이지네이션이다. 요청 범위를 넘는 page는 오류가 아니라 빈 목록으로 답한다 —
+     * 목록을 보는 사이 상품이 지워져 페이지 수가 줄면 정상적으로도 일어난다.
      *
      * @param userId  조회를 요청한 회원의 ID
      * @param keyword 상품명 검색어(옵션)
      * @param status  파생 상태 필터(옵션) — UNREGISTERED/READY/IN_PROGRESS/ENDED
-     * @param cursor  이전 페이지 마지막 상품의 productId(옵션, 없으면 첫 페이지)
+     * @param sort    정렬 기준(옵션, 기본 최신순) — LATEST/OLDEST
+     * @param page    0부터 세는 페이지 번호(옵션, 기본 {@value ProductRepository#FIRST_PAGE})
      * @param size    페이지 크기(옵션, 기본 {@value ProductRepository#DEFAULT_PAGE_SIZE})
-     * @return 상품 요약 목록과 다음 페이지 커서
+     * @return 상품 요약 한 페이지와 전체 개수·전체 페이지 수
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND)
      */
-    public CursorPageResponse<ProductSummaryResponseDto> getList(
-            Long userId, String keyword, ProductListingStatus status, Long cursor, Integer size) {
+    public PageResponse<ProductSummaryResponseDto> getList(
+            Long userId, String keyword, ProductListingStatus status,
+            ProductSortType sort, Integer page, Integer size) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
-        int pageSize = (size != null) ? size : ProductRepository.DEFAULT_PAGE_SIZE;
 
-        List<ProductSummaryResponseDto> fetched = productRepository.search(
-                sellerProfile.getSellerProfileId(), keyword, status, cursor, pageSize);
-
-        boolean hasNext = fetched.size() > pageSize;
-        List<ProductSummaryResponseDto> content = hasNext ? fetched.subList(0, pageSize) : fetched;
-        Long nextCursor = hasNext ? content.get(content.size() - 1).productId() : null;
-
-        return CursorPageResponse.of(content, nextCursor);
+        return PageResponse.of(productRepository.search(
+                sellerProfile.getSellerProfileId(), keyword, status, sort, page, size));
     }
 
     private SellerProfile findActiveSellerProfile(Long userId) {

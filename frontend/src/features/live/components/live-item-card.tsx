@@ -1,4 +1,4 @@
-import { Clock, Play } from 'lucide-react'
+import { Clock, FastForward, Play } from 'lucide-react'
 import { useState } from 'react'
 
 import { ProductThumbnail } from '@/components/product-thumbnail'
@@ -44,13 +44,16 @@ export function LiveItemCard({
   justExtended = null,
   justStarted = null,
   starting = false,
+  closingEarly = false,
+  softCloseTriggerSeconds = 0,
   rowRef,
   onSelect,
   onStart,
+  onCloseEarly,
 }: {
   item: AuctionItemDetail
   selected?: boolean
-  /** 방을 만든 사람만 경매를 시작할 수 있다. 구매자에게는 조작 줄을 숨긴다. */
+  /** 방을 만든 사람만 경매를 시작하거나 마감을 앞당길 수 있다. 구매자에게는 조작 줄을 숨긴다. */
   canStart?: boolean
   /** 지금 고를 수 없는 카드(빼기 선택 중의 진행·종료 물품) */
   dimmed?: boolean
@@ -62,11 +65,20 @@ export function LiveItemCard({
   justStarted?: AuctionStartFlashState | null
   /** 이 물품의 시작 요청을 서버가 아직 처리 중이다. */
   starting?: boolean
+  /** 이 물품의 마감 앞당기기 요청을 서버가 아직 처리 중이다. */
+  closingEarly?: boolean
+  /**
+   * 마감 몇 초 전부터 연장 구간인지. 앞당기기가 이 시각을 목적지로 삼으므로,
+   * 이미 그 안에 들어온 물품은 앞당길 자리가 없어 버튼을 잠근다(서버도 거절한다).
+   */
+  softCloseTriggerSeconds?: number
   /** 목록이 자리를 옮길 때 쓰는 FLIP 참조 */
   rowRef?: (element: HTMLLIElement | null) => void
   onSelect?: () => void
   /** 진행 시간(분)을 정해 경매를 시작한다. 실제 호출은 라우트가 한다. */
   onStart?: (minutes: number) => void
+  /** 마감을 연장 구간이 열리는 시각으로 앞당긴다. 확인 다이얼로그는 라우트가 띄운다. */
+  onCloseEarly?: () => void
 }) {
   const remaining = useCountdown(item.endsAt)
   const active = item.status === 'ACTIVE'
@@ -95,7 +107,11 @@ export function LiveItemCard({
         type="button"
         onClick={onSelect}
         aria-pressed={selected}
-        className={cn('flex w-full gap-3 p-3 text-left', ready && 'pb-1.5')}
+        className={cn(
+          'flex w-full gap-3 p-3 text-left',
+          // 아래에 조작 줄이 붙는 카드만 간격을 줄인다.
+          (ready || (active && canStart && onCloseEarly)) && 'pb-1.5',
+        )}
       >
         <ProductThumbnail
           src={item.imageUrl}
@@ -186,7 +202,74 @@ export function LiveItemCard({
           />
         </div>
       )}
+
+      {/*
+        진행 중 물품은 같은 자리에서 마감을 앞당길 수 있다. 시작 버튼과 자리를
+        나눠 쓰는 이유는 한 카드에 조작이 하나뿐이기 때문이다 (시작 전이면 시작,
+        진행 중이면 앞당기기).
+      */}
+      {active && canStart && onCloseEarly && (
+        <div className="flex justify-end px-3 pb-2.5">
+          <CloseEarlyControl
+            itemName={item.name}
+            pending={closingEarly}
+            /*
+             * 이미 연장 구간 안이면 앞당길 자리가 없다. 서버도 같은 이유로 거절한다.
+             * 남은 시간이 0 인 물품도 잠근다 — 마감 이벤트를 기다리는 중이라
+             * 화면에만 진행 중으로 남아 있는 상태다.
+             */
+            disabled={remaining <= softCloseTriggerSeconds}
+            onCloseEarly={onCloseEarly}
+          />
+        </div>
+      )}
     </li>
+  )
+}
+
+/**
+ * 진행 중 물품의 마감 앞당기기 버튼.
+ *
+ * 카드(`<button>`) 밖에 두는 이유는 `StartControl` 과 같다. 버튼 안에
+ * 버튼을 넣을 수 없다.
+ *
+ * **눈에 띄지 않게 두는 것이 이 버튼의 요건이다.** 처음에는 시작 버튼처럼
+ * 카드 폭을 채우는 빨간 버튼이었는데, 카드에서 제일 먼저 눈에 들어와서
+ * 누르라고 재촉하는 것처럼 보였다. 자주 쓸 조작이 아니라 "필요하면 이런
+ * 것도 된다" 정도로 알리면 되므로, 폭을 내용만큼만 잡고 색도 뺐다.
+ * 강조는 진행 중 카드에서 이미 남은 시간과 현재가가 가져가고 있다.
+ *
+ * 누르면 바로 보내지 않고 라우트가 확인 다이얼로그를 띄운다. 되돌릴 수
+ * 없는 조작이라 손이 스친 것만으로 마감이 당겨지면 안 된다.
+ */
+function CloseEarlyControl({
+  itemName,
+  pending,
+  disabled,
+  onCloseEarly,
+}: {
+  itemName: string
+  pending: boolean
+  disabled: boolean
+  onCloseEarly: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={`${itemName} 경매 마감 앞당기기`}
+      disabled={pending || disabled}
+      onClick={onCloseEarly}
+      className="ease-soft flex h-8 items-center gap-1 rounded-lg px-2 text-[12px] font-semibold text-neutral-tertiary transition-all duration-150 hover:bg-fill hover:text-neutral-secondary active:scale-95 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-neutral-muted disabled:active:scale-100"
+    >
+      {pending ? (
+        '앞당기는 중…'
+      ) : (
+        <>
+          <FastForward aria-hidden className="size-3 fill-current" />
+          {disabled ? '곧 마감돼요' : '마감 앞당기기'}
+        </>
+      )}
+    </button>
   )
 }
 

@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.scheduler;
 
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
@@ -84,6 +85,25 @@ public class AuctionCloseScheduleListener {
             auctionCloseScheduler.schedule(event.itemId(), event.endAt());
         } catch (Exception e) {
             log.error("Soft Close 마감 재예약 실패: itemId={}, endAt={}", event.itemId(), event.endAt(), e);
+        }
+    }
+
+    /**
+     * 판매자가 앞당긴 마감 시각에 맞춰 예약을 다시 건다. 하는 일은
+     * {@link #on(SoftCloseExtended)}과 같고, 시각이 뒤가 아니라 앞으로 옮겨진다는 점만 다르다.
+     *
+     * <p>여기서 예약을 못 바꾸면 물품은 <b>원래 시각까지 그대로 열려 있다.</b> 연장 때와 달리
+     * {@code closeIfDue}가 구해 주지 못한다 — 그쪽은 예약이 너무 일찍 깼을 때 다시 걸어주는
+     * 장치라, 앞당겨진 마감처럼 예약이 늦게 깨는 경우는 되돌리지 못한다. 그래도 예외를 삼키는
+     * 것은 커밋이 끝난 뒤에 도는 리스너라서다. 여기서 던지면 마감 시각은 이미 앞당겨졌는데
+     * 요청만 실패로 보인다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(ItemCloseAdvanced event) {
+        try {
+            auctionCloseScheduler.schedule(event.itemId(), event.endAt());
+        } catch (Exception e) {
+            log.error("앞당긴 마감 재예약 실패: itemId={}, endAt={}", event.itemId(), event.endAt(), e);
         }
     }
 }

@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
@@ -32,6 +33,8 @@ class AuctionCloseScheduleListenerTest {
     private static final LocalDateTime END_AT = LocalDateTime.of(2026, 8, 2, 21, 10);
     /** Soft Close로 30초 밀린 마감 시각. */
     private static final LocalDateTime EXTENDED_END_AT = END_AT.plusSeconds(30);
+    /** 판매자가 앞당겨 9분 앞으로 당겨진 마감 시각. */
+    private static final LocalDateTime ADVANCED_END_AT = END_AT.minusMinutes(9);
 
     @Mock
     private AuctionCloseScheduler auctionCloseScheduler;
@@ -84,6 +87,27 @@ class AuctionCloseScheduleListenerTest {
     }
 
     @Test
+    @DisplayName("판매자가 마감을 앞당기면 당겨진 시각으로 예약을 갈아 끼운다")
+    void reschedulesOnItemCloseAdvanced() {
+
+        auctionCloseScheduleListener.on(itemCloseAdvanced());
+
+        verify(auctionCloseScheduler).schedule(ITEM_ID, ADVANCED_END_AT);
+    }
+
+    @Test
+    @DisplayName("앞당김 재예약이 실패해도 요청까지 실패시키지 않는다")
+    void swallowsAdvancedRescheduleFailure() {
+
+        doThrow(new TaskRejectedException("스케줄러가 내려가는 중"))
+                .when(auctionCloseScheduler).schedule(any(), any());
+
+        assertThatCode(() -> auctionCloseScheduleListener.on(itemCloseAdvanced()))
+                .as("마감 시각은 이미 앞당겨졌는데 요청만 실패로 보이면 안 된다")
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     @DisplayName("낙찰로 마감되면 남은 예약을 취소한다")
     void cancelsOnItemEnded() {
 
@@ -104,5 +128,9 @@ class AuctionCloseScheduleListenerTest {
 
     private ItemStarted itemStarted() {
         return ItemStarted.of(ROOM_ID, ITEM_ID, ITEM_NAME, STARTED_AT, END_AT);
+    }
+
+    private ItemCloseAdvanced itemCloseAdvanced() {
+        return ItemCloseAdvanced.of(ROOM_ID, ITEM_ID, ITEM_NAME, 60, ADVANCED_END_AT, STARTED_AT);
     }
 }

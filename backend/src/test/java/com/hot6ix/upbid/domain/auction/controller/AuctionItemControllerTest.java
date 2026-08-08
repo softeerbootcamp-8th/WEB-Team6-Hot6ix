@@ -14,10 +14,12 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
+import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemService;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -41,6 +43,9 @@ class AuctionItemControllerTest extends AbstractControllerTest {
 
     @MockitoBean
     private AuctionItemService auctionItemService;
+
+    @MockitoBean
+    private AuctionItemCloseService auctionItemCloseService;
 
     /** 공개 조회는 숫자 PK를 받지 않는다. 방을 지목하는 값은 항상 이 공유 코드다. */
     private static final String SHARE_CODE = "abcdefghij123456";
@@ -633,6 +638,73 @@ class AuctionItemControllerTest extends AbstractControllerTest {
         mockMvc.perform(post("/api/v1/auction-items/30/start")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(newStartRequest(30))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(1005));
+    }
+
+    @Test
+    @DisplayName("마감을 앞당기면 200과 앞당겨진 마감 시각을 반환한다")
+    void closeEarly() throws Exception {
+
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L))
+                .thenReturn(new AuctionItemCloseEarlyResponseDto(
+                        30L, LocalDateTime.now().plusSeconds(60), 60));
+
+        mockMvc.perform(post("/api/v1/auction-items/30/close-early"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.auctionItemId").value(30))
+                .andExpect(jsonPath("$.data.remainingSeconds").value(60))
+                .andExpect(jsonPath("$.data.endAt").exists());
+    }
+
+    @Test
+    @DisplayName("없거나 남의 물품의 마감을 앞당기면 404와 4001을 반환한다")
+    void closeEarlyItemNotFound() throws Exception {
+
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 999L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        mockMvc.perform(post("/api/v1/auction-items/999/close-early"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4001));
+    }
+
+    @Test
+    @DisplayName("진행 중이 아닌 물품의 마감을 앞당기면 409와 4010을 반환한다")
+    void closeEarlyItemNotInProgress() throws Exception {
+
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_IN_PROGRESS));
+
+        mockMvc.perform(post("/api/v1/auction-items/30/close-early"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4010));
+    }
+
+    @Test
+    @DisplayName("이미 마감이 임박했으면 앞당기기에 409와 4011을 반환한다")
+    void closeEarlyAlreadyClosingSoon() throws Exception {
+
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_ALREADY_CLOSING_SOON));
+
+        mockMvc.perform(post("/api/v1/auction-items/30/close-early"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(4011));
+    }
+
+    @Test
+    @DisplayName("비로그인 사용자는 마감을 앞당길 수 없다")
+    void closeEarlyRejectsGuest() throws Exception {
+
+        비로그인_상태로_바꾼다();
+
+        mockMvc.perform(post("/api/v1/auction-items/30/close-early"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(1005));

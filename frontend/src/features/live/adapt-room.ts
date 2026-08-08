@@ -51,7 +51,12 @@ export function toAuctionRoomDetail(
      */
     shareCode: '',
     softCloseSeconds: dto.softCloseExtendSeconds ?? 0,
-    softCloseTriggerSeconds: dto.softCloseTriggerSeconds ?? 0,
+    /*
+     * 트리거는 경매방 생성에서 필수라 비어 있을 수 없지만, 값이 없는 옛 방을
+     * 만나면 서버와 같은 기본값(60초)으로 본다. 여기서 0 으로 두면 마감
+     * 앞당기기 안내가 "0초 뒤 마감"이 된다.
+     */
+    softCloseTriggerSeconds: dto.softCloseTriggerSeconds ?? 60,
     bidUnit: dto.bidIncrement ?? 0,
     items,
   }

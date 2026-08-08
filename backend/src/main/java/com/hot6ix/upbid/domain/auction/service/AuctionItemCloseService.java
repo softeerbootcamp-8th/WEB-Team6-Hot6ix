@@ -1,12 +1,19 @@
 package com.hot6ix.upbid.domain.auction.service;
 
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.user.entity.SellerProfile;
+import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
+import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.event.DomainEvent;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
+import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuctionItemCloseService {
 
     private final AuctionItemRepository auctionItemRepository;
+    private final SellerProfileRepository sellerProfileRepository;
     private final DomainEventPublisher domainEventPublisher;
 
     /**
@@ -87,6 +95,85 @@ public class AuctionItemCloseService {
         closeLocked(auctionItem, now);
 
         return Optional.empty();
+    }
+
+    /**
+     * 소유자 본인의 진행 중인 물품 마감을 <b>Soft Close 연장 구간이 열리는 순간</b>으로 앞당긴다.
+     * 판매자가 반응이 없는 물품을 빨리 넘기고 싶을 때 쓴다. <b>여기서 물품이 닫히지는 않는다</b> —
+     * 실제 마감은 지금까지처럼 새 시각에 깨어난 {@code AuctionCloseScheduler}의 예약이 한다.
+     *
+     * <p>즉시 닫지 않고 트리거만큼 남겨두는 것은 구매자에게 얼마나 남았는지 알릴 수 있게 하려는
+     * 것이다. 앞당긴 뒤에도 Soft Close는 그대로 살아 있어, 그 구간에 입찰이 들어오면 마감이 다시
+     * 밀린다. 곧 이 API는 마감을 <b>확정</b>하지 않고 앞당기기만 한다.
+     *
+     * <p>물품 행에 쓰기 락을 걸고 읽으므로 앞당기기가 입찰·마감과 한 줄로 직렬화된다. 락이 없으면
+     * 방금 옮긴 {@code end_at}이 같은 순간에 커밋된 연장에 덮이거나 그 반대가 된다.
+     *
+     * <p>이미 연장 구간 안이면(= 남은 시간이 트리거보다 짧으면) 거절한다. 받아주면 앞당기기가
+     * 오히려 마감을 뒤로 미는 경우가 생긴다.
+     *
+     * <p>커밋되면 {@code ItemCloseAdvanced}를 발행한다. 두 스케줄러가 이 이벤트로 예약을 새 마감
+     * 시각에 맞추고, 화면은 카운트다운을 다시 맞춘다.
+     *
+     * @param userId        앞당기기를 요청한 회원의 ID
+     * @param auctionItemId 마감을 앞당길 물품의 ID
+     * @return 앞당겨진 마감 시각과 그때까지 남은 초
+     * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
+     *                               물품이 없거나 본인 소유가 아닐 때(AUCTION_ITEM_NOT_FOUND),
+     *                               진행 중인 물품이 아닐 때(AUCTION_ITEM_NOT_IN_PROGRESS),
+     *                               이미 마감이 임박했을 때(AUCTION_ITEM_ALREADY_CLOSING_SOON)
+     */
+    @Transactional
+    public AuctionItemCloseEarlyResponseDto closeEarly(Long userId, Long auctionItemId) {
+
+        SellerProfile sellerProfile = findActiveSellerProfile(userId);
+
+        AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(auctionItemId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        assertOwnedBy(auctionItem, sellerProfile);
+
+        if (auctionItem.getStatus() != AuctionItemStatus.IN_PROGRESS) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_IN_PROGRESS);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        if (!auctionItem.closeEarly(now)) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_ALREADY_CLOSING_SOON);
+        }
+
+        AuctionItemCloseEarlyResponseDto response =
+                AuctionItemCloseEarlyResponseDto.of(auctionItem, now);
+
+        domainEventPublisher.publish(ItemCloseAdvanced.of(
+                auctionItem.getAuctionRoom().getAuctionRoomId(),
+                auctionItemId,
+                auctionItem.getProduct().getName(),
+                response.remainingSeconds(),
+                response.endAt(),
+                now));
+
+        return response;
+    }
+
+    /**
+     * 물품이 속한 경매방이 요청자 소유인지 확인한다. 남의 방 물품이면 물품의 존재 자체를 숨기려고
+     * 4001로 응답한다. {@code AuctionItemService.start}와 같은 규칙이다.
+     *
+     * <p>탈퇴한 판매자의 프로필로는 여기까지 오지 않는다 — {@link #findActiveSellerProfile}이
+     * 먼저 걸러낸다.
+     */
+    private void assertOwnedBy(AuctionItem auctionItem, SellerProfile sellerProfile) {
+        if (!auctionItem.getAuctionRoom().getSellerProfile().getSellerProfileId()
+                .equals(sellerProfile.getSellerProfileId())) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
+        }
+    }
+
+    private SellerProfile findActiveSellerProfile(Long userId) {
+        return sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND));
     }
 
     /**
