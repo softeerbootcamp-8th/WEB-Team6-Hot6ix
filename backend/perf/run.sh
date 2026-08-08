@@ -247,7 +247,11 @@ preflight
 
 # ── 실행 이름 ──────────────────────────────────────────────────────
 # 파라미터를 이름에 박아 두면 폴더 목록만 봐도 뭘 잰 건지 안다.
-STAMP="$(date +%Y-%m-%dT%H-%M)"
+# 초까지 넣는다. 분까지만 찍으면 앞 실행이 빨리 실패했을 때 다음 실행이 같은 분에 들어와
+# 실행 이름이 겹친다. 그러면 결과 폴더가 덮어써지고 Prometheus 의 run 라벨까지 같아져서,
+# 라벨을 도입해 막았던 "직전 실행 값을 집어오는" 문제가 그대로 다시 열린다.
+# 실측으로 겪었다 — 3연속 실행에서 2회차가 2/8 단계에 죽고 3회차가 같은 이름을 가져갔다.
+STAMP="$(date +%Y-%m-%dT%H-%M-%S)"
 RUN_ID="${STAMP}_s${SCENARIO}_vus${VUS}_pool${POOL}_items${ITEMS}_sse${SSE}"
 RESULT_DIR="$PERF_DIR/results/$RUN_ID"
 mkdir -p "$RESULT_DIR"
@@ -846,7 +850,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -871,8 +875,13 @@ if [ ! -f "$INDEX" ]; then
 fi
 
 # bottleneck 과 note 는 비워 둔다. 사람이 채우는 칸이 이 둘뿐이다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
-  "$RUN_ID" "$WHO" "$COMMIT" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
+#
+# status 를 여기 넣는 이유. 예전에는 aborted 실행도 정상 줄과 똑같은 모양으로 들어갔다.
+# k6 가 중간에 죽으면 summary.json 이 없어서 접수와 거절이 전부 0 인데 처리량은 그럴듯한
+# 숫자가 박혀서, 그 줄만 봐서는 아무도 못 알아본다. 실측으로 겪었다 — 구간 128초짜리
+# aborted 줄에 처리량 3490.7 이 들어갔고 접수는 0 이었다.
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+  "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
   "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS" \
@@ -982,10 +991,20 @@ if [ "$CONCURRENT_CONFLICT" != "0" ]; then
   echo "※ CONCURRENT_BID_CONFLICT 가 ${CONCURRENT_CONFLICT}건 나왔다. 행 락이 있으면 안 나오는 게 정상이라 그 자체가 발견이다." >&2
 fi
 
+# 붙여넣을 줄은 성공한 실행에서만 찍는다.
+#
+# 예전에는 aborted 여도 줄을 찍고 그 아래에 경고를 붙였는데, 경고가 줄 뒤에 오니까 이미
+# 복사한 뒤였다. 다섯 명이 각자 수십 번 돌리면 그 한 번이 조용히 노션에 들어간다.
+if [ "$STATUS" = "aborted" ]; then
+  echo "※ 이 실행은 aborted 다. k6 가 중간에 끝났거나 구간 앞뒤가 다른 컨테이너를 봤다." >&2
+  echo "  index.csv 에는 status=aborted 로 남겼다. **이 줄은 노션에 붙여넣지 않는다.**" >&2
+  echo "  폴더는 지우지 않는다 (나중에 '이 계단은 왜 비었지'가 되지 않게)." >&2
+  echo "  같은 조건으로 다시 돌린다: $RESULT_DIR" >&2
+  exit 0
+fi
+
 echo "note.md 의 판정 칸을 채우고, 아래 한 줄을 노션 측정 결과 표에 붙여 넣는다."
 echo "(결과 폴더는 커밋되지 않는다. 숫자를 합치는 곳은 노션이다.)"
 echo
 tail -1 "$INDEX"
-
-[ "$STATUS" = "aborted" ] && echo "※ k6 가 실패로 끝났다. meta.json 에 aborted 로 남겼다. 폴더를 지우지 않는다." >&2
 exit 0
