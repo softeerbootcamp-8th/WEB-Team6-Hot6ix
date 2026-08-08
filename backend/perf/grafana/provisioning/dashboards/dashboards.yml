@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: upbid
+    type: file
+    # 파일이 원본이다. Grafana UI 에서 고치면 저장이 안 되고 다음 기동에 사라진다.
+    # 패널을 바꾸고 싶으면 UI 에서 만든 뒤 JSON 을 내보내 grafana/dashboards/ 에 커밋한다.
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

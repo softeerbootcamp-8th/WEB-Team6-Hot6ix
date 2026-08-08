@@ -9,6 +9,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
+import com.hot6ix.upbid.domain.sse.config.SseProperties;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -25,8 +27,16 @@ class RoomSseManagerTest {
     private static final Long ROOM_ID = 1L;
     private static final String EVENT_NAME = "TEST_EVENT";
     private static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
+    private static final long EMITTER_TIMEOUT_MS = 60 * 60 * 1000L;
 
-    private final RoomSseManager roomSseManager = new RoomSseManager();
+    private final RoomSseManager roomSseManager = newRoomSseManager();
+
+    /** 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다. */
+    private static RoomSseManager newRoomSseManager() {
+        return new RoomSseManager(
+                new SseProperties(30_000L, EMITTER_TIMEOUT_MS),
+                new SseMetrics(new SimpleMeterRegistry()));
+    }
 
     @Test
     @DisplayName("여러 스레드가 동시에 구독해도 참여자 수가 구독 수와 일치한다")
@@ -132,7 +142,7 @@ class RoomSseManagerTest {
     @DisplayName("heartbeat 로 구독을 걷어내면 남은 구독에 참여자 수를 다시 알린다")
     void broadcastsCountAfterHeartbeatSweep() {
 
-        RoomSseManager manager = spy(new RoomSseManager());
+        RoomSseManager manager = spy(newRoomSseManager());
 
         manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
         SseEmitter dead = manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
@@ -149,7 +159,7 @@ class RoomSseManagerTest {
     @DisplayName("걷어낼 구독이 없으면 참여자 수를 다시 알리지 않는다")
     void doesNotBroadcastCountWhenNothingSwept() {
 
-        RoomSseManager manager = spy(new RoomSseManager());
+        RoomSseManager manager = spy(newRoomSseManager());
 
         manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
 
@@ -165,6 +175,37 @@ class RoomSseManagerTest {
     void countsZeroForUnknownRoom() {
 
         assertThat(roomSseManager.getParticipantCount(ROOM_ID)).isZero();
+    }
+
+    @Test
+    @DisplayName("마지막 구독이 빠지면 방 수 지표도 0으로 내려간다")
+    void reportsZeroRoomsAfterLastSubscriberLeaves() {
+
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RoomSseManager manager = new RoomSseManager(
+                new SseProperties(30_000L, EMITTER_TIMEOUT_MS), new SseMetrics(registry));
+
+        // 게이지는 @PostConstruct 에서 붙는다. 직접 생성한 객체에서는 안 불리므로 여기서 부른다.
+        manager.bindMetrics();
+
+        SseEmitter first = manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
+        SseEmitter second = manager.subscribe(EVENT_NAME, ROOM_ID, "payload");
+
+        assertThat(rooms(registry)).isEqualTo(1);
+
+        // 연결이 끊긴 상태를 만들고 heartbeat 로 걷어내게 한다.
+        first.complete();
+        second.complete();
+        manager.sendHeartbeat();
+
+        assertThat(manager.getParticipantCount(ROOM_ID)).isZero();
+        assertThat(rooms(registry))
+                .as("방을 안 지우면 한 번 오른 뒤 영영 안 내려온다")
+                .isZero();
+    }
+
+    private static double rooms(SimpleMeterRegistry registry) {
+        return registry.get("upbid.sse.rooms").gauge().value();
     }
 
     @Test
