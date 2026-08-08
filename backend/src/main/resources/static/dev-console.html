@@ -953,6 +953,24 @@
             <div class="f mono">--xmx</div>
             <input id="p-xmx" type="text" placeholder="비움">
           </div>
+          <div class="knob">
+            <div class="k">격리 수준 <small>RR 은 조회한 구간의 빈 자리까지 잠급니다(갭 락). RC 는 행만 잠급니다</small></div>
+            <div class="f mono">--isolation</div>
+            <select id="p-iso">
+              <option value="RR">RR (MySQL 기본)</option>
+              <option value="RC">RC</option>
+            </select>
+          </div>
+          <div class="knob">
+            <div class="k">채워 넣을 닫힌 물품 <small>마감 대상을 찾는 조회가 표를 통째로 훑는지 보려면 표가 커야 합니다</small></div>
+            <div class="f mono">--bulk-items</div>
+            <input id="p-bulk" type="number" min="0" max="1000000" value="0">
+          </div>
+          <div class="knob flag">
+            <div class="k">마감 조회 인덱스 <small>auction_items(status, end_at). 위 물품 채우기와 짝으로 켜고 끕니다</small></div>
+            <div class="f mono">--sweep-index on</div>
+            <input id="p-sweep" type="checkbox">
+          </div>
           <div class="knob flag">
             <div class="k">가상 스레드 <small>스케줄러만이 아니라 <b>톰캣도 함께</b> 바뀝니다. 결과에 그렇게 적힙니다</small></div>
             <div class="f mono">--virtual-threads</div>
@@ -1884,6 +1902,9 @@ function knobs() {
     schedulerPool: Number(el('p-sched').value) || 4,
     heartbeatMs: Number(el('p-hb').value) || 30000,
     xmx: el('p-xmx').value.trim(),
+    isolation: el('p-iso').value,
+    bulkItems: Number(el('p-bulk').value) || 0,
+    sweepIndex: el('p-sweep').checked,
     virtualThreads: el('p-virtual').checked,
     skipBuild: el('p-skip').checked,
     who: el('p-who').value.trim(),
@@ -1913,6 +1934,9 @@ function localCommand(k) {
   if (k.heartbeatMs !== 30000) parts.push('--heartbeat-ms', k.heartbeatMs)
   if (k.xmx) parts.push('--xmx', k.xmx)
   if (k.who) parts.push('--who', k.who)
+  if (k.isolation !== 'RR') parts.push('--isolation', k.isolation)
+  if (k.bulkItems > 0) parts.push('--bulk-items', k.bulkItems)
+  if (k.sweepIndex) parts.push('--sweep-index', 'on')
   if (k.virtualThreads) parts.push('--virtual-threads')
   if (k.skipBuild) parts.push('--skip-build')
 
@@ -1946,6 +1970,8 @@ function syncPerf() {
     ['p-sched', '4', true],
     ['p-hb', '30000', true],
     ['p-xmx', '', true],
+    ['p-iso', 'RR', true],
+    ['p-bulk', '0', true],
     ['p-vus', '40', picked.main === 'items' && picked.scenario === 5],
   ]
 
@@ -1958,7 +1984,7 @@ function syncPerf() {
     if (isChanged) changed += 1
   }
 
-  for (const id of ['p-skip', 'p-virtual']) {
+  for (const id of ['p-skip', 'p-virtual', 'p-sweep']) {
     const on = el(id).checked
     el(id).closest('.knob').classList.toggle('changed', on)
     if (on) changed += 1
@@ -2009,7 +2035,7 @@ function syncPerf() {
 
 for (const id of ['p-main', 'p-items', 'p-pool', 'p-sse', 'p-users',
                   'p-duration', 'p-sched', 'p-hb', 'p-xmx', 'p-who', 'p-skip',
-                  'p-vus', 'p-virtual']) {
+                  'p-vus', 'p-virtual', 'p-iso', 'p-bulk', 'p-sweep']) {
   el(id).oninput = syncPerf
   el(id).onchange = syncPerf
 }
@@ -2031,6 +2057,9 @@ el('btn-perf-reset').onclick = () => {
   el('p-xmx').value = ''
   el('p-skip').checked = false
   el('p-virtual').checked = false
+  el('p-iso').value = 'RR'
+  el('p-bulk').value = 0
+  el('p-sweep').checked = false
   el('p-vus').value = 40
   el('adv').open = false
   el('run-panel').style.display = 'none'

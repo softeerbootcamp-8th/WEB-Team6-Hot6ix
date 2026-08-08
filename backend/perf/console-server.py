@@ -164,6 +164,17 @@ def build_command(body):
     if who:
         args += ["--who", who]
 
+    isolation = str(body.get("isolation", "RR"))
+    if isolation == "RC":
+        args += ["--isolation", "RC"]
+
+    bulk_items = num("bulkItems", 0, 0, 1000000)
+    if bulk_items > 0:
+        args += ["--bulk-items", str(bulk_items)]
+
+    if body.get("sweepIndex"):
+        args += ["--sweep-index", "on"]
+
     if body.get("virtualThreads"):
         args.append("--virtual-threads")
 

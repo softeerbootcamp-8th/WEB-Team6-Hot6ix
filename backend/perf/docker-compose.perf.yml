@@ -87,6 +87,10 @@ services:
       # performance_schema 는 8.x 기본 on 이지만, 노트북마다 my.cnf 가 다를 수 있어 못 박는다.
       - --performance-schema=ON
       - --performance-schema-instrument=wait/lock/metadata/sql/mdl=ON
+      # RR 은 범위 조회에 갭 락을 걸고 RC 는 안 건다. 입찰이 물품 행 하나만 잠그는지 그 옆
+      # 빈 구간까지 잠그는지가 갈려서, 경합이 행 락 때문인지 갭 때문인지를 가를 수 있다.
+      # run.sh --isolation RC 로 바꾼다. 기본값은 MySQL 기본과 같은 RR 이다.
+      - --transaction-isolation=${TX_ISOLATION:-REPEATABLE-READ}
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p1234"]
       interval: 5s

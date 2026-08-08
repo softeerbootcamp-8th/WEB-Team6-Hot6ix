@@ -35,6 +35,9 @@ JAVA_OPTS=""
 SKIP_BUILD=0
 VIRTUAL_THREADS=false
 BID_ITEMS=0
+ISOLATION=RR
+BULK_ITEMS=0
+SWEEP_INDEX=off
 
 # perf 는 측정용 포트를 따로 쓴다. 개발 백엔드(8080)나 프론트(5173)와 안 겹치게 한다.
 # 겹치면 측정을 시작하는 순간 개발 환경이 죽고, 프론트가 조용히 perf 앱에 붙는다.
@@ -62,6 +65,12 @@ usage() {
   --virtual-threads  가상 스레드를 켠다. **톰캣도 함께 바뀐다**(전역 스위치)
   --bid-items N      시나리오 5 에서 입찰을 넣을 물품 수. 나머지는 마감 대상이 된다
                      (기본: 절반. 전부에 입찰하면 Soft Close 로 안 닫힌다)
+  --isolation RC|RR  MySQL 트랜잭션 격리 수준 (기본 RR = MySQL 기본값)
+                     RR 은 갭 락을 걸고 RC 는 안 건다. 경합이 행 락 때문인지 갭 때문인지 가른다
+  --bulk-items N     닫힌 물품 N 개를 SQL 로 밀어 넣어 표를 불린다 (기본 0)
+                     마감 대상을 찾는 조회가 표 전체를 훑는지 보려면 표가 커야 한다
+  --sweep-index on|off  auction_items(status, end_at) 인덱스를 만들지 (기본 off)
+                     --bulk-items 와 짝으로 켜고 끄면서 조회 시간이 어떻게 달라지는지 본다
 
   --duration D       측정 길이 (기본 3m)
   --warmup N         워밍업 초 (기본 30)
@@ -88,6 +97,9 @@ while [ $# -gt 0 ]; do
     --xmx) JAVA_OPTS="-Xmx$2"; shift 2 ;;
     --virtual-threads) VIRTUAL_THREADS=true; shift ;;
     --bid-items) BID_ITEMS="$2"; shift 2 ;;
+    --isolation) ISOLATION="$2"; shift 2 ;;
+    --bulk-items) BULK_ITEMS="$2"; shift 2 ;;
+    --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
     --who) WHO="$2"; shift 2 ;;
@@ -97,6 +109,18 @@ while [ $# -gt 0 ]; do
     *) echo "모르는 옵션: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+case "$ISOLATION" in
+  RC) TX_ISOLATION="READ-COMMITTED" ;;
+  RR) TX_ISOLATION="REPEATABLE-READ" ;;
+  *) echo "--isolation 은 RC 또는 RR 이다 (받은 값: $ISOLATION)" >&2; exit 1 ;;
+esac
+export TX_ISOLATION
+
+case "$SWEEP_INDEX" in
+  on|off) ;;
+  *) echo "--sweep-index 는 on 또는 off 다 (받은 값: $SWEEP_INDEX)" >&2; exit 1 ;;
+esac
 
 command -v jq >/dev/null || { echo "jq 가 필요하다: brew install jq" >&2; exit 1; }
 command -v docker >/dev/null || { echo "docker 가 필요하다" >&2; exit 1; }
@@ -139,6 +163,7 @@ cleanup() {
   # 정상 종료인데도 종료 코드가 1 로 나간다 (실측으로 확인).
   if [ -n "$CPU_SAMPLER" ]; then
     kill "$CPU_SAMPLER" 2>/dev/null || true
+kill "$LOCK_SAMPLER" 2>/dev/null || true
   fi
   rm -rf "$LOCK_DIR"
   return 0
@@ -342,6 +367,66 @@ BASE_URL="$APP_URL/api/v1" "$PERF_DIR/seed.sh" \
 # shellcheck source=/dev/null
 . "$SEED_ENV"
 
+# DB 를 직접 볼 때 쓴다. seed.sh 가 아니라 여기 두는 이유는 seed.sh 는 API 만 알고 있어서
+# --base 로 개발 앱에도 쓸 수 있는데, 컨테이너 이름을 아는 순간 그게 깨지기 때문이다.
+mysql_query() {
+  "${COMPOSE[@]}" exec -T mysql \
+    mysql -uroot -p1234 -N -B upbid -e "$1" 2>/dev/null || true
+}
+
+# 마감 대상을 찾는 조회는 status 와 end_at 으로 거른다. 물품이 스무 개뿐이면 표 전체를 훑어도
+# 순식간이라 인덱스가 있으나 없으나 같은 숫자가 나오고, 그러면 인덱스를 넣을 근거를 못 만든다.
+# 닫힌 물품을 채워 표를 불려야 훑는 비용이 드러난다.
+#
+# 채우는 행은 이미 있는 행을 그대로 복사한다. 컬럼 목록을 손으로 적으면 엔티티에 컬럼이
+# 하나 붙을 때마다 여기가 조용히 깨지므로 information_schema 에서 읽어 온다.
+# 복사한 뒤 상태를 CLOSED 로 바꾸고 end_at 을 흩어 놓는다. 전부 같은 값이면 인덱스를 타도
+# 한 덩어리라 범위 조회가 좁혀지지 않는다.
+if [ "$BULK_ITEMS" -gt 0 ]; then
+  echo "[4/8] 닫힌 물품 $BULK_ITEMS 개 채우기"
+
+  LAST_REAL_ID="$(mysql_query "SELECT COALESCE(MAX(auction_item_id), 0) FROM auction_items")"
+  TOTAL="$(mysql_query "SELECT COUNT(*) FROM auction_items")"
+  REMAINING="$BULK_ITEMS"
+
+  while [ "$REMAINING" -gt 0 ]; do
+    # 한 번에 지금 있는 만큼까지만 복사할 수 있다. 표가 두 배씩 커지므로 반복은 금방 끝난다.
+    BATCH="$REMAINING"
+    [ "$BATCH" -gt "$TOTAL" ] && BATCH="$TOTAL"
+
+    mysql_query "
+      SET @cols := (SELECT GROUP_CONCAT(COLUMN_NAME) FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'auction_items'
+                      AND COLUMN_NAME <> 'auction_item_id');
+      SET @sql := CONCAT('INSERT INTO auction_items (', @cols, ') SELECT ', @cols,
+                         ' FROM auction_items LIMIT $BATCH');
+      PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;" >/dev/null
+
+    REMAINING=$((REMAINING - BATCH))
+    TOTAL=$((TOTAL + BATCH))
+  done
+
+  mysql_query "
+    UPDATE auction_items
+       SET status = 'CLOSED',
+           end_at = DATE_SUB(NOW(), INTERVAL (auction_item_id % 86400) SECOND)
+     WHERE auction_item_id > $LAST_REAL_ID" >/dev/null
+
+  echo "[4/8]   물품 표: $(mysql_query "SELECT COUNT(*) FROM auction_items") 행"
+fi
+
+if [ "$SWEEP_INDEX" = "on" ]; then
+  echo "[4/8] idx_auction_items_status_end_at 만들기"
+  mysql_query "CREATE INDEX idx_auction_items_status_end_at
+               ON auction_items (status, end_at)" >/dev/null
+fi
+
+# 마감 대상 조회가 실제로 어떻게 도는지 남긴다. 인덱스를 켠 실행과 끈 실행의 이 파일을
+# 나란히 놓으면 type 이 ALL 에서 range 로 바뀌었는지, filesort 가 사라졌는지가 보인다.
+SWEEP_SQL="SELECT auction_item_id, end_at FROM auction_items
+           WHERE status = 'IN_PROGRESS' AND end_at IS NOT NULL ORDER BY end_at ASC"
+mysql_query "EXPLAIN $SWEEP_SQL" >"$RESULT_DIR/sweep_explain.txt"
+
 # 계측이 실제로 붙었는지 여기서 확인한다. 시딩이 수백 건을 보낸 뒤라 커넥션 풀도 쓰였고
 # 요청 지표도 생겼다 — 기동 직후에 보면 아직 없는 게 정상이라 잡아낼 수가 없다.
 # 3분을 다 재고 나서 그래프가 비어 있는 걸 발견하면 그 한 줄을 통째로 다시 돌려야 한다.
@@ -359,6 +444,7 @@ for _ in $(seq 1 10); do
                 http_server_requests_seconds_bucket \
                 upbid_sse_connections upbid_sse_rooms \
                 upbid_bid_lock_wait_seconds_bucket \
+                upbid_bid_lock_hold_seconds_bucket \
                 upbid_auction_close_delay_seconds_bucket \
                 upbid_auction_close_duration_seconds_bucket \
                 executor_queued_tasks; do
@@ -410,10 +496,20 @@ echo "[6/8] 워밍업 ${WARMUP}초"
 sleep "$WARMUP"
 
 row_lock_status() {
-  "${COMPOSE[@]}" exec -T mysql \
-    mysql -uroot -p1234 -N -B -e "SHOW GLOBAL STATUS LIKE 'Innodb_row_lock%'" 2>/dev/null || true
+  mysql_query "SHOW GLOBAL STATUS LIKE 'Innodb_row_lock%'"
 }
 row_lock_status >"$RESULT_DIR/innodb_row_lock_before.txt"
+
+# 입찰 한 건이 SELECT 를 몇 번 하는지 본다.
+#
+# 입찰 경로는 물품·경매방·참여자·최고가를 각각 읽는데, 그중 하나가 락 안에 들어가 있으면
+# 왕복이 늘어난 만큼 락을 오래 잡는다. 응답 시간만 보면 그게 왕복 수 때문인지 락 대기
+# 때문인지 안 갈린다. Com_select 는 서버 전체 누적이라 구간 증가분을 입찰 성공 건수로
+# 나눠서 "입찰 한 건당 몇 번"으로 만든다.
+com_select() {
+  mysql_query "SHOW GLOBAL STATUS LIKE 'Com_select'" | awk '{print $2}'
+}
+COM_SELECT_BEFORE="$(com_select)"
 
 # ── 6. k6 ─────────────────────────────────────────────────────────
 case "$SCENARIO" in
@@ -448,6 +544,26 @@ CPU_SAMPLER=$!
 # 잡 제어에서 떼어낸다. 안 그러면 끝낼 때 셸이 "Terminated" 를 뱉어서 결과 출력이 지저분해진다.
 disown "$CPU_SAMPLER" 2>/dev/null || true
 
+# 지금 잡혀 있는 락이 어떤 종류인지 부하 도중에 훔쳐본다.
+#
+# data_locks 는 그 순간에 살아 있는 락만 담고 있어서 끝나고 보면 표가 비어 있다. 그래서
+# 부하가 도는 동안 표본을 떠야 한다. RR 은 갭 락(GAP, NEXT-KEY)을 걸고 RC 는 안 걸어서,
+# --isolation 을 바꿔 가며 이 파일을 보면 갭이 실제로 사라졌는지 확인할 수 있다.
+LOCK_MODES_LOG="$RESULT_DIR/data_locks.txt"
+: >"$LOCK_MODES_LOG"
+(
+  while true; do
+    {
+      echo "── $(date +%H:%M:%S)"
+      mysql_query "SELECT LOCK_TYPE, LOCK_MODE, COUNT(*) FROM performance_schema.data_locks
+                   GROUP BY LOCK_TYPE, LOCK_MODE ORDER BY LOCK_TYPE, LOCK_MODE"
+    } >>"$LOCK_MODES_LOG"
+    sleep 5
+  done
+) &
+LOCK_SAMPLER=$!
+disown "$LOCK_SAMPLER" 2>/dev/null || true
+
 set +e
 VUS="$VUS" DURATION="$DURATION" RUN_ID="$RUN_ID" \
 SHARE_CODE="$SHARE_CODE" ITEM_IDS="$ITEM_IDS" CLOSE_ITEM_IDS="$CLOSE_ITEM_IDS" \
@@ -462,12 +578,25 @@ K6_EXIT="${PIPESTATUS[0]}"
 set -e
 
 kill "$CPU_SAMPLER" 2>/dev/null || true
+kill "$LOCK_SAMPLER" 2>/dev/null || true
 
 WINDOW_END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WINDOW_END_EPOCH="$(date +%s)"
 WINDOW_SECONDS=$((WINDOW_END_EPOCH - WINDOW_START_EPOCH))
 
 row_lock_status >"$RESULT_DIR/innodb_row_lock_after.txt"
+COM_SELECT_AFTER="$(com_select)"
+
+# 표본에서 갭까지 잠근 락이 몇 번 보였는지 센다.
+#
+# MySQL 은 넥스트키 락을 LOCK_MODE 에 그냥 X 로 적는다. 갭만 잠근 것이 X,GAP 이고 행 하나만
+# 잠근 것이 X,REC_NOT_GAP 이다. 그래서 REC_NOT_GAP 이 아닌 행 락이 곧 갭을 문 락이다.
+# REC_NOT_GAP 안에 GAP 이라는 글자가 들어 있어서 /GAP/ 로 세면 정반대를 센다.
+#
+# 5초마다 그 순간을 본 것이라 "몇 건이 걸렸다"가 아니라 "볼 때마다 몇 개가 있더라"다.
+# 절대값을 읽을 숫자가 아니고, --isolation RC 로 바꿨을 때 0 으로 떨어지는지를 보는 값이다.
+GAP_LOCKS="$(awk -F'\t' '$1 == "RECORD" && $2 !~ /REC_NOT_GAP|INSERT_INTENTION/ { n += $3 }
+                          END { print n + 0 }' "$LOCK_MODES_LOG")"
 
 # ── 7. 값 뽑기 ─────────────────────────────────────────────────────
 echo "[8/8] Prometheus 에서 값 뽑기 (구간 ${WINDOW_SECONDS}초)"
@@ -539,6 +668,9 @@ HIKARI_ACTIVE_MAX="$(promq "max(max_over_time(hikaricp_connections_active{$RUN}[
 HIKARI_PENDING_MAX="$(promq "max(max_over_time(hikaricp_connections_pending{$RUN}[$W]))")"
 HEAP_MB_MAX="$(promq "max(max_over_time(sum(jvm_memory_used_bytes{$RUN, area=\"heap\"})[$W:5s])) / 1024 / 1024")"
 LOCK_WAIT_P95_MS="$(p95_of "upbid_bid_lock_wait_seconds_bucket{$RUN}")"
+# 기다린 시간과 짝이다. 대기가 길고 유지가 짧으면 줄이 긴 것이고, 유지도 같이 길면 앞사람이
+# 오래 잡고 있는 것이라 줄을 짧게 해도 안 풀린다.
+LOCK_HOLD_P95_MS="$(p95_of "upbid_bid_lock_hold_seconds_bucket{$RUN}")"
 CONN_ACQUIRE_P95_MS="$(p95_of "hikaricp_connections_acquire_seconds_bucket{$RUN}")"
 CLOSE_DELAY_P95_MS="$(p95_of "upbid_auction_close_delay_seconds_bucket{$RUN}")"
 SSE_HEARTBEAT_P95_MS="$(p95_of "upbid_sse_heartbeat_seconds_bucket{$RUN}")"
@@ -610,6 +742,7 @@ HIKARI_ACTIVE_MAX="$(round "$HIKARI_ACTIVE_MAX" 0)"
 HIKARI_PENDING_MAX="$(round "$HIKARI_PENDING_MAX" 0)"
 HEAP_MB_MAX="$(round "$HEAP_MB_MAX" 0)"
 LOCK_WAIT_P95_MS="$(round "$LOCK_WAIT_P95_MS" 0)"
+LOCK_HOLD_P95_MS="$(round "$LOCK_HOLD_P95_MS" 0)"
 CONN_ACQUIRE_P95_MS="$(round "$CONN_ACQUIRE_P95_MS" 0)"
 CLOSE_DELAY_P95_MS="$(round "$CLOSE_DELAY_P95_MS" 0)"
 SSE_HEARTBEAT_P95_MS="$(round "$SSE_HEARTBEAT_P95_MS" 0)"
@@ -625,6 +758,13 @@ GC_PAUSE_MS_PER_S="$(round "$GC_PAUSE_MS_PER_S" 1)"
 K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
 K6_P95_MS="$(round "$K6_P95_MS" 0)"
 
+# 입찰 한 건이 SELECT 를 몇 번 했는지. Com_select 는 서버 전체 누적이라 배경 SSE 나 시딩까지
+# 섞이지 않도록 k6 직전과 직후의 차이만 쓴다. 입찰이 하나도 안 붙은 실행은 나눌 수가 없다.
+SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER" \
+                      -v accepted="$ACCEPTED" \
+  'BEGIN { if (accepted + 0 <= 0 || after == "" || before == "") print "NaN";
+           else printf "%.1f\n", (after - before) / accepted }')"
+
 # 그래프를 나중에 다시 그릴 수 있게 원본 시계열도 남긴다.
 # 숫자 몇 개만 남기면 "이 계단은 왜 이렇지"를 되짚을 수 없다.
 {
@@ -636,6 +776,7 @@ K6_P95_MS="$(round "$K6_P95_MS" 0)"
     "hikaricp_connections_pending{$RUN}|hikari_pending" \
     "sum(jvm_memory_used_bytes{$RUN, area=\"heap\"})|heap_bytes" \
     "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{$RUN}[30s])))|lock_wait_p95_s" \
+    "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_hold_seconds_bucket{$RUN}[30s])))|lock_hold_p95_s" \
     "upbid_sse_connections{$RUN}|sse_connections" \
     "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{$RUN}[30s])))|close_delay_p95_s"
   do
@@ -668,15 +809,19 @@ jq -n \
   --argjson items "$ITEMS" --argjson sse "$SSE" --argjson users "$USERS" \
   --argjson heartbeat_ms "$HEARTBEAT_MS" --argjson scheduler_pool "$SCHEDULER_POOL" \
   --arg virtual_threads "$VIRTUAL_THREADS" --arg xmx "$JAVA_OPTS" \
+  --arg isolation "$ISOLATION" --arg sweep_index "$SWEEP_INDEX" \
+  --argjson bulk_items "$BULK_ITEMS" \
   --argjson window_seconds "$WINDOW_SECONDS" \
   '{run_id:$run_id, scenario:$scenario, commit:$commit, dirty:($dirty=="true"), who:$who,
     params:{vus:$vus, pool_size:$pool, items:$items, sse:$sse, users:$users,
             heartbeat_ms:$heartbeat_ms, scheduler_pool:$scheduler_pool,
-            virtual_threads:($virtual_threads=="true"), xmx:$xmx},
+            virtual_threads:($virtual_threads=="true"), xmx:$xmx,
+            isolation:$isolation, bulk_items:$bulk_items,
+            sweep_index:($sweep_index=="on")},
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -701,14 +846,15 @@ if [ ! -f "$INDEX" ]; then
 fi
 
 # bottleneck 과 note 는 비워 둔다. 사람이 채우는 칸이 이 둘뿐이다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
   "$RUN_ID" "$WHO" "$COMMIT" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
-  "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" \
+  "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
+  "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS" \
   "$CLOSE_DELAY_P50_MS" "$CLOSE_DELAY_P95_MS" "$CLOSE_DELAY_MAX_MS" \
   "$CLOSE_DURATION_P95_MS" "$CLOSE_FAILURES" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
-  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$VIRTUAL_THREADS" \
+  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" \
   >>"$INDEX"
 
@@ -744,6 +890,9 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 커넥션 획득 p95 | ${CONN_ACQUIRE_P95_MS} ms |
 | 힙 max | ${HEAP_MB_MAX} MB |
 | 락 대기 p95 | ${LOCK_WAIT_P95_MS} ms |
+| 락 유지 p95 (커밋까지) | ${LOCK_HOLD_P95_MS} ms |
+| 입찰 한 건당 SELECT | ${SELECT_PER_BID} 회 |
+| 격리 수준 / 갭 락 표본 | ${ISOLATION} / ${GAP_LOCKS} |
 | 마감 지연 p50 / p95 / 최대 | ${CLOSE_DELAY_P50_MS} / ${CLOSE_DELAY_P95_MS} / ${CLOSE_DELAY_MAX_MS} ms |
 | 마감 소요 p95 (락 대기 포함) | ${CLOSE_DURATION_P95_MS} ms |
 | 마감 실패 | ${CLOSE_FAILURES} 건 |
@@ -784,7 +933,10 @@ echo "결과   $RESULT_DIR"
 echo "그래프 $GRAFANA_LINK  ← 열어서 grafana.png 로 저장"
 echo "표     $INDEX"
 echo
-printf '처리량 %s req/s   p95 %s ms   락대기 p95 %s ms\n' "$RPS" "$P95_MS" "$LOCK_WAIT_P95_MS"
+printf '처리량 %s req/s   p95 %s ms   락대기 p95 %s ms   락유지 p95 %s ms\n' \
+  "$RPS" "$P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS"
+printf '입찰당 SELECT %s 회   격리 %s   갭 락 표본 %s\n' \
+  "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS"
 printf '스레드 %s   커넥션 %s active / %s pending (획득 p95 %s ms)   힙 %s MB   k6 CPU %s%%\n' \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$K6_CPU_MAX"
 printf 'SSE 접속 max %s   마감 지연 p95 %s ms\n' "$SSE_CONN_MAX" "$CLOSE_DELAY_P95_MS"
