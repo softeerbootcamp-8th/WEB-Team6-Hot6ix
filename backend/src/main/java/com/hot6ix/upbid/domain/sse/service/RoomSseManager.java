@@ -2,7 +2,8 @@ package com.hot6ix.upbid.domain.sse.service;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
-import com.hot6ix.upbid.domain.sse.service.SseEventBuffer.BufferedEvent;
+import com.hot6ix.upbid.domain.sse.service.BufferedEvent;
+import com.hot6ix.upbid.global.event.payload.RoomClosed;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.util.List;
@@ -14,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Slf4j
@@ -218,5 +221,14 @@ public class RoomSseManager {
             emitter.completeWithError(e);
             return false;
         }
+    }
+
+    /**
+     * 방이 닫히면 해당 방의 이벤트 버퍼를 삭제한다.
+     * 재연결이 더 이상 필요 없으므로 메모리를 즉시 해제한다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onRoomClosed(RoomClosed event) {
+        sseEventBuffer.clear(event.roomId());
     }
 }
