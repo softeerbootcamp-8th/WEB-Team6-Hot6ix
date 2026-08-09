@@ -105,7 +105,6 @@ public class RoomSseManager {
         unregister(roomId, emitter);
 
         log.info("sse 연결 종료: roomId={}", roomId);
-        broadcastParticipantCount(roomId);
     }
 
     private void register(Long roomId, SseEmitter emitter) {
