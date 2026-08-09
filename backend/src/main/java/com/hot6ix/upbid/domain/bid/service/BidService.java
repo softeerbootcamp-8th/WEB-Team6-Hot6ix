@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.BidContextProjection;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.entity.Bid;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
@@ -81,10 +82,12 @@ public class BidService {
         User bidder = userRepository.findByUserIdAndDeletedAtIsNull(bidderUserId)
                 .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
 
-        Long sellerUserId = auctionItemRepository.findSellerUserId(auctionItemId)
+        // 락 안에서 지연 로딩으로 읽히던 값(상품명, 방의 Soft Close 설정)을 여기서 미리 읽는다.
+        // 판매자 확인에 필요한 값과 같은 조인이라 쿼리가 늘지 않는다.
+        BidContextProjection context = auctionItemRepository.findBidContext(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
-        validateEntitled(auctionItemId, bidder, sellerUserId);
+        validateEntitled(auctionItemId, bidder, context.sellerUserId());
 
         // 락 시작. 여기서 기다린 시간을 잰다 (자세한 이유는 BidMetrics 참고).
         AuctionItem auctionItem = bidMetrics.recordLockWait(() ->
@@ -100,15 +103,16 @@ public class BidService {
         auctionItem.applyBid(bidder, amount);
 
         // 리스너가 커밋 후에만 받으므로(DomainEventSseListener) 여기서 발행해도 롤백되면 나가지 않는다.
+        // 방 ID 와 상품명은 context 에서 온다. 여기서 엔티티를 타고 들어가면 락 안에서 SELECT 가 나간다.
         domainEventPublisher.publish(BidPlaced.of(
-                auctionItem.getAuctionRoom().getAuctionRoomId(),
+                context.roomId(),
                 auctionItem.getAuctionItemId(),
-                auctionItem.getProduct().getName(),
+                context.itemName(),
                 bidder.getNickname(),
                 amount,
                 bid.getAcceptedAt()));
 
-        publishIfExtended(auctionItem, now);
+        publishIfExtended(auctionItem, now, context);
 
         return BidCreateResponseDto.from(bid);
     }
@@ -121,20 +125,23 @@ public class BidService {
      *
      * <p>이 이벤트는 {@code AuctionCloseScheduler}가 마감 예약을 갈아 끼우는 신호이기도 하다.
      *
-     * @param now 락을 잡은 뒤에 구한 현재 시각. 받아들일지 판정한 {@code arrivedAt}과 달리
-     *            <b>지금</b>을 기준으로 임박 여부를 봐야 연장을 놓치지 않는다
+     * @param now     락을 잡은 뒤에 구한 현재 시각. 받아들일지 판정한 {@code arrivedAt}과 달리
+     *                <b>지금</b>을 기준으로 임박 여부를 봐야 연장을 놓치지 않는다
+     * @param context 락을 잡기 전에 읽어 둔 값. 방 설정과 상품명을 여기서 꺼내야 락 안에서
+     *                지연 로딩이 안 걸린다
      */
-    private void publishIfExtended(AuctionItem auctionItem, LocalDateTime now) {
+    private void publishIfExtended(AuctionItem auctionItem, LocalDateTime now,
+                                   BidContextProjection context) {
 
-        if (!auctionItem.extendIfClosingSoon(now)) {
+        if (!auctionItem.extendIfClosingSoon(now, context.softClosePolicy())) {
             return;
         }
 
         domainEventPublisher.publish(SoftCloseExtended.of(
-                auctionItem.getAuctionRoom().getAuctionRoomId(),
+                context.roomId(),
                 auctionItem.getAuctionItemId(),
-                auctionItem.getProduct().getName(),
-                auctionItem.getAuctionRoom().getSoftCloseExtendSeconds(),
+                context.itemName(),
+                context.softCloseExtendSeconds(),
                 auctionItem.getEndAt(),
                 now));
     }
