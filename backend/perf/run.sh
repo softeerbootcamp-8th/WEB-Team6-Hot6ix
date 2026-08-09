@@ -35,6 +35,19 @@ JAVA_OPTS=""
 SKIP_BUILD=0
 VIRTUAL_THREADS=false
 BID_ITEMS=0
+
+# 시나리오 5 전용. 방을 만들 때 주는 마감 임박 설정과, 마감 대상 물품에 입찰을 언제까지
+# 넣을지다. 기본값을 60/60 으로 두면 물품이 태어나자마자 임박 구간이라(물품 길이 하한이
+# 1분) 입찰이 들어온 물품은 영영 안 닫힌다. 아래 --scenario 5 기본값에서 낮춰 준다.
+SOFT_CLOSE_TRIGGER=60
+SOFT_CLOSE_EXTEND=60
+BID_START="10s"
+CLOSE_BID_UNTIL=0
+
+# 시나리오 5 에서 k6 가 물품을 시작할 때 줄 경매 시간(분). API 하한이 1분인데 임박 구간도
+# 하한이 60초라, 1분짜리 물품은 태어나자마자 임박 구간이어서 입찰이 들어오면 안 닫힌다.
+# 마감 대상에도 입찰을 넣으려면(--close-bid-until) 2분 이상으로 늘려 앞쪽에 안전 구간을 만든다.
+CLOSE_DURATION_MINUTES=1
 ISOLATION=RR
 BULK_ITEMS=0
 SWEEP_INDEX=off
@@ -64,6 +77,17 @@ usage() {
   --xmx SIZE         앱 힙 상한. 예: 512m
   --virtual-threads  가상 스레드를 켠다. **톰캣도 함께 바뀐다**(전역 스위치)
   --bid-items N      시나리오 5 에서 입찰을 넣을 물품 수. 나머지는 마감 대상이 된다
+  --bid-start T      입찰 VU 가 뛰기까지 기다릴 시간 (기본 10s). 물품을 다 시작하기 전에
+                     입찰이 들어가면 전부 4xx 로 거절되므로, --items 를 올리면 같이 올린다
+  --soft-close-trigger N  마감 임박으로 보는 남은 초 (기본 60). API 하한이 60이라 더는 못 내린다
+  --soft-close-extend N   임박 구간 입찰이 마감을 밀어 줄 초 (기본 60). 마찬가지로 하한 60
+  --close-duration-min N  시나리오 5 에서 물품에 줄 경매 시간(분, 기본 1). 임박 구간 하한이
+                     60초라 1분짜리 물품은 태어나자마자 임박이다. --close-bid-until 을 쓰려면
+                     2 이상으로 올려 앞쪽에 입찰해도 안 밀리는 구간을 만든다
+  --close-bid-until N     시나리오 5 에서 마감 대상 물품에도 입찰을 넣을 초 (기본 0 = 안 넣음).
+                     0 이면 마감 대상은 입찰이 없어 전부 유찰로 닫히고 낙찰 후보 생성이 안 돈다.
+                     낙찰까지 재려면 이 값을 주되, 임박 구간에 걸치지 않게
+                     (물품 길이 - 트리거) 보다 작게 준다
                      (기본: 절반. 전부에 입찰하면 Soft Close 로 안 닫힌다)
   --isolation RC|RR  MySQL 트랜잭션 격리 수준 (기본 RR = MySQL 기본값)
                      RR 은 갭 락을 걸고 RC 는 안 건다. 경합이 행 락 때문인지 갭 때문인지 가른다
@@ -97,6 +121,11 @@ while [ $# -gt 0 ]; do
     --xmx) JAVA_OPTS="-Xmx$2"; shift 2 ;;
     --virtual-threads) VIRTUAL_THREADS=true; shift ;;
     --bid-items) BID_ITEMS="$2"; shift 2 ;;
+    --soft-close-trigger) SOFT_CLOSE_TRIGGER="$2"; shift 2 ;;
+    --soft-close-extend) SOFT_CLOSE_EXTEND="$2"; shift 2 ;;
+    --bid-start) BID_START="$2"; shift 2 ;;
+    --close-bid-until) CLOSE_BID_UNTIL="$2"; shift 2 ;;
+    --close-duration-min) CLOSE_DURATION_MINUTES="$2"; shift 2 ;;
     --isolation) ISOLATION="$2"; shift 2 ;;
     --bulk-items) BULK_ITEMS="$2"; shift 2 ;;
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
@@ -225,6 +254,14 @@ preflight() {
   #   3 (SSE)       subscribe 가 @GuestAllowed 라 로그인도 약관 동의도 필요 없다
   #   4 (동시 마감)  판매자 한 명만 쓴다
   # 시나리오 5 는 물품을 입찰용과 마감용으로 나눈다. 하나뿐이면 나눌 수가 없다.
+  # 한 경매방에 물품 100개가 상한이다(4009). 시딩이 한 방만 만들기 때문에 이걸 넘길 수 없다.
+  # 마감 표본을 더 늘리려면 방을 여러 개 만들어야 하는데, 그러면 SSE 접속도 방마다 갈려서
+  # 한 방에 몰아넣은 지금과 다른 것을 재게 된다. 그건 따로 정할 일이라 여기서는 막기만 한다.
+  if [ "$ITEMS" -gt 100 ] 2>/dev/null; then
+    echo "※ 물품은 한 방에 100개까지다(--items $ITEMS). 100 이하로 준다." >&2
+    exit 1
+  fi
+
   if [ "$SCENARIO" = "5" ] && [ "$ITEMS" -lt 2 ] 2>/dev/null; then
     echo "※ 시나리오 5 는 --items 가 2 이상이어야 한다. 입찰용과 마감용으로 나누기 때문이다." >&2
     exit 1
@@ -281,6 +318,12 @@ export PERF_RUN_ID="$RUN_ID"
 export DB_POOL_SIZE="$POOL"
 export SCHEDULER_POOL_SIZE="$SCHEDULER_POOL"
 export SSE_HEARTBEAT_MS="$HEARTBEAT_MS"
+
+# 한 방에서 동시에 진행할 수 있는 물품 수. 서비스 규칙은 3이고 perf 프로파일이 이미 50으로
+# 올려 두었는데, 그것도 --items 를 그 위로 주면 넘친다. 넘친 물품은 4008 로 거절되고 그대로
+# 마감 표본이 줄어드는데, k6 쪽 check 만 실패하고 결과 표에는 아무 표시도 안 남아서 알아채기
+# 어렵다(실측으로 --items 100 을 줬다가 50개만 시작돼서 마감이 41건만 나왔다).
+export MAX_IN_PROGRESS_PER_ROOM="$ITEMS"
 export APP_JAVA_OPTS="$JAVA_OPTS"
 export VIRTUAL_THREADS
 
@@ -374,7 +417,8 @@ case "$SCENARIO" in 4|5) SEED_START="none" ;; esac
 BASE_URL="$APP_URL/api/v1" "$PERF_DIR/seed.sh" \
   --users "$USERS" --items "$ITEMS" \
   --start-price "$START_PRICE" --unit "$BID_UNIT" \
-  --start "$SEED_START" --out "$SEED_ENV"
+  --start "$SEED_START" --out "$SEED_ENV" \
+  --soft-close-trigger "$SOFT_CLOSE_TRIGGER" --soft-close-extend "$SOFT_CLOSE_EXTEND"
 
 # shellcheck source=/dev/null
 . "$SEED_ENV"
@@ -468,6 +512,9 @@ for _ in $(seq 1 10); do
                 upbid_bid_lock_hold_seconds_bucket \
                 upbid_auction_close_delay_seconds_bucket \
                 upbid_auction_close_duration_seconds_bucket \
+                upbid_auction_close_lock_wait_seconds_bucket \
+                upbid_auction_close_lock_hold_seconds_bucket \
+                upbid_deal_award_seconds_bucket \
                 executor_queued_tasks; do
     # 파이프를 쓰면 안 된다. grep -q 는 일치를 찾자마자 끝나는데, 그러면 앞 명령이
     # SIGPIPE 로 죽고 set -o pipefail 이 그걸 파이프라인 실패로 본다. 그래서 출력 앞쪽에
@@ -588,10 +635,12 @@ disown "$LOCK_SAMPLER" 2>/dev/null || true
 set +e
 VUS="$VUS" DURATION="$DURATION" RUN_ID="$RUN_ID" \
 SHARE_CODE="$SHARE_CODE" ITEM_IDS="$ITEM_IDS" CLOSE_ITEM_IDS="$CLOSE_ITEM_IDS" \
-BID_ITEMS="$BID_ITEMS" \
+BID_ITEMS="$BID_ITEMS" BID_START="$BID_START" CLOSE_BID_UNTIL="$CLOSE_BID_UNTIL" \
+CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
 START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
   "${COMPOSE[@]}" run --rm \
     -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
+    -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
     -e START_PRICE -e BID_UNIT \
     k6 run -o experimental-prometheus-rw "/scripts/$SCRIPT" \
     2>&1 | tee "$RESULT_DIR/k6.log"
@@ -712,8 +761,27 @@ CLOSE_DELAY_P50_MS="$(quantile_of "upbid_auction_close_delay_seconds_bucket{$RUN
 CLOSE_DELAY_MAX_MS="$(promq "max(max_over_time(upbid_auction_close_delay_seconds_max{$RUN}[$W])) * 1000")"
 # 락을 기다린 시간이 여기 잡힌다. 실제로 닫은 마감만 본다(재예약은 result 로 갈라 둔다).
 CLOSE_DURATION_P95_MS="$(quantile_of "upbid_auction_close_duration_seconds_bucket{$RUN, result=\"closed\"}" 0.95)"
+
+# 마감 한 건(close_duration)을 네 조각으로 가른다. duration 이 크다는 것까지는 알아도 그 안
+# 어디가 큰지는 못 가르는데, 처방이 조각마다 다르다 — 락 대기가 크면 입찰과 겹친 것이고,
+# 락 유지가 크면 락 안에서 뭘 더 하고 있는 것이고, 알림·후보가 크면 커밋 뒤 리스너가 스레드를
+# 붙잡고 있는 것이라 그 둘은 떼어내면 된다.
+#
+# 네 조각의 합이 duration 에 한참 못 미치면 아직 못 보고 있는 구간이 남아 있다는 뜻이다.
+CLOSE_LOCK_WAIT_P95_MS="$(p95_of "upbid_auction_close_lock_wait_seconds_bucket{$RUN}")"
+CLOSE_LOCK_HOLD_P95_MS="$(p95_of "upbid_auction_close_lock_hold_seconds_bucket{$RUN}")"
+# 마감이 쏜 알림만 본다. 태그를 안 걸고 보면 훨씬 잦은 입찰 알림에 파묻혀 마감 쪽이 안 보인다.
+CLOSE_NOTIFY_P95_MS="$(p95_of "upbid_sse_broadcast_seconds_bucket{$RUN, event=\"ITEM_ENDED\"}")"
+CLOSE_AWARD_P95_MS="$(p95_of "upbid_deal_award_seconds_bucket{$RUN}")"
 # 실패가 0인 실행에서는 시계열이 아예 없다. or vector(0) 으로 받지 않으면 NaN 이 된다.
 CLOSE_FAILURES="$(promq "sum($(delta "upbid_auction_close_failures_total{$RUN}")) or vector(0)")"
+
+# 마감이 몇 건 일어났나. p95 를 믿어도 되는지가 여기 달렸다 — 10건짜리 p95 는 사실상 최악의
+# 1건이라 돌릴 때마다 몇 배씩 튄다(실측으로 235~1611ms 를 봤다).
+CLOSES="$(promq "sum($(delta "upbid_auction_close_duration_seconds_count{$RUN}")) or vector(0)")"
+# 그중 낙찰이 몇 건인가. 마감 대상에 입찰이 없으면 전부 유찰이라 이 값이 0 이고, 그러면
+# 낙찰 후보 생성이 마감 소요에 아예 안 들어온다.
+AWARDS="$(promq "sum($(delta "upbid_deal_award_seconds_count{$RUN}")) or vector(0)")"
 
 # 스케줄러 일꾼. Boot 가 ThreadPoolTaskScheduler 를 자동으로 계측해 줘서 직접 만들 게 없었다.
 # 가상 스레드를 켜면 SimpleAsyncTaskScheduler 로 바뀌어 풀도 큐도 없어지므로 여기는 NaN 이 된다.
@@ -860,7 +928,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -890,13 +958,15 @@ fi
 # k6 가 중간에 죽으면 summary.json 이 없어서 접수와 거절이 전부 0 인데 처리량은 그럴듯한
 # 숫자가 박혀서, 그 줄만 봐서는 아무도 못 알아본다. 실측으로 겪었다 — 구간 128초짜리
 # aborted 줄에 처리량 3490.7 이 들어갔고 접수는 0 이었다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
   "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
   "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS" \
   "$CLOSE_DELAY_P50_MS" "$CLOSE_DELAY_P95_MS" "$CLOSE_DELAY_MAX_MS" \
-  "$CLOSE_DURATION_P95_MS" "$CLOSE_FAILURES" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
+  "$CLOSE_DURATION_P95_MS" \
+  "$CLOSE_LOCK_WAIT_P95_MS" "$CLOSE_LOCK_HOLD_P95_MS" "$CLOSE_NOTIFY_P95_MS" "$CLOSE_AWARD_P95_MS" \
+  "$CLOSE_FAILURES" "$CLOSES" "$AWARDS" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$HEARTBEAT_RUNS" "$HEARTBEAT_EXPECTED" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
   "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" \
@@ -985,6 +1055,12 @@ printf '입찰당 SELECT %s 회   격리 %s   갭 락 표본 %s\n' \
 printf '스레드 %s   커넥션 %s active / %s pending (획득 p95 %s ms)   힙 %s MB   k6 CPU %s%%\n' \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$K6_CPU_MAX"
 printf 'SSE 접속 max %s   마감 지연 p95 %s ms\n' "$SSE_CONN_MAX" "$CLOSE_DELAY_P95_MS"
+
+# 마감 소요를 조각내서 같이 보여 준다. 합이 소요에 못 미치면 아직 못 보는 구간이 남은 것이다.
+printf '마감 %s 건 (낙찰 %s)   소요 p95 %s ms  =  락대기 %s + 락유지 %s + 알림 %s + 후보 %s\n' \
+  "$CLOSES" "$AWARDS" \
+  "$CLOSE_DURATION_P95_MS" "$CLOSE_LOCK_WAIT_P95_MS" "$CLOSE_LOCK_HOLD_P95_MS" \
+  "$CLOSE_NOTIFY_P95_MS" "$CLOSE_AWARD_P95_MS"
 echo
 printf '접수 %s   경합충돌(7006) %s   그밖의거절 %s   실패5xx %s\n' \
   "$ACCEPTED" "$CONCURRENT_CONFLICT" "$REJECTED_OTHER" "$FAILED_5XX"
