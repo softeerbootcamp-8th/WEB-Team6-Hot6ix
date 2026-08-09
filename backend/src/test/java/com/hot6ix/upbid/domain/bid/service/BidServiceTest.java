@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import com.hot6ix.upbid.domain.auction.repository.BidContextProjection;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
@@ -163,14 +164,29 @@ class BidServiceTest {
         when(userRepository.findByUserIdAndDeletedAtIsNull(BIDDER_ID)).thenReturn(Optional.of(bidder));
     }
 
-    /** 판매자 검사는 락 앞에서 하므로 판매자 조회 하나면 된다. */
+    /**
+     * 락 앞에서 한 번에 읽는 값들. 판매자 확인뿐 아니라 상품명과 Soft Close 설정도 여기서 온다.
+     * 락 안에서 지연 로딩으로 읽히던 것을 앞으로 옮긴 결과다.
+     *
+     * <p>락을 잡기 전에 거절되는 경우(판매자 본인, 약관 미동의)는 물품이 필요 없어서 방 설정을
+     * 비워 둔다. 그 경로는 연장 판단까지 가지 않는다.
+     */
     private void givenSeller(Long sellerUserId) {
-        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(sellerUserId));
+        when(auctionItemRepository.findBidContext(ITEM_ID)).thenReturn(Optional.of(
+                new BidContextProjection(sellerUserId, ROOM_ID, "한정판피규어", null, null)));
     }
 
     /** 정상 경로 — 판매자가 남이고, 참여 기록이 있고, 물품을 락으로 읽는다. */
     private void givenItem(AuctionItem auctionItem) {
-        givenSeller(SELLER_ID);
+        AuctionRoom auctionRoom = auctionItem.getAuctionRoom();
+
+        // 물품이 든 방의 설정을 그대로 쓴다. 실제 흐름도 같은 방을 조인해 읽는다.
+        when(auctionItemRepository.findBidContext(ITEM_ID)).thenReturn(Optional.of(
+                new BidContextProjection(SELLER_ID, auctionRoom.getAuctionRoomId(),
+                        auctionItem.getProduct().getName(),
+                        auctionRoom.getSoftCloseTriggerSeconds(),
+                        auctionRoom.getSoftCloseExtendSeconds())));
+
         when(auctionItemRepository.existsParticipant(ITEM_ID, BIDDER_ID)).thenReturn(true);
         when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
     }
@@ -368,7 +384,7 @@ class BidServiceTest {
     void rejectsMissingItem() {
 
         givenBidder();
-        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.empty());
+        when(auctionItemRepository.findBidContext(ITEM_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, STARTING_PRICE))
                 .isInstanceOf(ApplicationException.class)

@@ -492,4 +492,58 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 auctionItem.getAuctionItemId(), bidder.getUserId())).isFalse();
     }
 
+    /**
+     * 이 쿼리는 JPQL 생성자 표현식이라 <b>필드 이름이나 순서가 틀려도 컴파일에서 안 잡힌다.</b>
+     * 실제로 실행해 봐야 터지는데, 그러면 부하 측정을 돌릴 때에야 알게 된다.
+     */
+    @Test
+    @DisplayName("findBidContext는 판매자와 방·상품·Soft Close 설정을 한 번에 읽는다")
+    void findBidContextReadsEverythingNeededBeforeTheLock() {
+
+        AuctionRoom auctionRoom = newAuctionRoomWithSoftClose("승민상점 경매방", 30, 60);
+        AuctionItem auctionItem = newAuctionItem(auctionRoom, "한정판피규어", AuctionItemStatus.IN_PROGRESS);
+        entityManager.flush();
+
+        BidContextProjection context =
+                auctionItemRepository.findBidContext(auctionItem.getAuctionItemId()).orElseThrow();
+
+        assertThat(context.sellerUserId()).isEqualTo(sellerProfile.getUser().getUserId());
+        assertThat(context.roomId()).isEqualTo(auctionRoom.getAuctionRoomId());
+        assertThat(context.itemName()).isEqualTo("한정판피규어");
+        assertThat(context.softCloseTriggerSeconds()).isEqualTo(30);
+        assertThat(context.softCloseExtendSeconds()).isEqualTo(60);
+    }
+
+    @Test
+    @DisplayName("Soft Close 설정이 없는 방이면 두 값이 비어 온다")
+    void findBidContextKeepsNullSoftCloseSettings() {
+
+        AuctionItem auctionItem =
+                newAuctionItem(newAuctionRoom("설정없는방"), "머그컵", AuctionItemStatus.IN_PROGRESS);
+        entityManager.flush();
+
+        BidContextProjection context =
+                auctionItemRepository.findBidContext(auctionItem.getAuctionItemId()).orElseThrow();
+
+        assertThat(context.softClosePolicy().isConfigured())
+                .as("설정이 없으면 연장 판단을 하지 않는다. 그 판단이 여기서 갈린다")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("없는 물품이면 빈 값이다")
+    void findBidContextReturnsEmptyForMissingItem() {
+        assertThat(auctionItemRepository.findBidContext(-1L)).isEmpty();
+    }
+
+    private AuctionRoom newAuctionRoomWithSoftClose(String name, int triggerSeconds, int extendSeconds) {
+        return entityManager.persist(AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(sellerProfile)
+                .name(name)
+                .softCloseTriggerSeconds(triggerSeconds)
+                .softCloseExtendSeconds(extendSeconds)
+                .build());
+    }
+
 }
