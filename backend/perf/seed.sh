@@ -31,6 +31,11 @@ OUT=""
 # 동의 요청을 몇 개씩 동시에 보낼지. 200명을 한 줄로 세우면 시딩만 1분 넘게 걸린다.
 CONCURRENCY=16
 
+# 마감 임박 구간. 물품 길이의 하한이 1분인데 트리거도 60초면 물품이 태어나자마자 임박 구간이라
+# 입찰이 들어올 때마다 마감이 밀려서 영영 안 닫힌다. 그래서 시나리오 5 는 이 값을 낮춰 쓴다.
+SOFT_CLOSE_TRIGGER=60
+SOFT_CLOSE_EXTEND=60
+
 usage() {
   cat <<'USAGE'
 사용법: seed.sh [옵션]
@@ -41,6 +46,8 @@ usage() {
   --unit N           입찰 단위 (기본 1000)
   --start all|none   물품을 시작할지 (기본 all). 시나리오 4는 none 으로 두고 k6 가 시작한다
   --duration-min N   시작할 때 줄 경매 시간(분). 기본 720 = 12시간, 측정 중에 안 닫히게
+  --soft-close-trigger N  마감 임박으로 보는 남은 초 (기본 60)
+  --soft-close-extend N   임박 구간에 입찰이 들어오면 밀어 줄 초 (기본 60)
   --out FILE         결과를 shell 변수로 적을 파일
   --base URL         API 주소 (기본 http://localhost:8080/api/v1 = 개발 앱)
 USAGE
@@ -54,6 +61,8 @@ while [ $# -gt 0 ]; do
     --unit) UNIT="$2"; shift 2 ;;
     --start) START_MODE="$2"; shift 2 ;;
     --duration-min) DURATION_MINUTES="$2"; shift 2 ;;
+    --soft-close-trigger) SOFT_CLOSE_TRIGGER="$2"; shift 2 ;;
+    --soft-close-extend) SOFT_CLOSE_EXTEND="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -105,7 +114,9 @@ curl -sS -o /dev/null -X POST "$BASE/seller-profiles" -b "$SELLER_JAR" -c "$SELL
 echo "[seed] 경매방 생성"
 ROOM_JSON="$(api "$SELLER_JAR" POST "/auction-rooms" \
   "$(jq -nc --argjson unit "$UNIT" \
-    '{name:"부하측정방", bidIncrement:$unit, softCloseTriggerSeconds:60, softCloseExtendSeconds:60}')")"
+       --argjson trigger "$SOFT_CLOSE_TRIGGER" --argjson extend "$SOFT_CLOSE_EXTEND" \
+    '{name:"부하측정방", bidIncrement:$unit,
+      softCloseTriggerSeconds:$trigger, softCloseExtendSeconds:$extend}')")"
 
 ROOM_ID="$(printf '%s' "$ROOM_JSON" | jq -r '.data.auctionRoomId')"
 SHARE_CODE="$(printf '%s' "$ROOM_JSON" | jq -r '.data.shareCode')"
@@ -122,21 +133,33 @@ while [ "$i" -le "$ITEMS" ]; do
   i=$((i + 1))
 done
 
-echo "[seed] 경매방 물품 $ITEMS 개 (벌크)"
-BULK_BODY="$(jq -nc \
-  --arg ids "$PRODUCT_IDS" \
-  --argjson price "$START_PRICE" \
-  '{items: [$ids | split(",") | .[] | {productId: (. | tonumber), startingPrice: $price}]}')"
+# 벌크 API 는 한 번에 100개까지만 받는다(2002 로 거절된다). 그래서 100개씩 끊어 보낸다.
+BULK_CHUNK=100
 
-BULK_JSON="$(api "$SELLER_JAR" POST "/auction-rooms/$ROOM_ID/auction-items/bulk" "$BULK_BODY")"
+echo "[seed] 경매방 물품 $ITEMS 개 (벌크 ${BULK_CHUNK}개씩)"
+ITEM_IDS_ALL=""
+OFFSET=0
 
-if [ "$(printf '%s' "$BULK_JSON" | jq -r '.data.failed | length')" != "0" ]; then
-  echo "[seed] 물품 추가가 일부 거절됐다:" >&2
-  printf '%s' "$BULK_JSON" | jq -r '.data.failed' >&2
-  exit 1
-fi
+while [ "$OFFSET" -lt "$ITEMS" ]; do
+  BULK_BODY="$(jq -nc \
+    --arg ids "$PRODUCT_IDS" \
+    --argjson price "$START_PRICE" \
+    --argjson from "$OFFSET" --argjson size "$BULK_CHUNK" \
+    '{items: [$ids | split(",") | .[$from:($from + $size)] | .[]
+              | {productId: (. | tonumber), startingPrice: $price}]}')"
 
-ITEM_IDS_ALL="$(printf '%s' "$BULK_JSON" | jq -r '[.data.added[].auctionItemId] | join(",")')"
+  BULK_JSON="$(api "$SELLER_JAR" POST "/auction-rooms/$ROOM_ID/auction-items/bulk" "$BULK_BODY")"
+
+  if [ "$(printf '%s' "$BULK_JSON" | jq -r '.data.failed | length')" != "0" ]; then
+    echo "[seed] 물품 추가가 일부 거절됐다:" >&2
+    printf '%s' "$BULK_JSON" | jq -r '.data.failed' >&2
+    exit 1
+  fi
+
+  CHUNK_IDS="$(printf '%s' "$BULK_JSON" | jq -r '[.data.added[].auctionItemId] | join(",")')"
+  ITEM_IDS_ALL="${ITEM_IDS_ALL:+$ITEM_IDS_ALL,}$CHUNK_IDS"
+  OFFSET=$((OFFSET + BULK_CHUNK))
+done
 
 STARTED_IDS=""
 READY_IDS=""
