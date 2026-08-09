@@ -60,6 +60,7 @@ upbid:
   sse:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
+    buffer-size: ${SSE_BUFFER_SIZE:50}
   auction:
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:3}
 
