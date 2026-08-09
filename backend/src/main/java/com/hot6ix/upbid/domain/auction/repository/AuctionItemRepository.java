@@ -213,6 +213,32 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
     Optional<Long> findSellerUserId(@Param("auctionItemId") Long auctionItemId);
 
     /**
+     * 입찰이 <b>행 락을 잡기 전에</b> 필요한 값을 한 번에 읽는다. {@link #findSellerUserId}가
+     * 하던 일에 상품명과 Soft Close 설정을 얹은 것이다.
+     *
+     * <p>이 넷은 원래 락 안에서 읽혔다. 이벤트에 넣을 상품명은 {@code auctionItem.getProduct()}로,
+     * 연장 판단에 쓰는 방 설정은 {@code auctionItem.getAuctionRoom()}으로 꺼내는데 둘 다 지연
+     * 로딩이라 그 자리에서 SELECT 가 나갔고, 하필 그 자리가 락 안이었다. 락은 줄을 세우는
+     * 장치라 한 요청이 잡는 시간이 뒤에 선 요청 수만큼 곱해진다.
+     *
+     * <p>{@code findSellerUserId}를 넓히지 않고 따로 둔 것은 그쪽을 낙찰 후보 조회
+     * ({@code DealCandidateService})도 쓰기 때문이다. 거기서는 판매자 ID 하나만 필요해서,
+     * 넓히면 안 쓰는 값 넷을 매번 같이 읽게 된다.
+     *
+     * <p><b>여기서 읽은 값으로 현재가나 상태를 판단하면 안 된다.</b> 그건 입찰마다 바뀌므로
+     * 락을 잡고 다시 읽어야 한다({@link #findByIdForUpdate}).
+     */
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.BidContextProjection("
+            + "  sp.user.userId, ar.auctionRoomId, p.name, "
+            + "  ar.softCloseTriggerSeconds, ar.softCloseExtendSeconds) "
+            + "from AuctionItem ai "
+            + "join ai.auctionRoom ar "
+            + "join ar.sellerProfile sp "
+            + "join ai.product p "
+            + "where ai.auctionItemId = :auctionItemId")
+    Optional<BidContextProjection> findBidContext(@Param("auctionItemId") Long auctionItemId);
+
+    /**
      * 이 물품이 속한 경매방에 입찰자의 참여 행이 있는지 확인한다. 입찰을 받을지 판정하는 데 쓴다.
      *
      * <p>{@code agreed_at}이 채워진 행만 참여로 본다. 그 행은 공유 코드를 알고 로그인한

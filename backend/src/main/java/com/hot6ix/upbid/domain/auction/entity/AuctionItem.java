@@ -231,17 +231,22 @@ public class AuctionItem extends BaseTimeEntity {
      * 않는 것은 연장 폭이 언제나 방 설정값과 같아야 화면에 알리는 "몇 초 연장"과 실제 마감
      * 시각이 어긋나지 않기 때문이다.
      *
-     * @param now 판정 기준 시각. 같은 트랜잭션의 다른 검증과 <b>같은 값</b>을 받아야 한다
+     * <p>방 설정을 {@code auctionRoom}에서 직접 꺼내지 않고 <b>밖에서 받는다.</b> 여기서 꺼내면
+     * 지연 로딩이 걸려 SELECT 가 한 번 나가는데, 이 메서드는 물품 행 락을 잡은 채로 불리므로
+     * 그 쿼리 시간만큼 뒤에 선 입찰이 전부 밀린다. 부르는 쪽이 락을 잡기 전에 읽어서 넘긴다.
+     *
+     * @param now    판정 기준 시각. 같은 트랜잭션의 다른 검증과 <b>같은 값</b>을 받아야 한다
+     * @param policy 이 물품이 속한 경매방의 Soft Close 설정
      * @return 연장했으면 {@code true}. {@code false}면 아무 값도 바뀌지 않았다
      */
-    public boolean extendIfClosingSoon(LocalDateTime now) {
+    public boolean extendIfClosingSoon(LocalDateTime now, SoftClosePolicy policy) {
 
-        Integer triggerSeconds = auctionRoom.getSoftCloseTriggerSeconds();
-        Integer extendSeconds = auctionRoom.getSoftCloseExtendSeconds();
-
-        if (endAt == null || triggerSeconds == null || extendSeconds == null) {
+        if (endAt == null || policy == null || !policy.isConfigured()) {
             return false;
         }
+
+        int triggerSeconds = policy.triggerSeconds();
+        int extendSeconds = policy.extendSeconds();
 
         if (now.isBefore(endAt.minusSeconds(triggerSeconds))) {
             return false;
