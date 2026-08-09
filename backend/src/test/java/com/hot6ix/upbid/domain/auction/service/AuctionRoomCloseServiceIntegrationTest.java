@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.auction.scheduler.AuctionCloseMetrics;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -20,12 +21,15 @@ import com.hot6ix.upbid.global.config.JpaConfig;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
@@ -46,9 +50,23 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({JpaConfig.class, AuctionRoomCloseService.class, AuctionItemCloseService.class})
+@Import({JpaConfig.class, AuctionRoomCloseService.class, AuctionItemCloseService.class,
+        AuctionRoomCloseServiceIntegrationTest.MetricsTestConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class AuctionRoomCloseServiceIntegrationTest extends AbstractMySqlContainerTest {
+
+    /**
+     * {@code @DataJpaTest}는 {@code MeterRegistry}를 올려 주지 않아 계측을 직접 넣어 준다.
+     * 계측을 목으로 두면 넘긴 조회를 실행하지 않아 마감이 통째로 안 돈다.
+     */
+    @TestConfiguration
+    static class MetricsTestConfig {
+
+        @Bean
+        AuctionCloseMetrics auctionCloseMetrics() {
+            return new AuctionCloseMetrics(new SimpleMeterRegistry());
+        }
+    }
 
     @Autowired
     private AuctionRoomCloseService auctionRoomCloseService;

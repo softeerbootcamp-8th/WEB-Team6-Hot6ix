@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.deal.listener;
 
 import com.hot6ix.upbid.domain.deal.service.DealCandidateService;
+import com.hot6ix.upbid.domain.deal.service.DealMetrics;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 public class DealCandidateAwardListener {
 
     private final DealCandidateService dealCandidateService;
+    private final DealMetrics dealMetrics;
 
     /**
      * 마감이 커밋된 뒤에만 후보를 만든다. 롤백된 마감으로 낙찰자가 생기면 안 된다.
@@ -24,7 +26,7 @@ public class DealCandidateAwardListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(ItemEnded event) {
         try {
-            dealCandidateService.award(event);
+            dealMetrics.recordAward(() -> dealCandidateService.award(event));
         } catch (Exception e) {
             log.error("낙찰 후보 생성 실패: itemId={}, eventId={}", event.itemId(), event.eventId(), e);
         }
