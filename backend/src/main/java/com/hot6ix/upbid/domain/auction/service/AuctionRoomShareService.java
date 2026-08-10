@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.auction.service;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomShareResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -58,6 +59,29 @@ public class AuctionRoomShareService {
     public Long resolveRoomId(String shareCode) {
         return auctionRoomRepository.findIdByShareCode(shareCode)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+    }
+
+    /**
+     * SSE 구독용 경매방 조회.
+     *
+     * <p>공유 코드를 내부 경매방 ID로 변환하며,
+     * 종료된 방은 {@code AUCTION_ROOM_CLOSED} 예외를 발생시킨다.
+     *
+     * <p>종료된 방에 대해 4xx 응답을 반환해야
+     * {@code EventSource}의 자동 재연결을 막을 수 있다.
+     * 일반 조회는 종료된 방도 허용하므로
+     * {@link #resolveRoomId}와 분리한다.
+     */
+    @Transactional(readOnly = true)
+    public Long resolveOpenRoomId(String shareCode) {
+        AuctionRoom auctionRoom = auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(shareCode)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        if (auctionRoom.getStatus() == AuctionRoomStatus.CLOSED) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED);
+        }
+
+        return auctionRoom.getAuctionRoomId();
     }
 
     /**

@@ -14,8 +14,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  */
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
+/**
+ * `closed` 는 **정상 종료**다. 방이 끝나서 더 받을 이벤트가 없는 상태이므로
+ * `reconnecting`·`failed` 와 달리 "연결이 끊겼다"는 경고를 띄우지 않는다.
+ */
 export type RealtimeStatus =
-  'connecting' | 'connected' | 'reconnecting' | 'failed'
+  'connecting' | 'connected' | 'reconnecting' | 'failed' | 'closed'
 
 export type SseEventPayload =
   | { kind: 'ItemStarted'; itemId: number; itemName: string; endedTime: string }
@@ -124,6 +128,9 @@ export type SseEventPayload =
  * shareCode 가 바뀌거나 retry() 를 호출하면 EventSource 를 닫고 다시 연다.
  * onEvent 는 매 렌더에서 ref 로 최신값을 유지하므로 바뀌어도 재연결하지 않는다.
  * 언마운트 시 EventSource 를 닫아 구독을 정리한다.
+ *
+ * 방이 종료되면(`ROOM_CLOSED`) 상태가 `closed` 가 되고 연결을 닫는다. 이유는 아래
+ * 리스너 주석 참고 — 닫지 않으면 정상 종료가 연결 실패처럼 보인다.
  */
 export function useRealtimeStatus(
   shareCode: string,
@@ -150,9 +157,21 @@ export function useRealtimeStatus(
       console.log('[SSE] connected')
       setStatus('connected')
     }
+    /**
+     * `readyState` 로 영구 실패와 일시 단절을 가른다.
+     *
+     * `CLOSED` 면 브라우저가 재접속을 포기한 것이다 — 서버가 200 이 아닌 응답을 준
+     * 경우(없는 방 404, 종료된 방 409)가 여기다. `CONNECTING` 이면 잠시 뒤 스스로
+     * 다시 붙으므로 그때만 '재연결 중' 이다.
+     *
+     * 구분하지 않으면 다시 붙을 일이 없는데도 `reconnecting` 에 영구히 박혀,
+     * "재연결 중" 표시와 경고 토스트가 사라지지 않는다.
+     */
     es.onerror = (e) => {
       console.error('[SSE] error', e)
-      setStatus('reconnecting')
+      setStatus(
+        es.readyState === EventSource.CLOSED ? 'failed' : 'reconnecting',
+      )
     }
 
     function makeHandler(kind: SseEventPayload['kind']) {
@@ -173,7 +192,23 @@ export function useRealtimeStatus(
     es.addEventListener('SOFT_CLOSE_EXTENDED', makeHandler('SoftCloseExtended'))
     es.addEventListener('ITEM_CLOSE_ADVANCED', makeHandler('ItemCloseAdvanced'))
     es.addEventListener('ITEM_ENDED', makeHandler('ItemEnded'))
-    es.addEventListener('ROOM_CLOSED', makeHandler('RoomClosed'))
+    /**
+     * 방 종료는 이 연결의 마지막 이벤트다. **받은 뒤 직접 닫는다.**
+     *
+     * SSE 에는 "서버가 끝냈다"는 신호가 없어서, 서버가 스트림을 끝내도 브라우저는
+     * 그것을 네트워크 단절과 구분하지 못하고 3초 뒤 자동으로 다시 붙는다. 서버는 그
+     * 재구독을 409 로 거절하고(종료된 방), 그러면 `onerror` 가 두 번 울려 정상적으로
+     * 끝난 경매에도 "실시간 연결이 끊겼어요" 경고가 뜬다.
+     *
+     * 여기서 닫으면 그 재접속 자체가 생기지 않는다 — 명시적 `close()` 는 재접속을
+     * 유발하지 않는다.
+     */
+    const handleRoomClosed = makeHandler('RoomClosed')
+    es.addEventListener('ROOM_CLOSED', (e: MessageEvent) => {
+      handleRoomClosed(e)
+      es.close()
+      setStatus('closed')
+    })
     es.addEventListener('ITEM_ADDED', makeHandler('ItemAdded'))
     es.addEventListener('ITEM_REMOVED', makeHandler('ItemRemoved'))
     es.addEventListener('ROOM_UPDATED', makeHandler('RoomUpdated'))
