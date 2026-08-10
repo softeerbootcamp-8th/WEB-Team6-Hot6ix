@@ -1,17 +1,31 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { ProfilePhoto } from '@/components/profile-photo'
+import { Search } from 'lucide-react'
+import { useState } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
+import { Button } from '@/components/ui/button'
+import { Dropdown } from '@/components/ui/dropdown'
 import { EmptyState, PageHeader } from '@/components/page-header'
-import { MOCK_TRADES } from '@/mocks/data'
-import { PRODUCT_STATUS } from '@/features/seller/product-status'
+import { Pager } from '@/components/pager'
+import {
+  PRODUCT_STATUS,
+  canEditProduct,
+} from '@/features/seller/product-status'
+import { toDeals } from '@/features/trades/adapt-deal'
+import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
 import { requireMember } from '@/lib/route-guards'
 import { RouteError, RoutePending } from '@/components/route-states'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useMySellerProfile } from '@/features/seller/use-my-seller-profile'
-import { useProductList } from '@/features/seller/use-product-list'
+import {
+  useProductList,
+  type ProductSort,
+} from '@/features/seller/use-product-list'
+import type { GetListStatus } from '@/api/generated/model'
 
 /**
  * 판매자 정보 진입.
@@ -20,22 +34,100 @@ import { useProductList } from '@/features/seller/use-product-list'
  * - 프로필 없음: `WEB-01 · 판매자 · 프로필 미등록`   (847:12938)
  *
  * 프로필 있음 화면은 380 프로필 패널 + 24 간격 + 812 상품 현황 패널, 높이 560.
+ *
+ * 상품 현황 패널이 상품 관리 화면을 그대로 품는다 — 검색·상태 필터·페이지네이션이
+ * 여기 있고, 따로 있던 `/seller/products` 화면은 없앴다.
  */
 export const Route = createFileRoute('/seller/')({
   beforeLoad: requireMember,
   component: SellerHomePage,
 })
 
-/** 상품 현황 표에 미리 보여주는 줄 수. 나머지는 "전체 상품 보기"로 넘긴다. */
-const PREVIEW_COUNT = 4
+/**
+ * 한 쪽에 담는 줄 수.
+ *
+ * 패널 높이(560)에 툴바와 페이지네이션까지 들어가야 해서 5줄이다.
+ * 이보다 늘리면 목록이 패널 안에서 스크롤된다.
+ */
+const PAGE_SIZE = 5
 
-const TABLE_COLS = 'grid-cols-[56px_minmax(0,1fr)_204px_120px] gap-x-5'
+const TABLE_COLS = 'grid-cols-[56px_minmax(0,1fr)_160px_110px_104px] gap-x-4'
+
+const FILTERS: { key: 'ALL' | GetListStatus; label: string }[] = [
+  { key: 'ALL', label: '전체 상태' },
+  { key: 'UNREGISTERED', label: '경매 미등록' },
+  { key: 'READY', label: '경매 대기' },
+  { key: 'IN_PROGRESS', label: '경매 중' },
+  { key: 'ENDED', label: '경매 종료' },
+]
+
+/** 정렬 선택지. 기본은 최신순이다. */
+const SORTS: { key: ProductSort; label: string }[] = [
+  { key: 'LATEST', label: '최신순' },
+  { key: 'OLDEST', label: '오래된 순' },
+]
 
 function SellerHomePage() {
   const { profile, isPending, notFound, isError, error, refetch } =
     useMySellerProfile()
-  // 미리보기라 첫 쪽만 받는다. 서버가 전체 개수를 주지 않아 더 있으면 "4+"로 적는다.
-  const products = useProductList({ size: PREVIEW_COUNT })
+
+  const [filter, setFilter] = useState<'ALL' | GetListStatus>('ALL')
+  const [keyword, setKeyword] = useState('')
+  const [sort, setSort] = useState<ProductSort>('LATEST')
+  const [page, setPage] = useState(0)
+  // 검색어는 서버로 나가므로 한 글자마다 보내지 않는다.
+  const debouncedKeyword = useDebouncedValue(keyword.trim())
+
+  /**
+   * 조건이 바뀌면 첫 쪽으로 되돌린다. 3쪽을 보다가 필터를 걸면 결과가 한 쪽뿐일 수
+   * 있는데, 그때 page 가 3으로 남아 있으면 빈 화면이 뜬다.
+   */
+  const changeFilter = (next: 'ALL' | GetListStatus) => {
+    setFilter(next)
+    setPage(0)
+  }
+
+  const changeKeyword = (next: string) => {
+    setKeyword(next)
+    setPage(0)
+  }
+
+  /*
+   * 정렬은 서버가 한다. 받아온 한 쪽만 뒤집으면 5개 안에서만 순서가 바뀌어,
+   * "오래된 순" 인데도 가장 오래된 상품이 마지막 쪽에 남는다.
+   */
+  const changeSort = (next: ProductSort) => {
+    setSort(next)
+    setPage(0)
+  }
+
+  const products = useProductList({
+    keyword: debouncedKeyword || undefined,
+    status: filter === 'ALL' ? undefined : filter,
+    sort,
+    page,
+    size: PAGE_SIZE,
+  })
+
+  /** 검색·필터를 걸지 않은 상태에서 비었으면 "등록한 상품이 없다"는 뜻이다. */
+  const filtered = debouncedKeyword !== '' || filter !== 'ALL'
+
+  /*
+   * "등록 상품" 숫자는 검색·필터와 무관한 전체 개수다. 위 목록 쿼리의
+   * `totalElements` 를 쓰면 필터를 걸 때마다 통계 숫자가 따라 변한다.
+   * 개수만 필요하므로 한 줄만 받아온다.
+   */
+  const allProducts = useProductList({ page: 0, size: 1 })
+
+  /**
+   * 완료 거래 수. 거래 내역 API 는 페이지 없이 전량을 주고 역할·상태를 서버가 판정해
+   * 내려주므로 여기서 세면 된다. 파라미터가 없어 거래 내역 화면과 쿼리 키가 같고,
+   * 그래서 둘 중 먼저 연 쪽의 응답을 나눠 쓴다.
+   */
+  const deals = useGetDeals()
+  const completedTrades = toDeals(deals.data?.data).filter(
+    (deal) => deal.role === 'SELLER' && deal.status === 'COMPLETED',
+  ).length
 
   if (isPending) return <RoutePending />
   if (isError && error)
@@ -43,11 +135,6 @@ function SellerHomePage() {
 
   // 404 는 장애가 아니라 "아직 등록하지 않았다"는 정상 상태다.
   if (notFound || !profile) return <MissingProfile />
-
-  // 완료 거래 수는 아직 목업이다 (거래 화면 소관).
-  const completedTrades = MOCK_TRADES.filter(
-    (trade) => trade.role === 'SELLER' && trade.status === 'COMPLETED',
-  ).length
 
   return (
     <AppShell title="판매자 정보" className="max-w-[1280px]">
@@ -99,14 +186,13 @@ function SellerHomePage() {
             {[
               {
                 label: '등록 상품',
-                value: products.isPending
-                  ? '—'
-                  : `${products.products.length}${products.hasNextPage ? '+' : ''}`,
+                // 표에 보이는 줄 수가 아니라 서버가 센 전체 개수다.
+                value: allProducts.isPending ? '—' : allProducts.totalElements,
                 accent: 'text-foreground',
               },
               {
                 label: '완료 거래',
-                value: completedTrades,
+                value: deals.isPending ? '—' : completedTrades,
                 accent: 'text-brand-500',
               },
             ].map((stat) => (
@@ -142,34 +228,64 @@ function SellerHomePage() {
 
         {/* 상품 현황 — 812×560 */}
         <section className="flex flex-col rounded-[20px] border bg-card p-7 lg:h-[calc(100svh-14rem)] lg:min-h-[560px]">
-          <div>
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="min-w-0 text-[18px] font-extrabold text-foreground">
-                상품 현황
-              </h2>
+          <h2 className="min-w-0 shrink-0 text-[18px] font-extrabold text-foreground">
+            상품 현황
+          </h2>
 
-              {/* 목록 맨 아래가 아니라 섹션 오른쪽 위에 둔다. */}
-              <Link
-                to="/seller/products"
-                className="ease-soft shrink-0 rounded-lg px-1 py-0.5 text-[13px] font-bold text-brand-500 transition-colors duration-150 hover:bg-brand-50"
-              >
-                전체 상품 보기 →
-              </Link>
+          {/*
+            검색·정렬·상태 필터. 상품이 아예 없으면 걸 조건도 없어서 숨긴다.
+            규격은 상품 관리 화면에서 쓰던 툴바와 같다.
+          */}
+          {!(
+            !products.isPending &&
+            !products.isError &&
+            products.products.length === 0 &&
+            !filtered
+          ) && (
+            <div className="mt-4 flex shrink-0 flex-wrap items-center gap-3">
+              <div className="relative min-w-0 flex-1">
+                <Search
+                  aria-hidden
+                  className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-neutral-muted"
+                />
+                <input
+                  type="search"
+                  value={keyword}
+                  onChange={(event) => changeKeyword(event.target.value)}
+                  placeholder="상품명으로 검색"
+                  aria-label="상품명으로 검색"
+                  className="h-10 w-full rounded-xl border bg-surface-subtle pr-4 pl-10 text-[14px] font-medium outline-none placeholder:text-neutral-muted focus-visible:border-brand-400"
+                />
+              </div>
+
+              <Dropdown
+                label="경매 상태 필터"
+                value={filter}
+                options={FILTERS.map((item) => ({
+                  value: item.key,
+                  label: item.label,
+                }))}
+                onChange={changeFilter}
+                className="w-32 shrink-0 md:w-40"
+              />
+
+              {/* 상태 필터와 같은 부품·같은 규격이다. 눌러서 목록에서 고른다. */}
+              <Dropdown
+                label="정렬 기준"
+                value={sort}
+                options={SORTS.map((item) => ({
+                  value: item.key,
+                  label: item.label,
+                }))}
+                onChange={changeSort}
+                className="w-32 shrink-0 md:w-40"
+              />
             </div>
-
-            {/*
-              설명은 링크와 같은 줄에 두지 않는다. 좁은 화면에서 링크가 폭을
-              가져가 문장이 중간에 끊긴다. `break-keep` 은 한국어를 어절 단위로
-              끊어 어쩔 수 없이 줄이 넘어갈 때도 단어가 쪼개지지 않게 한다.
-            */}
-            <p className="mt-2.5 text-[13px] font-medium break-keep text-neutral-tertiary">
-              상품은 한 번의 경매에만 사용할 수 있어요.
-            </p>
-          </div>
+          )}
 
           {products.isPending ? (
-            <ul aria-hidden className="mt-6 space-y-2">
-              {Array.from({ length: PREVIEW_COUNT }).map((_, index) => (
+            <ul aria-hidden className="mt-4 space-y-2">
+              {Array.from({ length: PAGE_SIZE }).map((_, index) => (
                 <li
                   key={index}
                   className="animate-skeleton h-[76px] rounded-2xl bg-fill"
@@ -177,9 +293,26 @@ function SellerHomePage() {
               ))}
             </ul>
           ) : products.isError ? (
-            <p className="mt-6 text-[13px] font-medium text-neutral-tertiary">
-              상품을 불러오지 못했어요. 전체 상품 보기에서 다시 시도해 주세요.
-            </p>
+            <div className="mt-6">
+              <p className="text-[13px] font-medium text-neutral-tertiary">
+                상품을 불러오지 못했어요.
+              </p>
+              <Button
+                variant="brandOutline"
+                size="field"
+                className="mt-3 w-[120px]"
+                onClick={() => void products.refetch()}
+              >
+                다시 시도
+              </Button>
+            </div>
+          ) : products.products.length === 0 && filtered ? (
+            <div className="mt-4">
+              <EmptyState
+                title="조건에 맞는 상품이 없어요"
+                description="필터나 검색어를 바꿔보세요."
+              />
+            </div>
           ) : products.products.length === 0 ? (
             <EmptyState
               title="등록한 상품이 없어요"
@@ -195,118 +328,145 @@ function SellerHomePage() {
             />
           ) : (
             <>
-              {/* 모바일은 표 대신 행 카드로 흐른다 (좁은 화면 가로 스크롤 방지) */}
-              <ul className="mt-4 space-y-3 md:hidden">
-                {products.products.map((product) => {
-                  const status =
-                    PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
+              {/*
+                목록만 패널 안에서 스크롤한다. 패널 높이가 560 으로 묶여 있어서
+                툴바와 페이지네이션은 늘 보이고 줄만 흐르게 둔다.
+              */}
+              <div className="min-h-0 flex-1 md:overflow-y-auto">
+                {/* 모바일은 표 대신 행 카드로 흐른다 (좁은 화면 가로 스크롤 방지) */}
+                <ul className="mt-4 space-y-3 md:hidden">
+                  {products.products.map((product) => {
+                    const status =
+                      PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
+                    // 경매가 시작된 상품은 수정할 수 없다. 상태만 볼 수 있다.
+                    const editable = canEditProduct(product.status)
 
-                  return (
-                    <li key={product.productId}>
-                      {/* 글자 규격은 상품 관리 화면과 같게 둔다. */}
-                      <Link
-                        to="/seller/products/$productId"
-                        params={{ productId: String(product.productId) }}
-                        className="ease-soft flex items-center gap-4 rounded-2xl border bg-card p-3.5 transition-all duration-150 active:scale-[0.99]"
-                      >
-                        <ProductThumbnail
-                          src={product.imageUrl}
-                          iconClassName="size-6"
-                          className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
-                        />
-
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[15px] font-bold text-foreground">
-                            {product.name}
-                          </span>
-                          <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
-                            {product.createdAt
-                              ? formatDate(product.createdAt)
-                              : '-'}
-                          </span>
-                          <span
-                            className={cn(
-                              'mt-2 flex h-6 w-[72px] items-center justify-center rounded-full text-[11px] font-bold',
-                              status.className,
-                            )}
-                          >
-                            {status.label}
-                          </span>
-                        </span>
-
-                        <span className="shrink-0 text-[13px] font-bold text-brand-500">
-                          상세 →
-                        </span>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
-
-              <div className="mt-6 hidden min-h-0 overflow-x-auto md:block">
-                <div className="min-w-[560px]">
-                  <div
-                    className={cn(
-                      'grid h-11 items-center rounded-[14px] bg-surface-subtle pr-9 pl-5 text-[13px] font-bold text-neutral-tertiary',
-                      TABLE_COLS,
-                    )}
-                  >
-                    <span>상품</span>
-                    <span />
-                    <span>등록일</span>
-                    <span>경매 상태</span>
-                  </div>
-
-                  <ul className="mt-3 space-y-1">
-                    {products.products.map((product, index) => {
-                      const status =
-                        PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
-
-                      return (
-                        <li
-                          key={product.productId}
-                          style={{ animationDelay: `${index * 30}ms` }}
-                          className={cn(
-                            'animate-rise grid h-[76px] items-center rounded-2xl pr-9 pl-5 transition-colors duration-150 hover:bg-surface-subtle',
-                            TABLE_COLS,
-                          )}
+                    return (
+                      <li key={product.productId}>
+                        {/* 글자 규격은 상품 관리 화면과 같게 둔다. */}
+                        <Link
+                          to="/seller/products/$productId"
+                          params={{ productId: String(product.productId) }}
+                          className="ease-soft flex items-center gap-4 rounded-2xl border bg-card p-3.5 transition-all duration-150 active:scale-[0.99]"
                         >
                           <ProductThumbnail
                             src={product.imageUrl}
                             iconClassName="size-6"
-                            className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
+                            className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
                           />
 
-                          <span className="min-w-0">
-                            <Link
-                              to="/seller/products/$productId"
-                              params={{ productId: String(product.productId) }}
-                              className="block truncate text-[15px] font-bold text-foreground hover:text-brand-500 hover:underline"
-                            >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[15px] font-bold text-foreground">
                               {product.name}
-                            </Link>
+                            </span>
+                            <span className="mt-1 block truncate text-[12px] font-medium text-neutral-tertiary">
+                              {product.createdAt
+                                ? formatDate(product.createdAt)
+                                : '-'}
+                            </span>
+                            <span
+                              className={cn(
+                                'mt-2 flex h-6 w-[72px] items-center justify-center rounded-full text-[11px] font-bold',
+                                status.className,
+                              )}
+                            >
+                              {status.label}
+                            </span>
                           </span>
 
-                          <span className="text-[13px] font-medium tabular-nums text-neutral-tertiary">
-                            {product.createdAt
-                              ? formatDate(product.createdAt)
-                              : '-'}
+                          <span className="shrink-0 text-[13px] font-bold text-brand-500">
+                            {editable ? '수정 →' : '상세 →'}
                           </span>
+                        </Link>
+                      </li>
+                    )
+                  })}
+                </ul>
 
-                          <span
+                <div className="mt-4 hidden overflow-x-auto md:block">
+                  <div className="min-w-[600px]">
+                    <ul className="space-y-1">
+                      {products.products.map((product, index) => {
+                        const status =
+                          PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
+                        const editable = canEditProduct(product.status)
+
+                        return (
+                          <li
+                            key={product.productId}
+                            style={{ animationDelay: `${index * 30}ms` }}
                             className={cn(
-                              'flex h-8 w-[120px] items-center justify-center rounded-2xl text-[12px] font-bold',
-                              status.className,
+                              'animate-rise grid h-[76px] items-center rounded-2xl pr-5 pl-4 transition-colors duration-150 hover:bg-surface-subtle',
+                              TABLE_COLS,
                             )}
                           >
-                            {status.label}
-                          </span>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                            <ProductThumbnail
+                              src={product.imageUrl}
+                              iconClassName="size-6"
+                              className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-brand-500"
+                            />
+
+                            <span className="min-w-0">
+                              <Link
+                                to="/seller/products/$productId"
+                                params={{
+                                  productId: String(product.productId),
+                                }}
+                                className="block truncate text-[15px] font-bold text-foreground hover:text-brand-500 hover:underline"
+                              >
+                                {product.name}
+                              </Link>
+                            </span>
+
+                            <span className="text-[13px] font-medium tabular-nums text-neutral-tertiary">
+                              {product.createdAt
+                                ? formatDate(product.createdAt)
+                                : '-'}
+                            </span>
+
+                            <span
+                              className={cn(
+                                'flex h-8 w-[110px] items-center justify-center rounded-2xl text-[12px] font-bold',
+                                status.className,
+                              )}
+                            >
+                              {status.label}
+                            </span>
+
+                            <Link
+                              to={
+                                editable
+                                  ? '/seller/products/$productId/edit'
+                                  : '/seller/products/$productId'
+                              }
+                              params={{ productId: String(product.productId) }}
+                              className={cn(
+                                'ease-soft flex h-10 items-center justify-center rounded-xl border bg-card text-[13px] font-bold transition-all duration-150 active:scale-95',
+                                editable
+                                  ? 'text-brand-500 hover:bg-brand-50'
+                                  : 'text-neutral-secondary hover:bg-fill',
+                              )}
+                            >
+                              {editable ? '수정' : '상세'}
+                            </Link>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
                 </div>
               </div>
+
+              {/*
+                쪽수는 서버가 필터를 적용한 뒤 세어 준 값이라 화면에서 다시 계산하지 않는다.
+                결과가 한 쪽뿐일 때도 버튼 한 개는 남기므로 최소 1로 둔다.
+              */}
+              <Pager
+                page={page}
+                pageCount={Math.max(1, products.totalPages)}
+                onChange={setPage}
+                className="mt-4 shrink-0"
+              />
             </>
           )}
         </section>

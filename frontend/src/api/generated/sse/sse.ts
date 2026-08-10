@@ -25,6 +25,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CommonResponseListRecentRoomEventDto,
   SseEmitter
 } from '.././model';
 
@@ -120,6 +121,99 @@ export function useSubscribe<TData = Awaited<ReturnType<typeof subscribe>>, TErr
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getSubscribeQueryOptions(shareCode,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
+ * 새로고침 등으로 SSE가 처음부터 다시 연결될 때, 알림 피드를 채울 최근 이벤트를 최대 20개까지 반환한다. 입찰·시작·마감·낙찰 등 실제 알림 대상 이벤트만 포함하고, 참여자 수 갱신 등 신호성 이벤트는 제외한다.
+ * @summary 경매방 최근 이벤트 조회
+ */
+export const getRecentEvents = (
+    shareCode: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+      
+      
+      return customInstance<CommonResponseListRecentRoomEventDto>(
+      {url: `/api/v1/auction-rooms/share/${shareCode}/events`, method: 'GET', signal
+    },
+      options);
+    }
+  
+
+
+
+export const getGetRecentEventsQueryKey = (shareCode?: string,) => {
+    return [
+    `/api/v1/auction-rooms/share/${shareCode}/events`
+    ] as const;
+    }
+
+    
+export const getGetRecentEventsQueryOptions = <TData = Awaited<ReturnType<typeof getRecentEvents>>, TError = ErrorType<CommonResponseListRecentRoomEventDto>>(shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRecentEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRecentEventsQueryKey(shareCode);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRecentEvents>>> = ({ signal }) => getRecentEvents(shareCode, requestOptions, signal);
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(shareCode), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRecentEvents>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetRecentEventsQueryResult = NonNullable<Awaited<ReturnType<typeof getRecentEvents>>>
+export type GetRecentEventsQueryError = ErrorType<CommonResponseListRecentRoomEventDto>
+
+
+export function useGetRecentEvents<TData = Awaited<ReturnType<typeof getRecentEvents>>, TError = ErrorType<CommonResponseListRecentRoomEventDto>>(
+ shareCode: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRecentEvents>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getRecentEvents>>,
+          TError,
+          Awaited<ReturnType<typeof getRecentEvents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetRecentEvents<TData = Awaited<ReturnType<typeof getRecentEvents>>, TError = ErrorType<CommonResponseListRecentRoomEventDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRecentEvents>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getRecentEvents>>,
+          TError,
+          Awaited<ReturnType<typeof getRecentEvents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetRecentEvents<TData = Awaited<ReturnType<typeof getRecentEvents>>, TError = ErrorType<CommonResponseListRecentRoomEventDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRecentEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 경매방 최근 이벤트 조회
+ */
+
+export function useGetRecentEvents<TData = Awaited<ReturnType<typeof getRecentEvents>>, TError = ErrorType<CommonResponseListRecentRoomEventDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getRecentEvents>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient 
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetRecentEventsQueryOptions(shareCode,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

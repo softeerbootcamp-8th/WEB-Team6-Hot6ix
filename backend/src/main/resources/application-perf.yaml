@@ -1,0 +1,127 @@
+# 부하 측정 전용 프로파일이다. (이슈 #242, backend/perf/README.md)
+#
+# 이 프로파일은 backend/perf/docker-compose.perf.yml 이 띄우는 컨테이너 안에서만 쓴다.
+# 로컬 개발(local)이나 운영(prod)에는 영향이 없다.
+#
+# 여기 있는 값은 다섯 명이 같은 커밋으로 같은 숫자를 만들기 위한 것이라, 실행할 때마다
+# 바뀌면 안 된다. 대조 실험에서 바꾸는 값만 환경변수로 열어 뒀다 (DB_POOL_SIZE 등).
+
+spring:
+  jpa:
+    hibernate:
+      # 이번 주말은 앱 1대라 create로 둔다. 컨테이너를 내렸다 올리면 스키마와 데이터가
+      # 함께 초기화돼서 run.sh 가 따로 정리할 게 없다.
+      #
+      # 서버를 2대로 늘리는 순간(--scale app=2) 이 값은 반드시 바꿔야 한다. 두 인스턴스가
+      # 동시에 뜨면서 서로의 스키마를 날린다. 3주차 수요일 Flyway 도입(#96) 때
+      # validate 로 바꾸고 스키마는 migration 이 만든다.
+      ddl-auto: create
+  datasource:
+    hikari:
+      # 그래프에서 어느 풀인지 구분하려고 이름을 준다. 지표 라벨(pool)로 나간다.
+      pool-name: upbid-pool
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULER_POOL_SIZE:4}
+
+  # 이건 스케줄러만 바꾸는 스위치가 아니다. **톰캣 커넥터까지 함께** 가상 스레드로 바뀐다.
+  # 그래서 켜고 잰 숫자는 "스케줄러에 가상 스레드를 쓴 효과"가 아니라 "앱 전체에 쓴 효과"다.
+  # 한 번에 하나만 바꾼다는 원칙에 어긋나지만 Boot 가 따로 켜는 방법을 안 준다.
+  # run.sh 가 이 값을 index.csv 에 적으므로, 나중에 어느 줄이 가상 스레드였는지는 알 수 있다.
+  #
+  # 켜면 TaskScheduler 빈이 ThreadPoolTaskScheduler 에서 SimpleAsyncTaskScheduler 로 바뀌어
+  # 큐가 없어지고 executor_queued_tasks{name="taskScheduler"} 시계열도 사라진다.
+  threads:
+    virtual:
+      enabled: ${VIRTUAL_THREADS:false}
+
+# 대조 실험에서 바꾸는 값들. run.sh 가 환경변수로 넘긴다.
+upbid:
+  sse:
+    heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
+    emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
+  auction:
+    # 시나리오 2(물품 분산)는 한 방에서 물품 20개를 동시에 진행해야 하는데 서비스 규칙이 3이다.
+    # 여기서만 올린다. 이 프로파일로 잰 숫자는 "제한을 푼 상태"라는 걸 note.md 에 적는다.
+    max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:50}
+  # deal.award-recovery는 여기서 건드리지 않는다. application.yaml 기본값
+  # (enabled=true, interval-ms=300000)을 그대로 쓴다 — DealAwardRecoveryRunner의
+  # @Scheduled가 SSE heartbeat·마감 예약과 스케줄링 풀을 공유해 upbid.auction.close.delay에
+  # 노이즈를 더할 수 있지만, 이 프로파일에서도 복구 러너가 실제로 도는지 보려고 켜 둔다.
+  # 끄고 싶으면 run.sh 에서 AWARD_RECOVERY_ENABLED=false 로 넘긴다.
+
+# 로그를 줄인다. 재는 대상이 서비스가 아니라 로그 출력이 되면 안 된다.
+#
+# 우리 코드까지 warn 으로 내리는 이유는 요청 경로에 INFO 로그가 여럿 있기 때문이다.
+#   DomainEventSseListener  입찰 1건 = 1줄. AFTER_COMMIT 이라 입찰 응답 경로 안에 있는데
+#                           upbid.sse.broadcast 타이머보다 앞이라 어느 지표에도 안 잡힌다.
+#                           응답 p95 만 조용히 부풀고 원인은 안 보인다
+#   RoomSseManager          SSE 접속·종료마다 1줄. 800개를 붙이면 접속만으로 800줄
+#   AuctionItemCloseService 마감 시도마다 1줄
+#
+# 잃는 건 없다. 마감 실패는 log.error, SSE 전송 실패는 log.warn 이라 그대로 남고,
+# 마감 지연은 이제 upbid.auction.close.delay 로 잰다.
+logging:
+  level:
+    root: warn
+    com.hot6ix.upbid: warn
+
+# 실제로는 안 쓰지만 없으면 부팅이 안 되는 값들.
+# KakaoProperties·NaverSensProperties 가 @ConfigurationProperties 라 바인딩 시점에
+# placeholder 를 해석하고, 못 찾으면 컨텍스트가 뜨지 않는다.
+# 부하 측정에서는 카카오 로그인 대신 dev-login 을, SMS 인증 대신 아무것도 쓰지 않는다.
+oauth:
+  kakao:
+    client-id: perf-unused
+    redirect-uri: http://localhost/perf-unused
+ncp:
+  sms:
+    access-key: perf-unused
+    secret-key: perf-unused
+    service-id: perf-unused
+    send-from: 00000000000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # health 는 run.sh 의 기동 대기와 부하 발생기 한계 측정(capacity.js)이 쓴다.
+        include: health,metrics,prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    # 실행마다 다른 값을 모든 지표에 라벨로 붙인다.
+    #
+    # 이게 없으면 실행을 갈아도 시계열 이름이 같다. 도커가 컨테이너 IP 를 재사용하면
+    # instance 라벨까지 같아져서, 새 컨테이너에 아직 안 생긴 지표를 조회할 때
+    # Prometheus 가 5분 lookback 으로 **직전 실행의 마지막 값**을 돌려준다.
+    # 그 값을 구간 시작값으로 쓰면 증가분이 음수로 나온다 (실측으로 확인).
+    #
+    # run.sh 가 실행 이름을 PERF_RUN_ID 로 넣어 준다.
+    tags:
+      run: ${PERF_RUN_ID:unknown}
+    distribution:
+      # 이걸 켜야 _bucket 시계열이 생기고 histogram_quantile 로 p95 를 뽑을 수 있다.
+      # 켜지 않으면 Timer 는 count/sum/max 만 내보내서 p95 를 구할 방법이 없다.
+      #
+      # upbid 는 접두사 매칭이라 커스텀 지표 여섯 개가 이 한 줄로 전부 켜진다.
+      percentiles-histogram:
+        http.server.requests: true
+        upbid: true
+        # 커넥션을 받기까지 기다린 시간. pending 은 "몇 개가 줄 서 있나"만 알려주는데
+        # 이건 "얼마나 오래 기다렸나"를 알려줘서, 커넥션이 모자란 것과 락 때문에
+        # 커넥션을 오래 붙잡는 것을 가른다.
+        hikaricp.connections.acquire: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+
+server:
+  tomcat:
+    mbeanregistry:
+      # 이게 없으면 tomcat_threads_busy_threads 가 통째로 안 나온다. 스레드가 200 근처인지
+      # 여유로운지를 못 보면 "자원은 노는데 처리량이 안 오른다"를 말할 수 없다.
+      enabled: true

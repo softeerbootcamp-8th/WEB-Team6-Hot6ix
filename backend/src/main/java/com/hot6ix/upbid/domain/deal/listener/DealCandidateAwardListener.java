@@ -19,7 +19,8 @@ public class DealCandidateAwardListener {
     /**
      * 마감이 커밋된 뒤에만 후보를 만든다. 롤백된 마감으로 낙찰자가 생기면 안 된다.
      * 예외를 삼키는 것은 이미 커밋된 마감을 되돌릴 수 없는데 예외가 전파되면 성공한 마감이
-     * 실패로 보이기 때문이다. 재시도는 없으므로 실패하면 로그를 보고 수동 복구한다.
+     * 실패로 보이기 때문이다. 여기서 재시도하지 않는 이유는 {@code DealAwardRecoveryRunner}가
+     * 맡기 때문이다.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(ItemEnded event) {

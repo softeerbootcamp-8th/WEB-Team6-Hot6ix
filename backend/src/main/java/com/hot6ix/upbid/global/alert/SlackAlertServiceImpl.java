@@ -1,7 +1,9 @@
 package com.hot6ix.upbid.global.alert;
 
+import com.hot6ix.upbid.global.logging.TraceIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -75,9 +77,12 @@ public class SlackAlertServiceImpl implements SlackAlertService {
                 .map(StackTraceElement::toString)
                 .reduce("", (a, b) -> a + "\n  at " + b);
 
+        String traceId = MDC.get(TraceIdFilter.TRACE_ID);
+
         return String.format("""
                 🚨 *[ERROR]* `%s %s`
                 *시각*: %s
+                *Trace ID*: `%s`
                 *예외*: `%s`
                 *메시지*: %s
                 *스택트레이스*:
@@ -86,6 +91,7 @@ public class SlackAlertServiceImpl implements SlackAlertService {
                 request.getMethod(),
                 request.getRequestURI(),
                 LocalDateTime.now().format(FORMATTER),
+                traceId != null ? traceId : "-",
                 e.getClass().getSimpleName(),
                 e.getMessage(),
                 stackTrace

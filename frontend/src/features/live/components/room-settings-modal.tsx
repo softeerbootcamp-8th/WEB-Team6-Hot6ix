@@ -18,6 +18,11 @@ import {
 } from '@/features/seller/use-image-upload'
 import { PresignedUrlRequestDtoDomain } from '@/api/generated/model'
 import { toast } from '@/lib/toast'
+import {
+  MAX_SOFT_CLOSE_MINUTES,
+  MIN_SOFT_CLOSE_MINUTES,
+  softCloseMinutesError,
+} from '@/features/rooms/soft-close'
 import type {
   AuctionRoomPublicResponseDto,
   AuctionRoomUpdateRequestDto,
@@ -149,6 +154,17 @@ function RoomSettingsForm({
       setError('경매방 이름을 2자 이상 입력해주세요.')
       return
     }
+    /*
+     * 서버가 어차피 400 으로 거절하는데, 그때는 커버 이미지가 이미 S3 에 올라간
+     * 뒤라 쓰지 않는 파일이 남는다. 값이 잠긴 방(locked)은 애초에 patch 에서 빠진다.
+     */
+    if (
+      !locked &&
+      (softCloseMinutesError(triggerMinutes) !== undefined ||
+        softCloseMinutesError(extendMinutes) !== undefined)
+    ) {
+      return
+    }
     if (!changed) {
       onClose()
       return
@@ -278,19 +294,23 @@ function RoomSettingsForm({
             label="마감 임박 기준"
             unit="분"
             steps={[1]}
-            min={1}
+            min={MIN_SOFT_CLOSE_MINUTES}
+            max={MAX_SOFT_CLOSE_MINUTES}
             value={triggerMinutes}
             disabled={locked}
             onValueChange={setTriggerMinutes}
+            error={softCloseMinutesError(triggerMinutes)}
           />
           <NumberField
             label="연장 시간"
             unit="분"
             steps={[1]}
-            min={1}
+            min={MIN_SOFT_CLOSE_MINUTES}
+            max={MAX_SOFT_CLOSE_MINUTES}
             value={extendMinutes}
             disabled={locked}
             onValueChange={setExtendMinutes}
+            error={softCloseMinutesError(extendMinutes)}
           />
         </div>
 

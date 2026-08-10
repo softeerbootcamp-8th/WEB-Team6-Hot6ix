@@ -15,10 +15,10 @@ import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
+import lombok.RequiredArgsConstructor;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Objects;
-import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +33,8 @@ public class BidService {
     private final UserRepository userRepository;
     private final DomainEventPublisher domainEventPublisher;
     private final Clock clock;
+    /** 계측은 이 객체가 안다. 서비스는 "무엇을 잰다"만 알고 Micrometer 는 모른다. */
+    private final BidMetrics bidMetrics;
 
     /**
      * 입찰을 접수해 기록을 남기고 물품의 현재가·최고 입찰자를 갱신한다.
@@ -84,9 +86,10 @@ public class BidService {
 
         validateEntitled(auctionItemId, bidder, sellerUserId);
 
-        // 락 시작
-        AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(auctionItemId)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+        // 락 시작. 여기서 기다린 시간을 잰다 (자세한 이유는 BidMetrics 참고).
+        AuctionItem auctionItem = bidMetrics.recordLockWait(() ->
+                auctionItemRepository.findByIdForUpdate(auctionItemId)
+                        .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND)));
 
         LocalDateTime now = LocalDateTime.now(clock);
 

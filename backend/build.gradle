@@ -30,6 +30,11 @@ dependencies {
 	// API Documentation
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.0.2'
 
+	// 계측 — actuator가 micrometer-core를 이미 끌고 오므로 레지스트리만 추가한다.
+	// 버전은 Boot BOM이 관리한다.
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'io.micrometer:micrometer-registry-prometheus'
+
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
@@ -66,4 +71,16 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+}
+
+// 개발용 정적 페이지는 운영 jar 에 안 싣는다.
+//
+// static/ 아래에 두면 모든 프로파일에서 서빙돼서, 운영 주소로도 그대로 열린다.
+// 부르는 API 가 @Profile("local","perf") 라 실제로 동작하지는 않지만, 방을 만드는 순서와
+// API 경로, 에러 코드가 화면에 다 적혀 있어서 내부 도구가 밖에 노출되는 셈이다.
+//
+// bootRun 은 build/resources/main 을 직접 보므로 로컬 개발에는 영향이 없다.
+tasks.named('bootJar') {
+	exclude 'static/dev-console.html'
+	exclude 'static/sse-test.html'
 }

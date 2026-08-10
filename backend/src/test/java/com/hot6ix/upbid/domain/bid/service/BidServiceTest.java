@@ -28,6 +28,7 @@ import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
 import com.hot6ix.upbid.support.ScriptedClock;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -86,7 +87,7 @@ class BidServiceTest {
 
     private BidService newBidService(Clock clock) {
         return new BidService(bidRepository, auctionItemRepository, userRepository,
-                domainEventPublisher, clock);
+                domainEventPublisher, clock, new BidMetrics(new SimpleMeterRegistry()));
     }
 
     /**

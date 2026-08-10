@@ -68,6 +68,10 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     private AuctionItem newAuctionItem(String productName) {
+        return newAuctionItem(productName, AuctionItemStatus.SOLD);
+    }
+
+    private AuctionItem newAuctionItem(String productName, AuctionItemStatus status) {
         AuctionRoom auctionRoom = entityManager.persist(AuctionRoom.builder()
                 .bidIncrement(1_000L)
                 .sellerProfile(sellerProfile)
@@ -85,7 +89,7 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
                 .product(product)
                 .startingPrice(10_000L)
                 .bidIncrement(1_000L)
-                .status(AuctionItemStatus.SOLD)
+                .status(status)
                 .endAt(LocalDateTime.of(2026, 7, 29, 21, 0))
                 .build());
     }
@@ -160,6 +164,80 @@ class DealCandidateRepositoryTest extends AbstractMySqlContainerTest {
 
         assertThat(dealCandidateRepository
                 .existsCandidate(auctionItem.getAuctionItemId())).isFalse();
+    }
+
+    @Test
+    @DisplayName("낙찰됐는데 후보가 없는 물품을 물품 ID 순서로 찾는다")
+    void findAwardRecoveryTargetsFindsSoldItemsWithoutCandidate() {
+
+        newBid(auctionItem, newUser("first@hot6ix.com", "원기"), 15_000L);
+
+        AuctionItem another = newAuctionItem("키링");
+        newBid(another, newUser("second@hot6ix.com", "승민"), 20_000L);
+
+        Long firstItemId = auctionItem.getAuctionItemId();
+        Long firstRoomId = auctionItem.getAuctionRoom().getAuctionRoomId();
+        Long secondItemId = another.getAuctionItemId();
+        entityManager.flush();
+        entityManager.clear();
+
+        List<AwardRecoveryTargetProjection> targets =
+                dealCandidateRepository.findAwardRecoveryTargets();
+
+        assertThat(targets)
+                .extracting(AwardRecoveryTargetProjection::auctionItemId)
+                .containsExactly(firstItemId, secondItemId);
+        assertThat(targets.getFirst().auctionRoomId())
+                .as("award 가 낙찰 권한 이벤트를 발행할 때 방 ID를 쓴다")
+                .isEqualTo(firstRoomId);
+    }
+
+    @Test
+    @DisplayName("후보가 이미 있는 물품은 복구 대상이 아니다")
+    void findAwardRecoveryTargetsExcludesItemWithCandidate() {
+
+        newBid(auctionItem, newUser("bidder@hot6ix.com", "원기"), 15_000L);
+        newCandidate(auctionItem, "candidate@hot6ix.com", 1, 15_000L);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(dealCandidateRepository.findAwardRecoveryTargets()).isEmpty();
+    }
+
+    /**
+     * 후보가 0건인 게 정상인 물품이다. {@code insertCandidatesFromBids}가 탈퇴 회원을 걸러내므로
+     * 다시 불러도 결과가 같은데, 대상에 담으면 복구가 돌 때마다 물품 행 락을 잡고 아무것도 하지
+     * 않는 헛일이 반복된다.
+     */
+    @Test
+    @DisplayName("입찰이 없거나 입찰자가 전원 탈퇴한 물품은 복구 대상이 아니다")
+    void findAwardRecoveryTargetsExcludesItemsThatShouldHaveNoCandidate() {
+
+        User withdrawn = newUser("gone@hot6ix.com", "탈퇴함");
+        withdrawn.softDelete(LocalDateTime.of(2026, 7, 30, 9, 0));
+        newBid(auctionItem, withdrawn, 15_000L);
+
+        newAuctionItem("입찰없는물품");
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(dealCandidateRepository.findAwardRecoveryTargets()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("아직 진행 중이거나 유찰된 물품은 복구 대상이 아니다")
+    void findAwardRecoveryTargetsExcludesNotSoldItems() {
+
+        AuctionItem inProgress = newAuctionItem("진행중물품", AuctionItemStatus.IN_PROGRESS);
+        newBid(inProgress, newUser("a@hot6ix.com", "가"), 15_000L);
+
+        AuctionItem failed = newAuctionItem("유찰물품", AuctionItemStatus.FAILED);
+        newBid(failed, newUser("b@hot6ix.com", "나"), 16_000L);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(dealCandidateRepository.findAwardRecoveryTargets()).isEmpty();
     }
 
     @Test

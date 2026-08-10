@@ -11,10 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
-import com.hot6ix.upbid.global.event.payload.ItemEnded;
-import com.hot6ix.upbid.global.event.payload.ItemPassed;
-import com.hot6ix.upbid.global.event.payload.ItemStarted;
-import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -27,17 +24,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.test.util.ReflectionTestUtils;
 
+/**
+ * 예약을 메모리에 담고 실행하는 부분만 본다. 어떤 이벤트에 예약을 걸고 취소하는지는
+ * {@link AuctionCloseScheduleListener}가 정하므로 {@code AuctionCloseScheduleListenerTest}가 맡는다.
+ */
 @ExtendWith(MockitoExtension.class)
-class AuctionCloseSchedulerTest {
+class InMemoryAuctionCloseSchedulerTest {
 
-    private static final Long ROOM_ID = 10L;
     private static final Long ITEM_ID = 30L;
-    private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 8, 2, 21, 0);
     private static final LocalDateTime END_AT = LocalDateTime.of(2026, 8, 2, 21, 10);
     /** Soft Close로 30초 밀린 마감 시각. */
     private static final LocalDateTime EXTENDED_END_AT = END_AT.plusSeconds(30);
@@ -48,16 +47,22 @@ class AuctionCloseSchedulerTest {
     @Mock
     private AuctionItemCloseService auctionItemCloseService;
 
+    /** 아무 데도 안 내보내는 레지스트리. 아래 지표 테스트가 여기서 값을 읽는다. */
+    private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+    @Spy
+    private AuctionCloseMetrics auctionCloseMetrics = new AuctionCloseMetrics(registry);
+
     @InjectMocks
-    private AuctionCloseScheduler auctionCloseScheduler;
+    private InMemoryAuctionCloseScheduler auctionCloseScheduler;
 
     @Test
-    @DisplayName("시작 이벤트를 받으면 마감 시각에 예약한다")
+    @DisplayName("받은 마감 시각에 예약한다")
     void schedulesAtEndAt() {
 
         givenScheduledFuture();
 
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
 
         ArgumentCaptor<Instant> captor = ArgumentCaptor.forClass(Instant.class);
         verify(taskScheduler).schedule(any(Runnable.class), captor.capture());
@@ -66,24 +71,12 @@ class AuctionCloseSchedulerTest {
     }
 
     @Test
-    @DisplayName("예약 등록이 실패해도 시작 요청까지 실패시키지 않는다")
-    void swallowsScheduleFailure() {
-
-        when(taskScheduler.schedule(any(Runnable.class), any(Instant.class)))
-                .thenThrow(new TaskRejectedException("스케줄러가 내려가는 중"));
-
-        assertThatCode(() -> auctionCloseScheduler.on(itemStarted()))
-                .as("커밋 뒤에 도는 리스너라, 여기서 던지면 이미 시작된 물품인데 시작 API가 실패한다")
-                .doesNotThrowAnyException();
-    }
-
-    @Test
     @DisplayName("예약된 작업이 실행되면 그 물품의 마감을 위임한다")
     void delegatesToCloseService() {
 
         givenScheduledFuture();
         givenClosed();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
 
         scheduledTask().run();
 
@@ -91,11 +84,94 @@ class AuctionCloseSchedulerTest {
     }
 
     @Test
+    @DisplayName("마감한 실행의 소요 시간을 closed 로 기록한다")
+    void recordsDurationAsClosed() {
+
+        givenScheduledFuture();
+        givenClosed();
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
+
+        scheduledTask().run();
+
+        assertThat(durationCount("closed")).isEqualTo(1);
+        assertThat(durationCount("rescheduled")).isZero();
+    }
+
+    @Test
+    @DisplayName("재예약으로 끝난 실행은 rescheduled 로 기록한다")
+    void recordsDurationAsRescheduled() {
+
+        givenScheduledFuture();
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
+        when(auctionItemCloseService.closeIfDue(ITEM_ID)).thenReturn(Optional.of(EXTENDED_END_AT));
+
+        scheduledTask().run();
+
+        assertThat(durationCount("rescheduled"))
+                .as("재예약을 closed 에 섞으면 실제로 닫은 마감의 p95 가 흐려진다")
+                .isEqualTo(1);
+        assertThat(durationCount("closed")).isZero();
+    }
+
+    @Test
+    @DisplayName("락을 기다린 시간은 지연이 아니라 소요 시간에 잡힌다")
+    void keepsLockWaitOutOfDelay() {
+
+        long lockWaitMillis = 60L;
+
+        givenScheduledFuture();
+        // 예정 시각을 지금으로 두면 "늦게 깨어난 시간"이 0에 가깝다. 그 상태에서 마감이 오래
+        // 걸리게 만들면 두 지표가 확실히 갈린다.
+        auctionCloseScheduler.schedule(ITEM_ID, LocalDateTime.now());
+        when(auctionItemCloseService.closeIfDue(ITEM_ID)).thenAnswer(invocation -> {
+            Thread.sleep(lockWaitMillis);
+            return Optional.empty();
+        });
+
+        scheduledTask().run();
+
+        assertThat(totalMillis("upbid.auction.close.delay", null))
+                .as("예전에는 마감을 부른 뒤에 지연을 재서 락 대기가 여기 섞였다")
+                .isLessThan(lockWaitMillis);
+        assertThat(totalMillis("upbid.auction.close.duration", "closed"))
+                .isGreaterThanOrEqualTo(lockWaitMillis);
+    }
+
+    @Test
+    @DisplayName("마감이 실패하면 예외 종류를 이유로 세어 둔다")
+    void countsFailureWithReason() {
+
+        givenScheduledFuture();
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
+        doThrow(new IllegalStateException("DB 연결 끊김"))
+                .when(auctionItemCloseService).closeIfDue(ITEM_ID);
+
+        scheduledTask().run();
+
+        assertThat(registry.find("upbid.auction.close.failures")
+                .tag("reason", "IllegalStateException")
+                .counter().count())
+                .as("락 타임아웃과 그 밖의 실패를 갈라야 재시도가 의미 있는지 말할 수 있다")
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("마감이 한 번도 안 일어나도 두 소요 시간 지표가 미리 만들어져 있다")
+    void registersDurationTimersUpFront() {
+
+        // 시계열이 측정 도중에 생기면 run.sh 가 구간 증가분을 못 구한다.
+        assertThat(registry.find("upbid.auction.close.duration").tag("result", "closed").timer())
+                .isNotNull();
+        assertThat(registry.find("upbid.auction.close.duration").tag("result", "rescheduled").timer())
+                .isNotNull();
+    }
+
+    @Test
     @DisplayName("마감이 실패해도 예외가 스케줄러 스레드로 전파되지 않는다")
     void swallowsFailure() {
 
         givenScheduledFuture();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
         doThrow(new IllegalStateException("DB 연결 끊김"))
                 .when(auctionItemCloseService).closeIfDue(ITEM_ID);
 
@@ -112,7 +188,7 @@ class AuctionCloseSchedulerTest {
 
         givenScheduledFuture();
         givenClosed();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
         assertThat(schedules()).containsKey(ITEM_ID);
 
         scheduledTask().run();
@@ -140,27 +216,11 @@ class AuctionCloseSchedulerTest {
     }
 
     @Test
-    @DisplayName("Soft Close 연장을 받으면 밀린 마감 시각으로 예약을 갈아 끼운다")
-    void reschedulesOnSoftCloseExtended() {
-
-        givenScheduledFuture();
-
-        auctionCloseScheduler.on(SoftCloseExtended.of(
-                ROOM_ID, ITEM_ID, "한정판 피규어", 30, EXTENDED_END_AT, END_AT));
-
-        ArgumentCaptor<Instant> captor = ArgumentCaptor.forClass(Instant.class);
-        verify(taskScheduler).schedule(any(Runnable.class), captor.capture());
-
-        assertThat(captor.getValue())
-                .isEqualTo(EXTENDED_END_AT.atZone(ZoneId.systemDefault()).toInstant());
-    }
-
-    @Test
     @DisplayName("아직 마감 시각이 아니라는 답을 받으면 그 시각으로 다시 예약한다")
     void reschedulesWhenNotDueYet() {
 
         givenScheduledFuture();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
         when(auctionItemCloseService.closeIfDue(ITEM_ID)).thenReturn(Optional.of(EXTENDED_END_AT));
 
         // 캡처를 먼저 해둔다. 실행하면 재예약이 일어나 schedule 호출이 두 번이 된다.
@@ -177,50 +237,32 @@ class AuctionCloseSchedulerTest {
     }
 
     @Test
-    @DisplayName("낙찰로 마감되면 남은 예약을 취소한다")
-    void cancelsScheduleOnItemEnded() {
+    @DisplayName("취소하면 걸려 있던 예약을 끊고 핸들도 버린다")
+    void cancelsSchedule() {
 
         ScheduledFuture<?> schedule = givenScheduledFuture();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
 
-        auctionCloseScheduler.on(ItemEnded.of(ROOM_ID, ITEM_ID, "한정판 피규어", 12_000L, "한기", END_AT));
+        auctionCloseScheduler.cancel(ITEM_ID);
 
         verify(schedule).cancel(false);
         assertThat(schedules())
-                .as("방 종료로 먼저 닫힌 물품의 예약이 남으면 방 길이만큼 핸들이 메모리에 머문다")
+                .as("먼저 닫힌 물품의 예약이 남으면 마감 시각까지 핸들이 메모리에 머문다")
                 .isEmpty();
     }
 
     @Test
-    @DisplayName("유찰로 마감돼도 남은 예약을 취소한다")
-    void cancelsScheduleOnItemPassed() {
-
-        ScheduledFuture<?> schedule = givenScheduledFuture();
-        auctionCloseScheduler.on(itemStarted());
-
-        auctionCloseScheduler.on(ItemPassed.of(ROOM_ID, ITEM_ID, "한정판 피규어", END_AT));
-
-        verify(schedule).cancel(false);
-        assertThat(schedules()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("예약이 스스로 실행돼 마감한 경우에는 취소할 대상이 없다")
+    @DisplayName("예약이 스스로 실행돼 마감한 뒤에 취소하면 아무 일도 하지 않는다")
     void cancelIsNoopAfterRun() {
 
         givenScheduledFuture();
         givenClosed();
-        auctionCloseScheduler.on(itemStarted());
+        auctionCloseScheduler.schedule(ITEM_ID, END_AT);
         scheduledTask().run();
 
-        assertThatCode(() -> auctionCloseScheduler.on(
-                ItemPassed.of(ROOM_ID, ITEM_ID, "한정판 피규어", END_AT)))
+        assertThatCode(() -> auctionCloseScheduler.cancel(ITEM_ID))
                 .as("실행이 시작된 예약은 이미 핸들을 버린 뒤라 취소가 겉돌아야 한다")
                 .doesNotThrowAnyException();
-    }
-
-    private ItemStarted itemStarted() {
-        return ItemStarted.of(ROOM_ID, ITEM_ID, "한정판 피규어", STARTED_AT, END_AT);
     }
 
     /**
@@ -249,5 +291,21 @@ class AuctionCloseSchedulerTest {
     private Map<Long, ScheduledFuture<?>> schedules() {
         return (Map<Long, ScheduledFuture<?>>)
                 ReflectionTestUtils.getField(auctionCloseScheduler, "schedules");
+    }
+
+    /** 그 결과 태그로 기록된 마감 건수. */
+    private long durationCount(String result) {
+        return registry.find("upbid.auction.close.duration").tag("result", result).timer().count();
+    }
+
+    /** 지표에 쌓인 총 시간(ms). 태그가 없으면 {@code null}을 준다. */
+    private long totalMillis(String name, String result) {
+        io.micrometer.core.instrument.search.Search search = registry.find(name);
+
+        if (result != null) {
+            search = search.tag("result", result);
+        }
+
+        return (long) search.timer().totalTime(java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 }

@@ -38,6 +38,14 @@ public class AuctionItem extends BaseTimeEntity {
      */
     public static final int MAX_TOTAL_EXTENSION_SECONDS = 3600;
 
+    /**
+     * 경매방에 Soft Close 트리거가 없을 때 {@link #closeEarly}가 대신 쓰는 값. 경매방 생성
+     * 요청에서 트리거는 필수이고 최소 60초라 정상 경로로는 비어 있을 수 없지만, 컬럼이
+     * nullable이라 방어값이 필요하다. 생성 API가 허용하는 최소값과 같은 값을 쓴다 — 다른
+     * 값을 두면 화면이 만들 수 없는 마감 시각이 이 경로에서만 생긴다.
+     */
+    public static final int DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS = 60;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "auction_item_id")
@@ -141,6 +149,58 @@ public class AuctionItem extends BaseTimeEntity {
      */
     public void close() {
         this.status = leaderUser != null ? AuctionItemStatus.SOLD : AuctionItemStatus.FAILED;
+    }
+
+    /**
+     * 마감을 <b>Soft Close 연장 구간이 열리는 순간</b>({@code 지금 + 트리거 초})으로 앞당긴다.
+     * 판매자가 물품을 빨리 넘기고 싶을 때 쓰며, 상태·소유자 검증은 Service가 마치고 호출한다.
+     *
+     * <p>지금 바로 닫지 않고 트리거만큼 남겨두는 것은 <b>구매자에게 얼마나 남았는지 알릴 수
+     * 있게</b> 하려는 것이다. 앞당긴 뒤에도 {@link #extendIfClosingSoon}은 그대로 살아 있어,
+     * 이 구간에 입찰이 들어오면 지금까지처럼 마감이 밀린다.
+     *
+     * <p><b>마감을 뒤로 밀지는 않는다.</b> 이미 연장 구간 안이면(= 남은 시간이 트리거보다
+     * 짧으면) 앞당길 자리가 없으므로 아무 값도 바꾸지 않고 {@code false}를 돌려준다. 부르는
+     * 쪽은 이걸 거절로 옮긴다.
+     *
+     * <p>{@code originalEndAt}과 {@code totalExtensionSeconds}는 건드리지 않는다. 앞은 원래
+     * 마감이 언제였는지를 남기는 값이라 앞당겼다고 달라지지 않고, 뒤는 연장 누적이라 앞당기기가
+     * 더할 것이 없다.
+     *
+     * <p>연장이 {@code endAt}을 바꾸는 다른 경로와 마찬가지로 <b>물품 행 락을 잡은 채</b>
+     * 불러야 하고, 호출한 쪽은 걸어둔 마감 예약을 새 시각으로 갈아 끼워야 한다.
+     *
+     * @param now 새 마감 시각의 기준. 같은 트랜잭션의 다른 검증과 <b>같은 값</b>을 받아야 한다
+     * @return 앞당겼으면 {@code true}. {@code false}면 아무 값도 바뀌지 않았다
+     */
+    public boolean closeEarly(LocalDateTime now) {
+
+        if (endAt == null) {
+            return false;
+        }
+
+        LocalDateTime advancedEndAt = now.plusSeconds(resolveSoftCloseTriggerSeconds());
+
+        if (!advancedEndAt.isBefore(endAt)) {
+            return false;
+        }
+
+        this.endAt = advancedEndAt;
+
+        return true;
+    }
+
+    /**
+     * 이 물품이 속한 경매방의 Soft Close 트리거 초. 값이 없으면
+     * {@link #DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS}다.
+     *
+     * <p>{@link #extendIfClosingSoon}은 이 기본값을 쓰지 않고 설정이 없으면 연장하지 않는다.
+     * 연장은 마감을 뒤로 미는 일이라 설정하지 않은 방에서 임의로 일어나면 안 되지만, 앞당기기는
+     * 판매자가 직접 누른 조작이라 기준이 없다고 거절할 이유가 없다.
+     */
+    private int resolveSoftCloseTriggerSeconds() {
+        Integer triggerSeconds = auctionRoom.getSoftCloseTriggerSeconds();
+        return triggerSeconds != null ? triggerSeconds : DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS;
     }
 
     /**

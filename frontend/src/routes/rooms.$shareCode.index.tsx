@@ -8,13 +8,14 @@ import {
   type ReactNode,
 } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Minus, Plus, Search, X } from 'lucide-react'
+import { ArrowRight, Minus, Plus, Search, X } from 'lucide-react'
 
 import {
   getGetDetail1QueryKey,
   getGetSummariesQueryKey,
   useGetDetail1,
   useAddAll,
+  useCloseEarly,
   useGetSummaries,
   useRemove,
   useStart,
@@ -28,6 +29,7 @@ import {
   useGetRoomByShareCode,
 } from '@/api/generated/경매방/경매방'
 import { usePlace } from '@/api/generated/입찰/입찰'
+import { useGetRecentEvents } from '@/api/generated/sse/sse'
 import { mergeItemDetail, toAuctionItems } from '@/features/live/adapt-item'
 import { toRoomResult } from '@/features/live/adapt-result'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
@@ -37,6 +39,7 @@ import {
   type AuctionStartFlashState,
 } from '@/features/live/components/auction-start-flash'
 import { preloadLiveMotion } from '@/features/live/preload-motion'
+import { toInitialRoomEvents } from '@/features/live/recent-events'
 import {
   SOFT_CLOSE_FLASH_MS,
   type SoftCloseFlash,
@@ -70,7 +73,7 @@ import { RouteError, RoutePending } from '@/components/route-states'
 import { SharePanel } from '@/features/live/components/share-panel'
 import { cn } from '@/lib/utils'
 import { useCountdown } from '@/hooks/use-countdown'
-import { formatClosingLead, formatWon } from '@/lib/format'
+import { formatClosingLead, formatRemaining, formatWon } from '@/lib/format'
 import { toast } from '@/lib/toast'
 import { useDevTools } from '@/lib/dev-tools'
 import { useCurrentUser } from '@/lib/session'
@@ -207,6 +210,38 @@ function LiveRoomPage() {
   })
 
   /**
+   * 새로고침 등으로 화면을 다시 열면 알림 피드(extraEvents)가 비어 있다.
+   * 서버 버퍼에 남아있는 최근 이벤트를 받아와 미리 채운다.
+   *
+   * `items`(입찰가·리더보드 등)는 이미 최신 REST 응답을 반영하고 있어서,
+   * 이 응답을 `handleSseEvent`처럼 처리하면 지나간 입찰이 다시 더해져
+   * 입찰 수·리더보드가 중복으로 갱신된다. 그래서 피드용 변환만 거친다.
+   *
+   * staleTime·refetchOnMount는 앱 기본값(1분, 켜짐)을 그대로 쓴다. 예전에는
+   * 둘 다 꺼서 마운트당 한 번만 부르게 했는데, 그러면 방을 나갔다 돌아와도
+   * react-query 캐시가 "영원히 신선"하다고 여겨 그사이 쌓인 알림을 놓쳤다.
+   */
+  const recentEventsQuery = useGetRecentEvents(shareCode)
+  const appliedRecentEventsRef = useRef(false)
+
+  useEffect(() => {
+    if (appliedRecentEventsRef.current) return
+    const events = recentEventsQuery.data?.data
+    if (!events) return
+
+    appliedRecentEventsRef.current = true
+    const initialEvents = toInitialRoomEvents(events)
+    if (initialEvents.length === 0) return
+
+    // 그사이 SSE 로 이미 들어온 이벤트와 겹치면 뺀다.
+    setExtraEvents((prev) => {
+      const knownIds = new Set(prev.map((event) => event.id))
+      const fresh = initialEvents.filter((event) => !knownIds.has(event.id))
+      return [...fresh, ...prev]
+    })
+  }, [recentEventsQuery.data])
+
+  /**
    * SSE 이벤트 수신 핸들러.
    *
    * 이벤트 피드(extraEvents)와 물품 상태(items)를 동시에 갱신한다.
@@ -230,7 +265,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'START',
               itemId: payload.itemId,
-              message: `${payload.itemName} 경매가 시작됐어요`,
+              itemName: payload.itemName,
+              message: '경매가 시작됐어요',
             },
           ])
           setItems((prev) =>
@@ -269,7 +305,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'CLOSE',
               itemId: payload.itemId,
-              message: `${payload.itemName} 마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
+              itemName: payload.itemName,
+              message: `마감 ${formatClosingLead(payload.remainingSeconds)} 전`,
               emphasized: true,
             },
           ])
@@ -283,8 +320,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'BID',
               itemId: payload.itemId,
+              itemName: payload.itemName,
               message: `${payload.bidderNickname}님이 ${formatWon(payload.bidPrice)} 입찰`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -325,8 +362,8 @@ function LiveRoomPage() {
               at: new Date().toISOString(),
               kind: 'EXTEND',
               itemId: payload.itemId,
+              itemName: payload.itemName,
               message: `마감 직전 입찰 발생 · 마감 +${payload.extendSeconds <= 60 ? `${payload.extendSeconds}초` : `${Math.floor(payload.extendSeconds / 60)}분`} 자동 연장`,
-              subtitle: payload.itemName,
               emphasized: true,
             },
           ])
@@ -350,23 +387,51 @@ function LiveRoomPage() {
           }))
           break
 
+        case 'ItemCloseAdvanced':
+          setExtraEvents((prev) => [
+            ...prev,
+            {
+              id: eventId,
+              at: new Date().toISOString(),
+              /*
+               * 연장과 같은 자리에 둔다. 둘 다 "마감 시각이 바뀌었다"는 사건이고
+               * 화면에서도 카운트다운이 함께 점프한다. 마감 임박·유찰(CLOSE)로 두면
+               * 아직 진행 중인 물품이 끝난 것처럼 보인다.
+               */
+              kind: 'EXTEND',
+              itemId: payload.itemId,
+              // 물품명은 문구에 섞지 않고 피드가 이름표로 올린다.
+              itemName: payload.itemName,
+              message: `판매자가 마감 앞당김 · ${formatClosingLead(payload.remainingSeconds)} 뒤 마감`,
+              emphasized: true,
+            },
+          ])
+          // 연장과 같은 이유로 서버가 준 마감 시각을 그대로 쓴다. 직접 빼서 계산하면
+          // 이벤트가 두 번 오거나 유실됐을 때 화면만 서버와 어긋난다.
+          setItems((prev) =>
+            (prev ?? roomItems).map((item) =>
+              item.id === payload.itemId
+                ? { ...item, endsAt: payload.endedTime }
+                : item,
+            ),
+          )
+          break
+
         case 'ItemEnded':
           setExtraEvents((prev) => [
             ...prev,
             {
               id: eventId,
               at: new Date().toISOString(),
-              kind: 'CLOSE',
+              // 낙찰가·낙찰자를 보조 줄로 빼지 않고 입찰 문구와 같은 결로 한 줄에 담는다.
+              kind: payload.winnerNickname ? 'WIN' : 'CLOSE',
               itemId: payload.itemId,
-              message: payload.winnerNickname
-                ? `${payload.itemName} 낙찰 확정`
-                : `${payload.itemName} 경매 종료 · 낙찰자 없음`,
-              // 유찰이면 둘 다 null 이라 낙찰 줄을 붙이지 않는다.
-              ...(payload.winnerNickname &&
-                payload.finalPrice !== null && {
-                  subtitle: `${formatWon(payload.finalPrice)} · ${payload.winnerNickname}님`,
-                  emphasized: true,
-                }),
+              itemName: payload.itemName,
+              message:
+                payload.winnerNickname && payload.finalPrice !== null
+                  ? `${payload.winnerNickname}님이 ${formatWon(payload.finalPrice)}에 낙찰`
+                  : '경매 종료 · 낙찰자 없음',
+              emphasized: true,
             },
           ])
           setItems((prev) =>
@@ -552,6 +617,13 @@ function LiveRoomPage() {
   )
   /** 시작 요청을 서버가 처리 중인 물품. 그 카드의 조작 줄만 잠근다. */
   const [startingItemId, setStartingItemId] = useState<number | null>(null)
+  /** 마감을 앞당길지 확인받는 중인 물품. 다이얼로그 문구에 이름이 들어간다. */
+  const [closingEarlyItem, setClosingEarlyItem] =
+    useState<AuctionItemDetail | null>(null)
+  /** 앞당기기 요청을 서버가 처리 중인 물품. 그 카드의 버튼만 잠근다. */
+  const [closingEarlyItemId, setClosingEarlyItemId] = useState<number | null>(
+    null,
+  )
   /** 판매자가 방 전체를 끝낼 때 한 번 더 확인받는다. */
   const [closingRoom, setClosingRoom] = useState(false)
   /** 판매자가 방 설정을 고치는 중. 라우트를 옮기지 않아 실시간 연결이 유지된다. */
@@ -597,9 +669,15 @@ function LiveRoomPage() {
   const detailMinimum = detailItem
     ? detailItem.currentPrice + detailItem.bidUnit
     : 0
-  // 상세가 닫혀 있으면 지금 시각을 넣어 0 초가 되게 한다(훅은 늘 같은 순서로).
-  const detailRemaining = useCountdown(
-    detailItem?.endsAt ?? new Date().toISOString(),
+  // 상세가 닫혀 있거나 시작 전 물품이면 null 이라 0 초다(훅은 늘 같은 순서로).
+  const detailRemaining = useCountdown(detailItem?.endsAt ?? null)
+
+  /*
+   * 앞당기기 확인 다이얼로그가 "지금 남은 시간 → 앞당긴 뒤 남은 시간"을 보여준다.
+   * 다이얼로그가 닫혀 있을 때 지금 시각을 넣는 것은 상세와 같은 이유다.
+   */
+  const closingEarlyRemaining = useCountdown(
+    closingEarlyItem?.endsAt ?? new Date().toISOString(),
   )
 
   // 상세를 열 때마다 최소 입찰가로 맞춘다.
@@ -624,6 +702,7 @@ function LiveRoomPage() {
 
   const placeBid = usePlace()
   const startItem = useStart()
+  const closeEarlyItem = useCloseEarly()
   const addItems = useAddAll()
   const removeItem = useRemove()
   const closeRoom = useClose()
@@ -689,6 +768,43 @@ function LiveRoomPage() {
       toast.error(title, { description })
     } finally {
       setStartingItemId(null)
+    }
+  }
+
+  /**
+   * 판매자가 진행 중인 물품의 마감을 연장 구간이 열리는 시각으로 앞당긴다.
+   *
+   * 물품이 바로 닫히지는 않는다. 서버가 마감 시각만 당기고, 그 시각에 서버
+   * 스케줄러가 닫는다. 그래서 여기서 화면을 종료로 바꾸지 않고 목록만 다시 읽는다.
+   *
+   * 새 마감 시각은 SSE(`ItemCloseAdvanced`)로도 오지만, 요청한 당사자에게는
+   * 응답이 먼저 도착할 수 있어 목록을 다시 읽어 카운트다운을 맞춘다.
+   */
+  const handleCloseEarly = async () => {
+    if (!closingEarlyItem) return
+
+    const item = closingEarlyItem
+    setClosingEarlyItemId(item.id)
+
+    try {
+      const response = await closeEarlyItem.mutateAsync({
+        auctionItemId: item.id,
+      })
+
+      setClosingEarlyItem(null)
+      toast.success('마감을 앞당겼어요', {
+        description: `${item.name} · ${formatClosingLead(response.data?.remainingSeconds ?? room.softCloseTriggerSeconds)} 뒤 마감`,
+      })
+      refreshItems(item.id)
+    } catch (error) {
+      const { title, description } = toSellerActionErrorMessage(
+        error,
+        'closeEarly',
+      )
+      toast.error(title, { description })
+      setClosingEarlyItem(null)
+    } finally {
+      setClosingEarlyItemId(null)
     }
   }
 
@@ -1095,12 +1211,21 @@ function LiveRoomPage() {
    * 방 종료 확인. 데스크톱·모바일 분기가 갈리므로 한 번 만들어 양쪽에서 쓴다.
    * 예전에는 데스크톱 분기에만 있어서 모바일에서는 눌러도 아무 일이 없었다.
    */
+  /*
+   * 진행 중인 물품은 마감 시각이 남아 있어도 함께 닫힌다(`AuctionRoomCloseService`).
+   * 몇 개가 딸려 닫히는지 세어 보여준다 — 그걸 모르고 누르면 아직 입찰을 받고 있던
+   * 물품이 그대로 마감되고, 되돌릴 방법이 없다.
+   */
   const closeRoomDialog = (
     <ConfirmDialog
       open={closingRoom}
       tone="danger"
       title="경매방을 종료할까요?"
-      description="진행 중인 물품이 모두 마감되고 낙찰 결과가 확정됩니다. 되돌릴 수 없어요."
+      description={
+        liveItems.length > 0
+          ? `진행 중인 물품 ${liveItems.length}개가 마감 시각과 상관없이 지금 마감되고 낙찰 결과가 확정됩니다. 되돌릴 수 없어요.`
+          : '경매방이 종료되고 참여자는 더 이상 입장할 수 없어요. 되돌릴 수 없어요.'
+      }
       confirmLabel="경매방 종료"
       onCancel={() => setClosingRoom(false)}
       pending={closeRoom.isPending}
@@ -1109,10 +1234,58 @@ function LiveRoomPage() {
   )
 
   /*
+   * 마감 앞당기기 확인. 되돌릴 수 없는 조작이라 한 번 더 묻는다.
+   * 종료 확인과 같은 이유로 한 번 만들어 양쪽 분기에서 쓴다.
+   */
+  const closeEarlyDialog = (
+    <ConfirmDialog
+      open={closingEarlyItem !== null}
+      tone="danger"
+      title="마감을 앞당길까요?"
+      description={
+        closingEarlyItem ? (
+          <>
+            <p className="text-[14px] font-semibold text-foreground">
+              {closingEarlyItem.name}
+            </p>
+
+            {/* 줄글로 적으면 두 시각을 눈으로 대조하기 어려워 한 칸에 모아 둔다. */}
+            <div className="mt-3.5 rounded-xl bg-fill px-4 py-4 text-center">
+              <p className="text-[11px] font-semibold text-neutral-muted">
+                남은 시간
+              </p>
+              <p className="mt-2 flex items-center justify-center gap-3 tabular-nums">
+                <span className="text-[15px] font-semibold text-neutral-tertiary">
+                  {formatRemaining(closingEarlyRemaining)}
+                </span>
+                <ArrowRight
+                  aria-hidden
+                  className="size-3.5 text-neutral-muted"
+                />
+                <span className="text-[18px] font-bold text-live">
+                  {formatRemaining(room.softCloseTriggerSeconds)}
+                </span>
+              </p>
+            </div>
+
+            <p className="mt-4 text-[13px] leading-relaxed">
+              마감 직전 입찰이 들어오면 지금처럼 다시 연장돼요.
+            </p>
+          </>
+        ) : undefined
+      }
+      confirmLabel="앞당기기"
+      pending={closeEarlyItem.isPending}
+      onCancel={() => setClosingEarlyItem(null)}
+      onConfirm={() => void handleCloseEarly()}
+    />
+  )
+
+  /*
    * 방 설정 수정. 종료 확인과 같은 이유로 한 번 만들어 양쪽 분기에서 쓴다.
    *
-   * 어댑터(`toAuctionRoomDetail`)가 `liveUrl`·`softCloseTriggerSeconds` 를
-   * 떨구기 때문에 **가공한 `room` 이 아니라 서버 응답을 그대로 넘긴다.**
+   * 어댑터(`toAuctionRoomDetail`)가 `liveUrl` 을 떨구기 때문에 **가공한 `room` 이
+   * 아니라 서버 응답을 그대로 넘긴다.**
    */
   const roomDto = roomQuery.data?.data
   const settingsModal = roomDto ? (
@@ -1150,6 +1323,8 @@ function LiveRoomPage() {
           isDimmed={(item) => removeMode && item.status !== 'READY'}
           seller={sellerControls}
           onStart={isOwner ? handleStart : undefined}
+          onCloseEarly={isOwner ? setClosingEarlyItem : undefined}
+          closingEarlyItemId={closingEarlyItemId}
           isOwner={isOwner}
           justClosedId={justClosedId}
           justExtended={justExtended}
@@ -1176,6 +1351,8 @@ function LiveRoomPage() {
             <MobileItemDetailView
               item={detailItem}
               sellerName={room.sellerName}
+              softCloseTriggerSeconds={room.softCloseTriggerSeconds}
+              softCloseSeconds={room.softCloseSeconds}
               events={roomEvents.filter(
                 (event) => event.itemId === detailItem.id,
               )}
@@ -1255,6 +1432,7 @@ function LiveRoomPage() {
         </Modal>
 
         {closeRoomDialog}
+        {closeEarlyDialog}
         {settingsModal}
 
         {/*
@@ -1464,7 +1642,10 @@ function LiveRoomPage() {
                   justExtended={justExtended}
                   justStarted={justStarted}
                   startingItemId={startingItemId}
+                  closingEarlyItemId={closingEarlyItemId}
+                  softCloseTriggerSeconds={room.softCloseTriggerSeconds}
                   onStart={isOwner ? handleStart : undefined}
+                  onCloseEarly={isOwner ? setClosingEarlyItem : undefined}
                   onSelect={handleSelectItem}
                 />
               ))}
@@ -1616,6 +1797,7 @@ function LiveRoomPage() {
       />
 
       {closeRoomDialog}
+      {closeEarlyDialog}
       {settingsModal}
 
       <ItemManagement
@@ -1740,8 +1922,8 @@ function makeDemoEvent(
     kind: 'BID',
     // 물품 상세의 로그도 id 로 골라내므로, 데모 이벤트에도 붙여야 거기 보인다.
     itemId,
+    itemName,
     message: `데모입찰러님이 ${amount.toLocaleString('ko-KR')}원 입찰`,
-    subtitle: itemName,
     emphasized: true,
   }
 }

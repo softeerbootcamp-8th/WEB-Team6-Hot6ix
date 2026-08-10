@@ -1,0 +1,14 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    # 대시보드 JSON 이 이 uid 로 데이터소스를 지목한다. 바꾸면 패널이 전부 빈다.
+    uid: upbid-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      # prometheus.yml 의 scrape_interval 과 맞춘다. 어긋나면 Grafana 가 기본 step 을
+      # 제 마음대로 잡아서 rate() 창이 실제 간격과 안 맞는다.
+      timeInterval: 5s

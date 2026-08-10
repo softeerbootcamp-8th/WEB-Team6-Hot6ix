@@ -3,13 +3,18 @@ package com.hot6ix.upbid.domain.sse.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
+import com.hot6ix.upbid.domain.sse.dto.RecentRoomEventDto;
+import com.hot6ix.upbid.global.event.EventType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,22 +32,27 @@ class SseServiceTest {
     @Mock
     private AuctionRoomShareService auctionRoomShareService;
 
+    @Mock
+    private SseEventBuffer sseEventBuffer;
+
     @InjectMocks
     private SseService sseService;
 
     private static final String SHARE_CODE = "abcdefghij123456";
+    private static final Long ROOM_ID = 7L;
 
     @Test
     @DisplayName("구독하면 공유 코드로 방을 찾아 emitter를 돌려준다")
     void subscribe_returnsEmitter() {
 
         SseEmitter emitter = new SseEmitter();
-        when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(7L);
-        when(roomSseManager.subscribe(any(), eq(7L), any())).thenReturn(emitter);
+        when(auctionRoomShareService.resolveOpenRoomId(SHARE_CODE)).thenReturn(7L);
+        when(roomSseManager.subscribe(7L, null)).thenReturn(emitter);
 
-        SseEmitter result = sseService.subscribe(3L, SHARE_CODE);
+        SseEmitter result = sseService.subscribe(3L, SHARE_CODE, null);
 
-        verify(auctionRoomShareService).resolveRoomId(SHARE_CODE);
+        verify(auctionRoomShareService).resolveOpenRoomId(SHARE_CODE);
+        verify(roomSseManager).subscribe(7L, null);
         assertThat(result).isSameAs(emitter);
     }
 
@@ -50,10 +60,85 @@ class SseServiceTest {
     @DisplayName("없는 공유 코드로는 구독하지 못한다")
     void subscribe_unknownShareCode() {
 
+        when(auctionRoomShareService.resolveOpenRoomId("nope"))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        assertThatThrownBy(() -> sseService.subscribe(3L, "nope", null))
+                .isInstanceOf(ApplicationException.class)
+                .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("종료된 경매방은 구독하지 못한다")
+    void subscribe_closedRoom() {
+
+        when(auctionRoomShareService.resolveOpenRoomId(SHARE_CODE))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED));
+
+        // 방을 닫을 때 서버가 연결을 끊지만, EventSource는 스트림 종료를 네트워크 단절과
+        // 구분하지 못해 한 번 다시 붙는다. 그 재접속을 여기서 끊어내야 루프가 멈춘다.
+        assertThatThrownBy(() -> sseService.subscribe(3L, SHARE_CODE, null))
+                .isInstanceOf(ApplicationException.class)
+                .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_CLOSED);
+
+        verify(roomSseManager, never()).subscribe(any(), any());
+    }
+
+    @Test
+    @DisplayName("getRecentEvents()는 알림 피드에 쌓이는 이벤트만 남기고 신호성 이벤트는 뺀다")
+    void getRecentEvents_filtersOutSignalOnlyEvents() {
+        when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
+        when(sseEventBuffer.getAllEvents(ROOM_ID)).thenReturn(List.of(
+                new BufferedEvent(1, EventType.BID_PLACED.name(), "bid", Instant.now()),
+                new BufferedEvent(2, "PARTICIPANT_COUNT_UPDATED", "count", Instant.now()),
+                new BufferedEvent(3, EventType.ROOM_UPDATED.name(), "updated", Instant.now()),
+                new BufferedEvent(4, EventType.ITEM_ADDED.name(), "added", Instant.now()),
+                new BufferedEvent(5, EventType.ITEM_ENDED.name(), "ended", Instant.now())
+        ));
+
+        List<RecentRoomEventDto> result = sseService.getRecentEvents(SHARE_CODE);
+
+        assertThat(result).extracting(RecentRoomEventDto::id).containsExactly(1L, 5L);
+    }
+
+    @Test
+    @DisplayName("getRecentEvents()는 필터 후 20개를 넘으면 가장 최근 20개만 반환한다")
+    void getRecentEvents_returnsOnlyLastTwentyAfterFiltering() {
+        when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
+
+        List<BufferedEvent> events = new ArrayList<>();
+        for (long id = 1; id <= 25; id++) {
+            events.add(new BufferedEvent(id, EventType.BID_PLACED.name(), "bid-" + id, Instant.now()));
+        }
+        when(sseEventBuffer.getAllEvents(ROOM_ID)).thenReturn(events);
+
+        List<RecentRoomEventDto> result = sseService.getRecentEvents(SHARE_CODE);
+
+        assertThat(result).hasSize(20);
+        assertThat(result.get(0).id()).isEqualTo(6L);
+        assertThat(result.get(19).id()).isEqualTo(25L);
+    }
+
+    @Test
+    @DisplayName("getRecentEvents()는 20개 미만이면 있는 만큼만 반환한다")
+    void getRecentEvents_returnsAllWhenFewerThanLimit() {
+        when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
+        when(sseEventBuffer.getAllEvents(ROOM_ID)).thenReturn(List.of(
+                new BufferedEvent(1, EventType.ITEM_STARTED.name(), "started", Instant.now())
+        ));
+
+        List<RecentRoomEventDto> result = sseService.getRecentEvents(SHARE_CODE);
+
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("없는 공유 코드로는 최근 이벤트를 조회하지 못한다")
+    void getRecentEvents_unknownShareCode() {
         when(auctionRoomShareService.resolveRoomId("nope"))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
-        assertThatThrownBy(() -> sseService.subscribe(3L, "nope"))
+        assertThatThrownBy(() -> sseService.getRecentEvents("nope"))
                 .isInstanceOf(ApplicationException.class)
                 .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
     }
