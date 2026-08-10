@@ -5,6 +5,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.CloseContextProjection;
 import com.hot6ix.upbid.domain.auction.scheduler.AuctionCloseMetrics;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -54,13 +55,16 @@ public class AuctionItemCloseService {
     @Transactional
     public void close(Long auctionItemId) {
 
+        CloseContextProjection context = auctionItemRepository.findCloseContext(auctionItemId)
+                .orElse(null);
+
         AuctionItem auctionItem = lockClosableItem(auctionItemId);
 
-        if (auctionItem == null) {
+        if (auctionItem == null || context == null) {
             return;
         }
 
-        closeLocked(auctionItem, LocalDateTime.now());
+        closeLocked(auctionItem, LocalDateTime.now(), context);
     }
 
     /**
@@ -80,9 +84,12 @@ public class AuctionItemCloseService {
     @Transactional
     public Optional<LocalDateTime> closeIfDue(Long auctionItemId) {
 
+        CloseContextProjection context = auctionItemRepository.findCloseContext(auctionItemId)
+                .orElse(null);
+
         AuctionItem auctionItem = auctionCloseMetrics.recordLockWait(() -> lockClosableItem(auctionItemId));
 
-        if (auctionItem == null) {
+        if (auctionItem == null || context == null) {
             return Optional.empty();
         }
 
@@ -94,7 +101,7 @@ public class AuctionItemCloseService {
             return Optional.of(endAt);
         }
 
-        closeLocked(auctionItem, now);
+        closeLocked(auctionItem, now, context);
 
         return Optional.empty();
     }
@@ -195,12 +202,18 @@ public class AuctionItemCloseService {
         return auctionItem;
     }
 
-    /** 락을 잡고 마감 대상임을 확인한 물품을 실제로 닫는다. */
-    private void closeLocked(AuctionItem auctionItem, LocalDateTime occurredAt) {
+    /**
+     * 락을 잡고 마감 대상임을 확인한 물품을 실제로 닫는다.
+     *
+     * @param context 락을 잡기 전에 읽어 둔 값. 방 ID와 상품명을 여기서 꺼내야 락 안에서
+     *                지연 로딩이 안 걸린다
+     */
+    private void closeLocked(AuctionItem auctionItem, LocalDateTime occurredAt,
+                             CloseContextProjection context) {
 
         auctionItem.close();
 
-        domainEventPublisher.publish(toEvent(auctionItem, occurredAt));
+        domainEventPublisher.publish(toEvent(auctionItem, occurredAt, context));
     }
 
     /**
@@ -210,12 +223,17 @@ public class AuctionItemCloseService {
      * <p><b>두 이벤트 모두 아직 화면까지 가지 않는다.</b> {@code DomainEventSseListener}가 SSE로
      * 내보낼 DTO를 만드는 자리에 이 둘의 분기가 없어 로그만 남는다. 실시간 채널은 B·E 담당이라
      * 여기서 함께 고치지 않는다.
+     *
+     * <p>방 ID와 상품명은 {@code context}에서 꺼낸다. 여기서 엔티티를 타고 들어가면 지연 로딩이
+     * 락 안에서 걸린다. <b>반면 낙찰자는 엔티티에서 읽어야 한다</b> — 입찰이 접수될 때마다 바뀌는
+     * 값이라 락을 잡기 전에 읽으면 그사이 들어온 입찰이 반영되지 않은 낙찰자를 발표하게 된다.
      */
-    private DomainEvent toEvent(AuctionItem auctionItem, LocalDateTime occurredAt) {
+    private DomainEvent toEvent(AuctionItem auctionItem, LocalDateTime occurredAt,
+                                CloseContextProjection context) {
 
-        Long roomId = auctionItem.getAuctionRoom().getAuctionRoomId();
+        Long roomId = context.roomId();
         Long itemId = auctionItem.getAuctionItemId();
-        String itemName = auctionItem.getProduct().getName();
+        String itemName = context.itemName();
 
         if (auctionItem.getStatus() == AuctionItemStatus.SOLD) {
             return ItemEnded.of(roomId, itemId, itemName, auctionItem.getCurrentPrice(),

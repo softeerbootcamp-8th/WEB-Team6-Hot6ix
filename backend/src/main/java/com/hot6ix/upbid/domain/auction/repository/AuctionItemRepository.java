@@ -146,6 +146,20 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
     Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
 
     /**
+     * 마감이 락을 잡기 전에 읽는 값들. 자세한 이유는 {@link CloseContextProjection} 참고.
+     *
+     * <p>{@link #findBidContext}를 재사용하지 않는 것은 그쪽이 판매자 ID와 Soft Close 설정까지
+     * 읽기 때문이다. 마감은 그 셋을 쓰지 않는다.
+     */
+    @Query("select new com.hot6ix.upbid.domain.auction.repository.CloseContextProjection("
+            + "  ar.auctionRoomId, p.name) "
+            + "from AuctionItem ai "
+            + "join ai.auctionRoom ar "
+            + "join ai.product p "
+            + "where ai.auctionItemId = :auctionItemId")
+    Optional<CloseContextProjection> findCloseContext(@Param("auctionItemId") Long auctionItemId);
+
+    /**
      * 경매방에서 지정 상태인 물품의 ID를 <b>오름차순으로</b> 조회한다. 방 종료가 진행 중인 물품을
      * 한꺼번에 마감할 때 쓴다.
      *

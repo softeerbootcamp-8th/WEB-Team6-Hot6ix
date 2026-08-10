@@ -14,6 +14,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.CloseContextProjection;
 import com.hot6ix.upbid.domain.auction.scheduler.AuctionCloseMetrics;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -213,7 +214,7 @@ class AuctionItemCloseServiceTest {
     @DisplayName("남의 방 물품은 마감을 앞당길 수 없고 물품이 없을 때와 같은 응답을 준다")
     void closeEarlyRejectsOtherSellersItem() {
 
-        givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().plusMinutes(10));
+        givenLockOnly(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().plusMinutes(10));
         givenSellerProfile(SELLER_PROFILE_ID + 1);
 
         assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
@@ -268,7 +269,7 @@ class AuctionItemCloseServiceTest {
 
     /** 앞당기기는 요청자를 보므로 물품 락과 판매자 프로필 조회를 함께 준비한다. */
     private AuctionItem givenOwnedItem(AuctionItemStatus status, LocalDateTime endAt) {
-        AuctionItem auctionItem = givenLockedItem(status, endAt);
+        AuctionItem auctionItem = givenLockOnly(status, endAt);
         givenSellerProfile(SELLER_PROFILE_ID);
         return auctionItem;
     }
@@ -290,7 +291,22 @@ class AuctionItemCloseServiceTest {
         return givenLockedItem(status, null);
     }
 
+    /**
+     * 마감 경로({@code close}, {@code closeIfDue})용. 락 조회에 더해, 락을 잡기 전에 읽는
+     * 방 ID와 상품명 프로젝션까지 준비한다.
+     *
+     * <p>앞당기기는 이 프로젝션을 읽지 않으므로 {@link #givenLockOnly}를 쓴다. 여기 스텁을
+     * 그대로 가져가면 쓰이지 않는 스텁이 되어 테스트가 깨진다.
+     */
     private AuctionItem givenLockedItem(AuctionItemStatus status, LocalDateTime endAt) {
+        AuctionItem auctionItem = givenLockOnly(status, endAt);
+        when(auctionItemRepository.findCloseContext(ITEM_ID))
+                .thenReturn(Optional.of(new CloseContextProjection(ROOM_ID, "한정판 피규어")));
+        return auctionItem;
+    }
+
+    /** 물품 락 조회만 준비한다. */
+    private AuctionItem givenLockOnly(AuctionItemStatus status, LocalDateTime endAt) {
         AuctionItem auctionItem = newItem(status, endAt);
         when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
         return auctionItem;
