@@ -83,6 +83,20 @@ public class SseEventBuffer {
     }
 
     /**
+     * 버퍼에 남아있는 이벤트를 오래된 것부터 최신 순으로 전부 반환한다.
+     */
+    public List<BufferedEvent> getAllEvents(Long roomId) {
+        ArrayDeque<BufferedEvent> queue = buffers.get(roomId);
+        if (queue == null) {
+            return List.of();
+        }
+
+        synchronized (queue) {
+            return List.copyOf(queue);
+        }
+    }
+
+    /**
      * 경매 종료 시 방 버퍼와 ID 카운터를 삭제한다.
      */
     public void clear(Long roomId) {
