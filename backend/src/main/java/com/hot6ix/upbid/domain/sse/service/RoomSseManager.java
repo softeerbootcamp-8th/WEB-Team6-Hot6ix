@@ -48,13 +48,13 @@ public class RoomSseManager {
     }
 
     /**
-     * SSE 구독을 등록한다.
+     * SSE 구독을 등록한다. 구독 시점의 현재 상태는 물품 조회 API가 내려주므로 초기 이벤트는 없다.
      *
-     * <p>최초 연결({@code lastEventId == null})이면 초기 이벤트({@code name}/{@code data})를 전송한다.
-     * 재연결({@code lastEventId != null})이면 버퍼에서 해당 ID 이후 이벤트를 먼저 replay한 뒤
-     * 신규 이벤트를 정상 수신한다. replay가 끝난 뒤 등록하므로 순서 역전이 없다.
+     * <p>재연결({@code lastEventId != null})이면 버퍼에서 그 ID 이후 이벤트를 replay한다. 최초
+     * 연결이면 아래 참여자 수 브로드캐스트가 이 연결의 첫 이벤트가 되고, 클라이언트는 그 ID를
+     * {@code Last-Event-ID}의 시작점으로 잡는다.
      */
-    public SseEmitter subscribe(String name, Long roomId, Object data, Long lastEventId) {
+    public SseEmitter subscribe(Long roomId, Long lastEventId) {
         SseEmitter emitter = new SseEmitter(sseProperties.emitterTimeoutMs());
 
         register(roomId, emitter);
@@ -68,8 +68,6 @@ public class RoomSseManager {
             for (BufferedEvent event : missed) {
                 send(roomId, emitter, event.eventName(), event.id(), event.data());
             }
-        } else {
-            send(roomId, emitter, name, null, data);
         }
 
         broadcastParticipantCount(roomId);
@@ -96,7 +94,7 @@ public class RoomSseManager {
             return;
         }
 
-        Long id = sseEventBuffer.add(roomId, name, data);
+        long id = sseEventBuffer.add(roomId, name, data);
 
         sseMetrics.recordBroadcast(() -> {
             for (SseEmitter emitter : emitters) {
@@ -111,18 +109,15 @@ public class RoomSseManager {
     }
 
     /**
-     * @param id 버퍼에 저장된 순차 ID. null이면 SSE {@code id} 필드를 붙이지 않는다.
-     *           클라이언트는 이 값을 {@code Last-Event-ID}로 저장해 재연결 시 서버에 보낸다.
+     * @param id 버퍼에 저장된 순차 ID. 클라이언트는 이 값을 {@code Last-Event-ID}로 저장해
+     *           재연결 시 서버에 보낸다. 초기 이벤트가 없어진 뒤로 ID 없이 나가는 이벤트는 없다.
      */
-    private void send(Long roomId, SseEmitter emitter, String name, Long id, Object data) {
+    private void send(Long roomId, SseEmitter emitter, String name, long id, Object data) {
         try {
-            SseEmitter.SseEventBuilder event = SseEmitter.event()
+            emitter.send(SseEmitter.event()
+                    .id(String.valueOf(id))
                     .name(name)
-                    .data(data);
-            if (id != null) {
-                event.id(String.valueOf(id));
-            }
-            emitter.send(event);
+                    .data(data));
         } catch (IOException | IllegalStateException e) {
             log.warn("sse 전송 실패: roomId={}, name={}", roomId, name, e);
             unregister(roomId, emitter);

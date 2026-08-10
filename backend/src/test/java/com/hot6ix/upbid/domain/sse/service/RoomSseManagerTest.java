@@ -51,8 +51,7 @@ class RoomSseManagerTest {
                 executor.submit(() -> {
                     try {
                         start.await();
-                        roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-                        roomSseManager.subscribe(ROOM_ID);
+                        roomSseManager.subscribe(ROOM_ID, null);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                     } finally {
@@ -76,8 +75,7 @@ class RoomSseManagerTest {
 
         int initialSubscribers = 32;
         for (int i = 0; i < initialSubscribers; i++) {
-            roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-            roomSseManager.subscribe(ROOM_ID);
+            roomSseManager.subscribe(ROOM_ID, null);
         }
 
         AtomicReference<Throwable> broadcastFailure = new AtomicReference<>();
@@ -94,8 +92,7 @@ class RoomSseManagerTest {
 
         Thread subscriber = new Thread(() -> {
             for (int i = 0; i < 200; i++) {
-                roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-                roomSseManager.subscribe(ROOM_ID);
+                roomSseManager.subscribe(ROOM_ID, null);
             }
         });
 
@@ -112,12 +109,9 @@ class RoomSseManagerTest {
     @DisplayName("이미 완료된 emitter가 섞여 있어도 나머지 구독은 이벤트를 받는다")
     void isolatesFailureFromOtherSubscribers() {
 
-        roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-        roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-        SseEmitter dead = roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-        roomSseManager.subscribe(ROOM_ID);
-        roomSseManager.subscribe(ROOM_ID);
-        SseEmitter dead = roomSseManager.subscribe(ROOM_ID);
+        roomSseManager.subscribe(ROOM_ID, null);
+        roomSseManager.subscribe(ROOM_ID, null);
+        SseEmitter dead = roomSseManager.subscribe(ROOM_ID, null);
 
         // 연결은 끊겼지만 아직 Set 에서 제거되지 않은 상태를 만든다.
         // 이 emitter 에 쓰면 ResponseBodyEmitter 가 IllegalStateException 을 던진다.
@@ -133,10 +127,8 @@ class RoomSseManagerTest {
     @DisplayName("heartbeat 가 응답하지 않는 구독을 걷어낸다")
     void sweepsDeadSubscriberOnHeartbeat() {
 
-        roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-        SseEmitter dead = roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-        roomSseManager.subscribe(ROOM_ID);
-        SseEmitter dead = roomSseManager.subscribe(ROOM_ID);
+        roomSseManager.subscribe(ROOM_ID, null);
+        SseEmitter dead = roomSseManager.subscribe(ROOM_ID, null);
 
         dead.complete();
 
@@ -151,11 +143,8 @@ class RoomSseManagerTest {
 
         RoomSseManager manager = spy(newRoomSseManager());
 
-        manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-        SseEmitter dead = manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-
-        manager.subscribe(ROOM_ID);
-        SseEmitter dead = manager.subscribe(ROOM_ID);
+        manager.subscribe(ROOM_ID, null);
+        SseEmitter dead = manager.subscribe(ROOM_ID, null);
         dead.complete();
 
         clearInvocations(manager);
@@ -171,8 +160,7 @@ class RoomSseManagerTest {
 
         RoomSseManager manager = spy(newRoomSseManager());
 
-        manager.subscribe(ROOM_ID);
-        manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
+        manager.subscribe(ROOM_ID, null);
 
         clearInvocations(manager);
 
@@ -199,10 +187,8 @@ class RoomSseManagerTest {
         // 게이지는 @PostConstruct 에서 붙는다. 직접 생성한 객체에서는 안 불리므로 여기서 부른다.
         manager.bindMetrics();
 
-        SseEmitter first = manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-        SseEmitter second = manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
-        SseEmitter first = manager.subscribe(ROOM_ID);
-        SseEmitter second = manager.subscribe(ROOM_ID);
+        SseEmitter first = manager.subscribe(ROOM_ID, null);
+        SseEmitter second = manager.subscribe(ROOM_ID, null);
 
         assertThat(rooms(registry)).isEqualTo(1);
 
@@ -227,8 +213,7 @@ class RoomSseManagerTest {
 
         List<SseEmitter> emitters = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
-            emitters.add(roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null));
-            emitters.add(roomSseManager.subscribe(ROOM_ID));
+            emitters.add(roomSseManager.subscribe(ROOM_ID, null));
         }
 
         assertThat(emitters).doesNotContainNull();

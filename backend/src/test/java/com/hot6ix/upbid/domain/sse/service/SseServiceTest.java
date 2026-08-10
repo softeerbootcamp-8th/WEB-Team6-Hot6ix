@@ -36,13 +36,12 @@ class SseServiceTest {
 
         SseEmitter emitter = new SseEmitter();
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(7L);
-        when(roomSseManager.subscribe(7L)).thenReturn(emitter);
-        when(roomSseManager.subscribe(any(), eq(7L), any(), any())).thenReturn(emitter);
+        when(roomSseManager.subscribe(7L, null)).thenReturn(emitter);
 
         SseEmitter result = sseService.subscribe(3L, SHARE_CODE, null);
 
         verify(auctionRoomShareService).resolveRoomId(SHARE_CODE);
-        verify(roomSseManager).subscribe(7L);
+        verify(roomSseManager).subscribe(7L, null);
         assertThat(result).isSameAs(emitter);
     }
 

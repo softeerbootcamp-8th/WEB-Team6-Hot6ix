@@ -18,7 +18,6 @@ public class SseService {
     public SseEmitter subscribe(Long userId, String shareCode, Long lastEventId){
         Long roomId = auctionRoomShareService.resolveRoomId(shareCode);
 
-        return roomSseManager.subscribe(PARTICIPANT_JOINED_EVENT, roomId, LeaderboardDto.dummy(), lastEventId);
-        return roomSseManager.subscribe(roomId);
+        return roomSseManager.subscribe(roomId, lastEventId);
     }
 }
