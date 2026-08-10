@@ -108,6 +108,42 @@ class SseEventBufferTest {
     }
 
     @Test
+    @DisplayName("getAllEvents()는 버퍼가 없는 방에 빈 리스트를 반환한다")
+    void getAllEvents_returnsEmptyForUnknownRoom() {
+        List<BufferedEvent> result = buffer.getAllEvents(ROOM_A);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("getAllEvents()는 버퍼에 남은 이벤트를 오래된 것부터 전부 반환한다")
+    void getAllEvents_returnsAllInAscendingOrder() {
+        buffer.add(ROOM_A, "EVENT", "data");  // id=1
+        buffer.add(ROOM_A, "EVENT", "data");  // id=2
+
+        List<BufferedEvent> result = buffer.getAllEvents(ROOM_A);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).id()).isEqualTo(1);
+        assertThat(result.get(1).id()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("getAllEvents()는 N개 초과로 밀려난 이벤트는 제외한다")
+    void getAllEvents_excludesEvictedEvents() {
+        buffer.add(ROOM_A, "EVENT", "id=1");
+        buffer.add(ROOM_A, "EVENT", "id=2");
+        buffer.add(ROOM_A, "EVENT", "id=3");
+        buffer.add(ROOM_A, "EVENT", "id=4");  // id=1이 밀려남
+
+        List<BufferedEvent> result = buffer.getAllEvents(ROOM_A);
+
+        assertThat(result).hasSize(3);
+        assertThat(result.get(0).id()).isEqualTo(2);
+        assertThat(result.get(2).id()).isEqualTo(4);
+    }
+
+    @Test
     @DisplayName("clear() 후에는 빈 리스트를 반환하고 ID가 1부터 다시 시작한다")
     void clear_removesBufferAndResetsId() {
         buffer.add(ROOM_A, "EVENT", "data");  // id=1

@@ -1,11 +1,15 @@
 package com.hot6ix.upbid.domain.sse.controller;
 
 import com.hot6ix.upbid.domain.sse.api.SseApi;
+import com.hot6ix.upbid.domain.sse.dto.RecentRoomEventDto;
 import com.hot6ix.upbid.domain.sse.service.SseService;
 import com.hot6ix.upbid.global.interceptor.GuestAllowed;
+import com.hot6ix.upbid.global.response.CommonResponse;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -33,5 +37,15 @@ public class SseController implements SseApi {
         response.setHeader("X-Accel-Buffering", "no");
 
         return sseService.subscribe(userId, shareCode, lastEventId);
+    }
+
+    @GuestAllowed
+    @GetMapping("/auction-rooms/share/{shareCode}/events")
+    public ResponseEntity<CommonResponse<List<RecentRoomEventDto>>> getRecentEvents(
+            @PathVariable String shareCode) {
+
+        List<RecentRoomEventDto> events = sseService.getRecentEvents(shareCode);
+
+        return ResponseEntity.ok(CommonResponse.ok(events, "최근 경매방 이벤트 조회에 성공했습니다."));
     }
 }

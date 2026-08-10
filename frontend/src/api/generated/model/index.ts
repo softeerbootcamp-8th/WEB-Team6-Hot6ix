@@ -50,6 +50,7 @@ export * from './commonResponseCursorPageResponseAuctionRoomListItemResponseDto'
 export * from './commonResponseDealCandidateListResponseDto';
 export * from './commonResponseListAuctionItemSummaryResponseDto';
 export * from './commonResponseListDealSummaryResponseDto';
+export * from './commonResponseListRecentRoomEventDto';
 export * from './commonResponsePageResponseProductSummaryResponseDto';
 export * from './commonResponsePresignedUrlResponseDto';
 export * from './commonResponseProductResponseDto';
@@ -85,6 +86,7 @@ export * from './productResponseDtoStatus';
 export * from './productSummaryResponseDto';
 export * from './productSummaryResponseDtoStatus';
 export * from './productUpdateRequestDto';
+export * from './recentRoomEventDto';
 export * from './sellerProfileCreateRequestDto';
 export * from './sellerProfileResponseDto';
 export * from './sellerProfileUpdateRequestDto';
