@@ -1,4 +1,41 @@
+import type { ReactNode } from 'react'
+
+import { AppShell, GuestShell } from '@/components/layout/page-shell'
 import { formatDate } from '@/lib/format'
+import { useCurrentUser } from '@/lib/session'
+
+/**
+ * 약관·방침 화면의 골격.
+ *
+ * 약관은 비로그인도 볼 수 있어야 해서 `requireMember` 를 붙이지 않는다. 대신
+ * 상단만 갈라 그린다 — 예전에는 두 라우트가 `GuestShell` 에 `state="비로그인"`
+ * 을 고정으로 넘겨서, 로그인한 사람이 약관을 열면 상단이 "비로그인" 으로
+ * 바뀌었다. 모바일에서는 같은 줄의 `MobileNavDrawer` 가 로그인한 사람에게만
+ * 프로필 사진을 그려서, "비로그인" 알약과 내 사진이 같이 떴다.
+ */
+export function LegalShell({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
+  const user = useCurrentUser()
+
+  if (user) {
+    return (
+      <AppShell title={title} back className="max-w-[720px]">
+        {children}
+      </AppShell>
+    )
+  }
+
+  return (
+    <GuestShell title={title} back state="비로그인" className="max-w-[720px]">
+      {children}
+    </GuestShell>
+  )
+}
 
 /**
  * 약관·방침 공통 문서 틀.

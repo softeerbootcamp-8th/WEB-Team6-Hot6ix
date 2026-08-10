@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { GuestShell } from '@/components/layout/page-shell'
-import { LegalDocument } from '@/features/legal/components/legal-document'
+import {
+  LegalDocument,
+  LegalShell,
+} from '@/features/legal/components/legal-document'
 
 export const Route = createFileRoute('/terms/privacy')({
   component: PrivacyPolicyPage,
@@ -32,18 +34,12 @@ const SECTIONS = [
 
 function PrivacyPolicyPage() {
   return (
-    // state 는 원래 GuestShell 기본값으로 붙던 값이다. 기본값을 없애면서 여기만 명시해 둔다.
-    <GuestShell
-      title="개인정보처리방침"
-      back
-      state="비로그인"
-      className="max-w-[720px]"
-    >
+    <LegalShell title="개인정보처리방침">
       <LegalDocument
         title="개인정보처리방침"
         updatedAt="2026-07-01"
         sections={SECTIONS}
       />
-    </GuestShell>
+    </LegalShell>
   )
 }
