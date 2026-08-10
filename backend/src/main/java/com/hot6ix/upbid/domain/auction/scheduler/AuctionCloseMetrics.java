@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.scheduler;
 
+import com.hot6ix.upbid.global.common.LockTimer;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -14,6 +15,10 @@ import org.springframework.stereotype.Component;
  * <p>마감을 두 구간으로 나눠 잰다. {@code delay}는 예정 시각부터 실행이 시작되기까지고
  * {@code duration}은 그 뒤 실행에 걸린 시간이다. 앞이 크면 스케줄러 스레드를 늘리는 게 답이고
  * 뒤가 크면 스레드를 늘려도 커넥션만 더 잡아먹으므로, 처방이 갈리는 만큼 지표도 갈라 둔다.
+ *
+ * <p><b>{@code duration}이 큰 것까지는 알아도 그 안 어디가 큰지는 못 가른다.</b> 그래서
+ * {@code lock.wait}과 {@code lock.hold}를 함께 잰다. 나머지 두 조각인 알림과 낙찰 후보 생성은
+ * 커밋 뒤 리스너에서 도는 것이라 {@code SseMetrics}와 {@code DealMetrics}가 맡는다.
  */
 @Component
 public class AuctionCloseMetrics {
@@ -35,11 +40,25 @@ public class AuctionCloseMetrics {
 
     private final Timer closeDurationRescheduled;
 
+    /** {@code upbid.auction.close.lock.wait}와 {@code .lock.hold}. 입찰 쪽과 같은 도구를 쓴다. */
+    private final LockTimer lock;
+
     public AuctionCloseMetrics(MeterRegistry registry) {
         this.registry = registry;
         this.closeDelay = registry.timer("upbid.auction.close.delay");
         this.closeDurationClosed = registry.timer(DURATION, "result", "closed");
         this.closeDurationRescheduled = registry.timer(DURATION, "result", "rescheduled");
+        this.lock = new LockTimer(registry, "upbid.auction.close");
+    }
+
+    /**
+     * 마감이 물품 행 락을 잡는 동안 걸린 시간과 잡고 있던 시간을 잰다.
+     *
+     * <p>입찰과 같은 행을 두고 줄을 서므로 {@code upbid.bid.lock.*}과 나란히 놓고 봐야 누가
+     * 누구를 기다리게 하는지 갈린다.
+     */
+    public <T> T recordLockWait(Supplier<T> lockedRead) {
+        return lock.recordWait(lockedRead);
     }
 
     /**
