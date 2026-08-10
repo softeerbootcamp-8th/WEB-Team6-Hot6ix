@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.deal.repository;
 
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidate;
 import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
 import java.util.Collection;
@@ -35,6 +36,33 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
     @Query("select count(dc) > 0 from DealCandidate dc "
             + "where dc.auctionItem.auctionItemId = :auctionItemId")
     boolean existsCandidate(@Param("auctionItemId") Long auctionItemId);
+
+    /**
+     * 낙찰됐는데 후보가 없는 물품을 찾는다. 마감 이벤트가 리스너까지 닿지 못해 후보 생성이
+     * 빠진 물품이며, 복구 러너가 이 목록으로 {@code award}를 다시 부른다.
+     *
+     * <p><b>후보가 없는 것이 정상인 물품은 빼야 한다.</b> {@link #insertCandidatesFromBids}가
+     * 탈퇴 회원을 걸러내므로 입찰자가 전원 탈퇴한 물품은 후보가 0건인 게 맞다. 그런 물품을
+     * 담으면 복구가 돌 때마다 물품 행 락을 잡고 아무것도 하지 않는 헛일이 반복된다. 그래서
+     * 삽입 쿼리와 <b>같은 조건</b>으로 "후보가 있어야 하는데 없는 물품"만 남긴다.
+     *
+     * <p>순서를 고정하는 것은 {@code findScheduleTargets}와 같은 이유다 — 복구 로그가 실행마다
+     * 같은 순서로 남아야 재현할 수 있다.
+     */
+    default List<AwardRecoveryTargetProjection> findAwardRecoveryTargets() {
+        return findAwardRecoveryTargets(AuctionItemStatus.SOLD);
+    }
+
+    @Query("select new com.hot6ix.upbid.domain.deal.repository.AwardRecoveryTargetProjection("
+            + "  ai.auctionItemId, ai.auctionRoom.auctionRoomId) "
+            + "from AuctionItem ai "
+            + "where ai.status = :status "
+            + "and not exists (select 1 from DealCandidate dc where dc.auctionItem = ai) "
+            + "and exists (select 1 from Bid b join b.bidder u "
+            + "            where b.auctionItem = ai and u.deletedAt is null) "
+            + "order by ai.auctionItemId asc")
+    List<AwardRecoveryTargetProjection> findAwardRecoveryTargets(
+            @Param("status") AuctionItemStatus status);
 
     /**
      * 물품의 입찰 이력을 낙찰 후보로 한 번에 옮긴다. 입찰자 한 명이 한 행이고 금액은 그 사람의
