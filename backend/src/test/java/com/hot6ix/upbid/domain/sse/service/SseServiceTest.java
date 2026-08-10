@@ -3,7 +3,7 @@ package com.hot6ix.upbid.domain.sse.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,12 +37,13 @@ class SseServiceTest {
     void subscribe_returnsEmitter() {
 
         SseEmitter emitter = new SseEmitter();
-        when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(7L);
-        when(roomSseManager.subscribe(any(), eq(7L), any(), any())).thenReturn(emitter);
+        when(auctionRoomShareService.resolveOpenRoomId(SHARE_CODE)).thenReturn(7L);
+        when(roomSseManager.subscribe(7L, null)).thenReturn(emitter);
 
         SseEmitter result = sseService.subscribe(3L, SHARE_CODE, null);
 
-        verify(auctionRoomShareService).resolveRoomId(SHARE_CODE);
+        verify(auctionRoomShareService).resolveOpenRoomId(SHARE_CODE);
+        verify(roomSseManager).subscribe(7L, null);
         assertThat(result).isSameAs(emitter);
     }
 
@@ -50,11 +51,27 @@ class SseServiceTest {
     @DisplayName("없는 공유 코드로는 구독하지 못한다")
     void subscribe_unknownShareCode() {
 
-        when(auctionRoomShareService.resolveRoomId("nope"))
+        when(auctionRoomShareService.resolveOpenRoomId("nope"))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         assertThatThrownBy(() -> sseService.subscribe(3L, "nope", null))
                 .isInstanceOf(ApplicationException.class)
                 .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("종료된 경매방은 구독하지 못한다")
+    void subscribe_closedRoom() {
+
+        when(auctionRoomShareService.resolveOpenRoomId(SHARE_CODE))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED));
+
+        // 방을 닫을 때 서버가 연결을 끊지만, EventSource는 스트림 종료를 네트워크 단절과
+        // 구분하지 못해 한 번 다시 붙는다. 그 재접속을 여기서 끊어내야 루프가 멈춘다.
+        assertThatThrownBy(() -> sseService.subscribe(3L, SHARE_CODE, null))
+                .isInstanceOf(ApplicationException.class)
+                .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_CLOSED);
+
+        verify(roomSseManager, never()).subscribe(any(), any());
     }
 }

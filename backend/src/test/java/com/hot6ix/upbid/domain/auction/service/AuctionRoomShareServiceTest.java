@@ -14,6 +14,7 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -82,6 +83,49 @@ class AuctionRoomShareServiceTest {
         when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
                 ROOM_ID, SELLER_PROFILE_ID))
                 .thenReturn(Optional.of(newAuctionRoom(sellerProfile)));
+    }
+
+    @Test
+    @DisplayName("진행 중인 경매방은 공유 코드로 방 ID를 찾는다")
+    void resolveOpenRoomId() {
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
+                .thenReturn(Optional.of(newAuctionRoom(newSellerProfile())));
+
+        Long roomId = newService("https://upbid.com").resolveOpenRoomId(SHARE_CODE);
+
+        assertThat(roomId).isEqualTo(ROOM_ID);
+    }
+
+    @Test
+    @DisplayName("종료된 경매방은 구독용 조회에서 거절된다")
+    void resolveOpenRoomId_closedRoom() {
+
+        AuctionRoom closedRoom = newAuctionRoom(newSellerProfile());
+        closedRoom.close(LocalDateTime.now());
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
+                .thenReturn(Optional.of(closedRoom));
+
+        // 4xx로 거절해야 EventSource가 재접속을 포기한다. 200으로 붙여주면 브라우저는
+        // 스트림 종료를 네트워크 단절과 구분하지 못해 계속 다시 붙는다.
+        assertThatThrownBy(() -> newService("https://upbid.com").resolveOpenRoomId(SHARE_CODE))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_CLOSED);
+    }
+
+    @Test
+    @DisplayName("없는 공유 코드는 구독용 조회에서 404다")
+    void resolveOpenRoomId_notFound() {
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("nope"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> newService("https://upbid.com").resolveOpenRoomId("nope"))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
     }
 
     @Test
