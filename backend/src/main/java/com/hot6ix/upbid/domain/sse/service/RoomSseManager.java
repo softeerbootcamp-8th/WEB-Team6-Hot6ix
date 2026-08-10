@@ -124,10 +124,20 @@ public class RoomSseManager {
             }
             emitter.send(event);
         } catch (IOException | IllegalStateException e) {
-            log.warn("sse 전송 실패: roomId={}, name={}", roomId, name, e);
             unregister(roomId, emitter);
+            log.debug("sse 전송 중 끊긴 연결 정리: roomId={}, name={}, remaining={}, cause={}",
+                    roomId, name, getParticipantCount(roomId), cause(e));
             emitter.completeWithError(e);
         }
+    }
+
+    /**
+     * 끊긴 연결은 장애가 아니라 정상적인 종료다. 스택트레이스를 남기면 봐야 할 로그가 묻히므로
+     * 예외 종류와 메시지만 남긴다. Broken pipe인지 Connection reset인지, 아니면 이미 완료된
+     * emitter였는지는 이 한 줄로 구분된다.
+     */
+    private String cause(Exception e) {
+        return e.getClass().getSimpleName() + ": " + e.getMessage();
     }
 
     private void disconnect(Long roomId, SseEmitter emitter) {
@@ -215,8 +225,9 @@ public class RoomSseManager {
             emitter.send(SseEmitter.event().comment("keep-alive"));
             return true;
         } catch (IOException | IllegalStateException e) {
-            log.warn("sse heartbeat 실패: roomId={}", roomId, e);
             unregister(roomId, emitter);
+            log.debug("sse heartbeat 중 끊긴 연결 정리: roomId={}, remaining={}, cause={}",
+                    roomId, getParticipantCount(roomId), cause(e));
             emitter.completeWithError(e);
             return false;
         }
