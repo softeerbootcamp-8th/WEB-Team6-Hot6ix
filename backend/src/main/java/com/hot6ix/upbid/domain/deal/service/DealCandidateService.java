@@ -11,6 +11,7 @@ import com.hot6ix.upbid.domain.deal.entity.DealCandidateStatus;
 import com.hot6ix.upbid.domain.deal.entity.DealRole;
 import com.hot6ix.upbid.domain.deal.entity.DealStatus;
 import com.hot6ix.upbid.domain.deal.exception.DealErrorType;
+import com.hot6ix.upbid.domain.deal.recovery.DealAwardRecoveryRunner;
 import com.hot6ix.upbid.domain.deal.repository.DealCandidateRepository;
 import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
