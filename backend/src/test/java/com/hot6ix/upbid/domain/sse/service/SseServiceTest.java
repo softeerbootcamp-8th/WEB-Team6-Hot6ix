@@ -12,6 +12,7 @@ import com.hot6ix.upbid.domain.auction.service.AuctionRoomShareService;
 import com.hot6ix.upbid.domain.sse.dto.RecentRoomEventDto;
 import com.hot6ix.upbid.global.event.EventType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -71,11 +72,11 @@ class SseServiceTest {
     void getRecentEvents_filtersOutSignalOnlyEvents() {
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
         when(sseEventBuffer.getAllEvents(ROOM_ID)).thenReturn(List.of(
-                new BufferedEvent(1, EventType.BID_PLACED.name(), "bid"),
-                new BufferedEvent(2, "PARTICIPANT_COUNT_UPDATED", "count"),
-                new BufferedEvent(3, EventType.ROOM_UPDATED.name(), "updated"),
-                new BufferedEvent(4, EventType.ITEM_ADDED.name(), "added"),
-                new BufferedEvent(5, EventType.ITEM_ENDED.name(), "ended")
+                new BufferedEvent(1, EventType.BID_PLACED.name(), "bid", Instant.now()),
+                new BufferedEvent(2, "PARTICIPANT_COUNT_UPDATED", "count", Instant.now()),
+                new BufferedEvent(3, EventType.ROOM_UPDATED.name(), "updated", Instant.now()),
+                new BufferedEvent(4, EventType.ITEM_ADDED.name(), "added", Instant.now()),
+                new BufferedEvent(5, EventType.ITEM_ENDED.name(), "ended", Instant.now())
         ));
 
         List<RecentRoomEventDto> result = sseService.getRecentEvents(SHARE_CODE);
@@ -90,7 +91,7 @@ class SseServiceTest {
 
         List<BufferedEvent> events = new ArrayList<>();
         for (long id = 1; id <= 25; id++) {
-            events.add(new BufferedEvent(id, EventType.BID_PLACED.name(), "bid-" + id));
+            events.add(new BufferedEvent(id, EventType.BID_PLACED.name(), "bid-" + id, Instant.now()));
         }
         when(sseEventBuffer.getAllEvents(ROOM_ID)).thenReturn(events);
 
@@ -106,7 +107,7 @@ class SseServiceTest {
     void getRecentEvents_returnsAllWhenFewerThanLimit() {
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
         when(sseEventBuffer.getAllEvents(ROOM_ID)).thenReturn(List.of(
-                new BufferedEvent(1, EventType.ITEM_STARTED.name(), "started")
+                new BufferedEvent(1, EventType.ITEM_STARTED.name(), "started", Instant.now())
         ));
 
         List<RecentRoomEventDto> result = sseService.getRecentEvents(SHARE_CODE);

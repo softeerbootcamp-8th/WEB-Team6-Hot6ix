@@ -12,6 +12,7 @@ import com.hot6ix.upbid.global.event.EventType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
 import com.hot6ix.upbid.global.support.AbstractControllerTest;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,7 @@ class SseControllerTest extends AbstractControllerTest {
     @DisplayName("최근 이벤트를 조회하면 알림 목록을 반환한다")
     void getRecentEvents_returnsEvents() throws Exception {
         when(sseService.getRecentEvents(SHARE_CODE)).thenReturn(List.of(
-                new RecentRoomEventDto(1L, EventType.BID_PLACED.name(), "data")
+                new RecentRoomEventDto(1L, EventType.BID_PLACED.name(), "data", Instant.now())
         ));
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/events", SHARE_CODE))

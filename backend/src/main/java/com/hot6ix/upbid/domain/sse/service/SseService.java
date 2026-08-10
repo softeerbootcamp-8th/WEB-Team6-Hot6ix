@@ -52,7 +52,7 @@ public class SseService {
 
         List<RecentRoomEventDto> feedEvents = sseEventBuffer.getAllEvents(roomId).stream()
                 .filter(event -> FEED_EVENT_NAMES.contains(event.eventName()))
-                .map(event -> new RecentRoomEventDto(event.id(), event.eventName(), event.data()))
+                .map(event -> new RecentRoomEventDto(event.id(), event.eventName(), event.data(), event.occurredAt()))
                 .toList();
 
         int from = Math.max(0, feedEvents.size() - RECENT_EVENTS_LIMIT);

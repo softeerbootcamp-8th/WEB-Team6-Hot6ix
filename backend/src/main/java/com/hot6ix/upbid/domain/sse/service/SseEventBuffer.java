@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.sse.service;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
+import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
@@ -38,7 +39,7 @@ public class SseEventBuffer {
      */
     public long add(Long roomId, String eventName, Object data) {
         long id = nextId(roomId);
-        BufferedEvent event = new BufferedEvent(id, eventName, data);
+        BufferedEvent event = new BufferedEvent(id, eventName, data, Instant.now());
 
         ArrayDeque<BufferedEvent> queue =
                 buffers.computeIfAbsent(roomId, k -> new ArrayDeque<>());
