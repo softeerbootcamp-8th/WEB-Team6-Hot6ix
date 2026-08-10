@@ -53,7 +53,10 @@ services:
       - SPRING_PROFILES_ACTIVE=perf
       # 모든 지표에 붙는 라벨. 실행마다 시계열을 갈라 놓는 값이라 반드시 달라야 한다.
       - PERF_RUN_ID=${PERF_RUN_ID:-unknown}
-      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/upbid?characterEncoding=UTF-8
+      # DB_JDBC_EXTRA 는 드라이버 옵션 대조 실험용이다. `&cachePrepStmts=true` 처럼
+      # & 로 시작하는 문자열을 넣으면 JDBC 주소 뒤에 그대로 붙는다. jar 를 다시 안 만들어도
+      # 바뀌므로 --skip-build 와 같이 쓸 수 있다.
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/upbid?characterEncoding=UTF-8${DB_JDBC_EXTRA:-}
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=1234
       # 대조 실험에서 바꾸는 값들. run.sh 가 --pool, --heartbeat 같은 인자로 채운다.

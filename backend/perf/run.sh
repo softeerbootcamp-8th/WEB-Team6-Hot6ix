@@ -30,9 +30,13 @@ START_PRICE=10000
 BID_UNIT=1000
 DURATION="3m"
 WARMUP=30
+# 워밍업은 데우는 게 목적이라 부하를 세게 줄 이유가 없다. 낮은 VU 로 도는 편이
+# 경합 없이 JIT 만 데우기에 낫다.
+WARMUP_VUS=5
 WHO="${PERF_WHO:-$(whoami)}"
 JAVA_OPTS=""
 SKIP_BUILD=0
+JFR=0
 VIRTUAL_THREADS=false
 BID_ITEMS=0
 
@@ -136,8 +140,10 @@ while [ $# -gt 0 ]; do
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
+    --warmup-vus) WARMUP_VUS="$2"; shift 2 ;;
     --who) WHO="$2"; shift 2 ;;
     --skip-build) SKIP_BUILD=1; shift ;;
+    --jfr) JFR=1; shift ;;
     --port) PERF_HTTP_PORT="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "모르는 옵션: $1" >&2; usage; exit 1 ;;
@@ -329,6 +335,15 @@ export SSE_HEARTBEAT_MS="$HEARTBEAT_MS"
 # 마감 표본이 줄어드는데, k6 쪽 check 만 실패하고 결과 표에는 아무 표시도 안 남아서 알아채기
 # 어렵다(실측으로 --items 100 을 줬다가 50개만 시작돼서 마감이 41건만 나왔다).
 export MAX_IN_PROGRESS_PER_ROOM="$ITEMS"
+# JFR(Java Flight Recorder)은 JDK 에 들어 있어서 따로 깔 게 없다. 10ms 마다 스레드가
+# 어느 코드에 있는지 찍어서 "CPU 를 어디서 태웠나"를 순위로 뽑을 수 있다.
+#
+# 앱이 종료될 때 파일로 떨어뜨린다(dumponexit). 중간에 꺼내려면 jcmd 가 필요한데 우리
+# 이미지가 JRE 라 없다. 그래서 측정이 끝난 뒤 앱을 멈춰서 받아낸다(아래 "JFR 꺼내기").
+if [ "$JFR" -eq 1 ]; then
+  JAVA_OPTS="$JAVA_OPTS -XX:StartFlightRecording=name=upbid,settings=profile,filename=/tmp/upbid.jfr,dumponexit=true"
+fi
+
 export APP_JAVA_OPTS="$JAVA_OPTS"
 export VIRTUAL_THREADS
 export PERF_CPUS="$CPUS"
@@ -564,10 +579,62 @@ else
   echo "[5/8] 배경 SSE 없음"
 fi
 
-# ── 5. 워밍업 ──────────────────────────────────────────────────────
+# ── 5. k6 스크립트와 실행 함수 ────────────────────────────────────
+# 워밍업이 본 측정과 같은 스크립트를 돌리므로 여기서 먼저 정한다.
+case "$SCENARIO" in
+  0) SCRIPT="capacity.js" ;;
+  1) SCRIPT="scenario1.js" ;;
+  2) SCRIPT="scenario2.js" ;;
+  3) SCRIPT="scenario3.js" ;;
+  4) SCRIPT="scenario4.js" ;;
+  5) SCRIPT="scenario5.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~5)" >&2; exit 1 ;;
+esac
+
+# k6 를 한 번 돌린다. 워밍업과 본 측정이 같은 함수를 지나야 워밍업이 실제로 같은 경로를
+# 데운 것이 된다 — 다른 경로를 데우면 데운 셈만 치는 것이다.
+#
+#   $1 VU 수   $2 길이   $3 RUN_ID (빈 값이면 summary.json 을 안 남긴다)
+#   $4 로그 파일   나머지 인자는 k6 에 그대로 넘어간다
+K6_EXIT=0
+run_k6() {
+  local vus="$1" duration="$2" run_id="$3" log="$4"
+  shift 4
+
+  set +e
+  VUS="$vus" DURATION="$duration" RUN_ID="$run_id" \
+  SHARE_CODE="$SHARE_CODE" ITEM_IDS="$ITEM_IDS" CLOSE_ITEM_IDS="$CLOSE_ITEM_IDS" \
+  BID_ITEMS="$BID_ITEMS" BID_START="$BID_START" CLOSE_BID_UNTIL="$CLOSE_BID_UNTIL" \
+  CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
+  START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
+    "${COMPOSE[@]}" run --rm \
+      -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
+      -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
+      -e START_PRICE -e BID_UNIT \
+      k6 run ${@+"$@"} "/scripts/$SCRIPT" \
+      2>&1 | tee "$log"
+  K6_EXIT="${PIPESTATUS[0]}"
+  set -e
+}
+
+# ── 6. 워밍업 ──────────────────────────────────────────────────────
 # JIT 이 덥혀지고 커넥션 풀이 채워지기 전 구간을 재면 첫 줄만 유독 느리게 나온다.
-echo "[6/8] 워밍업 ${WARMUP}초"
-sleep "$WARMUP"
+#
+# 예전에는 여기서 sleep 만 했다. 그건 아무것도 안 데운다 — JIT 도 커넥션 풀도 트래픽이
+# 있어야 데워진다. 실측으로 콜드와 웜이 5.5배 차이 났고(같은 설정에 195 대 1,236 req/s),
+# 같은 조건 3회 반복의 폭이 19% 에서 2.2% 로 줄었다.
+#
+# 마감 측정에서 특히 중요하다. 마감은 3분에 표본이 90건뿐이라 입찰보다 훨씬 크게 흔들린다.
+#
+# 부하를 주는 워밍업은 입찰 시나리오에서만 한다. 3(SSE)과 4·5(마감)는 부하 모양이 달라
+# 같은 스크립트로 데울 수가 없어서 예전처럼 기다리기만 한다.
+if [ "$SCENARIO" = "1" ] || [ "$SCENARIO" = "2" ]; then
+  echo "[6/8] 워밍업 ${WARMUP}초 (vus=$WARMUP_VUS 로 실제 부하를 준다)"
+  run_k6 "$WARMUP_VUS" "${WARMUP}s" "" "$RESULT_DIR/k6_warmup.log"
+else
+  echo "[6/8] 워밍업 ${WARMUP}초 (시나리오 $SCENARIO 는 기다리기만 한다)"
+  sleep "$WARMUP"
+fi
 
 row_lock_status() {
   mysql_query "SHOW GLOBAL STATUS LIKE 'Innodb_row_lock%'"
@@ -607,17 +674,7 @@ com_select() {
 }
 COM_SELECT_BEFORE="$(com_select)"
 
-# ── 6. k6 ─────────────────────────────────────────────────────────
-case "$SCENARIO" in
-  0) SCRIPT="capacity.js" ;;
-  1) SCRIPT="scenario1.js" ;;
-  2) SCRIPT="scenario2.js" ;;
-  3) SCRIPT="scenario3.js" ;;
-  4) SCRIPT="scenario4.js" ;;
-  5) SCRIPT="scenario5.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~5)" >&2; exit 1 ;;
-esac
-
+# ── 7. k6 ─────────────────────────────────────────────────────────
 WINDOW_START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WINDOW_START_EPOCH="$(date +%s)"
 
@@ -695,20 +752,8 @@ CONCURRENCY_LOG="$RESULT_DIR/mysql_concurrency.txt"
 LOCK_SAMPLER=$!
 disown "$LOCK_SAMPLER" 2>/dev/null || true
 
-set +e
-VUS="$VUS" DURATION="$DURATION" RUN_ID="$RUN_ID" \
-SHARE_CODE="$SHARE_CODE" ITEM_IDS="$ITEM_IDS" CLOSE_ITEM_IDS="$CLOSE_ITEM_IDS" \
-BID_ITEMS="$BID_ITEMS" BID_START="$BID_START" CLOSE_BID_UNTIL="$CLOSE_BID_UNTIL" \
-CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
-START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
-  "${COMPOSE[@]}" run --rm \
-    -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
-    -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
-    -e START_PRICE -e BID_UNIT \
-    k6 run -o experimental-prometheus-rw "/scripts/$SCRIPT" \
-    2>&1 | tee "$RESULT_DIR/k6.log"
-K6_EXIT="${PIPESTATUS[0]}"
-set -e
+run_k6 "$VUS" "$DURATION" "$RUN_ID" "$RESULT_DIR/k6.log" \
+  -o experimental-prometheus-rw
 
 kill "$CPU_SAMPLER" 2>/dev/null || true
 kill "$LOCK_SAMPLER" 2>/dev/null || true
@@ -1049,6 +1094,20 @@ SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER
   done
 } >"$RESULT_DIR/metrics.csv"
 
+# ── JFR 꺼내기 ─────────────────────────────────────────────────────
+# 지표를 다 뽑은 뒤에 한다. 앱을 멈춰야 파일이 써지는데, 먼저 멈추면 마지막 스크랩을 놓친다.
+if [ "$JFR" -eq 1 ]; then
+  echo "      JFR 기록 꺼내는 중 (앱을 멈춰야 파일이 써진다)"
+  APP_CID="$("${COMPOSE[@]}" ps -q app 2>/dev/null | head -1)"
+  "${COMPOSE[@]}" stop app >/dev/null 2>&1 || true
+
+  if [ -n "$APP_CID" ] && docker cp "$APP_CID:/tmp/upbid.jfr" "$RESULT_DIR/upbid.jfr" 2>/dev/null; then
+    echo "      $RESULT_DIR/upbid.jfr"
+  else
+    echo "※ JFR 파일을 못 꺼냈다. 앱이 정상 종료됐는지 본다." >&2
+  fi
+fi
+
 # ── 8. 결과 저장 ───────────────────────────────────────────────────
 STATUS="ok"
 [ "$K6_EXIT" -ne 0 ] && STATUS="aborted"
@@ -1185,6 +1244,8 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | SSE heartbeat p95 | ${SSE_HEARTBEAT_P95_MS} ms |
 | **heartbeat 실행 횟수** | **${HEARTBEAT_RUNS} / ${HEARTBEAT_EXPECTED} 회** ← 모자라면 굶은 것 |
 | SSE broadcast p95 | ${SSE_BROADCAST_P95_MS} ms |
+| **앱 CPU max** | **${APP_CPU_MAX} %** ← 천장이 200%(cpus: 2.0). 여기 붙었으면 이 줄은 CPU 실험이다 |
+| MySQL CPU max | ${MYSQL_CPU_MAX} % ← 천장 200% |
 | k6 CPU max | ${K6_CPU_MAX} % |
 | 앱 CPU (준 ${CPUS} 코어 기준) | 평균 ${APP_CPU_AVG} % / 최대 ${APP_CPU_MAX} % |
 | MySQL CPU (준 ${CPUS} 코어 기준) | 평균 ${MYSQL_CPU_AVG} % / 최대 ${MYSQL_CPU_MAX} % |
