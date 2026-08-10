@@ -2,8 +2,6 @@ package com.hot6ix.upbid.domain.sse.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,11 +36,12 @@ class SseServiceTest {
 
         SseEmitter emitter = new SseEmitter();
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(7L);
-        when(roomSseManager.subscribe(any(), eq(7L), any())).thenReturn(emitter);
+        when(roomSseManager.subscribe(7L)).thenReturn(emitter);
 
         SseEmitter result = sseService.subscribe(3L, SHARE_CODE);
 
         verify(auctionRoomShareService).resolveRoomId(SHARE_CODE);
+        verify(roomSseManager).subscribe(7L);
         assertThat(result).isSameAs(emitter);
     }
 

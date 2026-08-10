@@ -41,7 +41,10 @@ public class RoomSseManager {
         sseMetrics.bindConnections(roomEmitters);
     }
 
-    public SseEmitter subscribe(String name, Long roomId, Object data) {
+    /**
+     * 방에 클라이언트 커넥션 하나 추가
+     */
+    public SseEmitter subscribe(Long roomId) {
         SseEmitter emitter = new SseEmitter(sseProperties.emitterTimeoutMs());
 
         register(roomId, emitter);
@@ -50,7 +53,6 @@ public class RoomSseManager {
         emitter.onTimeout(() -> disconnect(roomId, emitter));
         emitter.onError(e -> disconnect(roomId, emitter));
 
-        send(roomId, emitter, name, data);
         broadcastParticipantCount(roomId);
 
         log.info("sse 연결 완료: roomId={}", roomId);
