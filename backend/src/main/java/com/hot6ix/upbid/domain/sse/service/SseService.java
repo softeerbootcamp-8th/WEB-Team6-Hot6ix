@@ -17,9 +17,9 @@ public class SseService {
     private static final String PARTICIPANT_JOINED_EVENT = "PARTICIPANT_JOINED_EVENT";
 
     // 방을 구독한다. 약관 동의는 /agreement API에서 처리하므로 여기서는 SSE 연결만 담당한다.
-    public SseEmitter subscribe(Long userId, String shareCode){
+    public SseEmitter subscribe(Long userId, String shareCode, Long lastEventId){
         Long roomId = auctionRoomShareService.resolveRoomId(shareCode);
 
-        return roomSseManager.subscribe(PARTICIPANT_JOINED_EVENT, roomId, LeaderboardDto.dummy());
+        return roomSseManager.subscribe(PARTICIPANT_JOINED_EVENT, roomId, LeaderboardDto.dummy(), lastEventId);
     }
 }

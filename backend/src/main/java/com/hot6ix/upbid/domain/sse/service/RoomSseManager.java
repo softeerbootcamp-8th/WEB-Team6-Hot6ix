@@ -2,8 +2,11 @@ package com.hot6ix.upbid.domain.sse.service;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
+import com.hot6ix.upbid.domain.sse.service.BufferedEvent;
+import com.hot6ix.upbid.global.event.payload.RoomClosed;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Slf4j
@@ -27,6 +32,7 @@ public class RoomSseManager {
     private final SseProperties sseProperties;
     /** 계측은 이 객체가 안다. 이 클래스는 Micrometer 를 모른다. */
     private final SseMetrics sseMetrics;
+    private final SseEventBuffer sseEventBuffer;
 
     /**
      * 지금 열려 있는 연결 수를 지표로 내보낸다. 게이지는 스크랩할 때 위 Map 을 읽어 가는
@@ -41,7 +47,14 @@ public class RoomSseManager {
         sseMetrics.bindConnections(roomEmitters);
     }
 
-    public SseEmitter subscribe(String name, Long roomId, Object data) {
+    /**
+     * SSE 구독을 등록한다.
+     *
+     * <p>최초 연결({@code lastEventId == null})이면 초기 이벤트({@code name}/{@code data})를 전송한다.
+     * 재연결({@code lastEventId != null})이면 버퍼에서 해당 ID 이후 이벤트를 먼저 replay한 뒤
+     * 신규 이벤트를 정상 수신한다. replay가 끝난 뒤 등록하므로 순서 역전이 없다.
+     */
+    public SseEmitter subscribe(String name, Long roomId, Object data, Long lastEventId) {
         SseEmitter emitter = new SseEmitter(sseProperties.emitterTimeoutMs());
 
         register(roomId, emitter);
@@ -50,10 +63,18 @@ public class RoomSseManager {
         emitter.onTimeout(() -> disconnect(roomId, emitter));
         emitter.onError(e -> disconnect(roomId, emitter));
 
-        send(roomId, emitter, name, data);
+        if (lastEventId != null) {
+            List<BufferedEvent> missed = sseEventBuffer.getEventsAfter(roomId, lastEventId);
+            for (BufferedEvent event : missed) {
+                send(roomId, emitter, event.eventName(), event.id(), event.data());
+            }
+        } else {
+            send(roomId, emitter, name, null, data);
+        }
+
         broadcastParticipantCount(roomId);
 
-        log.info("sse 연결 완료: roomId={}", roomId);
+        log.info("sse 연결 완료: roomId={}, lastEventId={}", roomId, lastEventId);
 
         return emitter;
     }
@@ -75,9 +96,11 @@ public class RoomSseManager {
             return;
         }
 
+        Long id = sseEventBuffer.add(roomId, name, data);
+
         sseMetrics.recordBroadcast(() -> {
             for (SseEmitter emitter : emitters) {
-                send(roomId, emitter, name, data);
+                send(roomId, emitter, name, id, data);
             }
         });
     }
@@ -87,13 +110,19 @@ public class RoomSseManager {
         return emitters == null ? 0 : emitters.size();
     }
 
-    private void send(Long roomId, SseEmitter emitter, String name, Object data) {
+    /**
+     * @param id 버퍼에 저장된 순차 ID. null이면 SSE {@code id} 필드를 붙이지 않는다.
+     *           클라이언트는 이 값을 {@code Last-Event-ID}로 저장해 재연결 시 서버에 보낸다.
+     */
+    private void send(Long roomId, SseEmitter emitter, String name, Long id, Object data) {
         try {
-            emitter.send(SseEmitter
-                    .event()
+            SseEmitter.SseEventBuilder event = SseEmitter.event()
                     .name(name)
-                    .data(data)
-            );
+                    .data(data);
+            if (id != null) {
+                event.id(String.valueOf(id));
+            }
+            emitter.send(event);
         } catch (IOException | IllegalStateException e) {
             log.warn("sse 전송 실패: roomId={}, name={}", roomId, name, e);
             unregister(roomId, emitter);
@@ -191,5 +220,14 @@ public class RoomSseManager {
             emitter.completeWithError(e);
             return false;
         }
+    }
+
+    /**
+     * 방이 닫히면 해당 방의 이벤트 버퍼를 삭제한다.
+     * 재연결이 더 이상 필요 없으므로 메모리를 즉시 해제한다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onRoomClosed(RoomClosed event) {
+        sseEventBuffer.clear(event.roomId());
     }
 }

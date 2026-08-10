@@ -12,6 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "upbid.sse")
 public record SseProperties(
         long heartbeatIntervalMs,
-        long emitterTimeoutMs
+        long emitterTimeoutMs,
+        int bufferSize
 ) {
 }
