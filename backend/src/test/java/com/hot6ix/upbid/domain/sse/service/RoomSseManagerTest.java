@@ -33,9 +33,8 @@ class RoomSseManagerTest {
 
     /** 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다. */
     private static RoomSseManager newRoomSseManager() {
-        return new RoomSseManager(
-                new SseProperties(30_000L, EMITTER_TIMEOUT_MS),
-                new SseMetrics(new SimpleMeterRegistry()));
+        SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
+        return new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), new SseEventBuffer(props));
     }
 
     @Test
@@ -52,6 +51,7 @@ class RoomSseManagerTest {
                 executor.submit(() -> {
                     try {
                         start.await();
+                        roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
                         roomSseManager.subscribe(ROOM_ID);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
@@ -76,6 +76,7 @@ class RoomSseManagerTest {
 
         int initialSubscribers = 32;
         for (int i = 0; i < initialSubscribers; i++) {
+            roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
             roomSseManager.subscribe(ROOM_ID);
         }
 
@@ -93,6 +94,7 @@ class RoomSseManagerTest {
 
         Thread subscriber = new Thread(() -> {
             for (int i = 0; i < 200; i++) {
+                roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
                 roomSseManager.subscribe(ROOM_ID);
             }
         });
@@ -110,6 +112,9 @@ class RoomSseManagerTest {
     @DisplayName("이미 완료된 emitter가 섞여 있어도 나머지 구독은 이벤트를 받는다")
     void isolatesFailureFromOtherSubscribers() {
 
+        roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
+        roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
+        SseEmitter dead = roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
         roomSseManager.subscribe(ROOM_ID);
         roomSseManager.subscribe(ROOM_ID);
         SseEmitter dead = roomSseManager.subscribe(ROOM_ID);
@@ -128,6 +133,8 @@ class RoomSseManagerTest {
     @DisplayName("heartbeat 가 응답하지 않는 구독을 걷어낸다")
     void sweepsDeadSubscriberOnHeartbeat() {
 
+        roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
+        SseEmitter dead = roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
         roomSseManager.subscribe(ROOM_ID);
         SseEmitter dead = roomSseManager.subscribe(ROOM_ID);
 
@@ -143,6 +150,9 @@ class RoomSseManagerTest {
     void broadcastsCountAfterHeartbeatSweep() {
 
         RoomSseManager manager = spy(newRoomSseManager());
+
+        manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
+        SseEmitter dead = manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
 
         manager.subscribe(ROOM_ID);
         SseEmitter dead = manager.subscribe(ROOM_ID);
@@ -162,6 +172,7 @@ class RoomSseManagerTest {
         RoomSseManager manager = spy(newRoomSseManager());
 
         manager.subscribe(ROOM_ID);
+        manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
 
         clearInvocations(manager);
 
@@ -183,11 +194,13 @@ class RoomSseManagerTest {
 
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         RoomSseManager manager = new RoomSseManager(
-                new SseProperties(30_000L, EMITTER_TIMEOUT_MS), new SseMetrics(registry));
+                new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50), new SseMetrics(registry), new SseEventBuffer(new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50)));
 
         // 게이지는 @PostConstruct 에서 붙는다. 직접 생성한 객체에서는 안 불리므로 여기서 부른다.
         manager.bindMetrics();
 
+        SseEmitter first = manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
+        SseEmitter second = manager.subscribe(EVENT_NAME, ROOM_ID, "payload", null);
         SseEmitter first = manager.subscribe(ROOM_ID);
         SseEmitter second = manager.subscribe(ROOM_ID);
 
@@ -214,6 +227,7 @@ class RoomSseManagerTest {
 
         List<SseEmitter> emitters = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
+            emitters.add(roomSseManager.subscribe(EVENT_NAME, ROOM_ID, "payload", null));
             emitters.add(roomSseManager.subscribe(ROOM_ID));
         }
 
