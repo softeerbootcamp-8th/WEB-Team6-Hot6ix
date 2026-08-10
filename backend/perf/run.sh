@@ -30,9 +30,13 @@ START_PRICE=10000
 BID_UNIT=1000
 DURATION="3m"
 WARMUP=30
+# 워밍업은 데우는 게 목적이라 부하를 세게 줄 이유가 없다. 낮은 VU 로 도는 편이
+# 경합 없이 JIT 만 데우기에 낫다.
+WARMUP_VUS=5
 WHO="${PERF_WHO:-$(whoami)}"
 JAVA_OPTS=""
 SKIP_BUILD=0
+JFR=0
 VIRTUAL_THREADS=false
 BID_ITEMS=0
 
@@ -131,8 +135,10 @@ while [ $# -gt 0 ]; do
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
+    --warmup-vus) WARMUP_VUS="$2"; shift 2 ;;
     --who) WHO="$2"; shift 2 ;;
     --skip-build) SKIP_BUILD=1; shift ;;
+    --jfr) JFR=1; shift ;;
     --port) PERF_HTTP_PORT="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "모르는 옵션: $1" >&2; usage; exit 1 ;;
@@ -324,6 +330,15 @@ export SSE_HEARTBEAT_MS="$HEARTBEAT_MS"
 # 마감 표본이 줄어드는데, k6 쪽 check 만 실패하고 결과 표에는 아무 표시도 안 남아서 알아채기
 # 어렵다(실측으로 --items 100 을 줬다가 50개만 시작돼서 마감이 41건만 나왔다).
 export MAX_IN_PROGRESS_PER_ROOM="$ITEMS"
+# JFR(Java Flight Recorder)은 JDK 에 들어 있어서 따로 깔 게 없다. 10ms 마다 스레드가
+# 어느 코드에 있는지 찍어서 "CPU 를 어디서 태웠나"를 순위로 뽑을 수 있다.
+#
+# 앱이 종료될 때 파일로 떨어뜨린다(dumponexit). 중간에 꺼내려면 jcmd 가 필요한데 우리
+# 이미지가 JRE 라 없다. 그래서 측정이 끝난 뒤 앱을 멈춰서 받아낸다(아래 "JFR 꺼내기").
+if [ "$JFR" -eq 1 ]; then
+  JAVA_OPTS="$JAVA_OPTS -XX:StartFlightRecording=name=upbid,settings=profile,filename=/tmp/upbid.jfr,dumponexit=true"
+fi
+
 export APP_JAVA_OPTS="$JAVA_OPTS"
 export VIRTUAL_THREADS
 
@@ -558,10 +573,72 @@ else
   echo "[5/8] 배경 SSE 없음"
 fi
 
-# ── 5. 워밍업 ──────────────────────────────────────────────────────
+# ── 5. k6 스크립트와 실행 함수 ────────────────────────────────────
+# 워밍업이 본 측정과 같은 스크립트를 돌리므로 여기서 먼저 정한다.
+case "$SCENARIO" in
+  0) SCRIPT="capacity.js" ;;
+  1) SCRIPT="scenario1.js" ;;
+  2) SCRIPT="scenario2.js" ;;
+  3) SCRIPT="scenario3.js" ;;
+  4) SCRIPT="scenario4.js" ;;
+  5) SCRIPT="scenario5.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~5)" >&2; exit 1 ;;
+esac
+
+# k6 를 한 번 돌린다. 워밍업과 본 측정이 같은 함수를 지나야 워밍업이 실제로 같은 경로를
+# 데운 것이 된다 — 다른 경로를 데우면 데운 셈만 치는 것이다.
+#
+#   $1 VU 수   $2 길이   $3 RUN_ID (빈 값이면 summary.json 을 안 남긴다)
+#   $4 로그 파일   $5 시작가   나머지 인자는 k6 에 그대로 넘어간다
+K6_EXIT=0
+run_k6() {
+  local vus="$1" duration="$2" run_id="$3" log="$4" price="$5"
+  shift 5
+
+  set +e
+  VUS="$vus" DURATION="$duration" RUN_ID="$run_id" \
+  SHARE_CODE="$SHARE_CODE" ITEM_IDS="$ITEM_IDS" CLOSE_ITEM_IDS="$CLOSE_ITEM_IDS" \
+  BID_ITEMS="$BID_ITEMS" BID_START="$BID_START" CLOSE_BID_UNTIL="$CLOSE_BID_UNTIL" \
+  CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
+  START_PRICE="$price" BID_UNIT="$BID_UNIT" \
+    "${COMPOSE[@]}" run --rm \
+      -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
+      -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
+      -e START_PRICE -e BID_UNIT \
+      k6 run ${@+"$@"} "/scripts/$SCRIPT" \
+      2>&1 | tee "$log"
+  K6_EXIT="${PIPESTATUS[0]}"
+  set -e
+}
+
+# ── 6. 워밍업 ──────────────────────────────────────────────────────
 # JIT 이 덥혀지고 커넥션 풀이 채워지기 전 구간을 재면 첫 줄만 유독 느리게 나온다.
-echo "[6/8] 워밍업 ${WARMUP}초"
-sleep "$WARMUP"
+#
+# 예전에는 여기서 sleep 만 했다. 그건 아무것도 안 데운다 — JIT 도 커넥션 풀도 트래픽이
+# 있어야 데워진다. 실측으로 콜드와 웜이 5.5배 차이 났고(같은 설정에 195 대 1,236 req/s),
+# 같은 조건 3회 반복의 폭이 19% 에서 2.2% 로 줄었다.
+#
+# 마감 측정에서 특히 중요하다. 마감은 3분에 표본이 90건뿐이라 입찰보다 훨씬 크게 흔들린다.
+#
+# 부하를 주는 워밍업은 입찰 시나리오에서만 한다. 3(SSE)과 4·5(마감)는 부하 모양이 달라
+# 같은 스크립트로 데울 수가 없어서 예전처럼 기다리기만 한다.
+if [ "$SCENARIO" = "1" ] || [ "$SCENARIO" = "2" ]; then
+  echo "[6/8] 워밍업 ${WARMUP}초 (vus=$WARMUP_VUS 로 실제 부하를 준다)"
+  run_k6 "$WARMUP_VUS" "${WARMUP}s" "" "$RESULT_DIR/k6_warmup.log" "$START_PRICE"
+
+  # 워밍업이 현재가를 올려놓고 끝난다. 그대로 본 측정을 시작하면 격자가 현재가를 따라잡을
+  # 때까지 입찰이 BID_AMOUNT_TOO_LOW 로 거절돼서 접수율이 런마다 달라진다.
+  WARMED_PRICE="$(curl -s "$APP_URL/api/v1/auction-rooms/share/$SHARE_CODE/auction-items" \
+    | jq -r '[.. | .currentPrice? // empty] | max // 0' 2>/dev/null || echo 0)"
+
+  if [ "${WARMED_PRICE:-0}" -gt "$START_PRICE" ] 2>/dev/null; then
+    echo "[6/8]   워밍업 뒤 현재가 $WARMED_PRICE → 본 측정 시작가 $((WARMED_PRICE + BID_UNIT))"
+    START_PRICE=$((WARMED_PRICE + BID_UNIT))
+  fi
+else
+  echo "[6/8] 워밍업 ${WARMUP}초 (시나리오 $SCENARIO 는 기다리기만 한다)"
+  sleep "$WARMUP"
+fi
 
 row_lock_status() {
   mysql_query "SHOW GLOBAL STATUS LIKE 'Innodb_row_lock%'"
@@ -579,32 +656,31 @@ com_select() {
 }
 COM_SELECT_BEFORE="$(com_select)"
 
-# ── 6. k6 ─────────────────────────────────────────────────────────
-case "$SCENARIO" in
-  0) SCRIPT="capacity.js" ;;
-  1) SCRIPT="scenario1.js" ;;
-  2) SCRIPT="scenario2.js" ;;
-  3) SCRIPT="scenario3.js" ;;
-  4) SCRIPT="scenario4.js" ;;
-  5) SCRIPT="scenario5.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~5)" >&2; exit 1 ;;
-esac
-
+# ── 7. k6 ─────────────────────────────────────────────────────────
 WINDOW_START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WINDOW_START_EPOCH="$(date +%s)"
 
 echo "[7/8] k6 $SCRIPT (vus=$VUS, $DURATION)"
 
-# k6 컨테이너 CPU 를 따로 샘플링한다. k6 는 자기 CPU 를 지표로 안 내보내서,
-# "여기부턴 부하 발생기가 병목"을 판정하려면 밖에서 봐야 한다.
-CPU_LOG="$RESULT_DIR/k6_cpu.txt"
+# 컨테이너 CPU 를 밖에서 샘플링한다. 세 개를 다 잡는다.
+#
+#   k6     자기 CPU 를 지표로 안 내보낸다. "여기부턴 부하 발생기가 병목"을 판정하려면 필요하다
+#   app    ★ 컨테이너 한도가 cpus: 2.0 이라 200% 가 천장이다. 여기 붙어 있으면 커넥션 풀이든
+#          스케줄러 스레드든 뭘 바꿔도 숫자가 안 움직인다. 그 상태인지를 표에서 봐야 한다
+#   mysql  같은 이유. 앱이 아니라 DB 가 천장이면 앱을 고쳐도 안 움직인다
+#
+# 예전에는 k6 만 잡았다. 앱 CPU 가 꽉 찼던 실행이 index.csv 에 흔적을 하나도 안 남겼다.
+CPU_LOG="$RESULT_DIR/cpu.txt"
 : >"$CPU_LOG"
 (
   while true; do
     docker stats --no-stream --format '{{.Name}} {{.CPUPerc}}' 2>/dev/null \
-      | awk -v skip="$SSE_CONTAINER" \
-          'tolower($1) ~ /k6/ && (skip == "" || $1 != skip) { gsub(/%/, "", $2); print $2 }' \
-      >>"$CPU_LOG" || true
+      | awk -v skip="$SSE_CONTAINER" '
+          { gsub(/%/, "", $2) }
+          tolower($1) ~ /k6/ && (skip == "" || $1 != skip) { print "k6", $2; next }
+          $1 ~ /-app-[0-9]+$/                             { print "app", $2; next }
+          $1 ~ /-mysql-[0-9]+$/                           { print "mysql", $2 }
+        ' >>"$CPU_LOG" || true
     sleep 5
   done
 ) &
@@ -632,20 +708,8 @@ LOCK_MODES_LOG="$RESULT_DIR/data_locks.txt"
 LOCK_SAMPLER=$!
 disown "$LOCK_SAMPLER" 2>/dev/null || true
 
-set +e
-VUS="$VUS" DURATION="$DURATION" RUN_ID="$RUN_ID" \
-SHARE_CODE="$SHARE_CODE" ITEM_IDS="$ITEM_IDS" CLOSE_ITEM_IDS="$CLOSE_ITEM_IDS" \
-BID_ITEMS="$BID_ITEMS" BID_START="$BID_START" CLOSE_BID_UNTIL="$CLOSE_BID_UNTIL" \
-CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
-START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
-  "${COMPOSE[@]}" run --rm \
-    -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
-    -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
-    -e START_PRICE -e BID_UNIT \
-    k6 run -o experimental-prometheus-rw "/scripts/$SCRIPT" \
-    2>&1 | tee "$RESULT_DIR/k6.log"
-K6_EXIT="${PIPESTATUS[0]}"
-set -e
+run_k6 "$VUS" "$DURATION" "$RUN_ID" "$RESULT_DIR/k6.log" "$START_PRICE" \
+  -o experimental-prometheus-rw
 
 kill "$CPU_SAMPLER" 2>/dev/null || true
 kill "$LOCK_SAMPLER" 2>/dev/null || true
@@ -827,8 +891,15 @@ ACCEPTED_PER_S="$(awk -v a="$ACCEPTED" -v w="$WINDOW_SECONDS" 'BEGIN { printf "%
 # 둘이 벌어지면 그 차이가 네트워크와 부하 발생기 몫이라, 그 자체가 신호다.
 K6_P95_MS="$(jq -r '.metrics.http_req_duration.values["p(95)"] // "NaN"' "$RESULT_DIR/summary.json" 2>/dev/null || echo NaN)"
 
-K6_CPU_MAX="$(sort -g "$CPU_LOG" 2>/dev/null | tail -1)"
-K6_CPU_MAX="${K6_CPU_MAX:-NaN}"
+# 컨테이너별 최고 CPU. 한도가 cpus: 2.0 이라 **200% 가 천장**이다 — 100% 가 아니다.
+# app 이 200 근처면 그 실행은 커넥션 풀이나 스레드 실험이 아니라 CPU 실험이었다는 뜻이다.
+cpu_max() {
+  awk -v k="$1" '$1 == k { seen = 1; if ($2 + 0 > m) m = $2 + 0 }
+                 END { if (!seen) print "NaN"; else print m + 0 }' "$CPU_LOG" 2>/dev/null
+}
+K6_CPU_MAX="$(cpu_max k6)"
+APP_CPU_MAX="$(cpu_max app)"
+MYSQL_CPU_MAX="$(cpu_max mysql)"
 
 # 자릿수를 맞춘다. 시간은 ms 정수, 메모리는 MB 정수, 처리량은 소수 1자리, CPU 는 % 정수.
 # 다섯 명이 각자 소수점을 몇 자리까지 적을지 정하면 표가 안 읽힌다.
@@ -859,6 +930,8 @@ SCHED_ACTIVE_MAX="$(round "$SCHED_ACTIVE_MAX" 0)"
 SCHED_QUEUED_MAX="$(round "$SCHED_QUEUED_MAX" 0)"
 GC_PAUSE_MS_PER_S="$(round "$GC_PAUSE_MS_PER_S" 1)"
 K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
+APP_CPU_MAX="$(round "$APP_CPU_MAX" 0)"
+MYSQL_CPU_MAX="$(round "$MYSQL_CPU_MAX" 0)"
 K6_P95_MS="$(round "$K6_P95_MS" 0)"
 
 # 입찰 한 건이 SELECT 를 몇 번 했는지. Com_select 는 서버 전체 누적이라 배경 SSE 나 시딩까지
@@ -897,6 +970,20 @@ SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER
   done
 } >"$RESULT_DIR/metrics.csv"
 
+# ── JFR 꺼내기 ─────────────────────────────────────────────────────
+# 지표를 다 뽑은 뒤에 한다. 앱을 멈춰야 파일이 써지는데, 먼저 멈추면 마지막 스크랩을 놓친다.
+if [ "$JFR" -eq 1 ]; then
+  echo "      JFR 기록 꺼내는 중 (앱을 멈춰야 파일이 써진다)"
+  APP_CID="$("${COMPOSE[@]}" ps -q app 2>/dev/null | head -1)"
+  "${COMPOSE[@]}" stop app >/dev/null 2>&1 || true
+
+  if [ -n "$APP_CID" ] && docker cp "$APP_CID:/tmp/upbid.jfr" "$RESULT_DIR/upbid.jfr" 2>/dev/null; then
+    echo "      $RESULT_DIR/upbid.jfr"
+  else
+    echo "※ JFR 파일을 못 꺼냈다. 앱이 정상 종료됐는지 본다." >&2
+  fi
+fi
+
 # ── 8. 결과 저장 ───────────────────────────────────────────────────
 STATUS="ok"
 [ "$K6_EXIT" -ne 0 ] && STATUS="aborted"
@@ -928,7 +1015,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,app_cpu_max,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -958,7 +1045,7 @@ fi
 # k6 가 중간에 죽으면 summary.json 이 없어서 접수와 거절이 전부 0 인데 처리량은 그럴듯한
 # 숫자가 박혀서, 그 줄만 봐서는 아무도 못 알아본다. 실측으로 겪었다 — 구간 128초짜리
 # aborted 줄에 처리량 3490.7 이 들어갔고 접수는 0 이었다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
   "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
@@ -968,7 +1055,8 @@ printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
   "$CLOSE_LOCK_WAIT_P95_MS" "$CLOSE_LOCK_HOLD_P95_MS" "$CLOSE_NOTIFY_P95_MS" "$CLOSE_AWARD_P95_MS" \
   "$CLOSE_FAILURES" "$CLOSES" "$AWARDS" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$HEARTBEAT_RUNS" "$HEARTBEAT_EXPECTED" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
-  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
+  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$APP_CPU_MAX" "$MYSQL_CPU_MAX" \
+  "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" \
   >>"$INDEX"
 
@@ -1015,6 +1103,8 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | SSE heartbeat p95 | ${SSE_HEARTBEAT_P95_MS} ms |
 | **heartbeat 실행 횟수** | **${HEARTBEAT_RUNS} / ${HEARTBEAT_EXPECTED} 회** ← 모자라면 굶은 것 |
 | SSE broadcast p95 | ${SSE_BROADCAST_P95_MS} ms |
+| **앱 CPU max** | **${APP_CPU_MAX} %** ← 천장이 200%(cpus: 2.0). 여기 붙었으면 이 줄은 CPU 실험이다 |
+| MySQL CPU max | ${MYSQL_CPU_MAX} % ← 천장 200% |
 | k6 CPU max | ${K6_CPU_MAX} % |
 | 접수 (201) | ${ACCEPTED} |
 | 거절 — 금액 규칙 (7004·7005) | ${REJECTED_AMOUNT} |
