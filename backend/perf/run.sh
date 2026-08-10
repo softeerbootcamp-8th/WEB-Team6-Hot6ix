@@ -871,6 +871,9 @@ SCHED_ACTIVE_MAX="$(round "$SCHED_ACTIVE_MAX" 0)"
 SCHED_QUEUED_MAX="$(round "$SCHED_QUEUED_MAX" 0)"
 GC_PAUSE_MS_PER_S="$(round "$GC_PAUSE_MS_PER_S" 1)"
 K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
+# 자리를 맞춰 둔다. 콘솔은 정수(4)로, 손으로 칠 때는 소수(4.0)로 보내기 쉬운데
+# 그대로 두면 같은 조건인 줄이 표에서 4 와 4.0 으로 갈라져 묶이지 않는다.
+CPUS="$(round "$CPUS" 1)"
 # 앱·MySQL 은 소수 첫째 자리까지 남긴다. --cpus 를 올렸을 때 몇 % 로 내려갔는지가
 # 이 실험의 답이라, 정수로 반올림하면 그 변화가 뭉개진다.
 APP_CPU_AVG="$(round "$APP_CPU_AVG" 1)"

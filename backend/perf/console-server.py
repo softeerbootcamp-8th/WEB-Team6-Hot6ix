@@ -133,6 +133,13 @@ def build_command(body):
     if pool != 10:
         args += ["--pool", str(pool)]
 
+    # 앱과 MySQL 에 줄 코어 수. 상한 8 은 Docker Desktop 이 쓸 수 있는 코어를 넘지 않게 둔 값이다.
+    # 두 컨테이너에 각각 걸리므로 8 이면 둘이서 16 을 요구하게 되는데, 노트북에 그만큼 없으면
+    # 도커가 실제로는 덜 준다. 그러면 "코어를 늘렸는데 왜 안 빨라지지" 를 잘못 읽는다.
+    cpus = num("cpus", 2, 1, 8)
+    if cpus != 2:
+        args += ["--cpus", str(cpus)]
+
     sse = num("sse", 0, 0, 5000)
     if sse:
         args += ["--sse", str(sse)]
