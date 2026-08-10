@@ -41,7 +41,10 @@ services:
       - "8080"
     # 배포 스펙과 같은 값. 노트북이 얼마나 바쁜지에 따라 결과가 흔들리면 안 된다.
     # 가장 사양 낮은 노트북 기준으로 토요일 오전에 확정하고, 바꾸면 전원이 같이 바꾼다.
-    cpus: 2.0
+    #
+    # run.sh --cpus 로 바꾼다. 기본값을 바꾸지 말 것 — 이 값을 바꾸면 지금까지 잰 결과와
+    # 비교할 수 없다. "CPU 를 늘리면 접수가 오르나" 를 볼 때만 한 실행에서 올려 본다.
+    cpus: ${PERF_CPUS:-2.0}
     mem_limit: 700m
     environment:
       # 베이스 이미지 기본값이 UTC 라 이게 없으면 LocalDateTime 이 UTC 벽시계로 만들어진다.
@@ -75,7 +78,9 @@ services:
     # run.sh 는 실행마다 DB 를 초기화해야 하는데, named volume 을 붙이면 그러려고
     # `docker compose down -v` 를 써야 한다. 그건 팀 금지 명령이고 훅이 막는다.
     # 볼륨이 없으면 `down` 만으로 데이터가 사라져서 그럴 일이 없다.
-    cpus: 2.0
+    # 앱과 같은 값으로 함께 움직인다 (run.sh --cpus). 한쪽만 올리면 어느 쪽이
+    # CPU 에 묶여 있었는지 못 가른다.
+    cpus: ${PERF_CPUS:-2.0}
     environment:
       - TZ=Asia/Seoul
       - MYSQL_ROOT_PASSWORD=1234

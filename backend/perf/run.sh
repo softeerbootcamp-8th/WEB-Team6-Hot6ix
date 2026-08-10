@@ -36,6 +36,7 @@ SKIP_BUILD=0
 VIRTUAL_THREADS=false
 BID_ITEMS=0
 ISOLATION=RR
+CPUS=2.0
 BULK_ITEMS=0
 SWEEP_INDEX=off
 
@@ -65,6 +66,9 @@ usage() {
   --virtual-threads  가상 스레드를 켠다. **톰캣도 함께 바뀐다**(전역 스위치)
   --bid-items N      시나리오 5 에서 입찰을 넣을 물품 수. 나머지는 마감 대상이 된다
                      (기본: 절반. 전부에 입찰하면 Soft Close 로 안 닫힌다)
+  --cpus N           앱과 MySQL 컨테이너에 줄 코어 수 (기본 2.0)
+                     둘을 함께 올린다. 한쪽만 올리면 어느 쪽이 CPU 에 묶였는지 못 가른다.
+                     **기본값으로 잰 결과와는 비교하지 않는다**
   --isolation RC|RR  MySQL 트랜잭션 격리 수준 (기본 RR = MySQL 기본값)
                      RR 은 갭 락을 걸고 RC 는 안 건다. 경합이 행 락 때문인지 갭 때문인지 가른다
   --bulk-items N     닫힌 물품 N 개를 SQL 로 밀어 넣어 표를 불린다 (기본 0)
@@ -97,6 +101,7 @@ while [ $# -gt 0 ]; do
     --xmx) JAVA_OPTS="-Xmx$2"; shift 2 ;;
     --virtual-threads) VIRTUAL_THREADS=true; shift ;;
     --bid-items) BID_ITEMS="$2"; shift 2 ;;
+    --cpus) CPUS="$2"; shift 2 ;;
     --isolation) ISOLATION="$2"; shift 2 ;;
     --bulk-items) BULK_ITEMS="$2"; shift 2 ;;
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
@@ -283,6 +288,7 @@ export SCHEDULER_POOL_SIZE="$SCHEDULER_POOL"
 export SSE_HEARTBEAT_MS="$HEARTBEAT_MS"
 export APP_JAVA_OPTS="$JAVA_OPTS"
 export VIRTUAL_THREADS
+export PERF_CPUS="$CPUS"
 
 # 일회성 컨테이너(docker compose run 으로 띄운 k6)는 down 이 안 지운다. 설계가 그렇다.
 # 안 지우면 직전 실행의 배경 SSE 가 새 앱에 그대로 붙어서, 이번 줄의 접속 수와 스레드가
@@ -570,15 +576,29 @@ WINDOW_START_EPOCH="$(date +%s)"
 
 echo "[7/8] k6 $SCRIPT (vus=$VUS, $DURATION)"
 
-# k6 컨테이너 CPU 를 따로 샘플링한다. k6 는 자기 CPU 를 지표로 안 내보내서,
-# "여기부턴 부하 발생기가 병목"을 판정하려면 밖에서 봐야 한다.
-CPU_LOG="$RESULT_DIR/k6_cpu.txt"
+# 컨테이너 CPU 를 밖에서 샘플링한다. 세 가지를 각각 봐야 한다.
+#
+#   k6    "여기부턴 부하 발생기가 병목" 판정. k6 는 자기 CPU 를 지표로 안 내보낸다.
+#   app   `process_cpu_usage` 로도 나오지만 index.csv 에 없으면 아무도 안 본다.
+#         실제로 pool 곡선을 20회 넘게 재는 동안 앱 CPU 를 한 번도 표에 안 올렸고,
+#         나중에 보니 pool 4 에서도 시간의 15 % 를 100 % 에 붙어 있었다.
+#   mysql **이 값만 다른 데서 못 구한다.** Prometheus 가 MySQL 을 안 긁어서,
+#         커밋이 느린 게 디스크 때문인지 CPU 때문인지 가를 근거가 여기밖에 없다.
+#
+# `docker stats` 의 `CPUPerc` 는 호스트 코어 기준이라 cpus=2 면 200 % 까지 올라간다.
+# 아래에서 --cpus 로 나눠 "준 코어를 몇 % 썼나" 로 바꾼다. 그래야 --cpus 를 바꾼 실행끼리
+# 비교가 된다.
+CPU_LOG="$RESULT_DIR/container_cpu.txt"
 : >"$CPU_LOG"
 (
   while true; do
     docker stats --no-stream --format '{{.Name}} {{.CPUPerc}}' 2>/dev/null \
-      | awk -v skip="$SSE_CONTAINER" \
-          'tolower($1) ~ /k6/ && (skip == "" || $1 != skip) { gsub(/%/, "", $2); print $2 }' \
+      | awk -v skip="$SSE_CONTAINER" '
+          { gsub(/%/, "", $2) }
+          # 배경 SSE 컨테이너는 뺀다. 안 그러면 k6 값이 둘 중 어느 쪽인지 모르는 값이 된다.
+          tolower($1) ~ /k6/ && (skip == "" || $1 != skip) { print "k6", $2; next }
+          $1 ~ /^upbid-perf-app-/   { print "app", $2; next }
+          $1 ~ /^upbid-perf-mysql-/ { print "mysql", $2; next }' \
       >>"$CPU_LOG" || true
     sleep 5
   done
@@ -803,8 +823,19 @@ ACCEPTED_PER_S="$(awk -v a="$ACCEPTED" -v w="$WINDOW_SECONDS" 'BEGIN { printf "%
 # 둘이 벌어지면 그 차이가 네트워크와 부하 발생기 몫이라, 그 자체가 신호다.
 K6_P95_MS="$(jq -r '.metrics.http_req_duration.values["p(95)"] // "NaN"' "$RESULT_DIR/summary.json" 2>/dev/null || echo NaN)"
 
-K6_CPU_MAX="$(sort -g "$CPU_LOG" 2>/dev/null | tail -1)"
-K6_CPU_MAX="${K6_CPU_MAX:-NaN}"
+# 컨테이너별로 평균과 최대를 뽑는다. 앱과 MySQL 은 --cpus 로 나눠 "준 코어의 몇 %" 로
+# 바꾸고, k6 는 제한을 안 걸었으니 호스트 코어 기준 그대로 둔다.
+cpu_stat() {
+  awk -v role="$1" -v div="$2" '
+    $1 == role { n++; sum += $2; if ($2 > max) max = $2 }
+    END {
+      if (n == 0) { print "NaN NaN"; exit }
+      printf "%.1f %.1f\n", sum / n / div, max / div
+    }' "$CPU_LOG" 2>/dev/null || echo "NaN NaN"
+}
+read -r APP_CPU_AVG APP_CPU_MAX <<<"$(cpu_stat app "$CPUS")"
+read -r MYSQL_CPU_AVG MYSQL_CPU_MAX <<<"$(cpu_stat mysql "$CPUS")"
+read -r _ K6_CPU_MAX <<<"$(cpu_stat k6 1)"
 
 # 자릿수를 맞춘다. 시간은 ms 정수, 메모리는 MB 정수, 처리량은 소수 1자리, CPU 는 % 정수.
 # 다섯 명이 각자 소수점을 몇 자리까지 적을지 정하면 표가 안 읽힌다.
@@ -840,6 +871,12 @@ SCHED_ACTIVE_MAX="$(round "$SCHED_ACTIVE_MAX" 0)"
 SCHED_QUEUED_MAX="$(round "$SCHED_QUEUED_MAX" 0)"
 GC_PAUSE_MS_PER_S="$(round "$GC_PAUSE_MS_PER_S" 1)"
 K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
+# 앱·MySQL 은 소수 첫째 자리까지 남긴다. --cpus 를 올렸을 때 몇 % 로 내려갔는지가
+# 이 실험의 답이라, 정수로 반올림하면 그 변화가 뭉개진다.
+APP_CPU_AVG="$(round "$APP_CPU_AVG" 1)"
+APP_CPU_MAX="$(round "$APP_CPU_MAX" 1)"
+MYSQL_CPU_AVG="$(round "$MYSQL_CPU_AVG" 1)"
+MYSQL_CPU_MAX="$(round "$MYSQL_CPU_MAX" 1)"
 K6_P95_MS="$(round "$K6_P95_MS" 0)"
 
 # 입찰 한 건이 SELECT 를 몇 번 했는지. Com_select 는 서버 전체 누적이라 배경 SSE 나 시딩까지
@@ -962,7 +999,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -992,7 +1029,7 @@ fi
 # k6 가 중간에 죽으면 summary.json 이 없어서 접수와 거절이 전부 0 인데 처리량은 그럴듯한
 # 숫자가 박혀서, 그 줄만 봐서는 아무도 못 알아본다. 실측으로 겪었다 — 구간 128초짜리
 # aborted 줄에 처리량 3490.7 이 들어갔고 접수는 0 이었다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
   "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" \
@@ -1002,7 +1039,8 @@ printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
   "$CLOSE_DELAY_P50_MS" "$CLOSE_DELAY_P95_MS" "$CLOSE_DELAY_MAX_MS" \
   "$CLOSE_DURATION_P95_MS" "$CLOSE_FAILURES" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
-  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
+  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" \
+  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" \
   >>"$INDEX"
 
@@ -1064,6 +1102,8 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | SSE heartbeat p95 | ${SSE_HEARTBEAT_P95_MS} ms |
 | SSE broadcast p95 | ${SSE_BROADCAST_P95_MS} ms |
 | k6 CPU max | ${K6_CPU_MAX} % |
+| 앱 CPU (준 ${CPUS} 코어 기준) | 평균 ${APP_CPU_AVG} % / 최대 ${APP_CPU_MAX} % |
+| MySQL CPU (준 ${CPUS} 코어 기준) | 평균 ${MYSQL_CPU_AVG} % / 최대 ${MYSQL_CPU_MAX} % |
 | 접수 (201) | ${ACCEPTED} |
 | 거절 — 금액 규칙 (7004·7005) | ${REJECTED_AMOUNT} |
 | 거절 — 이미 최고 입찰자 (7003) | ${REJECTED_ALREADY_TOP} |
@@ -1104,6 +1144,8 @@ printf '입찰당 SELECT %s 회   격리 %s   갭 락 표본 %s\n' \
   "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS"
 printf '스레드 %s   커넥션 %s active / %s pending (획득 p95 %s ms)   힙 %s MB   k6 CPU %s%%\n' \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$K6_CPU_MAX"
+printf 'CPU %s 코어   앱 평균 %s%% 최대 %s%%   MySQL 평균 %s%% 최대 %s%%\n' \
+  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX"
 printf 'SSE 접속 max %s   마감 지연 p95 %s ms\n' "$SSE_CONN_MAX" "$CLOSE_DELAY_P95_MS"
 echo
 printf '접수 %s   경합충돌(7006) %s   그밖의거절 %s   실패5xx %s\n' \
