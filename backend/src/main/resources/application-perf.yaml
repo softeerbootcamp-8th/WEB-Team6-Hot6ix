@@ -46,6 +46,11 @@ upbid:
     # 시나리오 2(물품 분산)는 한 방에서 물품 20개를 동시에 진행해야 하는데 서비스 규칙이 3이다.
     # 여기서만 올린다. 이 프로파일로 잰 숫자는 "제한을 푼 상태"라는 걸 note.md 에 적는다.
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:50}
+  # deal.award-recovery는 여기서 건드리지 않는다. application.yaml 기본값
+  # (enabled=true, interval-ms=300000)을 그대로 쓴다 — DealAwardRecoveryRunner의
+  # @Scheduled가 SSE heartbeat·마감 예약과 스케줄링 풀을 공유해 upbid.auction.close.delay에
+  # 노이즈를 더할 수 있지만, 이 프로파일에서도 복구 러너가 실제로 도는지 보려고 켜 둔다.
+  # 끄고 싶으면 run.sh 에서 AWARD_RECOVERY_ENABLED=false 로 넘긴다.
 
 # 로그를 줄인다. 재는 대상이 서비스가 아니라 로그 출력이 되면 안 된다.
 #

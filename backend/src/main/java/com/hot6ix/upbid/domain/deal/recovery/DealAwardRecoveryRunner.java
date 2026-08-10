@@ -30,7 +30,6 @@ public class DealAwardRecoveryRunner {
      * <p>조회 자체가 실패해도 예외를 삼킨다. 복구에 실패했다고 애플리케이션 기동까지 막으면
      * 그 서버는 경매를 아예 받지 못하는데, 그건 후보 몇 건이 안 만들어지는 것보다 나쁘다
      * ({@code AuctionRecoveryRunner}와 같은 이유).
-     *
      */
     @EventListener(ApplicationReadyEvent.class)
     @Scheduled(fixedDelayString = "${upbid.deal.award-recovery.interval-ms}")

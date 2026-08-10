@@ -62,6 +62,10 @@ upbid:
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
   auction:
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:3}
+  deal:
+    award-recovery:
+      enabled: ${AWARD_RECOVERY_ENABLED:true}
+      interval-ms: ${AWARD_RECOVERY_INTERVAL_MS:300000}
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
