@@ -84,25 +84,25 @@ class SseServiceTest {
     }
 
     @Test
-    @DisplayName("getRecentEvents()는 필터 후 10개를 넘으면 가장 최근 10개만 반환한다")
-    void getRecentEvents_returnsOnlyLastTenAfterFiltering() {
+    @DisplayName("getRecentEvents()는 필터 후 20개를 넘으면 가장 최근 20개만 반환한다")
+    void getRecentEvents_returnsOnlyLastTwentyAfterFiltering() {
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
 
         List<BufferedEvent> events = new ArrayList<>();
-        for (long id = 1; id <= 15; id++) {
+        for (long id = 1; id <= 25; id++) {
             events.add(new BufferedEvent(id, EventType.BID_PLACED.name(), "bid-" + id));
         }
         when(sseEventBuffer.getAllEvents(ROOM_ID)).thenReturn(events);
 
         List<RecentRoomEventDto> result = sseService.getRecentEvents(SHARE_CODE);
 
-        assertThat(result).hasSize(10);
+        assertThat(result).hasSize(20);
         assertThat(result.get(0).id()).isEqualTo(6L);
-        assertThat(result.get(9).id()).isEqualTo(15L);
+        assertThat(result.get(19).id()).isEqualTo(25L);
     }
 
     @Test
-    @DisplayName("getRecentEvents()는 10개 미만이면 있는 만큼만 반환한다")
+    @DisplayName("getRecentEvents()는 20개 미만이면 있는 만큼만 반환한다")
     void getRecentEvents_returnsAllWhenFewerThanLimit() {
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
         when(sseEventBuffer.getAllEvents(ROOM_ID)).thenReturn(List.of(
