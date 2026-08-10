@@ -3,6 +3,7 @@ package com.hot6ix.upbid.global.event.listener;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -81,6 +83,30 @@ class DomainEventSseListenerTest {
 
         assertThat(sentDto("ROOM_CLOSED"))
                 .isEqualTo(new RoomClosedDto("승민의 경매방", OCCURRED_AT));
+    }
+
+    @Test
+    @DisplayName("경매방 종료는 ROOM_CLOSED를 내보낸 뒤에 연결을 끊는다")
+    void closesRoomAfterRoomClosedBroadcast() {
+
+        domainEventSseListener.on(RoomClosed.of(ROOM_ID, "승민의 경매방", OCCURRED_AT));
+
+        // 순서가 뒤집히면 마지막 이벤트가 도착하기 전에 연결이 끊긴다. 두 동작을 별도
+        // @TransactionalEventListener로 나누면 실행 순서가 정해지지 않아, 한 메서드 안에서
+        // 문장 순서로 고정한다.
+        InOrder inOrder = inOrder(roomSseManager);
+        inOrder.verify(roomSseManager).sendBroadCast(eq("ROOM_CLOSED"), eq(ROOM_ID), any());
+        inOrder.verify(roomSseManager).closeRoom(ROOM_ID);
+    }
+
+    @Test
+    @DisplayName("방 종료가 아닌 이벤트는 연결을 끊지 않는다")
+    void keepsConnectionOnOtherEvents() {
+
+        domainEventSseListener.on(
+                ItemEnded.of(ROOM_ID, ITEM_ID, "한정판 피규어", 12_000L, "한기", OCCURRED_AT));
+
+        verify(roomSseManager, never()).closeRoom(any());
     }
 
     @Test
