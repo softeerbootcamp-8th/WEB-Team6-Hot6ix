@@ -2,66 +2,11 @@ import { useEffect, useRef } from 'react'
 
 import { useEventEntrance } from '@/features/live/use-event-entrance'
 
-import {
-  BidIcon,
-  ClosingIcon,
-  SoftCloseIcon,
-  StartIcon,
-  WinIcon,
-} from '@/features/live/components/event-icons'
+import { EventItemTag } from '@/features/live/components/event-item-tag'
+import { resolveEventTone } from '@/features/live/components/event-tone'
 import { formatTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { RoomEvent } from '@/mocks/types'
-
-/**
- * 이벤트 한 줄의 아이콘 칩과 글자색을 Figma `ev*` 값 그대로 고른다.
- *
- * 같은 `CLOSE` 라도 낙찰 확정(초록 체크)과 마감 임박(빨강 시계)이 다르고,
- * 같은 `BID` 라도 최신 입찰만 진하게 쓴다.
- */
-function resolveStyle(event: RoomEvent) {
-  switch (event.kind) {
-    case 'START':
-      return {
-        chip: 'bg-fill',
-        icon: <StartIcon />,
-        text: 'text-[14px] font-semibold text-foreground',
-      }
-    case 'CLOSE':
-      return event.subtitle
-        ? {
-            chip: 'bg-success-surface',
-            icon: <WinIcon />,
-            text: 'text-[14px] font-bold text-foreground',
-          }
-        : {
-            chip: 'bg-live-surface',
-            icon: <ClosingIcon />,
-            text: 'text-[14px] font-semibold text-foreground',
-          }
-    case 'EXTEND':
-      return {
-        chip: 'bg-notice-surface',
-        icon: <SoftCloseIcon />,
-        text: 'text-[14px] font-bold text-notice',
-      }
-    case 'REJECT':
-      return {
-        chip: 'bg-live-surface',
-        icon: <ClosingIcon />,
-        text: 'text-[14px] font-semibold text-live',
-      }
-    case 'BID':
-    default:
-      return {
-        chip: 'bg-brand-100',
-        icon: <BidIcon />,
-        text: event.emphasized
-          ? 'text-[14px] font-bold text-foreground'
-          : 'text-[14px] font-medium text-neutral-tertiary',
-      }
-  }
-}
 
 /**
  * 경매방 실시간 이벤트 피드.
@@ -105,10 +50,9 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
         </div>
       ) : (
         // 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다.
-        <ul className="flex min-h-full flex-col justify-end gap-4 p-2">
+        <ul className="flex min-h-full flex-col justify-end gap-2 p-2">
           {ordered.map((event, index) => {
-            const style = resolveStyle(event)
-            const latest = event.id === ordered[ordered.length - 1]?.id
+            const tone = resolveEventTone(event)
 
             return (
               <li
@@ -118,7 +62,9 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
                    * 음수 마진을 쓰면 스크롤 컨테이너가 좌우로 삐져나온 부분을
                    * 잘라내 둥근 모서리가 깎인다. 안쪽 여백만으로 배경을 만든다.
                    */
-                  'flex items-start gap-3 rounded-2xl px-3 py-2',
+                  'flex items-center gap-3 rounded-2xl px-3 py-2',
+                  // 줄 배경도 모바일과 같은 색을 쓴다.
+                  tone.row,
                   entranceOf(event.id) === 'incoming'
                     ? 'animate-event'
                     : 'animate-rise',
@@ -132,35 +78,28 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
                 <span
                   className={cn(
                     'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
-                    style.chip,
+                    tone.chip,
                     entranceOf(event.id) === 'incoming' && 'animate-event-chip',
                   )}
                 >
-                  {style.icon}
+                  {tone.icon}
                 </span>
 
-                <div className="min-w-0 flex-1 pt-0.5">
-                  <p className={style.text}>{event.message}</p>
-                  {event.subtitle && (
-                    <p
-                      className={cn(
-                        'mt-1 text-[12px]',
-                        event.kind === 'CLOSE'
-                          ? 'font-semibold text-success'
-                          : 'font-normal text-neutral-tertiary',
-                      )}
-                    >
-                      {event.subtitle}
+                <div className="min-w-0 flex-1">
+                  {/* 어느 물품인지는 종류와 상관없이 이름표가 맡는다. */}
+                  <EventItemTag event={event} />
+                  {/*
+                    이름표는 알약이라 안쪽 여백(px-1.5)만큼 글자가 들어가 있다.
+                    아래 문구도 같은 만큼 밀어야 글자 시작선이 나란해진다.
+                  */}
+                  <div className="pl-1.5">
+                    <p className="text-[13px] font-semibold text-foreground">
+                      {event.message}
                     </p>
-                  )}
+                  </div>
                 </div>
 
-                <time
-                  className={cn(
-                    'shrink-0 pt-0.5 text-[12px] tabular-nums text-neutral-muted',
-                    latest ? 'font-semibold' : 'font-normal',
-                  )}
-                >
+                <time className="shrink-0 text-[11px] font-medium tabular-nums text-neutral-muted">
                   {formatTime(event.at)}
                 </time>
               </li>

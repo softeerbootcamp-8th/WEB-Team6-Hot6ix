@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.scheduler;
 
 import com.hot6ix.upbid.domain.auction.service.ItemClosingSoonService;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
@@ -63,6 +64,22 @@ public class ItemClosingSoonScheduler {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(SoftCloseExtended event) {
         reschedule(event.itemId());
+    }
+
+    /**
+     * 판매자가 마감을 앞당기면 알림 예약을 <b>취소한다.</b> 다시 걸지 않는다.
+     *
+     * <p>앞당겨진 마감 시각이 곧 연장 구간이 열리는 순간이라 새 알림 시각은 정확히 지금이고,
+     * 이미 지난 시각으로는 예약을 걸 수 없다. 그 사실은 앞당김 이벤트가 남은 초와 함께 화면에
+     * 직접 알리므로 알림이 따로 나갈 이유도 없다.
+     *
+     * <p>취소하지 않으면 <b>이전 마감 기준으로 걸려 있던 예약이 살아남는다.</b> 예를 들어 90초
+     * 남은 물품을 트리거 60초인 방에서 앞당기면 알림 예약은 30초 뒤에 걸려 있는데, 그때 물품은
+     * 아직 진행 중이라 걸러지지도 않아서 실제로는 30초 남은 물품에 "마감 60초 전"이 나간다.
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(ItemCloseAdvanced event) {
+        cancel(event.itemId());
     }
 
     /** 낙찰로 마감된 물품의 남은 알림 예약을 정리한다. */

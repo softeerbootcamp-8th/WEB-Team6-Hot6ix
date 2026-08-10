@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Tag(name = "SSE", description = "경매방 실시간 이벤트 구독 API")
@@ -28,5 +29,7 @@ public interface SseApi {
             @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "구독할 경매방의 공유 코드", required = true)
             @PathVariable String shareCode,
+            @Parameter(description = "재연결 시 마지막으로 수신한 이벤트 ID. 최초 연결 시 생략.")
+            @RequestHeader(value = "Last-Event-ID", required = false) Long lastEventId,
             @Parameter(hidden = true) HttpServletResponse response);
 }

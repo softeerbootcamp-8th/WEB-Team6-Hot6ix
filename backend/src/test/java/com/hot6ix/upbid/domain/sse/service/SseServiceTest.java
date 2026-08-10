@@ -38,9 +38,9 @@ class SseServiceTest {
 
         SseEmitter emitter = new SseEmitter();
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(7L);
-        when(roomSseManager.subscribe(any(), eq(7L), any())).thenReturn(emitter);
+        when(roomSseManager.subscribe(any(), eq(7L), any(), any())).thenReturn(emitter);
 
-        SseEmitter result = sseService.subscribe(3L, SHARE_CODE);
+        SseEmitter result = sseService.subscribe(3L, SHARE_CODE, null);
 
         verify(auctionRoomShareService).resolveRoomId(SHARE_CODE);
         assertThat(result).isSameAs(emitter);
@@ -53,7 +53,7 @@ class SseServiceTest {
         when(auctionRoomShareService.resolveRoomId("nope"))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
-        assertThatThrownBy(() -> sseService.subscribe(3L, "nope"))
+        assertThatThrownBy(() -> sseService.subscribe(3L, "nope", null))
                 .isInstanceOf(ApplicationException.class)
                 .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
     }

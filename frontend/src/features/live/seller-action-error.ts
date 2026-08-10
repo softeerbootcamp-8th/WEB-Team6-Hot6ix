@@ -1,7 +1,7 @@
 import { readApiErrorCode } from '@/features/live/api-error'
 
 /**
- * 판매자 조작(물품 추가·빼기·시작) 실패 응답을 화면 문구로 바꾼다.
+ * 판매자 조작(물품 추가·빼기·시작·마감 앞당기기) 실패 응답을 화면 문구로 바꾼다.
  *
  * 입찰(`bid-error.ts`)과 나눠 둔 이유는 코드 대역이 다르기 때문이다. 입찰은
  * 7000번대(`BidErrorType`)를 쓰고, 판매자 조작은 4000번대(`AuctionErrorType`)를 쓴다.
@@ -12,7 +12,8 @@ import { readApiErrorCode } from '@/features/live/api-error'
  */
 
 /** 어떤 조작이었는지. 표에 없는 코드일 때의 문구가 이 값으로 갈린다. */
-export type SellerAction = 'add' | 'remove' | 'start' | 'closeRoom'
+export type SellerAction =
+  'add' | 'remove' | 'start' | 'closeRoom' | 'closeEarly'
 
 export interface SellerActionErrorMessage {
   /** 토스트 제목 */
@@ -71,6 +72,14 @@ const BY_CODE: Record<number, SellerActionErrorMessage> = {
     title: '물품을 더 넣을 수 없어요',
     description: '한 경매방에는 100개까지만 담을 수 있어요.',
   },
+  4010: {
+    title: '진행 중인 물품이 아니에요',
+    description: '이미 마감됐을 수 있어요. 새로고침해 주세요.',
+  },
+  4011: {
+    title: '이미 마감이 임박했어요',
+    description: '연장 구간에 들어와서 더 앞당길 수 없어요.',
+  },
   5001: {
     title: '없는 상품이에요',
     description: '상품 목록에서 빠졌을 수 있어요. 다시 골라주세요.',
@@ -105,6 +114,10 @@ const UNKNOWN: Record<SellerAction, SellerActionErrorMessage> = {
   },
   closeRoom: {
     title: '경매방을 종료하지 못했어요',
+    description: '잠시 뒤에 다시 시도해 주세요.',
+  },
+  closeEarly: {
+    title: '마감을 앞당기지 못했어요',
     description: '잠시 뒤에 다시 시도해 주세요.',
   },
 }

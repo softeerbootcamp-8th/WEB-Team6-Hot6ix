@@ -246,9 +246,14 @@ export function ClosedRoomView({
                         {won ? '낙찰' : '유찰'}
                       </span>
 
+                      {/*
+                        폭을 84 로 못 박으면 억 단위에서 글자가 칸을 넘어 줄이
+                        두 줄로 터진다. 최소 폭만 잡아 자리를 맞추고, 모자라면
+                        왼쪽 물품명이 잘리게 둔다.
+                      */}
                       <span
                         className={cn(
-                          'w-[84px] shrink-0 text-right text-[13px] tabular-nums',
+                          'min-w-[84px] shrink-0 text-right text-[13px] whitespace-nowrap tabular-nums',
                           won
                             ? 'font-bold text-foreground'
                             : 'font-medium text-neutral-muted',
@@ -385,8 +390,13 @@ export function ClosedRoomView({
                 경매방 종료 요약
               </h2>
 
-              {/* 왼쪽 목록과 같은 높이를 쓰도록 남는 공간을 채운다. */}
-              <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
+              {/*
+                왼쪽 목록과 같은 높이를 쓰도록 남는 공간을 채운다.
+                다만 화면이 낮으면 요약·결과·거래 현황 셋이 다 들어가지 못한다.
+                그때는 열을 통째로 스크롤한다 — 그냥 두면 바깥 `overflow-hidden`
+                에 걸려 결과표의 컬럼 머리글부터 아래가 잘려 나간다.
+              */}
+              <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
                 <div className="shrink-0 rounded-[20px] border bg-card p-4">
                   <h3 className="text-[16px] font-bold text-foreground">
                     경매방 종료 요약
@@ -445,7 +455,11 @@ export function ClosedRoomView({
                   </dl>
                 </div>
 
-                <div className="flex flex-col rounded-[20px] border bg-card p-4 lg:min-h-0 lg:flex-1">
+                {/*
+                  머리글(40) + 두 줄은 항상 보이게 최소 높이를 준다. `flex-1` 만
+                  두면 남는 높이가 모자랄 때 카드가 제 내용보다 작게 눌린다.
+                */}
+                <div className="flex flex-col rounded-[20px] border bg-card p-4 lg:min-h-[260px] lg:flex-1">
                   <h3 className="shrink-0 text-[18px] font-bold text-foreground">
                     전체 물품 결과
                   </h3>
@@ -453,67 +467,85 @@ export function ClosedRoomView({
                     낙찰 {result.soldCount}건 · 유찰 {unsoldCount}건
                   </p>
 
-                  <div className="mt-3 flex h-10 shrink-0 items-center rounded-lg bg-surface-subtle px-4 text-[11px] font-semibold text-neutral-tertiary">
-                    <span className="flex-1">물품</span>
-                    <span className="hidden w-[120px] sm:block">낙찰자</span>
-                    <span className="w-[68px] text-center">결과</span>
-                    <span className="w-[92px] text-right sm:w-[104px]">
-                      낙찰가
-                    </span>
-                  </div>
+                  {/*
+                    머리글을 스크롤 영역 밖에 두면 스크롤바 폭만큼 줄과 어긋나
+                    오른쪽 끝(낙찰가)이 밀려 잘린다. 같은 통 안에 넣고 sticky 로
+                    붙여 두면 줄과 정확히 같은 폭을 쓴다.
+                  */}
+                  <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-0.5">
+                    <div className="sticky top-0 z-10 bg-card pb-2">
+                      <div className="flex h-10 items-center rounded-lg bg-surface-subtle px-4 text-[11px] font-semibold text-neutral-tertiary">
+                        <span className="min-w-0 flex-1">물품</span>
+                        <span className="hidden w-[120px] shrink-0 sm:block">
+                          낙찰자
+                        </span>
+                        <span className="w-[68px] shrink-0 text-center">
+                          결과
+                        </span>
+                        <span className="w-[104px] shrink-0 text-right sm:w-[116px]">
+                          낙찰가
+                        </span>
+                      </div>
+                    </div>
 
-                  <ul className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
-                    {items.map((item) => {
-                      const won = item.outcome === 'SOLD'
+                    <ul className="space-y-2">
+                      {items.map((item) => {
+                        const won = item.outcome === 'SOLD'
 
-                      return (
-                        <li key={item.auctionItemId}>
-                          <ResultRow
-                            itemId={item.auctionItemId}
-                            canLink={
-                              isOwner ||
-                              item.isMyWin ||
-                              myDealItemIds.has(item.auctionItemId)
-                            }
-                            className="flex h-14 items-center rounded-[10px] border bg-card px-4 text-[13px]"
-                          >
-                            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                              {item.productName}
-                            </span>
+                        return (
+                          <li key={item.auctionItemId}>
+                            <ResultRow
+                              itemId={item.auctionItemId}
+                              canLink={
+                                isOwner ||
+                                item.isMyWin ||
+                                myDealItemIds.has(item.auctionItemId)
+                              }
+                              className="flex h-14 items-center rounded-[10px] border bg-card px-4 text-[13px]"
+                            >
+                              <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                                {item.productName}
+                              </span>
 
-                            <span className="hidden w-[120px] truncate font-medium text-neutral-tertiary sm:block">
-                              {item.winnerNickname ?? '—'}
-                            </span>
+                              <span className="hidden w-[120px] shrink-0 truncate font-medium text-neutral-tertiary sm:block">
+                                {item.winnerNickname ?? '—'}
+                              </span>
 
-                            {/* 낙찰·유찰은 색이 아니라 배지로 구분한다. 훑어볼 때 이게 제일 빠르다. */}
-                            <span className="flex w-[68px] justify-center">
+                              {/* 낙찰·유찰은 색이 아니라 배지로 구분한다. 훑어볼 때 이게 제일 빠르다. */}
+                              <span className="flex w-[68px] shrink-0 justify-center">
+                                <span
+                                  className={cn(
+                                    'flex h-6 w-[52px] items-center justify-center rounded-full text-[11px] font-bold',
+                                    won
+                                      ? 'bg-result-won-surface text-result-won'
+                                      : 'bg-result-failed-surface text-result-failed',
+                                  )}
+                                >
+                                  {won ? '낙찰' : '유찰'}
+                                </span>
+                              </span>
+
+                              {/*
+                                104 는 `9,999,999,999원`(14자)이 한 줄에 들어가는
+                                최소치(108)에 여유를 더한 값이다. 예전 92/104 에서는
+                                10억대부터 칸 안에서 두 줄로 접혀 행 높이가 어긋났다.
+                              */}
                               <span
                                 className={cn(
-                                  'flex h-6 w-[52px] items-center justify-center rounded-full text-[11px] font-bold',
+                                  'w-[104px] shrink-0 text-right whitespace-nowrap tabular-nums sm:w-[116px]',
                                   won
-                                    ? 'bg-result-won-surface text-result-won'
-                                    : 'bg-result-failed-surface text-result-failed',
+                                    ? 'font-bold text-foreground'
+                                    : 'font-medium text-neutral-muted',
                                 )}
                               >
-                                {won ? '낙찰' : '유찰'}
+                                {won ? formatWon(item.finalPrice ?? 0) : '—'}
                               </span>
-                            </span>
-
-                            <span
-                              className={cn(
-                                'w-[92px] text-right tabular-nums sm:w-[104px]',
-                                won
-                                  ? 'font-bold text-foreground'
-                                  : 'font-medium text-neutral-muted',
-                              )}
-                            >
-                              {won ? formatWon(item.finalPrice ?? 0) : '—'}
-                            </span>
-                          </ResultRow>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                            </ResultRow>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
                 </div>
 
                 <div className="shrink-0">

@@ -5,8 +5,10 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
+import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemService;
 import com.hot6ix.upbid.global.interceptor.GuestAllowed;
 import com.hot6ix.upbid.global.response.CommonResponse;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuctionItemController implements AuctionItemApi {
 
     private final AuctionItemService auctionItemService;
+    private final AuctionItemCloseService auctionItemCloseService;
 
     @GetMapping("/auction-rooms/share/{shareCode}/auction-items")
     @GuestAllowed
@@ -89,5 +92,16 @@ public class AuctionItemController implements AuctionItemApi {
         AuctionItemDetailResponseDto response = auctionItemService.start(auctionItemId, userId, request);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "물품 경매가 시작되었습니다."));
+    }
+
+    @PostMapping("/auction-items/{auctionItemId}/close-early")
+    @Override
+    public ResponseEntity<CommonResponse<AuctionItemCloseEarlyResponseDto>> closeEarly(
+            Long auctionItemId, Long userId) {
+
+        AuctionItemCloseEarlyResponseDto response =
+                auctionItemCloseService.closeEarly(userId, auctionItemId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "물품 마감이 앞당겨졌습니다."));
     }
 }

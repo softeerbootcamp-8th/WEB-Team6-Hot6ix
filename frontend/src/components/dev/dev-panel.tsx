@@ -12,7 +12,7 @@ import {
   type Session,
 } from '@/lib/session'
 import { toast } from '@/lib/toast'
-import { useDevLogin } from '@/api/generated/개발용-인증/개발용-인증'
+import { devLogin } from '@/api/generated/개발용-인증/개발용-인증'
 import { useLogout } from '@/api/generated/인증/인증'
 
 /**
@@ -21,18 +21,30 @@ import { useLogout } from '@/api/generated/인증/인증'
  * 화면이 역할(게스트·회원·판매자)에 따라 갈리고, API 를 붙일 때는 로딩·실패
  * 상태도 봐야 한다. 로그인 API 도 백엔드도 없이 그 상황을 만들 수 있게 둔다.
  *
- * - 세션: 게스트 / 회원 전환 (라우트 가드 재실행까지). "회원"은 로컬 전용
+ * - 세션: 게스트 / 회원 / 판매자 전환 (라우트 가드 재실행까지). 셋 다 로컬 전용
  *   `POST /auth/dev-login` 으로 실제 세션 쿠키를 발급받는다 — 화면만 회원처럼
  *   보이고 서버는 여전히 비로그인인 상태(과거 `MOCK_MEMBER`)를 만들지 않는다.
- *   판매자 여부는 서버가 `GET /seller-profiles/me` 로 정하므로 흉내 내지 않는다.
+ *   판매자 프로필이 실제로 있는지는 서버가 `GET /seller-profiles/me` 로 정하므로
+ *   흉내 내지 않는다. 여기서 하는 건 **어느 회원으로 붙을지** 고르는 것뿐이다.
  * - 응답 지연: 모든 API 요청에 지연을 걸어 로딩 UI 확인
  * - 실패율: 요청을 강제로 실패시켜 에러 UI·재시도 확인
  *
  * 프로덕션 빌드에서는 렌더링되지 않으며, `⌘/Ctrl + Shift + D` 로 숨길 수 있다.
  */
+
+/**
+ * 판매자로 붙을 때 쓰는 `dev-login` key.
+ *
+ * `backend/perf/seed.sh` 가 이 key 로 판매자와 경매방을 만든다. 값이 어긋나면
+ * 브라우저는 방 주인이 아닌 회원으로 붙어서 물품 등록·시작이 전부 403 이 된다.
+ * 바꿀 일이 생기면 양쪽을 같이 고친다.
+ */
+const SELLER_KEY = 'seller'
+
 const SESSIONS = [
   { key: 'guest', label: '게스트' },
   { key: 'member', label: '회원' },
+  { key: 'seller', label: '판매자' },
 ] as const
 
 const DELAYS = [
@@ -47,8 +59,17 @@ const FAIL_RATES = [
   { value: 100, label: '항상' },
 ]
 
+/**
+ * 지금 붙어 있는 세션이 셋 중 무엇인지 고른다.
+ *
+ * 판매자인지는 <b>닉네임</b>으로 가른다. `DevAuthService` 가 key 를 그대로 닉네임으로
+ * 쓰기 때문이다(기본 회원만 "테스트유저"). 서버가 "어느 dev key 로 붙었는지"를 따로
+ * 알려주지 않아서 이게 유일한 단서다.
+ */
 function currentKey(session: Session) {
-  return session.status === 'guest' ? 'guest' : 'member'
+  if (session.status === 'guest') return 'guest'
+
+  return session.user.nickname === SELLER_KEY ? 'seller' : 'member'
 }
 
 export function DevPanel() {
@@ -59,7 +80,8 @@ export function DevPanel() {
   const [open, setOpen] = useState(false)
   const [switching, setSwitching] = useState(false)
 
-  const devLogin = useDevLogin()
+  // 훅(useDevLogin)이 아니라 함수를 직접 부른다. key 를 눌린 칩에 따라 바꿔야 하는데
+  // 훅은 요청 옵션을 만들 때 고정해 버려서 클릭마다 다른 key 를 줄 수 없다.
   const logout = useLogout()
 
   if (import.meta.env.PROD) return null
@@ -70,12 +92,13 @@ export function DevPanel() {
   const applySession = async (key: (typeof SESSIONS)[number]['key']) => {
     setSwitching(true)
     try {
-      if (key === 'member') {
-        await devLogin.mutateAsync()
-        await hydrateSession()
-      } else {
+      if (key === 'guest') {
         await logout.mutateAsync()
         sessionStore.signOut()
+      } else {
+        // key 를 생략하면 기본 회원, 주면 그 key 로 회원이 갈린다.
+        await devLogin(key === 'seller' ? { params: { key: SELLER_KEY } } : {})
+        await hydrateSession()
       }
       // 앱 초기화 때 채운 캐시가 남아있으면 다음 진입에서 재요청을 안 하므로 지운다.
       queryClient.removeQueries({ queryKey: ['session'] })
@@ -83,9 +106,9 @@ export function DevPanel() {
       await router.invalidate()
     } catch {
       toast.error(
-        key === 'member'
-          ? '테스트 로그인에 실패했어요'
-          : '로그아웃에 실패했어요',
+        key === 'guest'
+          ? '로그아웃에 실패했어요'
+          : '테스트 로그인에 실패했어요',
         { description: '백엔드가 local 프로필로 떠 있는지 확인해 주세요.' },
       )
     } finally {

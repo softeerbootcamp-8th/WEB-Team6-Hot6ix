@@ -14,6 +14,7 @@ import com.hot6ix.upbid.domain.product.dto.response.ProductResponseDto;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
@@ -22,7 +23,7 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import com.hot6ix.upbid.global.response.CursorPageResponse;
+import com.hot6ix.upbid.global.response.PageResponse;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +34,9 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class ProductServiceTest {
@@ -179,43 +183,61 @@ class ProductServiceTest {
     }
 
     @Test
-    @DisplayName("요청한 크기만큼 결과가 오면 다음 페이지가 없다")
-    void getList_noNextPage() {
+    @DisplayName("조회한 페이지와 전체 개수·전체 페이지 수를 그대로 응답에 담는다")
+    void getList_returnsPageWithTotals() {
 
         SellerProfile sellerProfile = newSellerProfile();
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.of(sellerProfile));
-        when(productRepository.search(any(), any(), any(), any(), eq(2)))
-                .thenReturn(List.of(newSummary(3L), newSummary(2L)));
+        when(productRepository.search(any(), any(), any(), any(), any(), eq(2)))
+                .thenReturn(new PageImpl<>(
+                        List.of(newSummary(3L), newSummary(2L)), PageRequest.of(0, 2), 5));
 
-        CursorPageResponse<ProductSummaryResponseDto> response =
-                productService.getList(1L, null, null, null, 2);
+        PageResponse<ProductSummaryResponseDto> response =
+                productService.getList(1L, null, null, null, null, 2);
 
         assertThat(response.content()).extracting(ProductSummaryResponseDto::productId)
                 .containsExactly(3L, 2L);
-        assertThat(response.hasNext()).isFalse();
-        assertThat(response.nextCursor()).isNull();
+        assertThat(response.page()).isZero();
+        assertThat(response.totalElements()).isEqualTo(5);
+        assertThat(response.totalPages()).isEqualTo(3);
     }
 
     @Test
-    @DisplayName("요청한 크기보다 하나 더 오면 다음 페이지 커서를 잘라서 반환한다")
-    void getList_hasNextPage() {
+    @DisplayName("요청한 정렬·page·size를 그대로 조회에 넘긴다 — 기본값은 리포지토리가 채운다")
+    void getList_passesSortPageAndSizeThrough() {
 
         SellerProfile sellerProfile = newSellerProfile();
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.of(sellerProfile));
-        when(productRepository.search(any(), any(), any(), any(), eq(2)))
-                .thenReturn(List.of(newSummary(3L), newSummary(2L), newSummary(1L)));
+        when(productRepository.search(any(), any(), any(), any(), any(), any()))
+                .thenReturn(Page.empty());
 
-        CursorPageResponse<ProductSummaryResponseDto> response =
-                productService.getList(1L, null, null, null, 2);
+        productService.getList(
+                1L, "노트북", ProductListingStatus.READY, ProductSortType.OLDEST, 2, 10);
 
-        assertThat(response.content()).extracting(ProductSummaryResponseDto::productId)
-                .containsExactly(3L, 2L);
-        assertThat(response.hasNext()).isTrue();
-        assertThat(response.nextCursor()).isEqualTo(2L);
+        verify(productRepository).search(
+                sellerProfile.getSellerProfileId(), "노트북", ProductListingStatus.READY,
+                ProductSortType.OLDEST, 2, 10);
+    }
+
+    @Test
+    @DisplayName("정렬을 생략하면 null을 그대로 넘긴다 — 기본 정렬은 리포지토리가 정한다")
+    void getList_sortOmittedIsPassedAsNull() {
+
+        SellerProfile sellerProfile = newSellerProfile();
+
+        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
+                .thenReturn(Optional.of(sellerProfile));
+        when(productRepository.search(any(), any(), any(), any(), any(), any()))
+                .thenReturn(Page.empty());
+
+        productService.getList(1L, null, null, null, null, null);
+
+        verify(productRepository).search(
+                sellerProfile.getSellerProfileId(), null, null, null, null, null);
     }
 
     @Test
@@ -225,7 +247,7 @@ class ProductServiceTest {
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(1L))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> productService.getList(1L, null, null, null, null))
+        assertThatThrownBy(() -> productService.getList(1L, null, null, null, null, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);

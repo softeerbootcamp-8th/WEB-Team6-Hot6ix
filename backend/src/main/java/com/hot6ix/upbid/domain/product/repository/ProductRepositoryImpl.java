@@ -5,16 +5,23 @@ import com.hot6ix.upbid.domain.auction.entity.QAuctionItem;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemPredicates;
 import com.hot6ix.upbid.domain.product.dto.response.ProductSummaryResponseDto;
 import com.hot6ix.upbid.domain.product.entity.ProductListingStatus;
+import com.hot6ix.upbid.domain.product.entity.ProductSortType;
 import com.hot6ix.upbid.domain.product.entity.QProduct;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.OrderSpecifier;
+import com.querydsl.core.types.Predicate;
 import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.StringExpression;
 import com.querydsl.jpa.JPAExpressions;
+import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.support.PageableExecutionUtils;
 
 @RequiredArgsConstructor
 public class ProductRepositoryImpl implements ProductRepositoryCustom {
@@ -22,8 +29,9 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public List<ProductSummaryResponseDto> searchByLimit(
-            Long sellerProfileId, String keyword, ProductListingStatus status, Long cursor, int limit) {
+    public Page<ProductSummaryResponseDto> searchByPage(
+            Long sellerProfileId, String keyword, ProductListingStatus status,
+            ProductSortType sort, Pageable pageable) {
 
         QProduct product = QProduct.product;
         QAuctionItem ai = QAuctionItem.auctionItem;
@@ -31,27 +39,58 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
         BooleanExpression isUnsoldExpr = ai.auctionItemId.isNotNull().and(
                 AuctionItemPredicates.blockedForReregistration(ai).not()
         );
+        Predicate[] conditions = conditions(product, ai, sellerProfileId, keyword, status);
 
         List<Tuple> rows = queryFactory
                 .select(product.productId, product.name, product.imageUrl,
                         derivedStatusName, isUnsoldExpr, product.createdAt)
                 .from(product)
                 .leftJoin(ai).on(latestAuctionItem(product, ai))
-                .where(
-                        product.sellerProfile.sellerProfileId.eq(sellerProfileId),
-                        product.deletedAt.isNull(),
-                        keywordCondition(product, keyword),
-                        cursorCondition(product, cursor),
-                        statusCondition(ai, status))
-                .orderBy(product.productId.desc())
-                .limit(limit)
+                .where(conditions)
+                .orderBy(orderBy(product, sort))
+                .offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
                 .fetch();
 
-        return rows.stream()
+        List<ProductSummaryResponseDto> content = rows.stream()
                 .map(row -> new ProductSummaryResponseDto(
                         row.get(product.productId), row.get(product.name), row.get(product.imageUrl),
                         ProductListingStatus.valueOf(row.get(derivedStatusName)), row.get(isUnsoldExpr), row.get(product.createdAt)))
                 .toList();
+
+        // 상태 필터가 조인한 ai를 참조하므로 개수 쿼리에도 같은 조인이 필요하다.
+        JPAQuery<Long> countQuery = queryFactory
+                .select(product.count())
+                .from(product)
+                .leftJoin(ai).on(latestAuctionItem(product, ai))
+                .where(conditions);
+
+        // 첫 페이지가 다 안 찼거나 마지막 페이지면 개수가 이미 확정이라 count 쿼리를 건너뛴다.
+        return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
+    }
+
+    /**
+     * 정렬 방향만 고른다. 키는 어느 쪽이든 productId다 — 불변이라 페이지를 넘길 때
+     * 같은 상품이 두 쪽에 겹치거나 빠지지 않는다.
+     */
+    private OrderSpecifier<Long> orderBy(QProduct product, ProductSortType sort) {
+        return (sort == ProductSortType.OLDEST)
+                ? product.productId.asc()
+                : product.productId.desc();
+    }
+
+    /**
+     * 목록과 개수가 공유하는 조건. 한쪽만 고치면 상태 탭의 "총 N개"가 실제 목록과 어긋나므로
+     * 두 쿼리가 반드시 같은 배열을 쓰게 한다.
+     */
+    private Predicate[] conditions(QProduct product, QAuctionItem ai,
+                                   Long sellerProfileId, String keyword, ProductListingStatus status) {
+        return new Predicate[]{
+                product.sellerProfile.sellerProfileId.eq(sellerProfileId),
+                product.deletedAt.isNull(),
+                keywordCondition(product, keyword),
+                statusCondition(ai, status)
+        };
     }
 
     @Override
@@ -107,10 +146,6 @@ public class ProductRepositoryImpl implements ProductRepositoryCustom {
 
     private BooleanExpression keywordCondition(QProduct product, String keyword) {
         return (keyword != null) ? product.name.contains(keyword) : null;
-    }
-
-    private BooleanExpression cursorCondition(QProduct product, Long cursor) {
-        return (cursor != null) ? product.productId.lt(cursor) : null;
     }
 
     /**

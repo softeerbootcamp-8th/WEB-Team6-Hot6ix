@@ -27,9 +27,12 @@ export function LiveItemList({
   justExtended = null,
   justStarted = null,
   startingItemId,
+  closingEarlyItemId,
+  softCloseTriggerSeconds = 0,
   className,
   onSelect,
   onStart,
+  onCloseEarly,
 }: {
   items: AuctionItemDetail[]
   canStart?: boolean
@@ -43,10 +46,15 @@ export function LiveItemList({
   justStarted?: AuctionStartFlashState | null
   /** 시작 요청이 서버에서 처리 중인 물품 id */
   startingItemId?: number | null
+  /** 마감 앞당기기 요청이 서버에서 처리 중인 물품 id */
+  closingEarlyItemId?: number | null
+  /** 방의 연장 트리거(초). 앞당기기 버튼을 잠글지 판정하는 데 쓴다. */
+  softCloseTriggerSeconds?: number
   /** 바깥 레이아웃에 맞춰 스크롤 영역 크기를 바꿀 때 쓴다. */
   className?: string
   onSelect: (item: AuctionItemDetail) => void
   onStart?: (item: AuctionItemDetail, minutes: number) => void
+  onCloseEarly?: (item: AuctionItemDetail) => void
 }) {
   // 상태가 바뀌면 묶음이 달라진다. 그 이동을 눈에 보이게 한다.
   const rows = useListFlip<HTMLLIElement>(
@@ -95,11 +103,16 @@ export function LiveItemList({
                   }
                   canStart={canStart}
                   starting={startingItemId === item.id}
+                  closingEarly={closingEarlyItemId === item.id}
+                  softCloseTriggerSeconds={softCloseTriggerSeconds}
                   selected={isSelected?.(item) ?? false}
                   dimmed={isDimmed?.(item) ?? false}
                   onSelect={() => onSelect(item)}
                   onStart={
                     onStart ? (minutes) => onStart(item, minutes) : undefined
+                  }
+                  onCloseEarly={
+                    onCloseEarly ? () => onCloseEarly(item) : undefined
                   }
                 />
               ))}

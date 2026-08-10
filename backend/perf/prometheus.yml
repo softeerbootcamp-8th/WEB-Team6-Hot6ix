@@ -1,0 +1,24 @@
+global:
+  # 기본값 15초면 3분 구간에 점이 12개라 계단이 그래프에 안 보인다.
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: upbid-app
+    metrics_path: /actuator/prometheus
+    # static_configs 가 아니라 DNS 로 찾는다. --scale app=2 로 늘리면 Docker DNS 가
+    # A 레코드를 두 개 돌려주고, 프로메테우스가 두 인스턴스를 알아서 각각 긁는다.
+    # 목요일에 이 파일을 고칠 일이 없게 하려는 것이다.
+    dns_sd_configs:
+      - names: ["app"]
+        type: A
+        port: 8080
+        # 기본값 30초면 컨테이너를 새로 띄운 뒤 최대 30초 동안 아무것도 안 긁는다.
+        # 측정 구간이 그 사이에 시작되면 앞부분이 통째로 빈다.
+        refresh_interval: 5s
+
+  # 프로메테우스 자신. 스크랩이 밀리고 있는지(scrape_duration)를 봐야
+  # "그래프가 이상하다"가 서비스 문제인지 관측 문제인지 가른다.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
