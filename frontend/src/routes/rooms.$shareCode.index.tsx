@@ -211,19 +211,17 @@ function LiveRoomPage() {
 
   /**
    * 새로고침 등으로 화면을 다시 열면 알림 피드(extraEvents)가 비어 있다.
-   * 서버 버퍼에 남아있는 최근 이벤트를 한 번만 받아와 미리 채운다.
+   * 서버 버퍼에 남아있는 최근 이벤트를 받아와 미리 채운다.
    *
    * `items`(입찰가·리더보드 등)는 이미 최신 REST 응답을 반영하고 있어서,
    * 이 응답을 `handleSseEvent`처럼 처리하면 지나간 입찰이 다시 더해져
    * 입찰 수·리더보드가 중복으로 갱신된다. 그래서 피드용 변환만 거친다.
+   *
+   * staleTime·refetchOnMount는 앱 기본값(1분, 켜짐)을 그대로 쓴다. 예전에는
+   * 둘 다 꺼서 마운트당 한 번만 부르게 했는데, 그러면 방을 나갔다 돌아와도
+   * react-query 캐시가 "영원히 신선"하다고 여겨 그사이 쌓인 알림을 놓쳤다.
    */
-  const recentEventsQuery = useGetRecentEvents(shareCode, {
-    query: {
-      staleTime: Infinity,
-      refetchOnMount: false,
-      refetchOnWindowFocus: false,
-    },
-  })
+  const recentEventsQuery = useGetRecentEvents(shareCode)
   const appliedRecentEventsRef = useRef(false)
 
   useEffect(() => {
