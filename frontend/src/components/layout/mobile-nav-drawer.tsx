@@ -41,7 +41,9 @@ const NAV_ITEMS: {
   {
     to: '/seller',
     label: '판매자 정보',
-    desc: '프로필·상품·경매방 개설',
+    // 경매방 개설은 `/rooms` 상단에 있다. 여기 적어두면 `/seller` 로 들어가서
+    // 다시 못 찾는다.
+    desc: '프로필과 등록한 상품',
     icon: <Store className="size-[18px]" />,
   },
   {
