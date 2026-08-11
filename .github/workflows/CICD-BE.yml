@@ -147,6 +147,10 @@ jobs:
             SSE_TIMEOUT_MS='${{ vars.SSE_TIMEOUT_MS }}'
             MAX_IN_PROGRESS_PER_ROOM='${{ vars.MAX_IN_PROGRESS_PER_ROOM }}'
             DEV_LOGIN_TOKEN='${{ secrets.DEV_LOGIN_TOKEN }}'
+            REDIS_ENDPOINT='${{ secrets.REDIS_ENDPOINT }}'
+            REDIS_PORT='${{ vars.REDIS_PORT }}'
+            REDIS_PASSWORD='${{ secrets.REDIS_PASSWORD }}'
+            REDIS_SSL_ENABLED='${{ vars.REDIS_SSL_ENABLED }}'
             EOF
             docker compose pull app
             docker compose up -d

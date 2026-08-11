@@ -43,6 +43,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 
+	// Redis — Lettuce 클라이언트가 기본 포함된다 (Boot BOM이 버전 관리).
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
 	// Boot 4는 자동설정까지 모듈이라 flyway-core만 넣으면 Flyway가 아예 안 돌고,
 	// Flyway 10부터는 DB별 지원도 갈려서 flyway-mysql이 없으면 MySQL을 못 알아본다.
 	implementation 'org.springframework.boot:spring-boot-starter-flyway'

@@ -1,9 +1,10 @@
-# 로컬 개발용 MySQL 실행 파일이다. (배포용 아님)
+# 로컬 개발용 MySQL·Redis 실행 파일이다. (배포용 아님)
 #
-#   docker compose up -d      # MySQL 기동
-#   ./gradlew bootRun         # application.yaml 기본값(localhost:3306/upbid/root/1234)으로 바로 접속
+#   docker compose up -d      # MySQL·Redis 기동
+#   ./gradlew bootRun         # application.yaml 기본값(localhost:3306/upbid/root/1234,
+#                             # localhost:6379 Redis)으로 바로 접속
 #
-#   docker compose down       # 중지 (데이터는 volume에 남음)
+#   docker compose down       # 중지 (MySQL 데이터는 volume에 남음, Redis는 휘발)
 #   docker compose down -v    # 데이터까지 완전 삭제 (팀 규칙상 임의 실행 금지)
 
 
@@ -21,6 +22,18 @@ services:
       - upbid-mysql-data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD:-1234}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8.10.0
+    container_name: upbid-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
