@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -34,6 +35,30 @@ class GlobalExceptionHandlerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.message").value("테스트 예외입니다."))
                 .andExpect(jsonPath("$.data").doesNotExist())
                 .andExpect(jsonPath("$.errors").doesNotExist());
+    }
+
+    /*
+     * SSE 요청은 본문 없이 상태 코드만 받는다. 200 이 나가면 EventSource 가 "정상 연결 후 끊김"
+     * 으로 보고 retry 간격마다 무한히 재접속한다.
+     */
+    @Test
+    @DisplayName("SSE 요청에서 ApplicationException 이 나면 본문 없이 상태 코드만 반환한다")
+    void applicationExceptionOnEventStream() throws Exception {
+
+        mockMvc.perform(get("/test/application")
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isConflict())
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    @DisplayName("SSE 요청에서 예상치 못한 예외가 나면 본문 없이 500 만 반환한다")
+    void unexpectedExceptionOnEventStream() throws Exception {
+
+        mockMvc.perform(get("/test/unexpected")
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().string(""));
     }
 
     @Test
@@ -101,6 +126,11 @@ class GlobalExceptionHandlerTest extends AbstractControllerTest {
         @GetMapping("/application")
         public void applicationException() {
             throw new ApplicationException(TestErrorType.TEST_EXCEPTION);
+        }
+
+        @GetMapping("/unexpected")
+        public void unexpectedException() {
+            throw new IllegalStateException("예상치 못한 예외");
         }
 
         @PostMapping("/body")
