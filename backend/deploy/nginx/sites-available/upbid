@@ -8,13 +8,29 @@ server {
     server_name api.upbid.store;
 
     location / {
-        proxy_pass http://app;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        include /etc/nginx/snippets/upbid-proxy.conf;
+    }
+
+    # SSE 는 끝나지 않는 스트림이라 proxy_read_timeout 기본값 60초에 걸린다. 지금은
+    # heartbeat 가 30초라 그 전에 데이터가 흘러 살아 있지만, heartbeat 주기를 늘리는
+    # 대조 실험을 하면 서버가 아니라 nginx 가 끊어서 그 실험 자체를 못 한다.
+    # 앱의 emitter 타임아웃(upbid.sse.emitter-timeout-ms, 기본 1시간)에 맞춘다.
+    #
+    # 나머지 경로는 기본값 60초로 둔다. 다 늘리면 앱이 멈춘 요청까지 오래 붙들고 있는다.
+    location ~ ^/api/v1/auction-rooms/share/[^/]+/subscribe$ {
+        include /etc/nginx/snippets/upbid-proxy.conf;
+
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # /actuator 에는 인증이 없다. AuthInterceptor 가 /api/v1 아래만 보기 때문에, 노출을 켜면
+    # 힙과 DB 풀, 엔드포인트 목록이 그대로 공개된다.
+    #
+    # 측정 서버는 이 프록시가 아니라 app EC2 사설 IP(10.0.1.88:8080)를 직접 긁는다. 그래서
+    # 여기로 들어올 이유가 없고, allow 를 하나도 두지 않는다. 사설 IP 쪽은 보안 그룹으로 막는다.
+    location /actuator {
+        deny all;
     }
 
     listen 443 ssl http2; # managed by Certbot
