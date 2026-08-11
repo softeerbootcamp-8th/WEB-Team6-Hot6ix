@@ -1,0 +1,14 @@
+# prometheus.prod.yml 이 읽는 스크랩 대상이다. 이 파일을 targets.yml 로 복사하고
+# 앱 EC2 의 사설 IP 를 적는다. targets.yml 은 커밋하지 않는다 (.gitignore).
+#
+# 사설 IP 를 쓰는 이유는 측정 서버가 같은 VPC 안이라 프록시와 TLS 를 안 거쳐도 되기 때문이다.
+# 공개 도메인으로 긁으면 nginx 를 한 번 더 통과해서, 재는 대상에 관측 트래픽이 섞인다.
+#
+# app EC2 보안 그룹에 측정 서버에서 8080 으로 들어오는 규칙을 임시로 열어야 한다.
+# 규칙에는 설명을 달고(temp-perf-YYYY-MM-DD) 측정이 끝나면 지운다.
+
+- targets:
+    - "10.0.0.10:8080"
+  labels:
+    # index.csv 의 who 칸과 맞춘다. 로컬에서 긁은 시계열과 섞이지 않게 한다.
+    env: prod

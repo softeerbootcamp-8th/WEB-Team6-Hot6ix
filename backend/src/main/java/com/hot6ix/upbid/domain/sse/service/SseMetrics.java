@@ -1,8 +1,10 @@
 package com.hot6ix.upbid.domain.sse.service;
 
+import com.hot6ix.upbid.global.event.EventType;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Component;
@@ -14,18 +16,44 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Component
 public class SseMetrics {
 
+    private static final String BROADCAST = "upbid.sse.broadcast";
+
     private final MeterRegistry registry;
 
     /** heartbeat 한 바퀴. 접속 수가 늘 때 이 시간이 어떻게 늘어나는지를 본다. */
     private final Timer heartbeat;
 
-    /** 방 전원에게 한 번 쏘는 데 걸리는 시간. 이 값이 입찰 응답 시간에 그대로 얹힌다. */
-    private final Timer broadcast;
+    /**
+     * 방 전원에게 한 번 쏘는 데 걸리는 시간. 이 값이 그대로 부른 쪽 시간에 얹힌다. 입찰이면
+     * 응답 시간에(#234), 마감이면 마감 소요 시간에 들어간다.
+     *
+     * <p><b>이벤트 이름으로 갈라 둔다.</b> 합쳐 놓으면 방 전원에게 쏘는 비용이 얼마인지는 알아도
+     * 그게 어느 경로의 것인지 모른다. 마감 한 건이 왜 오래 걸리는지 보려면 마감이 쏜 것만
+     * 따로 봐야 한다(#198).
+     *
+     * <p>태그값마다 미리 만드는 이유는 {@code AuctionCloseMetrics}와 같다. 첫 이벤트 전까지
+     * 시계열이 없으면 측정 구간의 증가분을 구할 수 없다. {@code EventType}에 없는 이름은
+     * 참여자 수 알림 하나뿐이라 그것만 따로 넣는다.
+     */
+    private final Map<String, Timer> broadcasts;
 
     public SseMetrics(MeterRegistry registry) {
         this.registry = registry;
         this.heartbeat = registry.timer("upbid.sse.heartbeat");
-        this.broadcast = registry.timer("upbid.sse.broadcast");
+        this.broadcasts = broadcastTimers(registry);
+    }
+
+    private static Map<String, Timer> broadcastTimers(MeterRegistry registry) {
+
+        Map<String, Timer> timers = new HashMap<>();
+
+        for (EventType type : EventType.values()) {
+            timers.put(type.name(), registry.timer(BROADCAST, "event", type.name()));
+        }
+        timers.put(RoomSseManager.PARTICIPANT_COUNT_EVENT,
+                registry.timer(BROADCAST, "event", RoomSseManager.PARTICIPANT_COUNT_EVENT));
+
+        return Map.copyOf(timers);
     }
 
     /**
@@ -50,7 +78,14 @@ public class SseMetrics {
         heartbeat.record(sweep);
     }
 
-    public void recordBroadcast(Runnable send) {
-        broadcast.record(send);
+    /**
+     * 방 전원에게 한 번 쏘는 시간을 이벤트 이름별로 잰다.
+     *
+     * <p>미리 만들어 둔 것에 없는 이름이면 그때 만든다. 그런 이름은 지금 없지만, 새 이벤트를
+     * 추가하고 여기에 등록하는 걸 잊었을 때 계측이 통째로 빠지는 것보다는 낫다.
+     */
+    public void recordBroadcast(String eventName, Runnable send) {
+        broadcasts.getOrDefault(eventName, registry.timer(BROADCAST, "event", eventName))
+                .record(send);
     }
 }

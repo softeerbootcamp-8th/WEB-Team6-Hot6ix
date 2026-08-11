@@ -14,6 +14,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.scheduler.AuctionCloseMetrics;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
@@ -25,6 +26,7 @@ import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -33,6 +35,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -53,6 +56,10 @@ class AuctionItemCloseServiceTest {
 
     @Mock
     private DomainEventPublisher domainEventPublisher;
+
+    /** 계측은 목이 아니라 진짜를 쓴다. 목이면 넘긴 조회를 실행하지 않아 락 조회 자체가 안 일어난다. */
+    @Spy
+    private AuctionCloseMetrics auctionCloseMetrics = new AuctionCloseMetrics(new SimpleMeterRegistry());
 
     @InjectMocks
     private AuctionItemCloseService auctionItemCloseService;

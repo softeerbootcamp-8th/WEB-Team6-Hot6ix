@@ -6,14 +6,17 @@ import static org.mockito.Mockito.verify;
 
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.deal.service.DealCandidateService;
+import com.hot6ix.upbid.domain.deal.service.DealMetrics;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -21,6 +24,10 @@ class DealCandidateAwardListenerTest {
 
     @Mock
     private DealCandidateService dealCandidateService;
+
+    /** 계측은 목이 아니라 진짜를 쓴다. 목이면 넘긴 작업을 실행하지 않아 위임 자체가 안 일어난다. */
+    @Spy
+    private DealMetrics dealMetrics = new DealMetrics(new SimpleMeterRegistry());
 
     @InjectMocks
     private DealCandidateAwardListener dealCandidateAwardListener;

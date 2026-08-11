@@ -1,0 +1,25 @@
+# 측정 서버(별도 EC2)에서 배포 앱을 긁을 때 쓴다 (이슈 #266).
+#
+# 로컬용 prometheus.yml 은 건드리지 않는다. 로컬은 도커 DNS 로 --scale app=2 를 찾는데
+# EC2 는 그 방식으로 못 찾아서, 두 파일이 스크랩 대상을 정하는 방법 자체가 다르다.
+
+global:
+  # 로컬과 같은 값으로 둔다. 여기가 어긋나면 배포에서 나온 계단을 로컬 계단과 나란히 못 놓는다.
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: upbid-app
+    metrics_path: /actuator/prometheus
+    # 앱 사설 IP 는 커밋하지 않는다. targets.yml 을 서버에서 만들어 두고 여기서 읽기만 한다.
+    # targets.yml.example 을 복사해서 쓴다.
+    #
+    # static_configs 로 IP 를 직접 적지 않는 이유는 그게 커밋에 남기 때문이고, 파일로 빼면
+    # 프로메테우스를 다시 안 띄워도 대상이 바뀐다 (refresh_interval 마다 다시 읽는다).
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets.yml"]
+        refresh_interval: 5s
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

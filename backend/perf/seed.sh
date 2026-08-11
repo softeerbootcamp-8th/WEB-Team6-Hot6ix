@@ -31,6 +31,11 @@ OUT=""
 # 동의 요청을 몇 개씩 동시에 보낼지. 200명을 한 줄로 세우면 시딩만 1분 넘게 걸린다.
 CONCURRENCY=16
 
+# 마감 임박 구간. 물품 길이의 하한이 1분인데 트리거도 60초면 물품이 태어나자마자 임박 구간이라
+# 입찰이 들어올 때마다 마감이 밀려서 영영 안 닫힌다. 그래서 시나리오 5 는 이 값을 낮춰 쓴다.
+SOFT_CLOSE_TRIGGER=60
+SOFT_CLOSE_EXTEND=60
+
 usage() {
   cat <<'USAGE'
 사용법: seed.sh [옵션]
@@ -41,6 +46,8 @@ usage() {
   --unit N           입찰 단위 (기본 1000)
   --start all|none   물품을 시작할지 (기본 all). 시나리오 4는 none 으로 두고 k6 가 시작한다
   --duration-min N   시작할 때 줄 경매 시간(분). 기본 720 = 12시간, 측정 중에 안 닫히게
+  --soft-close-trigger N  마감 임박으로 보는 남은 초 (기본 60)
+  --soft-close-extend N   임박 구간에 입찰이 들어오면 밀어 줄 초 (기본 60)
   --out FILE         결과를 shell 변수로 적을 파일
   --base URL         API 주소 (기본 http://localhost:8080/api/v1 = 개발 앱)
 USAGE
@@ -54,6 +61,8 @@ while [ $# -gt 0 ]; do
     --unit) UNIT="$2"; shift 2 ;;
     --start) START_MODE="$2"; shift 2 ;;
     --duration-min) DURATION_MINUTES="$2"; shift 2 ;;
+    --soft-close-trigger) SOFT_CLOSE_TRIGGER="$2"; shift 2 ;;
+    --soft-close-extend) SOFT_CLOSE_EXTEND="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -73,14 +82,24 @@ SELLER_JAR="$WORK/seller.cookie"
 api() {
   local jar="$1" method="$2" path="$3" body="${4:-}"
   local response
+  local -a auth=()
+
+  # 배포에서는 dev-login 이 토큰을 아는 요청만 받는다 (#266). 로컬 perf 는 값이 없어서
+  # 헤더가 안 붙고 지금까지와 똑같이 돈다. 다른 엔드포인트에 붙어도 무시된다.
+  #
+  # ${auth[@]+"${auth[@]}"} 는 set -u 에서 빈 배열을 펼쳐도 안 죽는 형태다 (bash 3.2).
+  if [ -n "${DEV_LOGIN_TOKEN:-}" ]; then
+    auth=(-H "X-Dev-Login-Token: $DEV_LOGIN_TOKEN")
+  fi
 
   if [ -n "$body" ]; then
     response="$(curl -sS -X "$method" "$BASE$path" \
       -b "$jar" -c "$jar" \
+      ${auth[@]+"${auth[@]}"} \
       -H 'Content-Type: application/json' \
       -d "$body")"
   else
-    response="$(curl -sS -X "$method" "$BASE$path" -b "$jar" -c "$jar")"
+    response="$(curl -sS -X "$method" "$BASE$path" -b "$jar" -c "$jar" ${auth[@]+"${auth[@]}"})"
   fi
 
   if [ "$(printf '%s' "$response" | jq -r '.success // false')" != "true" ]; then
@@ -105,7 +124,9 @@ curl -sS -o /dev/null -X POST "$BASE/seller-profiles" -b "$SELLER_JAR" -c "$SELL
 echo "[seed] 경매방 생성"
 ROOM_JSON="$(api "$SELLER_JAR" POST "/auction-rooms" \
   "$(jq -nc --argjson unit "$UNIT" \
-    '{name:"부하측정방", bidIncrement:$unit, softCloseTriggerSeconds:60, softCloseExtendSeconds:60}')")"
+       --argjson trigger "$SOFT_CLOSE_TRIGGER" --argjson extend "$SOFT_CLOSE_EXTEND" \
+    '{name:"부하측정방", bidIncrement:$unit,
+      softCloseTriggerSeconds:$trigger, softCloseExtendSeconds:$extend}')")"
 
 ROOM_ID="$(printf '%s' "$ROOM_JSON" | jq -r '.data.auctionRoomId')"
 SHARE_CODE="$(printf '%s' "$ROOM_JSON" | jq -r '.data.shareCode')"
@@ -122,21 +143,33 @@ while [ "$i" -le "$ITEMS" ]; do
   i=$((i + 1))
 done
 
-echo "[seed] 경매방 물품 $ITEMS 개 (벌크)"
-BULK_BODY="$(jq -nc \
-  --arg ids "$PRODUCT_IDS" \
-  --argjson price "$START_PRICE" \
-  '{items: [$ids | split(",") | .[] | {productId: (. | tonumber), startingPrice: $price}]}')"
+# 벌크 API 는 한 번에 100개까지만 받는다(2002 로 거절된다). 그래서 100개씩 끊어 보낸다.
+BULK_CHUNK=100
 
-BULK_JSON="$(api "$SELLER_JAR" POST "/auction-rooms/$ROOM_ID/auction-items/bulk" "$BULK_BODY")"
+echo "[seed] 경매방 물품 $ITEMS 개 (벌크 ${BULK_CHUNK}개씩)"
+ITEM_IDS_ALL=""
+OFFSET=0
 
-if [ "$(printf '%s' "$BULK_JSON" | jq -r '.data.failed | length')" != "0" ]; then
-  echo "[seed] 물품 추가가 일부 거절됐다:" >&2
-  printf '%s' "$BULK_JSON" | jq -r '.data.failed' >&2
-  exit 1
-fi
+while [ "$OFFSET" -lt "$ITEMS" ]; do
+  BULK_BODY="$(jq -nc \
+    --arg ids "$PRODUCT_IDS" \
+    --argjson price "$START_PRICE" \
+    --argjson from "$OFFSET" --argjson size "$BULK_CHUNK" \
+    '{items: [$ids | split(",") | .[$from:($from + $size)] | .[]
+              | {productId: (. | tonumber), startingPrice: $price}]}')"
 
-ITEM_IDS_ALL="$(printf '%s' "$BULK_JSON" | jq -r '[.data.added[].auctionItemId] | join(",")')"
+  BULK_JSON="$(api "$SELLER_JAR" POST "/auction-rooms/$ROOM_ID/auction-items/bulk" "$BULK_BODY")"
+
+  if [ "$(printf '%s' "$BULK_JSON" | jq -r '.data.failed | length')" != "0" ]; then
+    echo "[seed] 물품 추가가 일부 거절됐다:" >&2
+    printf '%s' "$BULK_JSON" | jq -r '.data.failed' >&2
+    exit 1
+  fi
+
+  CHUNK_IDS="$(printf '%s' "$BULK_JSON" | jq -r '[.data.added[].auctionItemId] | join(",")')"
+  ITEM_IDS_ALL="${ITEM_IDS_ALL:+$ITEM_IDS_ALL,}$CHUNK_IDS"
+  OFFSET=$((OFFSET + BULK_CHUNK))
+done
 
 STARTED_IDS=""
 READY_IDS=""
@@ -163,11 +196,19 @@ echo "[seed] 구매자 $USERS 명 로그인 + 약관 동의 (동시 $CONCURRENCY
 seed_one_buyer() {
   jar="$WORK/buyer-$1.cookie"
 
-  curl -fsS -o /dev/null -X POST "$BASE/auth/dev-login?key=bidder-$1" -c "$jar" || return 1
+  local -a auth=()
+  if [ -n "${DEV_LOGIN_TOKEN:-}" ]; then
+    auth=(-H "X-Dev-Login-Token: $DEV_LOGIN_TOKEN")
+  fi
+
+  curl -fsS -o /dev/null -X POST "$BASE/auth/dev-login?key=bidder-$1" \
+    ${auth[@]+"${auth[@]}"} -c "$jar" || return 1
   curl -fsS -o /dev/null -X POST "$BASE/auction-rooms/share/$SHARE_CODE/agreement" -b "$jar" || return 1
 }
 export -f seed_one_buyer
 export BASE SHARE_CODE WORK
+# 자식 셸에서도 헤더를 붙이려면 넘겨야 한다. 안 넘기면 구매자 시딩만 전부 401 이 된다.
+export DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}"
 
 # 실패한 사람 수를 센다. xargs 는 자식이 실패하면 123 으로 끝나지만 몇 명인지는 안 알려준다.
 FAIL_LOG="$WORK/failed"
