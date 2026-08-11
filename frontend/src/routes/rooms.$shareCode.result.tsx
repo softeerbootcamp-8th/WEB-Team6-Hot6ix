@@ -1,31 +1,45 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
 
 import { GuestShell } from '@/components/layout/page-shell'
 import { EmptyState } from '@/components/page-header'
 import { RouteError, RoutePending } from '@/components/route-states'
-import { useGetResults } from '@/api/generated/경매방/경매방'
+import {
+  useGetResults,
+  useGetRoomByShareCode,
+} from '@/api/generated/경매방/경매방'
 import { toRoomResult } from '@/features/live/adapt-result'
-import { StatusBadge } from '@/components/status-badge'
-import { formatWon } from '@/lib/format'
+import { ClosedRoomView } from '@/features/live/components/closed-room-view'
+import { useCurrentUser } from '@/lib/session'
 
 export const Route = createFileRoute('/rooms/$shareCode/result')({
   component: RoomResultPage,
 })
 
-/** 이 화면은 종료된 방 전용이 아니다 — 진행 중인 방 주소로도 열릴 수 있다. */
-const ROOM_BADGE_LABEL = {
-  READY: '오픈 예정 경매방',
-  LIVE: '진행 중인 경매방',
-  CLOSED: '종료된 경매방',
-} as const
-
+/**
+ * 경매 결과 화면 (Figma `WEB-23` · `MOB-23`).
+ *
+ * 종료된 방의 도착지다. `/rooms/$shareCode` 는 진행 중인 방 전용이고, 방이
+ * 닫혀 있으면 그 라우트가 여기로 돌려보낸다. 두 화면을 나눠 두는 이유는
+ * 종료된 방에서 실시간 연결을 열지 않기 위해서다 — 진행 중 화면에 얹어 두면
+ * 방 상태를 알기 전에 SSE 가 붙고, 서버가 그 구독을 거절해서 "실시간 연결이
+ * 끊겼어요" 경고가 뜬다.
+ *
+ * 진행 중인 방 주소로도 열릴 수 있다. `ClosedRoomView` 가 아직 안 끝난 물품을
+ * `진행 중` 으로 그린다.
+ */
 function RoomResultPage() {
   const { shareCode } = Route.useParams()
+  const user = useCurrentUser()
 
   // 없는 공유 코드는 서버가 404 로 답하고 아래 에러 화면이 받는다.
   const resultsQuery = useGetResults(shareCode)
+  /*
+   * 판매자 조작(거래 현황)을 띄울 근거인 `isOwner` 는 결과 응답에 없어 방을 따로 읽는다.
+   * 진행 중 화면에서 넘어왔으면 이미 캐시에 있어 요청이 더 나가지 않는다.
+   */
+  const roomQuery = useGetRoomByShareCode(shareCode)
 
-  if (resultsQuery.isPending) return <RoutePending />
+  if (resultsQuery.isPending || roomQuery.isPending) return <RoutePending />
   if (resultsQuery.isError) {
     return (
       <RouteError
@@ -47,110 +61,15 @@ function RoomResultPage() {
     )
   }
 
+  /*
+   * 방을 못 읽어도 결과는 보여준다. 방 조회는 판매자 조작을 띄울지만 가르므로,
+   * 실패하면 구매자 화면으로 그리면 된다 — 결과 자체를 막을 이유가 없다.
+   */
   return (
-    <GuestShell title="경매 결과" back className="max-w-[1000px]">
-      <header className="rounded-4xl border bg-card p-5 md:p-6">
-        <StatusBadge tone="muted">
-          {ROOM_BADGE_LABEL[result.status]}
-        </StatusBadge>
-        <h1 className="mt-3 text-[22px] font-extrabold text-foreground md:text-[26px]">
-          {result.name}
-        </h1>
-        {result.sellerStoreName && (
-          <p className="mt-2 text-body font-medium text-neutral-tertiary">
-            {result.sellerStoreName}
-          </p>
-        )}
-
-        <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: '전체 물품', value: `${result.items.length}개` },
-            { label: '낙찰', value: `${result.soldCount}개` },
-            { label: '유찰', value: `${result.unsoldCount}개` },
-            { label: '총 낙찰가', value: formatWon(result.totalAmount) },
-          ].map((stat) => (
-            <div key={stat.label} className="rounded-2xl bg-surface-subtle p-4">
-              <dt className="text-caption font-normal text-neutral-muted">
-                {stat.label}
-              </dt>
-              <dd className="mt-1.5 text-body-strong font-semibold tabular-nums text-foreground">
-                {stat.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-
-        {result.myWinCount > 0 && (
-          <p className="mt-4 rounded-2xl bg-success-surface px-4 py-3 text-label font-bold text-success">
-            이 방에서 {result.myWinCount}개 물품을 낙찰받았어요. 거래 내역에서
-            진행 상황을 확인하세요.
-          </p>
-        )}
-      </header>
-
-      <section className="mt-6">
-        <h2 className="text-label font-bold text-foreground">
-          물품별 결과 ({result.items.length})
-        </h2>
-
-        <ul className="mt-3 space-y-3">
-          {result.items.map((item) => (
-            <li
-              key={item.auctionItemId}
-              className="rounded-3xl border bg-card p-5"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {item.outcome === 'SOLD' ? (
-                      <StatusBadge tone="success">낙찰</StatusBadge>
-                    ) : item.outcome === 'FAILED' ? (
-                      <StatusBadge tone="muted">유찰</StatusBadge>
-                    ) : (
-                      <StatusBadge tone="notice">진행 중</StatusBadge>
-                    )}
-                    {item.isMyWin && (
-                      <StatusBadge tone="brand">내 낙찰</StatusBadge>
-                    )}
-                  </div>
-                  <h3 className="mt-2.5 text-card-title font-bold text-foreground">
-                    {item.productName}
-                  </h3>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-price font-extrabold tabular-nums text-foreground">
-                    {item.outcome === 'SOLD'
-                      ? formatWon(item.finalPrice ?? 0)
-                      : '-'}
-                  </p>
-                  <p className="mt-1 text-caption font-normal text-neutral-tertiary">
-                    {item.outcome === 'SOLD'
-                      ? `${item.winnerNickname ?? '알 수 없음'} 낙찰`
-                      : item.outcome === 'FAILED'
-                        ? '입찰자 없음'
-                        : '경매 진행 중'}
-                  </p>
-                </div>
-              </div>
-
-              {item.myRank != null && (
-                <p className="mt-4 rounded-xl bg-surface-subtle px-4 py-2.5 text-caption font-normal text-neutral-secondary">
-                  내 최종 순위 {item.myRank}위 · {formatWon(item.myAmount ?? 0)}
-                </p>
-              )}
-
-              <Link
-                to="/rooms/$shareCode/items/$itemId"
-                params={{ shareCode, itemId: String(item.auctionItemId) }}
-                className="mt-4 block rounded-lg border py-2 text-center text-label font-semibold text-neutral-secondary transition-colors hover:border-border-strong"
-              >
-                상세 결과 보기
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
-    </GuestShell>
+    <ClosedRoomView
+      result={result}
+      isGuest={user === null}
+      isOwner={roomQuery.data?.data?.isOwner === true}
+    />
   )
 }
