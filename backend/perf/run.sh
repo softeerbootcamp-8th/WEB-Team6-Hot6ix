@@ -20,6 +20,8 @@ COMPOSE=(docker compose -f "$PERF_DIR/docker-compose.perf.yml")
 
 SCENARIO=1
 VUS=40
+# 0 이면 닫힌 모델(constant-vus). 값을 주면 초당 도착 건수를 고정하는 열린 모델이 된다.
+RATE=0
 POOL=10
 ITEMS=1
 SSE=0
@@ -70,7 +72,11 @@ usage() {
 
   --scenario N       0=부하 발생기 한계, 1~5=시나리오 (기본 1)
                      5 는 마감과 입찰을 겹친다. --items 로 마감할 물품 수를 준다
+                     6=탐색 램프(무릎 찾기), 7=스파이크(절벽). 둘 다 판정에 안 쓴다
   --vus N            가상 사용자 수. 계단은 10/20/40/80/160 (기본 40)
+                     --rate 와 같이 주면 도착률을 채울 VU 수(preAllocatedVUs)가 된다
+  --rate N           초당 도착 건수를 고정한다 (열린 모델). 안 주면 예전처럼 닫힌 모델
+                     "동시 참여자 200명이 평균 3초에 한 번" = --rate 66 처럼 환산한다
   --items N          물품 수. 시나리오 1은 1, 2는 20 (기본 1)
   --sse N            같이 붙여 둘 SSE 접속 수. 5번(겹쳐 재기)에서 쓴다 (기본 0)
   --users N          시딩할 구매자 수. --vus 보다 커야 한다 (기본 200)
@@ -120,6 +126,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --scenario) SCENARIO="$2"; shift 2 ;;
     --vus) VUS="$2"; shift 2 ;;
+    --rate) RATE="$2"; shift 2 ;;
     --items) ITEMS="$2"; shift 2 ;;
     --sse) SSE="$2"; shift 2 ;;
     --users) USERS="$2"; shift 2 ;;
@@ -149,6 +156,12 @@ while [ $# -gt 0 ]; do
     *) echo "모르는 옵션: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+# 컨테이너를 다 띄우고 시딩까지 한 뒤에 k6 가 init 에서 죽으면 몇 분을 버린다. 여기서 막는다.
+if [ "$SCENARIO" = "7" ] && [ "$RATE" -le 0 ] 2>/dev/null; then
+  echo "시나리오 7(스파이크)은 --rate 가 있어야 한다. 예: --scenario 7 --rate 200" >&2
+  exit 1
+fi
 
 case "$ISOLATION" in
   RC) TX_ISOLATION="READ-COMMITTED" ;;
@@ -588,8 +601,19 @@ case "$SCENARIO" in
   3) SCRIPT="scenario3.js" ;;
   4) SCRIPT="scenario4.js" ;;
   5) SCRIPT="scenario5.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~5)" >&2; exit 1 ;;
+  6) SCRIPT="explore.js" ;;
+  7) SCRIPT="spike.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~7)" >&2; exit 1 ;;
 esac
+
+# 6(탐색 램프)과 7(스파이크)은 램프라서 p95 가 구간 평균이 되고 max 계열이 램프 끝 값만
+# 남는다. "어느 부하에서 처음 0을 벗어났는지"가 사라지므로 판정 규칙("두 배 올려 1.2배
+# 미만인 첫 줄")이 성립하지 않는다. 그래서 표에는 aborted 로 남기고 노션에 안 붙인다.
+if [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ]; then
+  RAMP_RUN=1
+else
+  RAMP_RUN=0
+fi
 
 # k6 를 한 번 돌린다. 워밍업과 본 측정이 같은 함수를 지나야 워밍업이 실제로 같은 경로를
 # 데운 것이 된다 — 다른 경로를 데우면 데운 셈만 치는 것이다.
@@ -607,11 +631,11 @@ run_k6() {
   BID_ITEMS="$BID_ITEMS" BID_START="$BID_START" CLOSE_BID_UNTIL="$CLOSE_BID_UNTIL" \
   CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
   START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
-  DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" \
+  DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" RATE="${RUN_RATE:-$RATE}" \
     "${COMPOSE[@]}" run --rm \
       -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
       -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
-      -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN \
+      -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN -e RATE \
       k6 run ${@+"$@"} "/scripts/$SCRIPT" \
       2>&1 | tee "$log"
   K6_EXIT="${PIPESTATUS[0]}"
@@ -629,9 +653,15 @@ run_k6() {
 #
 # 부하를 주는 워밍업은 입찰 시나리오에서만 한다. 3(SSE)과 4·5(마감)는 부하 모양이 달라
 # 같은 스크립트로 데울 수가 없어서 예전처럼 기다리기만 한다.
-if [ "$SCENARIO" = "1" ] || [ "$SCENARIO" = "2" ]; then
+if [ "$SCENARIO" = "1" ] || [ "$SCENARIO" = "2" ] \
+  || [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ]; then
   echo "[6/8] 워밍업 ${WARMUP}초 (vus=$WARMUP_VUS 로 실제 부하를 준다)"
+
+  # 워밍업은 항상 닫힌 모델로 돈다. --rate 를 그대로 물려받으면 VU 몇 개로 목표 도착률을
+  # 채우려다 못 채우고, 데우지도 못한 채 "서버가 못 받았다"처럼 보이는 로그만 남는다.
+  RUN_RATE=0
   run_k6 "$WARMUP_VUS" "${WARMUP}s" "" "$RESULT_DIR/k6_warmup.log"
+  unset RUN_RATE
 else
   echo "[6/8] 워밍업 ${WARMUP}초 (시나리오 $SCENARIO 는 기다리기만 한다)"
   sleep "$WARMUP"
@@ -1113,6 +1143,9 @@ fi
 STATUS="ok"
 [ "$K6_EXIT" -ne 0 ] && STATUS="aborted"
 
+# 램프는 성공해도 판정에 못 쓴다. 위 RAMP_RUN 주석 참고.
+[ "$RAMP_RUN" = "1" ] && STATUS="aborted"
+
 # 증가분이 음수면 구간 앞뒤가 다른 컨테이너를 본 것이다. 그 줄은 표에 쓰면 안 된다.
 if awk -v v="$RPS" 'BEGIN { exit !(v + 0 < 0) }' 2>/dev/null; then
   STATUS="aborted"
@@ -1124,7 +1157,8 @@ jq -n \
   --arg run_id "$RUN_ID" --arg who "$WHO" --arg commit "$COMMIT" \
   --arg status "$STATUS" --arg start "$WINDOW_START" --arg end "$WINDOW_END" \
   --arg dirty "$([ -n "$DIRTY" ] && echo true || echo false)" \
-  --argjson scenario "$SCENARIO" --argjson vus "$VUS" --argjson pool "$POOL" \
+  --argjson scenario "$SCENARIO" --argjson vus "$VUS" --argjson rate "$RATE" \
+  --argjson pool "$POOL" \
   --argjson items "$ITEMS" --argjson sse "$SSE" --argjson users "$USERS" \
   --argjson heartbeat_ms "$HEARTBEAT_MS" --argjson scheduler_pool "$SCHEDULER_POOL" \
   --arg virtual_threads "$VIRTUAL_THREADS" --arg xmx "$JAVA_OPTS" \
@@ -1132,7 +1166,7 @@ jq -n \
   --argjson bulk_items "$BULK_ITEMS" \
   --argjson window_seconds "$WINDOW_SECONDS" \
   '{run_id:$run_id, scenario:$scenario, commit:$commit, dirty:($dirty=="true"), who:$who,
-    params:{vus:$vus, pool_size:$pool, items:$items, sse:$sse, users:$users,
+    params:{vus:$vus, rate:$rate, pool_size:$pool, items:$items, sse:$sse, users:$users,
             heartbeat_ms:$heartbeat_ms, scheduler_pool:$scheduler_pool,
             virtual_threads:($virtual_threads=="true"), xmx:$xmx,
             isolation:$isolation, bulk_items:$bulk_items,
@@ -1140,7 +1174,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,vus,rate,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -1170,8 +1204,8 @@ fi
 # k6 가 중간에 죽으면 summary.json 이 없어서 접수와 거절이 전부 0 인데 처리량은 그럴듯한
 # 숫자가 박혀서, 그 줄만 봐서는 아무도 못 알아본다. 실측으로 겪었다 — 구간 128초짜리
 # aborted 줄에 처리량 3490.7 이 들어갔고 접수는 0 이었다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
-  "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+  "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$RATE" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
@@ -1321,10 +1355,17 @@ fi
 # 예전에는 aborted 여도 줄을 찍고 그 아래에 경고를 붙였는데, 경고가 줄 뒤에 오니까 이미
 # 복사한 뒤였다. 다섯 명이 각자 수십 번 돌리면 그 한 번이 조용히 노션에 들어간다.
 if [ "$STATUS" = "aborted" ]; then
-  echo "※ 이 실행은 aborted 다. k6 가 중간에 끝났거나 구간 앞뒤가 다른 컨테이너를 봤다." >&2
-  echo "  index.csv 에는 status=aborted 로 남겼다. **이 줄은 노션에 붙여넣지 않는다.**" >&2
-  echo "  폴더는 지우지 않는다 (나중에 '이 계단은 왜 비었지'가 되지 않게)." >&2
-  echo "  같은 조건으로 다시 돌린다: $RESULT_DIR" >&2
+  if [ "$RAMP_RUN" = "1" ]; then
+    echo "※ 시나리오 $SCENARIO 는 램프라 판정에 쓰지 않는다. 실패한 게 아니다." >&2
+    echo "  p95 가 구간 평균이 되고 max 계열이 램프 끝 값만 남아서, 어느 부하에서" >&2
+    echo "  처음 무너졌는지가 사라진다. 여기서 잡은 무릎 근처로 계단을 다시 낸다." >&2
+    echo "  결과: $RESULT_DIR" >&2
+  else
+    echo "※ 이 실행은 aborted 다. k6 가 중간에 끝났거나 구간 앞뒤가 다른 컨테이너를 봤다." >&2
+    echo "  index.csv 에는 status=aborted 로 남겼다. **이 줄은 노션에 붙여넣지 않는다.**" >&2
+    echo "  폴더는 지우지 않는다 (나중에 '이 계단은 왜 비었지'가 되지 않게)." >&2
+    echo "  같은 조건으로 다시 돌린다: $RESULT_DIR" >&2
+  fi
   exit 0
 fi
 
