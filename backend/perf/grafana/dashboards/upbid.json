@@ -1109,16 +1109,16 @@
       {
         "name": "run",
         "label": "실행",
-        "description": "어느 실행을 볼지. 최신이 맨 위다. run.sh 가 실행마다 다른 값을 모든 지표에 라벨로 붙인다.",
+        "description": "어느 실행을 볼지. 최신이 맨 위다. 로컬은 run.sh 가 실행마다 다른 값을 붙이고, 배포는 앱이 부팅 때 받은 값(PERF_RUN_ID, 기본 unknown)을 창구 내내 단다. 배포에서는 계단이 라벨이 아니라 시간 범위로 갈린다.",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "upbid-prometheus"
         },
-        "definition": "label_values(process_start_time_seconds{run=~\"[0-9]{4}-[0-9]{2}-[0-9]{2}T.*\"}, run)",
+        "definition": "label_values(process_start_time_seconds, run)",
         "query": {
           "qryType": 1,
-          "query": "label_values(process_start_time_seconds{run=~\"[0-9]{4}-[0-9]{2}-[0-9]{2}T.*\"}, run)",
+          "query": "label_values(process_start_time_seconds, run)",
           "refId": "run"
         },
         "sort": 2,
