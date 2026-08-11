@@ -12,31 +12,6 @@ services:
     ports:
       - "8080:8080"
     mem_limit: 700m
-
-    # 부하 측정용 손잡이만 따로 받는 파일이다 (이슈 #266).
-    #
-    # .env는 CD가 배포할 때마다 `cat >`로 새로 써서 손으로 넣은 줄이 사라진다. 이 파일은
-    # CD가 안 건드리므로 **한 번 만들어 두면 배포해도 남는다.** 측정이 끝나면 파일을 지운다.
-    #
-    #   cat > .env.perf <<EOF
-    #   ACTUATOR_EXPOSURE=health,metrics,prometheus
-    #   DEV_LOGIN_TOKEN=<열쇠값>
-    #   EOF
-    #   docker compose up -d
-    #
-    # 없어도 정상이다(required: false). 그때는 앱이 application.yaml의 기본값으로 뜨고
-    # 지금과 동작이 같다 — actuator는 health만, dev-login은 빈 자체가 안 생긴다.
-    #
-    # **여기 있는 키를 아래 environment에 또 적으면 안 된다.** environment가 env_file을
-    # 덮어써서 이 파일이 통째로 무시된다.
-    #
-    # required: false 는 Docker Compose 2.24 이상이 필요하다. 서버가 그보다 낮으면
-    # `docker compose config` 가 여기서 실패하므로, 그때는 빈 .env.perf 를 만들어 두고
-    # 짧은 문법(`- .env.perf`)으로 바꾼다.  확인: docker compose version
-    env_file:
-      - path: .env.perf
-        required: false
-
     environment:
       # 베이스 이미지 기본값이 UTC라 LocalDateTime이 UTC 벽시계로 만들어진다.
       # 응답에는 오프셋이 없어서(예: "2026-08-04T07:55:00") 브라우저가 KST로 읽고,
@@ -49,15 +24,21 @@ services:
       - SPRING_DATASOURCE_USERNAME=${RDS_USERNAME}
       - SPRING_DATASOURCE_PASSWORD=${RDS_PASSWORD}
       - SPRING_PROFILES_ACTIVE=prod
+      # 아래는 전부 부하 측정용 손잡이다 (이슈 #266). 값을 안 주면 지금과 동작이 같다.
       #
-      # 측정용 손잡이는 여기 안 적는다. 위 env_file(.env.perf)로 받는다.
-      # environment가 env_file보다 우선이라, 여기 적으면 .env.perf가 무시된다.
-      #
-      # 안 줬을 때의 기본값은 application.yaml과 application-prod.yaml이 이미 갖고 있다.
-      #   ACTUATOR_EXPOSURE=health   DEV_LOGIN_TOKEN=(빈 값)   PERF_RUN_ID=unknown
-      #   DB_POOL_SIZE=10   SCHEDULER_POOL_SIZE=4   LOG_LEVEL=info
-      #   SSE_HEARTBEAT_MS=30000   SSE_TIMEOUT_MS=3600000   MAX_IN_PROGRESS_PER_ROOM=3
-      #
+      # ACTUATOR_EXPOSURE 를 열기 전에 nginx 에서 /actuator 를 측정 서버 IP 로 제한한다.
+      # 8080 이 호스트에 그대로 뚫려 있어서 프록시를 안 거치는 경로가 남는다.
+      - ACTUATOR_EXPOSURE=${ACTUATOR_EXPOSURE:-health}
+      # 비워 두면 dev-login 엔드포인트 자체가 안 생긴다. 측정 창구에만 값을 주고 끝나면 지운다.
+      - DEV_LOGIN_TOKEN=${DEV_LOGIN_TOKEN:-}
+      - PERF_RUN_ID=${PERF_RUN_ID:-unknown}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
+      - SCHEDULER_POOL_SIZE=${SCHEDULER_POOL_SIZE:-4}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - APP_LOG_LEVEL=${APP_LOG_LEVEL:-info}
+      - SSE_HEARTBEAT_MS=${SSE_HEARTBEAT_MS:-30000}
+      - SSE_TIMEOUT_MS=${SSE_TIMEOUT_MS:-3600000}
+      - MAX_IN_PROGRESS_PER_ROOM=${MAX_IN_PROGRESS_PER_ROOM:-3}
       # 카카오 로그인 (application.yaml 의 oauth.kakao.*)
       - KAKAO_CLIENT_ID=${KAKAO_CLIENT_ID}
       - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET}
