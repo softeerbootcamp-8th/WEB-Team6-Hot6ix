@@ -16,6 +16,8 @@ java {
 // Boot BOM이 관리하는 com.querydsl 5.1.0은 Hibernate 6 기준 빌드라 Boot 4(Hibernate 7.2) 위에서는 검증되지 않은 조합임.
 ext {
 	queryDslVersion = '7.5'
+	// Boot BOM이 이 좌표를 관리하지 않는다. 7.7.0이 Spring 7 / Spring Boot 4 공식 호환 확인된 최신판(2026-08 기준).
+	shedLockVersion = '7.7.0'
 }
 
 repositories {
@@ -45,6 +47,10 @@ dependencies {
 
 	// Redis — Lettuce 클라이언트가 기본 포함된다 (Boot BOM이 버전 관리).
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+	// ShedLock
+	implementation "net.javacrumbs.shedlock:shedlock-spring:${shedLockVersion}"
+	implementation "net.javacrumbs.shedlock:shedlock-provider-redis-spring:${shedLockVersion}"
 
 	// Boot 4는 자동설정까지 모듈이라 flyway-core만 넣으면 Flyway가 아예 안 돌고,
 	// Flyway 10부터는 DB별 지원도 갈려서 flyway-mysql이 없으면 MySQL을 못 알아본다.
