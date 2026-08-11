@@ -1,0 +1,15 @@
+# 운영 전용 (deploy/docker-compose.yml 이 SPRING_PROFILES_ACTIVE=prod 로 띄운다)
+#
+# 이 파일이 없어서 운영이 base 의 ddl-auto: create 를 그대로 썼고, 재배포와 재부팅마다
+# RDS 데이터가 사라졌다 (#96).
+
+spring:
+  flyway:
+    # 운영 RDS 에는 Hibernate 가 만든 테이블이 이미 있고 flyway_schema_history 만 없다.
+    # 없으면 V1 이 "테이블 이미 존재"로 실패한다. 스키마가 Flyway 로 넘어간 뒤에는 지워도 된다.
+    baseline-on-migrate: true
+
+  jpa:
+    hibernate:
+      # base 와 같은 값이지만, base 가 바뀌어도 운영은 스키마를 자동 변경하지 않게 한 번 더 막는다.
+      ddl-auto: validate
