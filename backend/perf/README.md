@@ -263,6 +263,50 @@ Soft Close 가 마감을 계속 미루기 때문입니다. 실제로 `--items 20
 없어 한 줄이 여러 명 몫을 합니다) 그대로 말할 수 없는데, 도착률은 **"동시 참여자 200명이 평균
 3초에 한 번 입찰 = 초당 66건"** 으로 환산해 말할 수 있습니다.
 
+### 배포 서버 재기
+
+`--base` 를 주면 **앱과 DB 를 안 띄우고** 그쪽을 잽니다. 측정 EC2 에서 돌립니다.
+
+```bash
+./perf/run.sh --scenario 1 --vus 40 \
+  --base https://api.upbid.store/api/v1 \
+  --app-url http://10.0.1.88:8080 \
+  --run-label prod-2026-08-11 \
+  --db-host upbid-mysql.cvbxvy47ktze.ap-northeast-2.rds.amazonaws.com \
+  --db-user upbid --db-pass '****' \
+  --who 승민
+```
+
+**주소가 둘인 이유가 있습니다.** 배스천 nginx 가 `/actuator` 를 막기 때문에 부하와 관측을 같은
+주소로 할 수 없습니다.
+
+| | 무엇 | 무엇을 재나 |
+|---|---|---|
+| `--base` | 부하를 거는 주소 | 배스천 도메인이면 사용자가 겪는 값, 앱 사설 IP 면 프록시와 TLS 를 뺀 앱 자체 |
+| `--app-url` | 관측용 주소. **항상 앱 사설 IP** | 지표를 읽는 곳 |
+
+같은 시나리오를 `--base` 만 바꿔 두 번 돌리면 그 차이가 곧 배스천이 먹는 비용입니다.
+배스천이 `t4g.nano` 로 앱(`t4g.micro`)보다 작아서 **프록시가 먼저 무너질 수 있는데**, 그걸
+앱 한계로 읽지 않으려면 두 줄이 필요합니다.
+
+**`--run-label` 은 앱이 부팅 때 받은 `PERF_RUN_ID` 입니다.** 실행 이름이 아닙니다. 로컬은
+실행마다 앱을 새로 띄우니 둘이 같지만, 배포는 앱을 안 내리므로 창구 내내 한 값입니다.
+계단은 구간 시각으로 갈립니다. 안 맞으면 조회가 아무것도 못 잡아 모든 지표가 NaN 이 되므로,
+`run.sh` 가 시작 전에 확인하고 안 맞으면 멈춥니다.
+
+```bash
+ssh upbid-app 'docker exec app-app-1 printenv PERF_RUN_ID'
+```
+
+**`--db-*` 는 RDS 직접 접속입니다.** `run.sh` 가 MySQL 내부 카운터를 SQL 로 읽어야
+`select_per_bid`, `lock_wait_p95`, `gap_locks` 가 채워집니다. 로컬은 `docker compose exec mysql`
+로 하는데 배포에는 그 컨테이너가 없습니다. **원격에서는 접속이 실패하면 조용히 넘어가지 않고
+멈춥니다.** 예전처럼 빈 값이 돌아오면 그 칸들이 NaN 인 채로 3분을 다 재게 됩니다.
+
+못 채우는 칸도 있습니다. `app_cpu_*` 와 `mysql_cpu_*`, `cpus` 는 `docker stats` 로 뜨던 값이라
+배포에서는 안 나옵니다. 앱은 Grafana 의 `process_cpu_usage`, RDS 와 EC2 는 CloudWatch
+`CPUUtilization` 으로 봅니다. 실행이 끝날 때 이 안내가 같이 찍힙니다.
+
 ### 소크는 시나리오가 아니라 실행 방법입니다
 
 SSE emitter 정리 누락, 세션 누적, GC 후에도 안 내려가는 힙은 **3분으로는 절대 안 보입니다.**

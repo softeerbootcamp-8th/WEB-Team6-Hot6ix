@@ -23,6 +23,20 @@ VUS=40
 # 0 이면 닫힌 모델(constant-vus). 값을 주면 초당 도착 건수를 고정하는 열린 모델이 된다.
 RATE=0
 POOL=10
+
+# ── 원격(배포) 측정용 ──────────────────────────────────────────────
+# 비어 있으면 예전처럼 로컬 컨테이너를 띄워 잰다. 값을 주면 그쪽을 재고 아무것도 안 띄운다.
+BASE_TARGET=""
+# 관측용 주소. 원격에서는 앱 사설 IP 다 (배스천은 /actuator 를 막는다).
+ADMIN_TARGET=""
+# RDS 접속. run.sh 가 MySQL 내부 카운터를 SQL 로 직접 읽어야 채워지는 칸이 여럿 있다.
+DB_HOST=""
+DB_PORT=3306
+DB_NAME=upbid
+DB_USER=""
+DB_PASS=""
+# 앱이 부팅 때 받은 PERF_RUN_ID. 조회 필터로 쓴다.
+RUN_LABEL=""
 ITEMS=1
 SSE=0
 USERS=200
@@ -116,6 +130,16 @@ usage() {
   --skip-build       jar 를 다시 안 만든다. 같은 커밋으로 계단만 올릴 때
   --port N           perf nginx 를 띄울 호스트 포트 (기본 18080)
 
+  배포 서버 재기 (측정 EC2 에서 돌린다)
+  --base URL         부하를 거는 주소. 이걸 주면 앱과 DB 를 안 띄우고 그쪽을 잰다
+                     사용자 경로: https://api.upbid.store/api/v1
+                     앱 직접:     http://10.0.1.88:8080/api/v1  (프록시와 TLS 를 뺀 값)
+  --app-url URL      관측용 주소. 배스천은 /actuator 를 막으므로 **앱 사설 IP** 를 준다
+                     예: http://10.0.1.88:8080
+  --run-label V      앱이 부팅 때 받은 PERF_RUN_ID. 안 맞으면 모든 지표가 NaN 이다
+  --db-host H        RDS 주소. --db-user / --db-pass 와 함께 준다
+                     (--db-port 3306, --db-name upbid 이 기본)
+
 측정용 포트는 개발 백엔드(8080)나 프론트(5173)와 겹치지 않는다.
   nginx 18080   Prometheus 19090   Grafana 13000
 환경변수 PERF_HTTP_PORT / PERF_PROM_PORT / PERF_GRAFANA_PORT 로도 바꿀 수 있다.
@@ -127,6 +151,14 @@ while [ $# -gt 0 ]; do
     --scenario) SCENARIO="$2"; shift 2 ;;
     --vus) VUS="$2"; shift 2 ;;
     --rate) RATE="$2"; shift 2 ;;
+    --base) BASE_TARGET="$2"; shift 2 ;;
+    --app-url) ADMIN_TARGET="$2"; shift 2 ;;
+    --run-label) RUN_LABEL="$2"; shift 2 ;;
+    --db-host) DB_HOST="$2"; shift 2 ;;
+    --db-port) DB_PORT="$2"; shift 2 ;;
+    --db-name) DB_NAME="$2"; shift 2 ;;
+    --db-user) DB_USER="$2"; shift 2 ;;
+    --db-pass) DB_PASS="$2"; shift 2 ;;
     --items) ITEMS="$2"; shift 2 ;;
     --sse) SSE="$2"; shift 2 ;;
     --users) USERS="$2"; shift 2 ;;
@@ -163,6 +195,32 @@ if [ "$SCENARIO" = "7" ] && [ "$RATE" -le 0 ] 2>/dev/null; then
   exit 1
 fi
 
+# 원격 모드에 빠진 값이 있으면 여기서 멈춘다.
+#
+# 이걸 안 막으면 실행은 끝까지 도는데 표의 여러 칸이 NaN 으로 남는다. 3분을 다 재고 나서야
+# 알게 되고, 그때는 이미 데이터가 쌓여서 같은 조건으로 다시 재기도 어렵다.
+if [ -n "$BASE_TARGET" ]; then
+  MISSING=""
+  [ -z "$ADMIN_TARGET" ] && MISSING="$MISSING --app-url"
+  [ -z "$RUN_LABEL" ] && MISSING="$MISSING --run-label"
+  [ -z "$DB_HOST" ]   && MISSING="$MISSING --db-host"
+  [ -z "$DB_USER" ]   && MISSING="$MISSING --db-user"
+  [ -z "$DB_PASS" ]   && MISSING="$MISSING --db-pass"
+
+  if [ -n "$MISSING" ]; then
+    cat >&2 <<MSG
+--base 를 줬으면 아래도 있어야 한다:$MISSING
+
+  --run-label  앱이 부팅 때 받은 PERF_RUN_ID. 이게 안 맞으면 조회가 아무것도 안 잡아서
+               모든 지표가 NaN 이 된다. 서버에서 확인:
+                 docker exec app-app-1 printenv PERF_RUN_ID
+  --db-*       RDS 접속. run.sh 가 MySQL 내부 카운터를 SQL 로 직접 읽어야
+               select_per_bid, lock_wait, gap_locks 가 채워진다
+MSG
+    exit 1
+  fi
+fi
+
 case "$ISOLATION" in
   RC) TX_ISOLATION="READ-COMMITTED" ;;
   RR) TX_ISOLATION="REPEATABLE-READ" ;;
@@ -180,9 +238,44 @@ command -v docker >/dev/null || { echo "docker 가 필요하다" >&2; exit 1; }
 
 export PERF_HTTP_PORT PERF_PROM_PORT PERF_GRAFANA_PORT
 
-APP_URL="http://localhost:$PERF_HTTP_PORT"
+# --base 를 주면 원격 모드다. 배포 서버를 재는 것이라 이 스크립트가 앱과 DB 를 띄우지 않는다.
+#
+# Prometheus 와 Grafana, k6 는 측정 서버에서 이 스크립트와 같은 박스에 뜬다
+# (docker-compose.perf-prod.yml). 그래서 그 둘의 주소는 로컬과 같다.
+#
+# **주소가 둘이다.** 배스천 nginx 가 /actuator 를 막기 때문에 부하와 관측을 같은 주소로 못 한다.
+#
+#   APP_URL   부하를 거는 주소 (--base). 사용자 경로를 재려면 배스천 도메인,
+#             프록시를 뺀 앱 자체를 재려면 앱 사설 IP
+#   ADMIN_URL 관측용 주소 (--app-url). 지표를 읽는 곳이라 **항상 앱 사설 IP** 다
+#
+# 둘의 차이가 곧 배스천이 먹는 비용이다. 배스천이 t4g.nano 로 앱(t4g.micro)보다 작아서
+# 프록시가 먼저 무너질 수 있는데, 같은 시나리오를 --base 만 바꿔 두 번 돌리면 그게 갈린다.
+if [ -n "$BASE_TARGET" ]; then
+  REMOTE=1
+  APP_URL="${BASE_TARGET%/api/v1}"
+  ADMIN_URL="${ADMIN_TARGET%/}"
+  # 측정 서버 구성에는 app·mysql·nginx 가 없다. 그 셋이 든 파일을 그대로 쓰면
+  # compose 가 없는 서비스를 띄우려 든다.
+  COMPOSE=(docker compose -f "$PERF_DIR/docker-compose.perf-prod.yml")
+  COMPOSE_PROJECT="upbid-perf-prod"
+else
+  REMOTE=0
+  APP_URL="http://localhost:$PERF_HTTP_PORT"
+  ADMIN_URL="$APP_URL"
+  COMPOSE_PROJECT="upbid-perf"
+fi
+
 PROM_URL="http://localhost:$PERF_PROM_PORT"
 GRAFANA_URL="http://localhost:$PERF_GRAFANA_PORT"
+
+# 조회용 run 라벨. 로컬은 실행마다 컨테이너를 새로 만들어서 실행 이름을 그대로 쓰면 되는데,
+# 배포는 앱을 안 내리므로 앱이 부팅 때 받은 PERF_RUN_ID 를 계속 달고 있다. 계단마다 이 값을
+# 바꾸려면 앱을 재시작해야 하고 그러면 JIT 와 커넥션 풀이 식는다. 그래서 창구 내내 한 값을
+# 쓰고, 계단은 구간 시각(WINDOW_START/END)으로 가른다.
+#
+# 안 맞으면 모든 지표가 조용히 NaN 이 되므로 아래에서 실제로 붙었는지 확인한다.
+RUN_LABEL="${RUN_LABEL:-}"
 
 # ── 사전 점검 ──────────────────────────────────────────────────────
 # 노트북마다 다른 것 중에 결과를 통째로 망치는 게 둘 있다. 기억에 맡기면 반드시 빠뜨린다.
@@ -233,12 +326,17 @@ cleanup() {
 # 포트를 누가 잡고 있으면 컨테이너가 조용히 안 뜨거나, 더 나쁘게는 남의 포트를 뺏는다.
 assert_ports_free() {
   local blocked=""
-  for entry in "$PERF_HTTP_PORT:nginx" "$PERF_PROM_PORT:prometheus" "$PERF_GRAFANA_PORT:grafana"; do
+  local entries="$PERF_HTTP_PORT:nginx $PERF_PROM_PORT:prometheus $PERF_GRAFANA_PORT:grafana"
+
+  # 원격 모드는 nginx 를 안 띄운다. 배스천 것을 쓴다.
+  [ "$REMOTE" = "1" ] && entries="$PERF_PROM_PORT:prometheus $PERF_GRAFANA_PORT:grafana"
+
+  for entry in $entries; do
     local port="${entry%%:*}" name="${entry##*:}"
 
     # 우리 perf 컨테이너가 잡고 있는 건 정상이다(재실행). 그 외가 잡고 있으면 막는다.
     if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-      if ! docker ps --filter "label=com.docker.compose.project=upbid-perf" --format '{{.Ports}}' \
+      if ! docker ps --filter "label=com.docker.compose.project=$COMPOSE_PROJECT" --format '{{.Ports}}' \
            2>/dev/null | grep -q ":$port->"; then
         blocked="$blocked\n  $port ($name) — $(lsof -nP -iTCP:"$port" -sTCP:LISTEN -Fc 2>/dev/null | grep '^c' | head -1 | cut -c2-)"
       fi
@@ -326,13 +424,20 @@ echo "커밋 $COMMIT${DIRTY:+  (커밋 안 된 변경 있음 — 남이 재현 �
 # ── 1. jar ────────────────────────────────────────────────────────
 # Dockerfile 은 미리 만들어 둔 app.jar 를 복사만 한다(CI 와 같은 방식).
 # 그래서 도커에 넘기기 전에 여기서 만든다.
-if [ "$SKIP_BUILD" -eq 0 ]; then
-  echo "[1/8] jar 빌드"
-  (cd "$BACKEND_DIR" && ./gradlew --no-daemon -q bootJar)
-  find "$BACKEND_DIR/build/libs" -name '*.jar' ! -name '*-plain.jar' -exec cp {} "$BACKEND_DIR/app.jar" \;
-fi
+#
+# 원격 모드는 앱을 이 스크립트가 안 띄우므로 빌드도 안 한다. 배포된 이미지를 재는 것이고,
+# 어느 커밋인지는 index.csv 의 commit 칸이 아니라 배포된 IMAGE_TAG 로 확인해야 한다.
+if [ "$REMOTE" = "0" ]; then
+  if [ "$SKIP_BUILD" -eq 0 ]; then
+    echo "[1/8] jar 빌드"
+    (cd "$BACKEND_DIR" && ./gradlew --no-daemon -q bootJar)
+    find "$BACKEND_DIR/build/libs" -name '*.jar' ! -name '*-plain.jar' -exec cp {} "$BACKEND_DIR/app.jar" \;
+  fi
 
-[ -f "$BACKEND_DIR/app.jar" ] || { echo "app.jar 가 없다. --skip-build 를 빼고 다시 돌린다." >&2; exit 1; }
+  [ -f "$BACKEND_DIR/app.jar" ] || { echo "app.jar 가 없다. --skip-build 를 빼고 다시 돌린다." >&2; exit 1; }
+else
+  echo "[1/8] jar 빌드 건너뜀 (원격: $APP_URL)"
+fi
 
 # ── 2. 컨테이너 ────────────────────────────────────────────────────
 # down 만으로 DB 가 비워진다. mysql 에 볼륨을 안 붙여 뒀기 때문이다
@@ -366,7 +471,7 @@ export PERF_CPUS="$CPUS"
 # 조용히 부풀려진다 (실측: 다음 실행 시작 시점에 톰캣 스레드가 이미 87이었다).
 cleanup_oneoff() {
   docker ps -aq \
-    --filter "label=com.docker.compose.project=upbid-perf" \
+    --filter "label=com.docker.compose.project=$COMPOSE_PROJECT" \
     --filter "label=com.docker.compose.oneoff=True" 2>/dev/null \
     | while read -r cid; do docker rm -f "$cid" >/dev/null 2>&1 || true; done
 }
@@ -389,9 +494,18 @@ cleanup_oneoff
 # 날아가는 명령이고, 이건 여기 적은 세 서비스의 익명 볼륨만 건드린다. 측정용 DB 는 매 실행
 # 비우는 게 목적이라 지워도 되는 것이고, named 볼륨인 prometheus-data 와 다른 프로젝트의
 # 개발용 DB 볼륨은 그대로 남는 것을 확인했다.
-"${COMPOSE[@]}" rm -sfv nginx app mysql >/dev/null 2>&1 || true
 UP_AT="$(date +%s)"
-"${COMPOSE[@]}" up -d --build nginx app mysql prometheus grafana
+
+if [ "$REMOTE" = "1" ]; then
+  # 배포 스택은 이 스크립트가 건드리지 않는다. 관측 도구만 띄운다.
+  #
+  # **앱을 내리지 않는 것이 원격 모드의 전제다.** 내리면 카운터가 0 으로 돌아가서 구간
+  # 증가분이 음수가 되고, 다시 뜨는 동안 JIT 와 커넥션 풀이 식어서 첫 계단만 나쁘게 나온다.
+  "${COMPOSE[@]}" up -d prometheus grafana
+else
+  "${COMPOSE[@]}" rm -sfv nginx app mysql >/dev/null 2>&1 || true
+  "${COMPOSE[@]}" up -d --build nginx app mysql prometheus grafana
+fi
 
 # Prometheus 가 실행 사이에 살아남게 됐으므로 설정 파일을 다시 읽게 한다.
 #
@@ -403,14 +517,57 @@ UP_AT="$(date +%s)"
 
 echo "[3/8] 기동 대기"
 for _ in $(seq 1 120); do
-  if curl -sf "$APP_URL/actuator/health" >/dev/null 2>&1; then break; fi
+  if curl -sf "$ADMIN_URL/actuator/health" >/dev/null 2>&1; then break; fi
   sleep 2
 done
-curl -sf "$APP_URL/actuator/health" >/dev/null || {
-  echo "앱이 안 떴다. 로그:" >&2
-  "${COMPOSE[@]}" logs --tail 60 app >&2
+curl -sf "$ADMIN_URL/actuator/health" >/dev/null || {
+  if [ "$REMOTE" = "1" ]; then
+    cat >&2 <<MSG
+$ADMIN_URL/actuator/health 에 못 붙었다. 셋 중 하나다.
+
+  1. --app-url 을 배스천 도메인으로 줬다. 배스천 nginx 는 /actuator 를 막는다(deny all).
+     여기는 **앱 사설 IP** 를 준다: --app-url http://10.0.1.88:8080
+  2. 측정 서버에서 앱 8080 으로 가는 보안 그룹이 안 열려 있다
+  3. ACTUATOR_EXPOSURE 를 아직 안 열었다 (기본값이 health 라 health 는 나와야 정상이다)
+MSG
+  else
+    echo "앱이 안 떴다. 로그:" >&2
+    "${COMPOSE[@]}" logs --tail 60 app >&2
+  fi
   exit 1
 }
+
+# 원격이면 RDS 와 조회 라벨을 여기서 한 번씩 찔러 본다.
+#
+# 둘 다 틀려도 실행은 끝까지 도는데 표의 여러 칸이 NaN 으로 남는다. 3분을 다 재고 나서
+# 알게 되면 이미 데이터가 쌓여서 같은 조건으로 다시 재기도 어렵다.
+if [ "$REMOTE" = "1" ]; then
+  echo "[3/8] RDS 접속 확인"
+  mysql_query "SELECT 1" >/dev/null || {
+    echo "RDS 에 못 붙었다: $DB_USER@$DB_HOST:$DB_PORT/$DB_NAME" >&2
+    echo "  보안 그룹에 측정 서버에서 3306 으로 오는 규칙이 있는지, 계정과 비밀번호가 맞는지 본다." >&2
+    exit 1
+  }
+
+  # promq() 와 RUN 은 아래에서 정의되므로 여기서는 직접 조회한다.
+  echo "[3/8] 조회 라벨 확인 (run=\"$RUN_LABEL\")"
+  LABEL_HITS="$(curl -sG "$PROM_URL/api/v1/query" \
+    --data-urlencode "query=count(jvm_info{run=\"$RUN_LABEL\"})" \
+    | jq -r '.data.result[0].value[1] // "0"')"
+
+  if [ "$LABEL_HITS" = "0" ] || [ "$LABEL_HITS" = "null" ]; then
+    cat >&2 <<MSG
+run="$RUN_LABEL" 로 잡히는 시계열이 없다. 이대로 재면 모든 지표가 NaN 이 된다.
+
+  앱이 실제로 달고 있는 값을 확인한다:
+    ssh upbid-app 'docker exec app-app-1 printenv PERF_RUN_ID'
+
+  Prometheus 가 앱을 긁고 있는지도 함께 본다 (targets 가 up 인지):
+    curl -s '$PROM_URL/api/v1/targets' | jq '.data.activeTargets[].health'
+MSG
+    exit 1
+  fi
+fi
 
 # Prometheus 가 이 컨테이너를 실제로 긁기 시작할 때까지 기다린다.
 #
@@ -459,9 +616,33 @@ BASE_URL="$APP_URL/api/v1" "$PERF_DIR/seed.sh" \
 
 # DB 를 직접 볼 때 쓴다. seed.sh 가 아니라 여기 두는 이유는 seed.sh 는 API 만 알고 있어서
 # --base 로 개발 앱에도 쓸 수 있는데, 컨테이너 이름을 아는 순간 그게 깨지기 때문이다.
+# RDS 에 붙을 때 쓰는 클라이언트. 측정 서버에 mysql 을 깔지 않으려고 컨테이너로 쓴다.
+# 운영 RDS 가 8.4.9 라 메이저를 맞춘다.
+MYSQL_IMAGE="mysql:8.4"
+
+# 값을 반드시 받아야 하는 조회. **실패하면 멈춘다.**
+#
+# 로컬은 예전처럼 stderr 를 버리고 || true 로 넘어간다. 컨테이너가 항상 있고, 없으면 그 앞의
+# health 대기에서 이미 걸리기 때문이다.
+#
+# 원격은 다르다. mysql 컨테이너가 없는데 조용히 빈 값이 돌아오면 select_per_bid 와 gap_locks,
+# lock_wait 이 전부 NaN 이 되고 --bulk-items 와 --sweep-index 가 아무것도 안 하는데
+# 아무도 모른다. 그래서 여기서는 에러를 그대로 올린다.
 mysql_query() {
+  if [ "$REMOTE" = "1" ]; then
+    docker run --rm -i -e MYSQL_PWD="$DB_PASS" "$MYSQL_IMAGE" \
+      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -N -B "$DB_NAME" -e "$1"
+    return
+  fi
+
   "${COMPOSE[@]}" exec -T mysql \
     mysql -uroot -p1234 -N -B upbid -e "$1" 2>/dev/null || true
+}
+
+# 실패해도 되는 것 전용 (이미 있는 인덱스를 CREATE 하는 경우 등).
+# 원격에서도 여기서는 안 멈춘다. 대신 부르는 쪽이 결과를 따로 확인해야 한다.
+mysql_try() {
+  mysql_query "$1" 2>/dev/null || true
 }
 
 # 마감 대상을 찾는 조회는 status 와 end_at 으로 거른다. 물품이 스무 개뿐이면 표 전체를 훑어도
@@ -507,10 +688,12 @@ fi
 
 if [ "$SWEEP_INDEX" = "on" ]; then
   echo "[4/8] idx_auction_items_status_end_at 만들기"
-  mysql_query "CREATE INDEX idx_auction_items_status_end_at
-               ON auction_items (status, end_at)" >/dev/null
+  # 이미 있으면 CREATE 가 실패하는데 그건 정상이라 mysql_try 를 쓴다. 실제로 걸렸는지는
+  # 바로 아래에서 SHOW INDEX 로 확인하므로, 여기서 멈출 이유가 없다.
+  mysql_try "CREATE INDEX idx_auction_items_status_end_at
+             ON auction_items (status, end_at)" >/dev/null
 
-  # mysql_query 는 stderr 를 버리고 || true 로 끝나서, CREATE 가 실패해도 그냥 지나간다.
+  # mysql_try 는 실패를 삼키므로, CREATE 가 실패해도 그냥 지나간다.
   # 그러면 on 과 off 가 사실상 같은 실행이 되고 "인덱스를 넣어도 효과가 없다"는 틀린 결론이
   # 나온다. 대조 실험은 한쪽이 조용히 안 걸리는 게 제일 나쁘므로 여기서 멈춘다.
   if [ -z "$(mysql_query "SHOW INDEX FROM auction_items
@@ -536,7 +719,7 @@ mysql_query "EXPLAIN $SWEEP_SQL" >"$RESULT_DIR/sweep_explain.txt"
 #   hikaricp_connections_pending  ← 없으면 "줄 서 있는 중"을 못 본다
 MISSING=""
 for _ in $(seq 1 10); do
-  METRICS="$(curl -s "$APP_URL/actuator/prometheus")"
+  METRICS="$(curl -s "$ADMIN_URL/actuator/prometheus")"
   MISSING=""
   for metric in tomcat_threads_busy_threads \
                 hikaricp_connections_active hikaricp_connections_pending \
@@ -576,13 +759,14 @@ if [ "$SSE" -gt 0 ]; then
   # 구분 못 해서, k6_cpu_max 가 둘 중 어느 쪽인지 모르는 값이 된다.
   SSE_CID="$("${COMPOSE[@]}" run --rm -d --no-deps \
     -e "VUS=$SSE" -e "SHARE_CODE=$SHARE_CODE" -e "RUN_ID=" -e "DURATION=30m" \
+    -e "BASE_URL=$APP_URL/api/v1" -e "DEV_LOGIN_TOKEN=${DEV_LOGIN_TOKEN:-}" \
     k6 run /scripts/scenario3.js)"
   SSE_CONTAINER="$(docker inspect --format '{{.Name}}' "$SSE_CID" 2>/dev/null | sed 's#^/##')"
 
   # 접속이 실제로 붙었는지 확인하고 넘어간다. 안 붙은 채로 재면 "SSE 를 붙였는데 영향이
   # 없었다"는 잘못된 결론이 나온다.
   sleep 15
-  ATTACHED="$(curl -s "$APP_URL/actuator/metrics/upbid.sse.connections" \
+  ATTACHED="$(curl -s "$ADMIN_URL/actuator/metrics/upbid.sse.connections" \
     | jq -r '.measurements[0].value // 0')"
   echo "[5/8]   붙은 접속 $ATTACHED / $SSE"
   if [ "${ATTACHED%%.*}" -lt "$((SSE / 2))" ] 2>/dev/null; then
@@ -632,10 +816,11 @@ run_k6() {
   CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
   START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
   DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" RATE="${RUN_RATE:-$RATE}" \
+  BASE_URL="$APP_URL/api/v1" \
     "${COMPOSE[@]}" run --rm \
       -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
       -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
-      -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN -e RATE \
+      -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN -e RATE -e BASE_URL \
       k6 run ${@+"$@"} "/scripts/$SCRIPT" \
       2>&1 | tee "$log"
   K6_EXIT="${PIPESTATUS[0]}"
@@ -830,7 +1015,9 @@ W="${WINDOW_SECONDS}s"
 # (실측: SSE 100개를 붙였더니 전체 p95 가 Micrometer 최대 버킷인 30초로 찍혔다).
 # SSE 는 upbid_sse_connections 와 upbid_sse_heartbeat 로 따로 본다.
 # 이번 실행의 시계열만 본다. run 라벨이 실행마다 달라서 직전 실행 값을 집어올 수 없다.
-RUN="run=\"$RUN_ID\""
+# 로컬은 실행마다 앱을 새로 띄우므로 실행 이름이 곧 라벨이다. 원격은 앱을 안 내리니
+# 부팅 때 받은 값(--run-label)을 쓰고, 계단은 구간 시각으로 가른다.
+RUN="run=\"${RUN_LABEL:-$RUN_ID}\""
 NOT_ACTUATOR="$RUN, uri!=\"/actuator/prometheus\", uri!~\".*subscribe\""
 
 # 처리량과 p95 는 그 시나리오가 재려는 요청만 본다.
@@ -1127,7 +1314,12 @@ SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER
 
 # ── JFR 꺼내기 ─────────────────────────────────────────────────────
 # 지표를 다 뽑은 뒤에 한다. 앱을 멈춰야 파일이 써지는데, 먼저 멈추면 마지막 스크랩을 놓친다.
-if [ "$JFR" -eq 1 ]; then
+if [ "$JFR" -eq 1 ] && [ "$REMOTE" = "1" ]; then
+  # 배포 앱을 멈추는 건 이 스크립트가 할 일이 아니다. 멈추는 순간 그 창구의 남은 계단이
+  # 전부 콜드 스타트가 되고, 카운터가 0 으로 돌아가 앞 계단과 이어지지도 않는다.
+  echo "※ --jfr 은 원격에서 안 된다. dumponexit=true 라 앱을 멈춰야 파일이 써진다." >&2
+  echo "  필요하면 창구 마지막 실행에서만 앱 서버에 직접 붙어 꺼낸다." >&2
+elif [ "$JFR" -eq 1 ]; then
   echo "      JFR 기록 꺼내는 중 (앱을 멈춰야 파일이 써진다)"
   APP_CID="$("${COMPOSE[@]}" ps -q app 2>/dev/null | head -1)"
   "${COMPOSE[@]}" stop app >/dev/null 2>&1 || true
@@ -1367,6 +1559,19 @@ if [ "$STATUS" = "aborted" ]; then
     echo "  같은 조건으로 다시 돌린다: $RESULT_DIR" >&2
   fi
   exit 0
+fi
+
+# 원격에서는 못 채우는 칸이 있다. 비어 있는 걸 보고 "계측이 깨졌나" 하지 않게 미리 적는다.
+if [ "$REMOTE" = "1" ]; then
+  cat >&2 <<MSG
+
+※ 원격 실행이라 아래 칸은 이 스크립트가 못 채운다 (NaN 이 정상이다).
+  app_cpu_*, mysql_cpu_*, cpus  docker stats 로 뜨던 값이다. 배포는 컨테이너가 여기 없다.
+                                앱은 Grafana 의 process_cpu_usage, RDS 와 EC2 는
+                                CloudWatch CPUUtilization 으로 본다.
+  T 계열 크레딧이 남아 있었는지도 CloudWatch CPUCreditBalance 로 함께 본다.
+  크레딧이 마르는 중이었으면 그 줄은 판정을 보류한다.
+MSG
 fi
 
 echo "note.md 의 판정 칸을 채우고, 아래 한 줄을 노션 측정 결과 표에 붙여 넣는다."
