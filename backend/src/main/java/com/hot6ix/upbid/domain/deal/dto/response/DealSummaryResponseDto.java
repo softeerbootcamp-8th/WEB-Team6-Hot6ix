@@ -9,7 +9,9 @@ import java.time.LocalDateTime;
  *
  * @param productId       판매 건만 값이 있다. 내가 산 물건은 내 상품이 아니다
  * @param imageUrl        상품 사진 주소. 판매자가 안 올렸으면 {@code null}
- * @param partnerNickname 판매 건이면 거래 상대 후보, 구매 건이면 판매자.
+ * @param partnerNickname 판매 건이면 거래 상대 후보의 닉네임, 구매 건이면 판매자의 상점명
+ *                        ({@code SellerProfile.storeName}). 구매자는 판매자를 사람이
+ *                        아니라 상점으로 알아보므로 개인 닉네임이 아니라 상점명을 준다.
  *                        유찰이거나 후보가 전원 실패해 상대가 없으면 {@code null}
  * @param sellerProfileId 구매자가 판매자에게 연락할 때 쓰는 프로필 조회 키. 연락처를 목록에
  *                        싣지 않는 이유는 거래와 무관한 화면까지 개인 정보를 들고 다니게 되기

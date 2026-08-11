@@ -1,9 +1,11 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
 
+import { useWithdraw } from '@/api/generated/유저/유저'
 import { AppShell } from '@/components/layout/page-shell'
+import { toWithdrawErrorMessage } from '@/features/auth/withdraw-error'
 import { requireMember } from '@/lib/route-guards'
 import { sessionStore } from '@/lib/session'
+import { toast } from '@/lib/toast'
 
 /**
  * 회원 탈퇴 확인 (Figma `WEB-02 · 공통 · 회원 탈퇴 확인`, 713:4776).
@@ -23,25 +25,21 @@ const NOTICES = [
 
 function WithdrawConfirmPage() {
   const navigate = useNavigate()
-  const [pending, setPending] = useState(false)
 
-  // 탈퇴 후 화면을 떠나므로 남은 목업 타이머는 언마운트 때 정리한다.
-  const timer = useRef<number | null>(null)
-  useEffect(
-    () => () => {
-      if (timer.current !== null) window.clearTimeout(timer.current)
+  const withdrawMutation = useWithdraw({
+    mutation: {
+      onSuccess: () => {
+        sessionStore.signOut()
+        void navigate({ to: '/my/withdraw/complete' })
+      },
+      onError: (error) => {
+        const { title, description } = toWithdrawErrorMessage(error)
+        toast.error(title, { description })
+      },
     },
-    [],
-  )
+  })
 
-  const withdraw = () => {
-    setPending(true)
-    // TODO: DELETE /api/v1/users/me 연동 (현재 목업)
-    timer.current = window.setTimeout(() => {
-      sessionStore.signOut()
-      void navigate({ to: '/my/withdraw/complete' })
-    }, 700)
-  }
+  const withdraw = () => withdrawMutation.mutate()
 
   return (
     <AppShell title="회원 탈퇴" back className="max-w-[1280px]">
@@ -91,10 +89,10 @@ function WithdrawConfirmPage() {
           <button
             type="button"
             onClick={withdraw}
-            disabled={pending}
+            disabled={withdrawMutation.isPending}
             className="ease-soft h-[52px] flex-1 rounded-2xl bg-live text-[14px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100"
           >
-            {pending ? '처리 중…' : '회원 탈퇴'}
+            {withdrawMutation.isPending ? '처리 중…' : '회원 탈퇴'}
           </button>
         </div>
       </section>

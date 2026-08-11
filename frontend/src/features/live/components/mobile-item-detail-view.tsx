@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
+import { ProductThumbnail } from '@/components/product-thumbnail'
 import { cn } from '@/lib/utils'
 import {
   formatClosingLead,
@@ -101,8 +102,13 @@ export function MobileItemDetailView({
 
         {/* 안쪽 여백을 넉넉히. 글자가 카드 테두리에 붙으면 답답하다. */}
         <section className="mt-1 rounded-2xl border bg-card p-5">
-          {/* 상품 이미지 — 319×260 */}
-          <div className="relative flex h-[260px] items-center justify-center rounded-xl bg-border-strong">
+          {/* 상품 이미지 — 319×260. 데스크톱 `ItemDetailPanel` 과 같은 부품을 쓴다. */}
+          <div className="relative">
+            <ProductThumbnail
+              src={item.imageUrl}
+              iconClassName="size-8"
+              className="flex h-[260px] items-center justify-center rounded-xl bg-fill text-neutral-muted"
+            />
             <span
               className={cn(
                 'absolute top-3 left-3 flex h-[22px] items-center rounded-full px-3 text-[11px] font-extrabold text-white',
@@ -110,9 +116,6 @@ export function MobileItemDetailView({
               )}
             >
               {closed ? '종료' : 'LIVE'}
-            </span>
-            <span className="text-[11px] font-medium text-neutral-muted">
-              상품 이미지
             </span>
           </div>
 

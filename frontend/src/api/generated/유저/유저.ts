@@ -30,6 +30,7 @@ import type {
 
 import type {
   CommonResponseUserResponseDto,
+  CommonResponseVoid,
   UserUpdateRequestDto
 } from '.././model';
 
@@ -42,7 +43,7 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * 세션의 유저 정보를 반환한다. 앱 초기화 시 호출해 sessionStore를 세팅한다.
+ * 세션의 유저 정보를 반환한다. 앱 초기화 시 호출해 sessionStore를 세팅한다. phoneNumber는 인증을 마친 전화번호이며 인증 전이면 null이다.
  * @summary 내 정보 조회
  */
 export const getMe = (
@@ -195,6 +196,68 @@ export const useUpdateMe = <TError = ErrorType<CommonResponseUserResponseDto>,
       > => {
 
       const mutationOptions = getUpdateMeMutationOptions(options);
+
+      return useMutation(mutationOptions, queryClient);
+    }
+    /**
+ * 회원 정보를 익명화하고 soft delete한다. 판매자 프로필이 있으면 함께 정리하며, 진행 중인(OPEN) 경매방이 있으면 탈퇴할 수 없다. 처리 후 현재 세션을 즉시 무효화한다.
+ * @summary 회원 탈퇴
+ */
+export const withdraw = (
+    
+ options?: SecondParameter<typeof customInstance>,) => {
+      
+      
+      return customInstance<CommonResponseVoid>(
+      {url: `/api/v1/users/me`, method: 'DELETE'
+    },
+      options);
+    }
+  
+
+
+export const getWithdrawMutationOptions = <TError = ErrorType<CommonResponseVoid>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof withdraw>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof withdraw>>, TError,void, TContext> => {
+
+const mutationKey = ['withdraw'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof withdraw>>, void> = () => {
+          
+
+          return  withdraw(requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type WithdrawMutationResult = NonNullable<Awaited<ReturnType<typeof withdraw>>>
+    
+    export type WithdrawMutationError = ErrorType<CommonResponseVoid>
+
+    /**
+ * @summary 회원 탈퇴
+ */
+export const useWithdraw = <TError = ErrorType<CommonResponseVoid>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof withdraw>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof withdraw>>,
+        TError,
+        void,
+        TContext
+      > => {
+
+      const mutationOptions = getWithdrawMutationOptions(options);
 
       return useMutation(mutationOptions, queryClient);
     }

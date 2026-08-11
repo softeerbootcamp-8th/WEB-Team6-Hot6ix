@@ -9,6 +9,8 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.ResponseEntity;
 
 @Tag(name = "유저", description = "유저 정보 조회 API")
@@ -42,4 +44,20 @@ public interface UserApi {
     ResponseEntity<CommonResponse<UserResponseDto>> updateMe(
             @Parameter(hidden = true) @LoginUserId Long userId,
             UserUpdateRequestDto request);
+
+    @Operation(
+            summary = "회원 탈퇴",
+            description = "회원 정보를 익명화하고 soft delete한다. 판매자 프로필이 있으면 함께 정리하며, "
+                    + "진행 중인(OPEN) 경매방이 있으면 탈퇴할 수 없다. 처리 후 현재 세션을 즉시 무효화한다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "탈퇴 성공"),
+            @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
+            @ApiResponse(responseCode = "404", description = "존재하지 않는 회원 (code 9001)"),
+            @ApiResponse(responseCode = "409", description = "진행 중인 경매방이 있어 탈퇴할 수 없음 (code 3003)")
+    })
+    ResponseEntity<CommonResponse<Void>> withdraw(
+            @Parameter(hidden = true) HttpServletRequest request,
+            @Parameter(hidden = true) HttpServletResponse response,
+            @Parameter(hidden = true) @LoginUserId Long userId);
 }

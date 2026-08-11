@@ -10,16 +10,15 @@ import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.auth.domain.PendingSignup;
-import com.hot6ix.upbid.domain.auth.exception.AuthErrorType;
 import com.hot6ix.upbid.domain.upload.ImageUrlValidator;
 import com.hot6ix.upbid.domain.upload.exception.UploadErrorType;
 import com.hot6ix.upbid.domain.user.dto.request.UserUpdateRequestDto;
 import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
 import com.hot6ix.upbid.domain.user.entity.User;
+import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.exception.UserErrorType;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,6 +38,9 @@ class UserServiceTest {
     // 이미지 주소 검증은 ImageUrlValidatorTest에서 본다. 여기서는 통과시킨다.
     @Mock
     private ImageUrlValidator imageUrlValidator;
+
+    @Mock
+    private SellerProfileService sellerProfileService;
 
     @InjectMocks
     private UserService userService;
@@ -103,22 +105,6 @@ class UserServiceTest {
 
         assertThat(userService.findByOAuth(OauthProvider.KAKAO, "kakao-123")).isEmpty();
         verify(userRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("탈퇴한 회원이면 WITHDRAWN_USER 예외가 발생한다")
-    void findByOAuth_withdrawnUser() {
-
-        User withdrawn = newUser();
-        withdrawn.softDelete(LocalDateTime.now());
-
-        when(userRepository.findByProviderAndProviderId(OauthProvider.KAKAO, "kakao-123"))
-                .thenReturn(Optional.of(withdrawn));
-
-        assertThatThrownBy(() -> userService.findByOAuth(OauthProvider.KAKAO, "kakao-123"))
-                .isInstanceOf(ApplicationException.class)
-                .extracting(e -> ((ApplicationException) e).getErrorType())
-                .isEqualTo(AuthErrorType.WITHDRAWN_USER);
     }
 
     @Test
@@ -241,5 +227,50 @@ class UserServiceTest {
                 .isInstanceOf(ApplicationException.class);
 
         verify(userRepository, never()).findByUserIdAndDeletedAtIsNull(1L);
+    }
+
+    // ==================== withdraw ====================
+
+    @Test
+    @DisplayName("탈퇴하면 User가 익명화·soft delete되고 SellerProfile 정리가 호출된다")
+    void withdraw() {
+
+        User user = savedUser(1L);
+        when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+
+        userService.withdraw(1L);
+
+        assertThat(user.isDeleted()).isTrue();
+        assertThat(user.getProviderId()).isEqualTo("withdrawn_1");
+        verify(sellerProfileService).withdraw(1L);
+    }
+
+    @Test
+    @DisplayName("존재하지 않거나 이미 탈퇴한 회원이면 USER_NOT_FOUND 예외가 발생하고 SellerProfile은 건드리지 않는다")
+    void withdraw_userNotFound() {
+
+        when(userRepository.findByUserIdAndDeletedAtIsNull(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.withdraw(99L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(UserErrorType.USER_NOT_FOUND);
+
+        verify(sellerProfileService, never()).withdraw(any());
+    }
+
+    @Test
+    @DisplayName("진행 중인 경매방이 있어 SellerProfile 정리가 실패하면 그 예외가 그대로 전파된다")
+    void withdraw_propagatesSellerProfileException() {
+
+        User user = savedUser(1L);
+        when(userRepository.findByUserIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(user));
+        doThrow(new ApplicationException(SellerProfileErrorType.SELLER_PROFILE_IN_USE))
+                .when(sellerProfileService).withdraw(1L);
+
+        assertThatThrownBy(() -> userService.withdraw(1L))
+                .isInstanceOf(ApplicationException.class)
+                .extracting(e -> ((ApplicationException) e).getErrorType())
+                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_IN_USE);
     }
 }
