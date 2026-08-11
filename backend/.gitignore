@@ -221,3 +221,6 @@ perf/__pycache__/
 
 # 측정 서버가 긁을 앱 사설 IP (#266). targets.yml.example 을 복사해서 서버에서 만든다.
 perf/targets.yml
+
+# 측정 창구에만 앱 서버에 두는 손잡이 (#266). dev-login 토큰이 들어가므로 커밋하지 않는다.
+deploy/.env.perf
