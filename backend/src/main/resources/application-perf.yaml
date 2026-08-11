@@ -7,15 +7,8 @@
 # 바뀌면 안 된다. 대조 실험에서 바꾸는 값만 환경변수로 열어 뒀다 (DB_POOL_SIZE 등).
 
 spring:
-  jpa:
-    hibernate:
-      # 이번 주말은 앱 1대라 create로 둔다. 컨테이너를 내렸다 올리면 스키마와 데이터가
-      # 함께 초기화돼서 run.sh 가 따로 정리할 게 없다.
-      #
-      # 서버를 2대로 늘리는 순간(--scale app=2) 이 값은 반드시 바꿔야 한다. 두 인스턴스가
-      # 동시에 뜨면서 서로의 스키마를 날린다. 3주차 수요일 Flyway 도입(#96) 때
-      # validate 로 바꾸고 스키마는 migration 이 만든다.
-      ddl-auto: create
+  # ddl-auto 는 base 의 validate 를 그대로 쓴다. 예전에는 여기서 create 로 덮었는데,
+  # 두 인스턴스가 동시에 뜨면서 서로의 스키마를 날려서 --scale app=2 를 못 했다 (#96).
   datasource:
     hikari:
       # 그래프에서 어느 풀인지 구분하려고 이름을 준다. 지표 라벨(pool)로 나간다.

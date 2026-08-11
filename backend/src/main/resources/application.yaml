@@ -22,13 +22,12 @@ spring:
 
   jpa:
     hibernate:
-      # 엔티티와 실제 스키마가 벌어져서 한 번 싹 맞추려고 create로 둔다.
-      # update는 컬럼 삭제·타입 변경을 반영하지 않아 어긋난 채로 쌓인다.
+      # 스키마는 Hibernate가 아니라 Flyway가 만든다 (#96). 엔티티를 바꾸면
+      # src/main/resources/db/migration에 V{다음번호}__{설명}.sql을 직접 추가해야 한다.
       #
-      # 주의: 한 번만 도는 게 아니라 **앱이 뜰 때마다** 테이블을 지우고 다시 만든다.
-      # 재배포는 물론 EC2 재부팅이나 컨테이너 재시작(restart: unless-stopped)에도
-      # 데이터가 사라진다. Flyway를 붙이면서 validate로 바꾼다.
-      ddl-auto: create
+      # 테스트도 이 값을 쓴다. src/test/resources에 yaml이 없어서 Testcontainers 테스트가
+      # 이 파일을 읽기 때문에, 마이그레이션이 엔티티와 어긋나면 CI가 잡는다.
+      ddl-auto: validate
     properties:
       hibernate:
         format_sql: true
