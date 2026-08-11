@@ -3,6 +3,8 @@ package com.hot6ix.upbid.global.exception;
 import com.hot6ix.upbid.global.alert.SlackAlertService;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -35,7 +37,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApplicationException.class)
     public ResponseEntity<CommonResponse<Void>> handleApplicationException(
-            ApplicationException e, HttpServletRequest request) {
+            ApplicationException e, HttpServletRequest request, HttpServletResponse response) {
 
         ErrorType errorType = e.getErrorType();
 
@@ -43,9 +45,8 @@ public class GlobalExceptionHandler {
                 request.getMethod(), request.getRequestURI(),
                 errorType.getErrorCode(), errorType.getMessage());
 
-        String accept = request.getHeader(HttpHeaders.ACCEPT);
-        if (accept != null && accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE)) {
-            return null;
+        if (isEventStreamRequest(request)) {
+            return statusOnly(response, errorType);
         }
 
         return ResponseEntity.status(errorType.getHttpStatus())
@@ -135,20 +136,41 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<CommonResponse<Void>> handleException(
-            Exception e, HttpServletRequest request) {
+            Exception e, HttpServletRequest request, HttpServletResponse response) {
 
         log.error("예상치 못한 예외 발생 - [{}] {} ({})", request.getMethod(), request.getRequestURI(), e.getMessage(), e);
         slackAlertService.send(request, e);
 
-        // SSE 요청은 Content-Type이 text/event-stream으로 고정되어 있어
-        // CommonResponse를 직렬화할 converter가 없으므로 null을 반환해 Spring이 응답 쓰기를 시도하지 않게 한다.
-        String accept = request.getHeader(HttpHeaders.ACCEPT);
-        if (accept != null && accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE)) {
-            return null;
+        if (isEventStreamRequest(request)) {
+            return statusOnly(response, CommonErrorType.INTERNAL_SERVER_ERROR);
         }
 
         return ResponseEntity.status(CommonErrorType.INTERNAL_SERVER_ERROR.getHttpStatus())
                 .body(CommonResponse.error(CommonErrorType.INTERNAL_SERVER_ERROR));
+    }
+
+    private static boolean isEventStreamRequest(HttpServletRequest request) {
+
+        String accept = request.getHeader(HttpHeaders.ACCEPT);
+        return accept != null && accept.contains(MediaType.TEXT_EVENT_STREAM_VALUE);
+    }
+
+    /**
+     * SSE 요청의 에러 응답은 상태 코드만 실어 보낸다.
+     *
+     * <p>협상된 미디어 타입이 {@code text/event-stream} 이라 {@link CommonResponse} 를 직렬화할
+     * converter 가 없다. 본문을 담으면 그 자체가 다시 예외가 되므로 {@code null} 을 반환해
+     * Spring 이 응답 쓰기를 시도하지 않게 한다.
+     *
+     * <p>다만 상태 코드는 응답에 직접 실어야 한다. 그냥 {@code null} 만 돌려주면 컨테이너 기본값인
+     * 200 이 나가고, 브라우저 {@code EventSource} 는 그것을 "정상 연결 후 끊김" 으로 보고 retry
+     * 간격마다 무한히 다시 붙는다. 4xx/5xx 를 받으면 재접속 없이 연결을 실패 처리한다.
+     */
+    private static ResponseEntity<CommonResponse<Void>> statusOnly(
+            HttpServletResponse response, ErrorType errorType) {
+
+        response.setStatus(errorType.getHttpStatus().value());
+        return null;
     }
 
     private static Stream<ValidationError> toValidationErrors(ParameterValidationResult result) {
