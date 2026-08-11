@@ -37,10 +37,10 @@ DB_USER=""
 DB_PASS=""
 # 앱이 부팅 때 받은 PERF_RUN_ID 다. 조회 필터로 쓴다.
 #
-# 기본값이 unknown 인 이유. application-prod.yaml 이 ${PERF_RUN_ID:unknown} 이라, 서버에
-# 아무것도 안 넣으면 앱은 run="unknown" 을 붙인다. 계단은 구간 시각으로 갈리므로 그걸로 충분하다.
-# 서버에 값을 넣었으면 그 값을 여기 그대로 준다.
-RUN_LABEL="unknown"
+# 비워 두면 모드에 따라 아래에서 채운다. 로컬은 실행 이름(run.sh 가 앱에 그대로 넣는다),
+# 원격은 unknown 이다 (application-prod.yaml 이 ${PERF_RUN_ID:unknown} 이라 서버에 아무것도
+# 안 넣으면 앱이 그 값을 붙인다). 서버에 값을 넣었으면 --run-label 로 그 값을 준다.
+RUN_LABEL=""
 ITEMS=1
 SSE=0
 USERS=200
@@ -140,8 +140,8 @@ usage() {
                      앱 직접:     http://10.0.1.88:8080/api/v1  (프록시와 TLS 를 뺀 값)
   --app-url URL      관측용 주소. 배스천은 /actuator 를 막으므로 **앱 사설 IP** 를 준다
                      예: http://10.0.1.88:8080
-  --run-label V      앱이 부팅 때 받은 PERF_RUN_ID (기본 unknown). 서버에 그 값을 안
-                     넣었으면 기본값 그대로 두면 된다. 안 맞으면 모든 지표가 NaN 이다
+  --run-label V      앱이 부팅 때 받은 PERF_RUN_ID. 원격 기본값은 unknown 이라
+                     서버에 값을 안 넣었으면 생략해도 된다. 안 맞으면 모든 지표가 NaN 이다
   --db-host H        RDS 주소. --db-user / --db-pass 와 함께 준다
                      (--db-port 3306, --db-name upbid 이 기본)
 
@@ -260,6 +260,8 @@ if [ -n "$BASE_TARGET" ]; then
   # compose 가 없는 서비스를 띄우려 든다.
   COMPOSE=(docker compose -f "$PERF_DIR/docker-compose.perf-prod.yml")
   COMPOSE_PROJECT="upbid-perf-prod"
+  # 배포 앱은 부팅 때 받은 라벨을 창구 내내 달고 있다. 안 넣었으면 unknown 이다.
+  RUN_LABEL="${RUN_LABEL:-unknown}"
 else
   REMOTE=0
   APP_URL="http://localhost:$PERF_HTTP_PORT"
@@ -276,7 +278,6 @@ GRAFANA_URL="http://localhost:$PERF_GRAFANA_PORT"
 # 쓰고, 계단은 구간 시각(WINDOW_START/END)으로 가른다.
 #
 # 안 맞으면 모든 지표가 조용히 NaN 이 되므로 아래에서 실제로 붙었는지 확인한다.
-RUN_LABEL="${RUN_LABEL:-}"
 
 # ── 사전 점검 ──────────────────────────────────────────────────────
 # 노트북마다 다른 것 중에 결과를 통째로 망치는 게 둘 있다. 기억에 맡기면 반드시 빠뜨린다.
@@ -579,24 +580,34 @@ fi
 #
 # process_start_time_seconds 는 JVM 이 뜬 시각이라 컨테이너마다 다르다. 이 값이 우리가
 # up 을 부른 시각보다 뒤면, 지금 보고 있는 게 새 컨테이너라는 뜻이다.
-echo "      Prometheus 가 새 컨테이너를 잡을 때까지 대기"
-RUN_LABEL="run=\"$RUN_ID\""
-PROM_READY=0
-for _ in $(seq 1 60); do
-  STARTED="$(curl -sG "$PROM_URL/api/v1/query" \
-    --data-urlencode "query=max(process_start_time_seconds{$RUN_LABEL})" \
-    | jq -r '.data.result[0].value[1] // "0"')"
+#
+# 원격은 이 대기를 건너뛴다. 앱을 새로 안 띄우니 기다릴 새 컨테이너가 없고, 저 조회는
+# 이번 실행의 RUN_ID 로 찾는데 배포 앱은 부팅 때 받은 라벨(기본 unknown)을 달고 있어서
+# 영영 안 잡힌다. 대신 위에서 --run-label 이 실제로 잡히는지 이미 확인했다.
+if [ "$REMOTE" = "0" ]; then
+  echo "      Prometheus 가 새 컨테이너를 잡을 때까지 대기"
 
-  if awk -v a="$STARTED" -v b="$UP_AT" 'BEGIN { exit !(a + 0 >= b + 0) }'; then
-    PROM_READY=1
-    break
-  fi
-  sleep 2
-done
-[ "$PROM_READY" -eq 1 ] || {
-  echo "Prometheus 가 앱을 못 찾았다. prometheus.yml 의 dns_sd 설정을 본다." >&2
-  exit 1
-}
+  # --run-label 로 받는 RUN_LABEL 과 이름이 겹치면 안 된다. 겹치면 이 줄이 그 값을 덮어써서
+  # 아래 RUN 이 run="run=..." 이라는 깨진 셀렉터가 되고, promq 가 에러를 NaN 으로 삼켜서
+  # 표 한 줄이 통째로 NaN 이 되는데 경고가 하나도 안 나온다.
+  PROM_RUN_SELECTOR="run=\"$RUN_ID\""
+  PROM_READY=0
+  for _ in $(seq 1 60); do
+    STARTED="$(curl -sG "$PROM_URL/api/v1/query" \
+      --data-urlencode "query=max(process_start_time_seconds{$PROM_RUN_SELECTOR})" \
+      | jq -r '.data.result[0].value[1] // "0"')"
+
+    if awk -v a="$STARTED" -v b="$UP_AT" 'BEGIN { exit !(a + 0 >= b + 0) }'; then
+      PROM_READY=1
+      break
+    fi
+    sleep 2
+  done
+  [ "$PROM_READY" -eq 1 ] || {
+    echo "Prometheus 가 앱을 못 찾았다. prometheus.yml 의 dns_sd 설정을 본다." >&2
+    exit 1
+  }
+fi
 
 # 계측이 실제로 나오는지 여기서 확인한다. 3분을 다 재고 나서 그래프가 비어 있는 걸
 # 발견하면 그 한 줄을 통째로 다시 돌려야 한다.
