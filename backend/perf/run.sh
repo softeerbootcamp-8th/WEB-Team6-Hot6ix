@@ -269,6 +269,15 @@ else
   COMPOSE_PROJECT="upbid-perf"
 fi
 
+# k6 가 때릴 주소. **로컬은 컨테이너 안에서 도는 것이라 호스트 주소를 주면 안 된다.**
+# APP_URL 은 이 셸에서 쓰는 주소(localhost:18080)라 컨테이너에서는 연결이 거부된다.
+# 같은 도커 네트워크의 서비스 이름으로 부른다.
+if [ "$REMOTE" = "1" ]; then
+  K6_BASE_URL="$APP_URL/api/v1"
+else
+  K6_BASE_URL="http://nginx/api/v1"
+fi
+
 PROM_URL="http://localhost:$PERF_PROM_PORT"
 GRAFANA_URL="http://localhost:$PERF_GRAFANA_PORT"
 
@@ -779,7 +788,7 @@ if [ "$SSE" -gt 0 ]; then
   SSE_CID="$("${COMPOSE[@]}" run --rm -d --no-deps \
     --user "$(id -u):$(id -g)" \
     -e "VUS=$SSE" -e "SHARE_CODE=$SHARE_CODE" -e "RUN_ID=" -e "DURATION=30m" \
-    -e "BASE_URL=$APP_URL/api/v1" -e "DEV_LOGIN_TOKEN=${DEV_LOGIN_TOKEN:-}" \
+    -e "BASE_URL=$K6_BASE_URL" -e "DEV_LOGIN_TOKEN=${DEV_LOGIN_TOKEN:-}" \
     k6 run /scripts/scenario3.js)"
   SSE_CONTAINER="$(docker inspect --format '{{.Name}}' "$SSE_CID" 2>/dev/null | sed 's#^/##')"
 
@@ -841,7 +850,7 @@ run_k6() {
   CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
   START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
   DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" RATE="${RUN_RATE:-$RATE}" \
-  BASE_URL="$APP_URL/api/v1" \
+  BASE_URL="$K6_BASE_URL" \
     "${COMPOSE[@]}" run --rm \
       --user "$(id -u):$(id -g)" \
       -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
