@@ -8,7 +8,6 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
   "editable": true,
   "refresh": "5s",
   "time": {
@@ -1127,12 +1126,13 @@
         "multi": false,
         "current": {
           "selected": true,
-          "text": "전체",
+          "text": "All",
           "value": "$__all"
         },
         "options": [],
         "allValue": ".*"
       }
     ]
-  }
+  },
+  "version": 2
 }
