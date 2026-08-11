@@ -13,3 +13,43 @@ spring:
     hibernate:
       # base 와 같은 값이지만, base 가 바뀌어도 운영은 스키마를 자동 변경하지 않게 한 번 더 막는다.
       ddl-auto: validate
+
+# 배포 서버를 재는 데 필요한 계측이다 (이슈 #266). 로컬 perf 프로파일과 같은 값을 쓴다.
+# 여기가 perf 와 어긋나면 배포에서 나온 숫자를 로컬 계단과 나란히 놓을 수 없다.
+management:
+  endpoints:
+    web:
+      exposure:
+        # 기본값을 health 로 둔다. 지금과 같은 동작이고, 측정 창구에만 환경변수로 열었다가 닫는다.
+        #
+        # AuthInterceptor 는 /api/v1 아래만 보므로 /actuator 에는 인증이 없다. 노출을 켜면
+        # 힙과 DB 풀, 엔드포인트 목록이 그대로 보이기 때문에 nginx 에서 측정 서버 IP 만
+        # allow 하는 것이 1차 방어선이고, 이 기본값이 2차 방어선이다. 둘 중 하나만 두지 않는다.
+        include: ${ACTUATOR_EXPOSURE:health}
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    # 실행마다 다른 값을 모든 지표에 라벨로 붙인다. 없으면 실행을 갈아도 시계열 이름이 같아서,
+    # 구간 시작값으로 직전 실행의 마지막 값을 집어 증가분이 음수로 나온다 (로컬에서 실측).
+    tags:
+      run: ${PERF_RUN_ID:unknown}
+    distribution:
+      # 이걸 켜야 _bucket 시계열이 생기고 histogram_quantile 로 p95 를 뽑을 수 있다.
+      # upbid 는 접두사 매칭이라 커스텀 지표가 이 한 줄로 전부 켜진다.
+      #
+      # 노출을 닫아 둔 평소에도 버킷은 쌓인다. 측정 창구에 노출만 열면 되도록 일부러 그렇게 뒀다.
+      # 한 번에 하나만 바꿔야 창구에서 나온 숫자를 믿을 수 있다.
+      percentiles-histogram:
+        http.server.requests: true
+        upbid: true
+        hikaricp.connections.acquire: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+
+server:
+  tomcat:
+    mbeanregistry:
+      # 이게 없으면 tomcat_threads_busy_threads 가 통째로 안 나온다.
+      enabled: true
