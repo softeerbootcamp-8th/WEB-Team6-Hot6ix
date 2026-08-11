@@ -1,6 +1,6 @@
-# 로컬 개발용 MySQL 실행 파일이다. (배포용 아님)
+# 로컬 개발용 MySQL·Redis 실행 파일이다. (배포용 아님)
 #
-#   docker compose up -d      # MySQL 기동
+#   docker compose up -d      # MySQL·Redis 기동
 #   ./gradlew bootRun         # application.yaml 기본값(localhost:3306/upbid/root/1234)으로 바로 접속
 #
 #   docker compose down       # 중지 (데이터는 volume에 남음)
@@ -24,6 +24,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # 입찰 동시성 제어를 Redis 로 옮기는 비교군용이다 (이슈 #246 의 C).
+  # 태그는 실 배포에 올릴 버전과 같은 8.10.0 으로 못 박는다.
+  #
+  # 볼륨을 안 붙인다. 붙이면 지울 때 `docker compose down -v` 가 필요한데 그건 팀 금지
+  # 명령이고 훅이 막는다. MySQL 과 반대로 두는 이유는, 여기 들어가는 값이 DB 에서 다시
+  # 만들 수 있는 값이기 때문이다.
+  redis:
+    image: redis:8.10.0-alpine
+    container_name: upbid-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
 
 volumes:
   upbid-mysql-data:

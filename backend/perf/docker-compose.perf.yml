@@ -66,10 +66,13 @@ services:
       - VIRTUAL_THREADS=${VIRTUAL_THREADS:-false}
       # 프론트를 안 띄우므로 CORS 는 의미가 없지만 값이 없으면 부팅이 안 된다.
       - FRONTEND_URL=http://localhost:5173
+      - SPRING_DATA_REDIS_HOST=redis
       - JAVA_TOOL_OPTIONS=${APP_JAVA_OPTS:-}
     depends_on:
       mysql:
         condition: service_healthy
+      redis:
+        condition: service_started
 
   mysql:
     image: mysql:8.4.9
@@ -101,6 +104,28 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # 입찰 동시성 제어를 Redis 로 옮긴 비교군(이슈 #246 의 C·D)용이다.
+  # 태그는 실 배포에 올릴 버전과 같은 8.10.0 으로 못 박는다.
+  redis:
+    # 호스트 포트를 안 연다. 로컬 개발용 6379(backend/docker-compose.yml)와 부딪히지
+    # 않고, 프로젝트 이름이 upbid-perf 라 컨테이너도 네트워크도 따로 논다.
+    expose:
+      - "6379"
+    image: redis:8.10.0-alpine
+    # 앱·MySQL 과 같은 값으로 함께 움직인다 (run.sh --cpus). Redis 만 제한 없이 두면
+    # 어느 쪽이 CPU 에 묶여 있었는지 못 가른다. MySQL CPU 를 안 재서 곡선을 한 번
+    # 잘못 읽은 적이 있다.
+    cpus: ${PERF_CPUS:-2.0}
+    command:
+      # 디스크에 안 쓴다. RDB·AOF 를 켜면 fsync 가 곡선에 들어오는데, Docker Desktop
+      # on macOS 에서 fsync 는 호스트 CPU 작업이라 MySQL redo fsync 와 같은 자원을
+      # 놓고 다투게 된다. 측정마다 DB 를 초기화하므로 남길 값도 없다.
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
 
   prometheus:
     image: prom/prometheus:v3.6.0

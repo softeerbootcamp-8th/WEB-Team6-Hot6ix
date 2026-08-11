@@ -1,9 +1,10 @@
 package com.hot6ix.upbid.domain.bid.service;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
-import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.entity.Bid;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
@@ -18,10 +19,11 @@ import com.hot6ix.upbid.global.exception.CommonErrorType;
 import lombok.RequiredArgsConstructor;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.Objects;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -30,11 +32,17 @@ public class BidService {
 
     private final BidRepository bidRepository;
     private final AuctionItemRepository auctionItemRepository;
+    private final AuctionParticipantRepository auctionParticipantRepository;
     private final UserRepository userRepository;
     private final DomainEventPublisher domainEventPublisher;
     private final Clock clock;
-    /** 계측은 이 객체가 안다. 서비스는 "무엇을 잰다"만 알고 Micrometer 는 모른다. */
-    private final BidMetrics bidMetrics;
+    private final AuctionRedisStore auctionRedisStore;
+    /**
+     * 접수된 입찰을 저장하는 구간만 트랜잭션으로 묶는다. {@code place()}가 트랜잭션 밖에서
+     * 돌아야 거절된 요청이 커넥션을 잡지 않으므로, 프록시의 {@code @Transactional}로는
+     * 이 범위를 만들 수 없다.
+     */
+    private final TransactionTemplate transactionTemplate;
 
     /**
      * 입찰을 접수해 기록을 남기고 물품의 현재가·최고 입찰자를 갱신한다.
@@ -73,44 +81,129 @@ public class BidService {
      *                              (AUCTION_ITEM_NOT_FOUND), 자격이 없거나 거절 조건에
      *                              걸렸을 때(7xxx)
      */
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public BidCreateResponseDto place(Long auctionItemId, Long bidderUserId, Long amount) {
 
-        LocalDateTime arrivedAt = LocalDateTime.now(clock);
+        long nowMillis = clock.millis();
 
-        User bidder = userRepository.findByUserIdAndDeletedAtIsNull(bidderUserId)
-                .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
+        long result = auctionRedisStore.evaluateBid(auctionItemId, bidderUserId, amount, nowMillis);
 
-        Long sellerUserId = auctionItemRepository.findSellerUserId(auctionItemId)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+        if (result == AuctionRedisStore.KEY_MISSING) {
+            seedFromDatabase(auctionItemId);
+            result = auctionRedisStore.evaluateBid(auctionItemId, bidderUserId, amount, nowMillis);
+        }
 
-        validateEntitled(auctionItemId, bidder, sellerUserId);
+        if (result != AuctionRedisStore.ACCEPTED) {
+            throw new ApplicationException(toErrorType(result));
+        }
 
-        // 락 시작. 여기서 기다린 시간을 잰다 (자세한 이유는 BidMetrics 참고).
-        AuctionItem auctionItem = bidMetrics.recordLockWait(() ->
-                auctionItemRepository.findByIdForUpdate(auctionItemId)
-                        .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND)));
+        return persistAccepted(auctionItemId, bidderUserId, amount);
+    }
 
-        LocalDateTime now = LocalDateTime.now(clock);
+    /**
+     * Redis에 물품 HASH가 없을 때 DB에서 읽어 채운다. 물품이 시작될 때가 아니라 첫 입찰이
+     * 왔을 때 돈다. 물품 하나에 한 번이고, Redis를 재시작한 뒤에도 같은 경로로 복구된다.
+     *
+     * <p>물품이 DB에도 없으면 {@code AUCTION_ITEM_NOT_FOUND}다. 이 경로가 물품 존재를
+     * 확인하는 유일한 자리다 — Redis에 키가 없다는 것만으로는 "아직 안 채워졌다"와 "그런
+     * 물품이 없다"를 가를 수 없다.
+     */
+    private void seedFromDatabase(Long auctionItemId) {
 
-        validateBiddable(auctionItem, bidder, arrivedAt);
-        validateAmount(auctionItem, amount);
+        transactionTemplate.executeWithoutResult(status -> {
+            AuctionItem item = auctionItemRepository.findById(auctionItemId)
+                    .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
-        Bid bid = saveBid(auctionItem, bidder, amount);
-        auctionItem.applyBid(bidder, amount);
+            // 아직 시작하지 않은 물품은 endAt이 null이라 채울 수가 없다. 스크립트는 endAt만
+            // 보므로 status를 보는 자리가 여기 하나 남는다. 물품 하나에 한 번만 도는 경로라
+            // 거절 요청이 DB에 닿지 않는다는 성질은 그대로다.
+            if (item.getEndAt() == null) {
+                throw new ApplicationException(BidErrorType.ITEM_NOT_IN_PROGRESS);
+            }
 
-        // 리스너가 커밋 후에만 받으므로(DomainEventSseListener) 여기서 발행해도 롤백되면 나가지 않는다.
-        domainEventPublisher.publish(BidPlaced.of(
-                auctionItem.getAuctionRoom().getAuctionRoomId(),
-                auctionItem.getAuctionItemId(),
-                auctionItem.getProduct().getName(),
-                bidder.getNickname(),
-                amount,
-                bid.getAcceptedAt()));
+            Long sellerUserId = auctionItemRepository.findSellerUserId(auctionItemId)
+                    .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
-        publishIfExtended(auctionItem, now);
+            Long roomId = item.getAuctionRoom().getAuctionRoomId();
 
-        return BidCreateResponseDto.from(bid);
+            auctionRedisStore.seed(item, roomId, sellerUserId,
+                    auctionParticipantRepository.findAgreedUserIds(roomId));
+        });
+    }
+
+    /**
+     * 접수가 확정된 입찰을 DB에 남긴다. <b>판정은 하지 않는다.</b>
+     *
+     * <p>판정을 다시 하면 Redis와 DB 값이 다를 때 Lua가 접수한 입찰이 여기서 거절되는데,
+     * Lua는 이미 {@code currentPrice}를 올려놨고 그걸 되돌릴 방법이 없다. 그래서
+     * {@code findByIdForUpdate}도 안 쓴다 — 판정을 안 하니 물품 행 락을 잡을 이유가 없다.
+     *
+     * <p>여기서 예외가 나면 사용자는 5xx를 받는다. Redis에서는 접수됐는데 DB에 기록이 없는
+     * 상태라, 낙찰 판정이 DB 기준이므로 그 입찰은 후보에서 빠진다. 재시도는 이 브랜치에서
+     * 안 짠다 — 지금까지 측정에서 {@code failed_5xx}가 전부 0이라 이 부하에서 안 일어나고,
+     * 붙이면 그게 비교군 D의 절반이라 C가 왜 빨라졌는지 못 가린다.
+     */
+    private BidCreateResponseDto persistAccepted(Long auctionItemId, Long bidderUserId, Long amount) {
+
+        return transactionTemplate.execute(status -> {
+
+            User bidder = userRepository.findByUserIdAndDeletedAtIsNull(bidderUserId)
+                    .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
+
+            AuctionItem auctionItem = auctionItemRepository.findById(auctionItemId)
+                    .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+            Bid bid = saveBid(auctionItem, bidder, amount);
+
+            applyIfNewer(auctionItem, bidder, amount);
+
+            // 리스너가 커밋 후에만 받으므로(DomainEventSseListener) 여기서 발행해도 롤백되면 나가지 않는다.
+            domainEventPublisher.publish(BidPlaced.of(
+                    auctionItem.getAuctionRoom().getAuctionRoomId(),
+                    auctionItem.getAuctionItemId(),
+                    auctionItem.getProduct().getName(),
+                    bidder.getNickname(),
+                    amount,
+                    bid.getAcceptedAt()));
+
+            publishIfExtended(auctionItem, LocalDateTime.now(clock));
+
+            return BidCreateResponseDto.from(bid);
+        });
+    }
+
+    /**
+     * 물품의 현재가와 최고 입찰자를 갱신한다. <b>금액이 올라갈 때만</b> 바꾼다.
+     *
+     * <p>Lua는 같은 물품 입찰을 한 줄로 세우지만, 그 뒤 DB 트랜잭션은 각자라서 커밋 순서가
+     * 뒤집힐 수 있다. 앱이 2대면 더 그렇다. 그대로 덮어쓰면 10,000이 11,000 뒤에 도착해
+     * {@code current_price}가 내려간다. 입찰 판정은 Redis가 하므로 이것 때문에 입찰이
+     * 틀리지는 않고, 키가 날아갔을 때 {@link #seedFromDatabase}가 낮은 값을 심는 것이 문제다.
+     *
+     * <p>첫 입찰은 {@code currentPrice}가 시작가와 같은 값이라 금액이 같을 수 있어서
+     * {@code leaderUser}가 비어 있는지로 가른다.
+     */
+    private void applyIfNewer(AuctionItem auctionItem, User bidder, Long amount) {
+
+        if (auctionItem.getLeaderUser() == null || amount > auctionItem.getCurrentPrice()) {
+            auctionItem.applyBid(bidder, amount);
+        }
+    }
+
+    /** {@code lua/bid.lua}가 돌려준 거절 코드를 에러로 옮긴다. 코드와 뜻은 그 파일에 있다. */
+    private static BidErrorType toErrorType(long result) {
+
+        return switch ((int) result) {
+            case 1 -> BidErrorType.ITEM_CLOSED;
+            case 2 -> BidErrorType.ALREADY_TOP_BIDDER;
+            case 3 -> BidErrorType.BID_AMOUNT_TOO_LOW;
+            case 4 -> BidErrorType.INVALID_BID_UNIT;
+            case 5 -> BidErrorType.SELLER_CANNOT_BID;
+            case 6 -> BidErrorType.TERMS_NOT_AGREED;
+            // 스크립트가 우리가 모르는 값을 돌려줬다는 뜻이다. 접수로 넘기면 안 되고,
+            // 아무 거절 사유나 붙이면 index.csv의 거절 분포가 조용히 틀어진다.
+            default -> throw new IllegalStateException("bid.lua가 모르는 값을 돌려줬다: " + result);
+        };
     }
 
     /**
@@ -130,6 +223,10 @@ public class BidService {
             return;
         }
 
+        // 판정은 Redis의 endAt으로 하므로 바뀐 값을 옮겨야 한다. 안 옮기면 연장은 DB에만
+        // 남고 입찰은 옛 마감 시각에 막혀서, 연장이 있으나 마나가 된다.
+        auctionRedisStore.updateEndAt(auctionItem.getAuctionItemId(), auctionItem.getEndAt());
+
         domainEventPublisher.publish(SoftCloseExtended.of(
                 auctionItem.getAuctionRoom().getAuctionRoomId(),
                 auctionItem.getAuctionItemId(),
@@ -137,80 +234,6 @@ public class BidService {
                 auctionItem.getAuctionRoom().getSoftCloseExtendSeconds(),
                 auctionItem.getEndAt(),
                 now));
-    }
-
-    /**
-     * 락을 잡기 전에 판정할 수 있는 자격을 검사한다. 물품 상태와 무관해서 락이 필요 없다.
-     *
-     * <p>여기서 거른 요청은 {@code findByIdForUpdate}에 도달하지 않는다. 물품 ID를 훑으며
-     * 던지는 요청이 물품 행 락을 잡으면 같은 물품에 몰린 정상 입찰이 그만큼 뒤로 밀린다.
-     *
-     * <p>참여 여부는 {@code auction_participants}에 {@code agreed_at}이 채워진 행이 있는지로
-     * 본다. 그 행은 공유 코드를 알고 로그인한 사용자가 약관 동의 API를 부를 때만 생긴다.
-     *
-     * <p><b>판매자 검사를 참여 검사보다 먼저 한다.</b> 판매자는 자기 방에 약관 동의를 하지
-     * 않아 참여 행이 없다. 순서가 반대면 판매자가 {@code TERMS_NOT_AGREED}를 받고, 화면은
-     * 약관에 동의하라고 안내하는데, 동의해도 그다음엔 {@code SELLER_CANNOT_BID}로 다시
-     * 거절된다.
-     */
-    private void validateEntitled(Long auctionItemId, User bidder, Long sellerUserId) {
-
-        if (Objects.equals(sellerUserId, bidder.getUserId())) {
-            throw new ApplicationException(BidErrorType.SELLER_CANNOT_BID);
-        }
-
-        if (!auctionItemRepository.existsParticipant(auctionItemId, bidder.getUserId())) {
-            throw new ApplicationException(BidErrorType.TERMS_NOT_AGREED);
-        }
-    }
-
-    /**
-     * 락을 잡고 다시 읽은 물품으로 입찰을 받을 수 없는 요청을 거른다.
-     *
-     * <p>여기 남은 셋은 모두 락 안에서 봐야 하는 값이다. 락 앞에서 읽으면 그 사이에 상태가
-     * 바뀔 수 있다. 락이 필요 없는 자격 검사는 {@link #validateEntitled}가 먼저 끝낸다.
-     *
-     * <p>상태와 마감 시각을 모두 보는 이유는 물품을 진행중으로 바꾸는 코드가 아직 없어
-     * {@code endAt}이 지났는데도 진행중으로 남아 있는 물품이 생길 수 있기 때문이다.
-     * {@code endAt}이 비어 있으면 마감 판정을 할 수 없으므로 받지 않는다.
-     */
-    private void validateBiddable(AuctionItem auctionItem, User bidder, LocalDateTime arrivedAt) {
-
-        if (auctionItem.getStatus() != AuctionItemStatus.IN_PROGRESS) {
-            throw new ApplicationException(BidErrorType.ITEM_NOT_IN_PROGRESS);
-        }
-
-        LocalDateTime endAt = auctionItem.getEndAt();
-        if (endAt == null || !arrivedAt.isBefore(endAt)) {
-            throw new ApplicationException(BidErrorType.ITEM_CLOSED);
-        }
-
-        User leader = auctionItem.getLeaderUser();
-        if (leader != null && Objects.equals(leader.getUserId(), bidder.getUserId())) {
-            throw new ApplicationException(BidErrorType.ALREADY_TOP_BIDDER);
-        }
-    }
-
-    /**
-     * 금액 규칙을 검증한다.
-     *
-     * <p>최소 입찰 금액은 입찰이 아직 없으면 시작가, 있으면 현재가 + 단위다. 시작가와 같은
-     * 금액으로 첫 입찰을 할 수 있어야 해서 "현재가 초과"가 아니라 이 형태다. 통과한 금액은
-     * 항상 {@code 시작가 + 단위 × N} 위에 있으므로 현재가도 그 격자 위에 있다.
-     */
-    private void validateAmount(AuctionItem auctionItem, Long amount) {
-
-        long minimum = auctionItem.getLeaderUser() == null
-                ? auctionItem.getStartingPrice()
-                : auctionItem.getCurrentPrice() + auctionItem.getBidIncrement();
-
-        if (amount < minimum) {
-            throw new ApplicationException(BidErrorType.BID_AMOUNT_TOO_LOW);
-        }
-
-        if ((amount - auctionItem.getStartingPrice()) % auctionItem.getBidIncrement() != 0) {
-            throw new ApplicationException(BidErrorType.INVALID_BID_UNIT);
-        }
     }
 
     /**

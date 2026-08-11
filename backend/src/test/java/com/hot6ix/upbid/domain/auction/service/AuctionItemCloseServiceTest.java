@@ -14,6 +14,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
@@ -53,6 +54,10 @@ class AuctionItemCloseServiceTest {
 
     @Mock
     private DomainEventPublisher domainEventPublisher;
+
+    /** 조기 마감이 앞당긴 endAt을 Redis에도 쓴다(이슈 #246의 비교군 C). 여기서는 호출만 받는다. */
+    @Mock
+    private AuctionRedisStore auctionRedisStore;
 
     @InjectMocks
     private AuctionItemCloseService auctionItemCloseService;
