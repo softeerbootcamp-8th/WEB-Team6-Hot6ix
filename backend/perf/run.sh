@@ -356,9 +356,16 @@ preflight() {
   local cores
   cores="$(docker info --format '{{.NCPU}}' 2>/dev/null || echo 0)"
 
-  # 앱 2 + MySQL 2 를 주고 나면 나머지가 k6 와 nginx, Prometheus 몫이다.
-  # 4코어짜리에 돌리면 부하 발생기가 서버보다 먼저 막혀서, 그 숫자는 서버 한계가 아니다.
-  if [ "$cores" -lt 6 ] 2>/dev/null; then
+  # 필요한 코어 수가 모드마다 다르다. 로컬은 앱 2 + MySQL 2 를 주고 나머지가 k6 와 nginx,
+  # Prometheus 몫이라 6개는 있어야 한다. 원격은 앱과 DB 가 저쪽에 있으니 k6 와 관측 도구만
+  # 쓴다. 어느 쪽이든 모자라면 부하 발생기가 서버보다 먼저 막혀서 그 숫자는 서버 한계가 아니다.
+  if [ "$REMOTE" = "1" ]; then
+    if [ "$cores" -lt 4 ] 2>/dev/null; then
+      echo "※ 이 서버의 코어가 ${cores}개다. k6 가 먼저 막힐 수 있다." >&2
+      echo "  시나리오 0(--scenario 0)을 먼저 돌려 부하 발생기 한계를 확인하고," >&2
+      echo "  k6_cpu_max 가 100% 에 가까운 줄은 버린다." >&2
+    fi
+  elif [ "$cores" -lt 6 ] 2>/dev/null; then
     echo "※ Docker Desktop 에 할당된 코어가 ${cores}개다. 최소 6개는 있어야 한다." >&2
     echo "  (앱 2 + MySQL 2 + k6 몫). Settings > Resources 에서 올린다." >&2
     echo "  이대로 재면 부하 발생기가 먼저 막혀서 서버 한계를 못 본다." >&2
@@ -539,6 +546,37 @@ MSG
   exit 1
 }
 
+# DB 를 직접 볼 때 쓴다. seed.sh 가 아니라 여기 두는 이유는 seed.sh 는 API 만 알고 있어서
+# --base 로 개발 앱에도 쓸 수 있는데, 컨테이너 이름을 아는 순간 그게 깨지기 때문이다.
+# RDS 에 붙을 때 쓰는 클라이언트. 측정 서버에 mysql 을 깔지 않으려고 컨테이너로 쓴다.
+# 운영 RDS 가 8.4.9 라 메이저를 맞춘다.
+MYSQL_IMAGE="mysql:8.4"
+
+# 값을 반드시 받아야 하는 조회. **실패하면 멈춘다.**
+#
+# 로컬은 예전처럼 stderr 를 버리고 || true 로 넘어간다. 컨테이너가 항상 있고, 없으면 그 앞의
+# health 대기에서 이미 걸리기 때문이다.
+#
+# 원격은 다르다. mysql 컨테이너가 없는데 조용히 빈 값이 돌아오면 select_per_bid 와 gap_locks,
+# lock_wait 이 전부 NaN 이 되고 --bulk-items 와 --sweep-index 가 아무것도 안 하는데
+# 아무도 모른다. 그래서 여기서는 에러를 그대로 올린다.
+mysql_query() {
+  if [ "$REMOTE" = "1" ]; then
+    docker run --rm -i -e MYSQL_PWD="$DB_PASS" "$MYSQL_IMAGE" \
+      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -N -B "$DB_NAME" -e "$1"
+    return
+  fi
+
+  "${COMPOSE[@]}" exec -T mysql \
+    mysql -uroot -p1234 -N -B upbid -e "$1" 2>/dev/null || true
+}
+
+# 실패해도 되는 것 전용 (이미 있는 인덱스를 CREATE 하는 경우 등).
+# 원격에서도 여기서는 안 멈춘다. 대신 부르는 쪽이 결과를 따로 확인해야 한다.
+mysql_try() {
+  mysql_query "$1" 2>/dev/null || true
+}
+
 # 원격이면 RDS 와 조회 라벨을 여기서 한 번씩 찔러 본다.
 #
 # 둘 다 틀려도 실행은 끝까지 도는데 표의 여러 칸이 NaN 으로 남는다. 3분을 다 재고 나서
@@ -625,37 +663,6 @@ BASE_URL="$APP_URL/api/v1" "$PERF_DIR/seed.sh" \
 
 # shellcheck source=/dev/null
 . "$SEED_ENV"
-
-# DB 를 직접 볼 때 쓴다. seed.sh 가 아니라 여기 두는 이유는 seed.sh 는 API 만 알고 있어서
-# --base 로 개발 앱에도 쓸 수 있는데, 컨테이너 이름을 아는 순간 그게 깨지기 때문이다.
-# RDS 에 붙을 때 쓰는 클라이언트. 측정 서버에 mysql 을 깔지 않으려고 컨테이너로 쓴다.
-# 운영 RDS 가 8.4.9 라 메이저를 맞춘다.
-MYSQL_IMAGE="mysql:8.4"
-
-# 값을 반드시 받아야 하는 조회. **실패하면 멈춘다.**
-#
-# 로컬은 예전처럼 stderr 를 버리고 || true 로 넘어간다. 컨테이너가 항상 있고, 없으면 그 앞의
-# health 대기에서 이미 걸리기 때문이다.
-#
-# 원격은 다르다. mysql 컨테이너가 없는데 조용히 빈 값이 돌아오면 select_per_bid 와 gap_locks,
-# lock_wait 이 전부 NaN 이 되고 --bulk-items 와 --sweep-index 가 아무것도 안 하는데
-# 아무도 모른다. 그래서 여기서는 에러를 그대로 올린다.
-mysql_query() {
-  if [ "$REMOTE" = "1" ]; then
-    docker run --rm -i -e MYSQL_PWD="$DB_PASS" "$MYSQL_IMAGE" \
-      mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -N -B "$DB_NAME" -e "$1"
-    return
-  fi
-
-  "${COMPOSE[@]}" exec -T mysql \
-    mysql -uroot -p1234 -N -B upbid -e "$1" 2>/dev/null || true
-}
-
-# 실패해도 되는 것 전용 (이미 있는 인덱스를 CREATE 하는 경우 등).
-# 원격에서도 여기서는 안 멈춘다. 대신 부르는 쪽이 결과를 따로 확인해야 한다.
-mysql_try() {
-  mysql_query "$1" 2>/dev/null || true
-}
 
 # 마감 대상을 찾는 조회는 status 와 end_at 으로 거른다. 물품이 스무 개뿐이면 표 전체를 훑어도
 # 순식간이라 인덱스가 있으나 없으나 같은 숫자가 나오고, 그러면 인덱스를 넣을 근거를 못 만든다.
