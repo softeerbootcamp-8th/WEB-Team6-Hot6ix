@@ -30,12 +30,24 @@ class RoomSseManagerTest {
     private static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
     private static final long EMITTER_TIMEOUT_MS = 60 * 60 * 1000L;
 
+    /**
+     * 브로드캐스트를 부른 스레드에서 그대로 실행한다.
+     *
+     * <p>운영에서는 전용 실행기가 전송을 비동기로 돌리지만(SseBroadcastConfig), 여기서는
+     * sendBroadCast 가 돌아온 직후에 도착을 단언한다. 진짜 실행기를 주면 아직 안 보낸 상태를
+     * 보고 실패하거나, sleep 으로 기다리는 불안정한 테스트가 된다. 비동기 자체의 검증은
+     * 부하 측정(시나리오 1 + --sse)이 맡는다.
+     */
+    private static final com.hot6ix.upbid.domain.sse.config.SseBroadcastExecutor SYNC_EXECUTOR =
+            new com.hot6ix.upbid.domain.sse.config.SseBroadcastExecutor(Runnable::run);
+
     private final RoomSseManager roomSseManager = newRoomSseManager();
 
     /** 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다. */
     private static RoomSseManager newRoomSseManager() {
         SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
-        return new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), new SseEventBuffer(props));
+        return new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), new SseEventBuffer(props),
+                SYNC_EXECUTOR);
     }
 
     @Test
@@ -195,7 +207,7 @@ class RoomSseManagerTest {
         SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
         SseEventBuffer buffer = new SseEventBuffer(props);
         RoomSseManager manager =
-                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer);
+                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer, SYNC_EXECUTOR);
 
         manager.subscribe(ROOM_ID, null);
         manager.sendBroadCast(EVENT_NAME, ROOM_ID, "payload");
@@ -215,7 +227,7 @@ class RoomSseManagerTest {
         SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
         SseEventBuffer buffer = new SseEventBuffer(props);
         RoomSseManager manager =
-                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer);
+                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer, SYNC_EXECUTOR);
 
         manager.subscribe(ROOM_ID, null);
         manager.closeRoom(ROOM_ID);
@@ -245,7 +257,8 @@ class RoomSseManagerTest {
 
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         RoomSseManager manager = new RoomSseManager(
-                new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50), new SseMetrics(registry), new SseEventBuffer(new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50)));
+                new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50), new SseMetrics(registry),
+                new SseEventBuffer(new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50)), SYNC_EXECUTOR);
 
         // 게이지는 @PostConstruct 에서 붙는다. 직접 생성한 객체에서는 안 불리므로 여기서 부른다.
         manager.bindMetrics();

@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.sse.service;
 
+import com.hot6ix.upbid.domain.sse.config.SseBroadcastExecutor;
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
 import jakarta.annotation.PostConstruct;
@@ -29,6 +30,8 @@ public class RoomSseManager {
     /** 계측은 이 객체가 안다. 이 클래스는 Micrometer 를 모른다. */
     private final SseMetrics sseMetrics;
     private final SseEventBuffer sseEventBuffer;
+    /** 브로드캐스트 전송 전용. 입찰 요청 스레드를 붙잡지 않으려고 뗀다. */
+    private final SseBroadcastExecutor broadcastExecutor;
 
     /**
      * 지금 열려 있는 연결 수를 지표로 내보낸다. 게이지는 스크랩할 때 위 Map 을 읽어 가는
@@ -76,9 +79,10 @@ public class RoomSseManager {
     /**
      * 방에 붙어 있는 모든 연결에 이벤트를 쏜다.
      *
-     * <p>지금은 부르는 스레드가 직접 다 쏘고 나서 돌아간다. 입찰을 처리한 톰캣 스레드가
-     * 커밋 뒤에 이 메서드를 부르므로, 여기 걸린 시간이 그대로 입찰 응답 시간에 얹힌다.
-     * {@code upbid.sse.broadcast}로 그 비용을 잰다(#234).
+     * <p><b>전송은 전용 실행기가 맡는다</b>({@link SseBroadcastExecutor}). 예전에는 부르는 스레드가
+     * 직접 다 쏘고 돌아갔고, 그래서 여기 걸린 시간이 그대로 입찰 응답에 얹혔다 — SSE 접속 400개에서
+     * 브로드캐스트 p95 30ms, 입찰 처리량 55% 하락으로 나타났다(2026-08-10 실측).
+     * {@code upbid.sse.broadcast}로 재는 값은 이제 <b>입찰 응답 밖</b>의 시간이다(#234).
      *
      * <p>쏠 대상이 없으면 재지 않는다. 0에 가까운 값이 히스토그램에 섞이면 p95가 실제보다
      * 낮게 나온다.
@@ -90,12 +94,33 @@ public class RoomSseManager {
             return;
         }
 
+        // 순번 발급은 요청 스레드에 남긴다.
+        //
+        // 이 id 가 클라이언트의 Last-Event-ID 가 되므로 커밋 순서대로 매겨져야 한다. 전송까지
+        // 통째로 비동기로 넘기면 두 입찰의 순번이 커밋 순서와 뒤바뀔 수 있다. 버퍼에 넣는 것은
+        // 메모리 작업이라 요청 스레드에 남겨도 비용이 거의 없다.
         long id = sseEventBuffer.add(roomId, name, data);
 
-        sseMetrics.recordBroadcast(() -> {
-            for (SseEmitter emitter : emitters) {
-                send(roomId, emitter, name, id, data);
+        // 큐 대기를 따로 잰다. recordBroadcast 는 전송 루프만 재므로, 이벤트가 클라이언트로
+        // 나가기까지 걸린 시간은 두 값을 더한 것이다. 자세한 이유는 SseMetrics 의 필드 주석에 있다.
+        //
+        // 호출 스레드가 곧 실행 스레드면 CallerRunsPolicy 가 발동한 것이다(큐가 넘쳤다). 그때는
+        // 대기가 0으로 찍히므로 따로 세지 않으면 "한가해서 0"과 구분되지 않는다.
+        Thread caller = Thread.currentThread();
+        long enqueuedAt = System.nanoTime();
+
+        broadcastExecutor.execute(() -> {
+            sseMetrics.recordBroadcastQueueWait(System.nanoTime() - enqueuedAt);
+
+            if (Thread.currentThread() == caller) {
+                sseMetrics.countBroadcastRanOnCaller();
             }
+
+            sseMetrics.recordBroadcast(() -> {
+                for (SseEmitter emitter : emitters) {
+                    send(roomId, emitter, name, id, data);
+                }
+            });
         });
     }
 
