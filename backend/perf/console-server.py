@@ -117,7 +117,7 @@ def build_command(body):
 
     # run.sh 의 case 문이 받는 범위와 같아야 한다. 벗어난 값을 보내면 컨테이너 기동과
     # 시딩을 다 하고 나서 "모르는 시나리오" 로 죽는다. 여기서 먼저 막는다.
-    scenario = num("scenario", 1, 0, 5)
+    scenario = num("scenario", 1, 0, 6)
     args = ["./perf/run.sh", "--scenario", str(scenario)]
 
     # 4 는 올리는 값이 사람 수가 아니라 물품 수라 --vus 를 안 보낸다.
@@ -171,6 +171,10 @@ def build_command(body):
     bulk_items = num("bulkItems", 0, 0, 1000000)
     if bulk_items > 0:
         args += ["--bulk-items", str(bulk_items)]
+
+    bids_per_item = num("bidsPerItem", 0, 0, 100000)
+    if bids_per_item > 0:
+        args += ["--bids-per-item", str(bids_per_item)]
 
     if body.get("sweepIndex"):
         args += ["--sweep-index", "on"]

@@ -38,6 +38,9 @@ BID_ITEMS=0
 ISOLATION=RR
 BULK_ITEMS=0
 SWEEP_INDEX=off
+BIDS_PER_ITEM=0
+BIDDERS_PER_ITEM=0
+PREP_STMT=off
 
 # perf 는 측정용 포트를 따로 쓴다. 개발 백엔드(8080)나 프론트(5173)와 안 겹치게 한다.
 # 겹치면 측정을 시작하는 순간 개발 환경이 죽고, 프론트가 조용히 perf 앱에 붙는다.
@@ -50,8 +53,10 @@ usage() {
   cat <<'USAGE'
 사용법: run.sh [옵션]
 
-  --scenario N       0=부하 발생기 한계, 1~5=시나리오 (기본 1)
+  --scenario N       0=부하 발생기 한계, 1~6=시나리오 (기본 1)
                      5 는 마감과 입찰을 겹친다. --items 로 마감할 물품 수를 준다
+                     6 은 입장 폭주다. 방·물품목록·최근이벤트를 한 번에 부른다.
+                     리더보드가 물품 목록에 딸려 나오므로 --bids-per-item 과 짝으로 쓴다
   --vus N            가상 사용자 수. 계단은 10/20/40/80/160 (기본 40)
   --items N          물품 수. 시나리오 1은 1, 2는 20 (기본 1)
   --sse N            같이 붙여 둘 SSE 접속 수. 5번(겹쳐 재기)에서 쓴다 (기본 0)
@@ -71,6 +76,22 @@ usage() {
                      마감 대상을 찾는 조회가 표 전체를 훑는지 보려면 표가 커야 한다
   --sweep-index on|off  auction_items(status, end_at) 인덱스를 만들지 (기본 off)
                      --bulk-items 와 짝으로 켜고 끄면서 조회 시간이 어떻게 달라지는지 본다
+  --bids-per-item N  물품마다 입찰 N 건을 SQL 로 미리 채운다 (기본 0)
+                     리더보드 쿼리는 bids 를 GROUP BY 로 훑으므로, 표가 비면 즉시 끝나서
+                     "입장이 아주 빠르다"는 거짓 결과가 나온다. seed.sh 는 입찰을 안 만든다
+                     총건수가 아니라 물품당인 이유: 이 값을 현실값에 고정해 두고 --vus 만
+                     올리는 게 시나리오 6 의 계단이라, --items 를 바꿔도 안 흔들려야 한다
+  --bidders-per-item N  물품마다 서로 다른 입찰자를 몇 명 만들지 (기본 0 = --users 와 같음)
+                     리더보드 쿼리 비용은 행 수뿐 아니라 GROUP BY 결과인 (물품, 입찰자) 조합
+                     수에 달려 있고, **이 값이 옵티마이저의 계획 선택까지 바꾼다.**
+                     실측: 물품당 200명(각 1건)이면 users 를 풀스캔하는 나쁜 계획으로 9.83ms,
+                     20명(각 10건)이면 idx_bids_item_bidder_amount 를 타는 계획으로 2.92ms.
+                     행 수는 4,000 으로 같았다. --users 로 대신하면 users 표 크기까지 함께
+                     바뀌어 대조가 깨지므로 따로 둔다
+  --prep-stmt on|off MySQL prepared statement 캐시 (기본 off = 드라이버 기본값)
+                     off 면 실행할 때마다 SQL 텍스트를 보내고 MySQL 이 매번 파싱한다.
+                     쿼리 종류가 적고 실행이 잦은데 DB 가 CPU 에 묶여 있으면 여기가 먹힌다
+                     앱 코드가 안 바뀌므로 --skip-build 로 켜고 끄며 비교할 수 있다
 
   --duration D       측정 길이 (기본 3m)
   --warmup N         워밍업 초 (기본 30)
@@ -100,6 +121,9 @@ while [ $# -gt 0 ]; do
     --isolation) ISOLATION="$2"; shift 2 ;;
     --bulk-items) BULK_ITEMS="$2"; shift 2 ;;
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
+    --bids-per-item) BIDS_PER_ITEM="$2"; shift 2 ;;
+    --bidders-per-item) BIDDERS_PER_ITEM="$2"; shift 2 ;;
+    --prep-stmt) PREP_STMT="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
     --who) WHO="$2"; shift 2 ;;
@@ -231,7 +255,7 @@ preflight() {
   fi
 
   case "$SCENARIO" in
-    1|2|5)
+    1|2|5|6)
       if [ "$USERS" -lt "$VUS" ] 2>/dev/null; then
         echo "※ 시딩할 회원(${USERS})이 VU(${VUS})보다 적다. 남는 VU 는 약관 동의가 없어" >&2
         echo "  전부 TERMS_NOT_AGREED 로 거절된다. --users 를 올린다." >&2
@@ -239,6 +263,14 @@ preflight() {
       fi
       ;;
   esac
+
+  # 입장은 리더보드 비용을 재는 것이고, 리더보드는 bids 를 훑는다. seed.sh 는 입찰을 한 건도
+  # 만들지 않으므로 이대로 두면 그 쿼리가 빈 표에서 즉시 끝나고, "입장이 초당 수천 건"이라는
+  # 거짓 숫자가 나온다. 그 줄은 겉보기에 멀쩡해서 아무도 못 알아본다.
+  if [ "$SCENARIO" = "6" ] && [ "$BIDS_PER_ITEM" -eq 0 ] 2>/dev/null; then
+    echo "※ 시나리오 6 을 --bids-per-item 0 으로 돌린다. bids 가 빈 표라 리더보드 조회가" >&2
+    echo "  즉시 끝나므로, 이 줄은 '리더보드가 공짜일 때'의 값이다. 대조군으로만 쓴다." >&2
+  fi
 }
 
 acquire_lock
@@ -283,6 +315,17 @@ export SCHEDULER_POOL_SIZE="$SCHEDULER_POOL"
 export SSE_HEARTBEAT_MS="$HEARTBEAT_MS"
 export APP_JAVA_OPTS="$JAVA_OPTS"
 export VIRTUAL_THREADS
+
+# 드라이버 옵션은 JDBC URL 뒤에 붙는다 (compose 의 SPRING_DATASOURCE_URL 참고).
+#
+# cachePrepStmts 만 켜면 클라이언트 측 파싱만 캐시된다. useServerPrepStmts 까지 켜야
+# 서버 측 prepared statement 를 써서 MySQL 이 매 실행마다 SQL 을 다시 파싱하지 않는다.
+# 둘은 짝이라 따로 켜지 않는다.
+case "$PREP_STMT" in
+  on)  export JDBC_EXTRA="&cachePrepStmts=true&useServerPrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048" ;;
+  off) export JDBC_EXTRA="" ;;
+  *)   echo "--prep-stmt 는 on 또는 off 다 (받은 값: $PREP_STMT)" >&2; exit 1 ;;
+esac
 
 # 일회성 컨테이너(docker compose run 으로 띄운 k6)는 down 이 안 지운다. 설계가 그렇다.
 # 안 지우면 직전 실행의 배경 SSE 가 새 앱에 그대로 붙어서, 이번 줄의 접속 수와 스레드가
@@ -427,6 +470,80 @@ if [ "$BULK_ITEMS" -gt 0 ]; then
   echo "[4/8]   물품 표: $(mysql_query "SELECT COUNT(*) FROM auction_items") 행"
 fi
 
+# ── 입찰을 미리 채운다 (시나리오 6 의 계단) ─────────────────────────
+# 리더보드는 별도 API 가 아니라 물품 목록 응답에 딸려 나가고(AuctionItemService.getSummaries),
+# 그 쿼리는 bids 를 GROUP BY 로 묶어 ROW_NUMBER 로 순위를 매긴다. seed.sh 는 입찰을 한 건도
+# 만들지 않으므로 채우지 않으면 그 쿼리가 빈 표에서 즉시 끝난다.
+#
+# 두 가지가 따로 논다. 둘 다 늘어야 실제 상황과 같아진다.
+#   전체 행 수                  -> 훑는 양
+#   distinct (물품, 입찰자) 수  -> GROUP BY 뒤에 정렬할 행 수
+# 그래서 시딩된 구매자 전원에게 돌려 가며 뿌린다.
+#
+# uk_bids_item_amount 가 (auction_item_id, amount) unique 라 물품 안에서 금액이 겹치면
+# INSERT 가 통째로 실패한다. 금액을 격자 위에서 1씩 올려 유일하게 만든다.
+if [ "$BIDS_PER_ITEM" -gt 0 ]; then
+  PREFILL_ITEM_COUNT="$(echo "$ITEM_IDS" | tr ',' '\n' | grep -c .)"
+  PREFILL_EXPECTED=$((BIDS_PER_ITEM * PREFILL_ITEM_COUNT))
+
+  # 0 이면 시딩한 구매자 전원을 돌린다(예전 동작). 시딩한 인원보다 많이 요구하면 그만큼
+  # 만들 수 없으므로 자른다 — 안 자르면 modulo 가 없는 rn 을 가리켜 그 회차가 통째로 빠진다.
+  PREFILL_BIDDERS="$BIDDERS_PER_ITEM"
+  [ "$PREFILL_BIDDERS" -eq 0 ] 2>/dev/null && PREFILL_BIDDERS="$USERS"
+  [ "$PREFILL_BIDDERS" -gt "$USERS" ] 2>/dev/null && {
+    echo "※ --bidders-per-item($PREFILL_BIDDERS)이 시딩한 회원($USERS)보다 많아 $USERS 로 자른다." >&2
+    PREFILL_BIDDERS="$USERS"
+  }
+
+  echo "[4/8] 입찰 미리 채우기 (물품당 $BIDS_PER_ITEM x 물품 $PREFILL_ITEM_COUNT = $PREFILL_EXPECTED 건, 입찰자 $PREFILL_BIDDERS 명/물품)"
+
+  # 재귀 CTE 기본 한도가 1000 이라 그 위로는 조용히 끊긴다. 끊기면 채운 줄 알고 재게 되므로
+  # 세션 한도를 먼저 올린다. 아래 검증이 최종 방어선이다.
+  mysql_query "
+    SET SESSION cte_max_recursion_depth = 4294967295;
+    INSERT INTO bids (auction_item_id, bidder_user_id, amount, accepted_at)
+    WITH RECURSIVE seq(n) AS (
+      SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < $BIDS_PER_ITEM
+    )
+    SELECT i.auction_item_id,
+           b.user_id,
+           $START_PRICE + seq.n * $BID_UNIT,
+           NOW()
+      FROM seq
+      JOIN auction_items i
+        ON i.auction_item_id IN ($ITEM_IDS)
+      JOIN (SELECT user_id, ROW_NUMBER() OVER (ORDER BY user_id) AS rn
+              FROM users WHERE deleted_at IS NULL) b
+        ON b.rn = ((seq.n - 1) % $PREFILL_BIDDERS) + 1" >/dev/null
+
+  # 직접 INSERT 는 물품의 현재가와 1위를 안 건드린다. 그대로 두면 목록 응답이 현재가 1만 원에
+  # 리더보드 250만 원인 모순된 방이 되고, 나중에 입장과 입찰을 겹쳐 재려 할 때 살아 있는 입찰이
+  # 이미 있는 금액과 부딪혀 unique 위반으로 터진다. 채운 값에 맞춰 둘 다 올려 둔다.
+  mysql_query "
+    UPDATE auction_items i
+       JOIN (SELECT auction_item_id, MAX(amount) AS top_amount
+               FROM bids GROUP BY auction_item_id) t
+         ON t.auction_item_id = i.auction_item_id
+       JOIN bids top
+         ON top.auction_item_id = t.auction_item_id AND top.amount = t.top_amount
+       SET i.current_price = t.top_amount,
+           i.leader_user_id = top.bidder_user_id
+     WHERE i.auction_item_id IN ($ITEM_IDS)" >/dev/null
+
+  PREFILL_ACTUAL="$(mysql_query "SELECT COUNT(*) FROM bids")"
+  PREFILL_DISTINCT="$(mysql_query "SELECT COUNT(DISTINCT bidder_user_id) FROM bids
+                                    WHERE auction_item_id = ${ITEM_IDS%%,*}")"
+  echo "[4/8]   입찰 표: $PREFILL_ACTUAL 행 (물품 하나에 서로 다른 입찰자 $PREFILL_DISTINCT 명)"
+
+  # mysql_query 는 stderr 를 버리고 || true 로 끝나서 INSERT 가 실패해도 그냥 지나간다.
+  # 그러면 빈 표로 재고서 "리더보드는 부하가 없다"는 틀린 결론이 나온다. 여기서 멈춘다.
+  if [ "$PREFILL_ACTUAL" -lt "$PREFILL_EXPECTED" ] 2>/dev/null; then
+    echo "※ 입찰이 덜 채워졌다 (기대 $PREFILL_EXPECTED, 실제 $PREFILL_ACTUAL)." >&2
+    echo "  이대로 재면 리더보드 비용이 실제보다 작게 나오므로 멈춘다." >&2
+    exit 1
+  fi
+fi
+
 if [ "$SWEEP_INDEX" = "on" ]; then
   echo "[4/8] idx_auction_items_status_end_at 만들기"
   mysql_query "CREATE INDEX idx_auction_items_status_end_at
@@ -514,7 +631,23 @@ fi
 # ── 5. 워밍업 ──────────────────────────────────────────────────────
 # JIT 이 덥혀지고 커넥션 풀이 채워지기 전 구간을 재면 첫 줄만 유독 느리게 나온다.
 echo "[6/8] 워밍업 ${WARMUP}초"
-sleep "$WARMUP"
+
+# 예전에는 `sleep "$WARMUP"` 뿐이었다. 그러면 아무것도 안 덥혀져서 측정 구간 앞부분이
+# 그대로 워밍업 구간이 된다. 실측(2026-08-11 시나리오 0, vus 160): 앞 40초가 정상 구간의
+# 1/10 처리량이었고 구간 평균이 정상 상태보다 12% 낮게 찍혔다. 계단마다 그 비중이 달라
+# "두 배 올렸을 때 몇 배" 비율이 왜곡되므로, 계단 비교를 쓰는 이 도구에서는 치명적이다.
+#
+# warmup.js 는 읽기 전용 둘만 때린다. 그 시나리오의 스크립트로 덥히면 상태가 바뀐다 —
+# 입찰이면 current_price 가 올라 본 측정의 첫 입찰들이 거절되고, 마감이면 물품이 미리 닫힌다.
+#
+# 워밍업 트래픽은 WINDOW_START 이전이라 구간 집계에 안 들어간다. Com_select 와
+# innodb_row_lock 스냅샷도 이 아래에서 뜨므로 워밍업 몫이 섞이지 않는다.
+if [ "$WARMUP" -gt 0 ] 2>/dev/null; then
+  VUS="$VUS" DURATION="${WARMUP}s" SHARE_CODE="$SHARE_CODE" \
+    "${COMPOSE[@]}" run --rm -e VUS -e DURATION -e SHARE_CODE \
+      k6 run /scripts/warmup.js >/dev/null 2>&1 \
+    || echo "※ 워밍업이 실패했다. 측정은 계속하지만 이 줄은 앞부분이 콜드 구간이다." >&2
+fi
 
 row_lock_status() {
   mysql_query "SHOW GLOBAL STATUS LIKE 'Innodb_row_lock%'"
@@ -527,6 +660,18 @@ row_lock_status >"$RESULT_DIR/innodb_row_lock_before.txt"
 # 왕복이 늘어난 만큼 락을 오래 잡는다. 응답 시간만 보면 그게 왕복 수 때문인지 락 대기
 # 때문인지 안 갈린다. Com_select 는 서버 전체 누적이라 구간 증가분을 입찰을 시도한 건수로
 # 나눠서 "입찰 한 건당 몇 번"으로 만든다.
+# Com_select 하나만 센다. --prep-stmt on 에서도 그렇다.
+#
+# 한때 Com_stmt_execute 를 합산했다. "useServerPrepStmts=true 면 실행이 COM_STMT_EXECUTE 로
+# 나가니 Com_select 가 0 이 될 것"이라고 본 것인데, **사실이 아니다.** MySQL 은 prepared
+# statement 를 실행할 때 명령 종류별 카운터도 함께 올려서 둘 다 증가한다.
+#
+# 실측(--prep-stmt on 으로 3분): Com_select 186,711 / Com_stmt_execute 186,972 로 거의 같았고,
+# 합산하면 입장당 SELECT 가 8.0 -> 16.0 으로 정확히 두 배가 됐다. 코드가 그대로인데 쿼리가
+# 두 배로 늘 수는 없으니 그게 곧 이중 계수의 증거다.
+#
+# 참고: 같은 구간의 Com_stmt_prepare 는 134 뿐이었다. 18만 번 실행에 prepare 134 번이면
+# statement 캐시가 실제로 동작하고 있다는 뜻이라, on/off 가 정말 바뀌었는지 확인할 때 쓴다.
 com_select() {
   mysql_query "SHOW GLOBAL STATUS LIKE 'Com_select'" | awk '{print $2}'
 }
@@ -540,7 +685,8 @@ case "$SCENARIO" in
   3) SCRIPT="scenario3.js" ;;
   4) SCRIPT="scenario4.js" ;;
   5) SCRIPT="scenario5.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~5)" >&2; exit 1 ;;
+  6) SCRIPT="scenario6.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~6)" >&2; exit 1 ;;
 esac
 
 WINDOW_START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -653,6 +799,9 @@ case "$SCENARIO" in
   0)     MAIN_URI=', uri="/actuator/health"' ;;
   1|2|5) MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/bids"' ;;
   4)     MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/start"' ;;
+  # 6 은 입장 셋 중 물품 목록이 주인공이다. 리더보드가 여기 딸려 나오므로 무거워지는 건
+  # 이 요청뿐이고, 방·최근이벤트까지 섞으면 가벼운 둘이 p95 를 끌어내린다.
+  6)     MAIN_URI=', uri="/api/v1/auction-rooms/share/{shareCode}/auction-items"' ;;
   # 3 은 SSE 구독이 주인공인데 끝나지 않는 스트림이라 응답 시간에 안 잡힌다. 그래서 안 좁힌다.
   *)     MAIN_URI='' ;;
 esac
@@ -696,6 +845,12 @@ CONN_ACQUIRE_P95_MS="$(p95_of "hikaricp_connections_acquire_seconds_bucket{$RUN}
 CLOSE_DELAY_P95_MS="$(p95_of "upbid_auction_close_delay_seconds_bucket{$RUN}")"
 SSE_HEARTBEAT_P95_MS="$(p95_of "upbid_sse_heartbeat_seconds_bucket{$RUN}")"
 SSE_BROADCAST_P95_MS="$(p95_of "upbid_sse_broadcast_seconds_bucket{$RUN}")"
+# 브로드캐스트가 실행기 큐에서 기다린 시간. broadcast 는 전송 루프만 재므로 이벤트가 실제로
+# 나가기까지는 두 값을 더해야 한다. 동기 전송이던 시절에는 큐가 없어서 이 계열이 아예 없다(NaN).
+SSE_BROADCAST_QUEUE_P95_MS="$(p95_of "upbid_sse_broadcast_queue_seconds_bucket{$RUN}")"
+# 0보다 크면 큐가 넘쳐 호출 스레드가 직접 쏜 것이다 = 그만큼 비동기화 이전 동작이다.
+# 위 대기 시간과 짝으로 본다. CallerRuns 면 대기가 0으로 찍혀서 "한가해서 0"과 구분되지 않는다.
+SSE_BROADCAST_CALLER_RUNS="$(promq "sum($(delta "upbid_sse_broadcast_caller_runs_total{$RUN}")) or vector(0)")"
 SSE_CONN_MAX="$(promq "max(max_over_time(upbid_sse_connections{$RUN}[$W]))")"
 
 # 마감은 p95 만으로 부족하다. 한 건이라도 크게 튀면 스레드가 그만큼 묶이므로 최대값을 같이 본다.
@@ -713,6 +868,16 @@ SCHED_ACTIVE_MAX="$(promq "max(max_over_time(executor_active_threads{$SCHED}[$W]
 SCHED_QUEUED_MAX="$(promq "max(max_over_time(executor_queued_tasks{$SCHED}[$W]))")"
 GC_PAUSE_MS_PER_S="$(promq "sum($(delta "jvm_gc_pause_seconds_sum{$RUN}")) / $WINDOW_SECONDS * 1000")"
 
+# 앱이 준 CPU 를 다 쓰고 있는지.
+#
+# 이게 없으면 "스레드가 막힌 것"과 "CPU 가 없는 것"을 못 가른다. 둘은 처방이 정반대다 —
+# 막힌 것이면 일을 다른 스레드로 옮기면 되지만(비동기화), CPU 가 없는 것이면 옮겨도 총량이
+# 그대로라 소용이 없고 일 자체를 줄여야 한다.
+#
+# process_cpu_usage 는 JVM 이 쓴 비율(0~1)이고 컨테이너 상한(cpus 2.0) 기준이 아니라서,
+# 1.0 에 붙으면 준 CPU 를 다 쓴 것으로 읽는다.
+APP_CPU_MAX="$(promq "max(max_over_time(process_cpu_usage{$RUN}[$W])) * 100")"
+
 # 입찰 결과는 k6 요약에서 읽는다.
 #
 # 서버 지표로는 못 가른다 — 입찰 거절이 BID_AMOUNT_TOO_LOW 도 CONCURRENT_BID_CONFLICT 도
@@ -721,7 +886,17 @@ k6sum() {
   jq -r --arg m "$1" '.metrics[$m].values.count // 0' "$RESULT_DIR/summary.json" 2>/dev/null || echo 0
 }
 
-if [ -f "$RESULT_DIR/summary.json" ]; then
+if [ -f "$RESULT_DIR/summary.json" ] && [ "$SCENARIO" = "6" ]; then
+  # 입장은 입찰이 아니라서 금액·경합 거절이라는 게 없다. 접수 = 요청 셋이 다 통과한 입장이다.
+  # bid_* 카운터를 그대로 읽으면 전부 0 이 되어 "3분 동안 아무 일도 없었다"로 보인다.
+  ACCEPTED="$(k6sum entry_ok)"
+  REJECTED_AMOUNT=0
+  REJECTED_ALREADY_TOP=0
+  REJECTED_CLOSED=0
+  CONCURRENT_CONFLICT=0
+  REJECTED_OTHER="$(k6sum entry_rejected_other)"
+  FAILED_5XX="$(k6sum entry_failed)"
+elif [ -f "$RESULT_DIR/summary.json" ]; then
   ACCEPTED="$(k6sum bid_accepted)"
   REJECTED_AMOUNT="$(k6sum bid_rejected_amount)"
   REJECTED_ALREADY_TOP="$(k6sum bid_rejected_already_top)"
@@ -772,6 +947,8 @@ CONN_ACQUIRE_P95_MS="$(round "$CONN_ACQUIRE_P95_MS" 0)"
 CLOSE_DELAY_P95_MS="$(round "$CLOSE_DELAY_P95_MS" 0)"
 SSE_HEARTBEAT_P95_MS="$(round "$SSE_HEARTBEAT_P95_MS" 0)"
 SSE_BROADCAST_P95_MS="$(round "$SSE_BROADCAST_P95_MS" 0)"
+SSE_BROADCAST_QUEUE_P95_MS="$(round "$SSE_BROADCAST_QUEUE_P95_MS" 0)"
+SSE_BROADCAST_CALLER_RUNS="$(round "$SSE_BROADCAST_CALLER_RUNS" 0)"
 SSE_CONN_MAX="$(round "$SSE_CONN_MAX" 0)"
 CLOSE_DELAY_P50_MS="$(round "$CLOSE_DELAY_P50_MS" 0)"
 CLOSE_DELAY_MAX_MS="$(round "$CLOSE_DELAY_MAX_MS" 0)"
@@ -780,6 +957,7 @@ CLOSE_FAILURES="$(round "$CLOSE_FAILURES" 0)"
 SCHED_ACTIVE_MAX="$(round "$SCHED_ACTIVE_MAX" 0)"
 SCHED_QUEUED_MAX="$(round "$SCHED_QUEUED_MAX" 0)"
 GC_PAUSE_MS_PER_S="$(round "$GC_PAUSE_MS_PER_S" 1)"
+APP_CPU_MAX="$(round "$APP_CPU_MAX" 0)"
 K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
 K6_P95_MS="$(round "$K6_P95_MS" 0)"
 
@@ -839,18 +1017,20 @@ jq -n \
   --argjson heartbeat_ms "$HEARTBEAT_MS" --argjson scheduler_pool "$SCHEDULER_POOL" \
   --arg virtual_threads "$VIRTUAL_THREADS" --arg xmx "$JAVA_OPTS" \
   --arg isolation "$ISOLATION" --arg sweep_index "$SWEEP_INDEX" \
-  --argjson bulk_items "$BULK_ITEMS" \
+  --argjson bulk_items "$BULK_ITEMS" --argjson bids_per_item "$BIDS_PER_ITEM" \
+  --arg prep_stmt "$PREP_STMT" --argjson bidders_per_item "$BIDDERS_PER_ITEM" \
   --argjson window_seconds "$WINDOW_SECONDS" \
   '{run_id:$run_id, scenario:$scenario, commit:$commit, dirty:($dirty=="true"), who:$who,
     params:{vus:$vus, pool_size:$pool, items:$items, sse:$sse, users:$users,
             heartbeat_ms:$heartbeat_ms, scheduler_pool:$scheduler_pool,
             virtual_threads:($virtual_threads=="true"), xmx:$xmx,
             isolation:$isolation, bulk_items:$bulk_items,
-            sweep_index:($sweep_index=="on")},
+            sweep_index:($sweep_index=="on"), bids_per_item:$bids_per_item,
+            prep_stmt:($prep_stmt=="on"), bidders_per_item:$bidders_per_item},
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,app_cpu_max,k6_cpu_max,virtual_threads,bulk_items,sweep_index,bids_per_item,bidders_per_item,prep_stmt,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -880,7 +1060,7 @@ fi
 # k6 가 중간에 죽으면 summary.json 이 없어서 접수와 거절이 전부 0 인데 처리량은 그럴듯한
 # 숫자가 박혀서, 그 줄만 봐서는 아무도 못 알아본다. 실측으로 겪었다 — 구간 128초짜리
 # aborted 줄에 처리량 3490.7 이 들어갔고 접수는 0 이었다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
   "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
@@ -888,7 +1068,7 @@ printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
   "$CLOSE_DELAY_P50_MS" "$CLOSE_DELAY_P95_MS" "$CLOSE_DELAY_MAX_MS" \
   "$CLOSE_DURATION_P95_MS" "$CLOSE_FAILURES" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
-  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
+  "$GC_PAUSE_MS_PER_S" "$APP_CPU_MAX" "$K6_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" "$BIDS_PER_ITEM" "$BIDDERS_PER_ITEM" "$PREP_STMT" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" \
   >>"$INDEX"
 
@@ -933,7 +1113,9 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 스케줄러 일꾼 / 대기열 max | ${SCHED_ACTIVE_MAX} / ${SCHED_QUEUED_MAX} |
 | SSE 접속 max | ${SSE_CONN_MAX} |
 | SSE heartbeat p95 | ${SSE_HEARTBEAT_P95_MS} ms |
-| SSE broadcast p95 | ${SSE_BROADCAST_P95_MS} ms |
+| SSE broadcast p95 (전송 루프) | ${SSE_BROADCAST_P95_MS} ms |
+| SSE broadcast 큐 대기 p95 | ${SSE_BROADCAST_QUEUE_P95_MS} ms ← 위 값과 더한 것이 이벤트 도달 시간 |
+| **SSE broadcast 호출 스레드 실행** | **${SSE_BROADCAST_CALLER_RUNS}** ← 0이 정상. 크면 큐가 넘쳐 동기로 돌아간 것 |
 | k6 CPU max | ${K6_CPU_MAX} % |
 | 접수 (201) | ${ACCEPTED} |
 | 거절 — 금액 규칙 (7004·7005) | ${REJECTED_AMOUNT} |
@@ -983,7 +1165,11 @@ echo
 # 세션이 안 붙으면 입찰이 전부 401 로 거절되는데, 401 도 4xx 라 "정상 거절"로 세어져서
 # 그래프만 봐서는 안 드러난다. 락 대기가 NaN 인 걸 보고서야 알게 된다.
 if [ "$REJECTED_OTHER" != "0" ] && [ "$SCENARIO" != "0" ] && [ "$SCENARIO" != "3" ]; then
-  echo "※ 경고: 입찰이 401·403 으로 거절된 게 ${REJECTED_OTHER}건이다. 세션이나 약관 동의가 안 붙은 것이라" >&2
+  case "$SCENARIO" in
+    6) REJECTED_WHAT="입장 요청이" ;;
+    *) REJECTED_WHAT="입찰이" ;;
+  esac
+  echo "※ 경고: ${REJECTED_WHAT} 401·403 으로 거절된 게 ${REJECTED_OTHER}건이다. 세션이나 약관 동의가 안 붙은 것이라" >&2
   echo "  이 줄의 숫자는 서버 한계가 아니다. 폴더는 남기되 표에는 쓰지 않는다." >&2
 fi
 
