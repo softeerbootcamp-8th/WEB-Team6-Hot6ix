@@ -17,6 +17,7 @@
 //   ./perf/run.sh --scenario 5 --vus 40 --items 20
 
 import http from 'k6/http'
+import exec from 'k6/execution'
 import { check, sleep } from 'k6'
 import { BASE, DURATION, VUS, authHeaders, ensureSession, summaryTo } from './common.js'
 import { bidOnce } from './bid.js'
@@ -39,6 +40,18 @@ const DURATION_MINUTES = Number(__ENV.CLOSE_DURATION_MINUTES || 1)
 // 대신 "마감이 같은 물품의 입찰 락을 기다리는" 그림은 이 방법으로 재현되지 않는다. 여기서
 // 재는 것은 입찰 부하가 스레드와 커넥션을 잡고 있을 때 마감이 얼마나 밀리는가다.
 const BID_ITEMS = Number(__ENV.BID_ITEMS || 0)
+
+// ── 마감 대상에도 초반에만 입찰을 넣는다 ──────────────────────────
+// 위 방식대로 마감 대상을 그냥 두면 입찰이 하나도 없어서 전부 유찰로 닫힌다. 유찰은
+// ItemPassed 라 낙찰 후보 생성(DealCandidateService.award)이 안 돈다. 그런데 그게 마감
+// 소요 시간에 얹히는 조각 중 하나라, 지금까지는 그 조각을 아예 못 재고 있었다.
+//
+// 그래서 측정 시작 후 이 초까지만 마감 대상에도 입찰을 넣고 그 뒤로는 손을 뗀다. 임박
+// 구간에 걸치면 마감이 계속 밀려서 또 안 닫히므로, run.sh 쪽에서 트리거를 낮춰 주고
+// (물품 길이 - 트리거)보다 작은 값을 준다.
+//
+// 0 이면 예전 그대로 마감 대상에 입찰을 안 넣는다.
+const CLOSE_BID_UNTIL = Number(__ENV.CLOSE_BID_UNTIL || 0)
 
 function splitTargets(ids) {
   if (ids.length < 2) {
@@ -117,6 +130,15 @@ export function closer() {
     '요청한 물품이 전부 시작됨': () => started === CLOSE_ITEM_IDS.length,
   })
 
+  // 못 시작한 물품은 그대로 마감 표본이 줄어드는 것이라 눈에 띄게 남긴다. check 만 실패시키면
+  // summary.json 을 열어 보기 전까지 모르고, 결과 표에는 "마감이 왜 이것밖에 안 됐지"만 남는다.
+  if (started !== CLOSE_ITEM_IDS.length) {
+    console.error(
+      `물품 ${CLOSE_ITEM_IDS.length}개 중 ${started}개만 시작됐다. ` +
+      '동시 진행 상한(MAX_IN_PROGRESS_PER_ROOM)이나 방 물품 수 상한을 확인한다.',
+    )
+  }
+
   // 마감이 실제로 일어나고 지표가 찍힐 때까지 남아 있는다. 여기서 끝내면 컨테이너가 내려가
   // 정작 재려던 순간을 못 본다.
   sleep(DURATION_MINUTES * 60 + 60)
@@ -131,7 +153,23 @@ export function closer() {
  * 이 물품들은 입찰 때문에 Soft Close 로 계속 밀린다. 그때마다 예약이 취소되고 다시 걸려서
  * 스케줄러 큐가 쌓이는데, 그게 이 시나리오가 보려는 것 중 하나다.
  */
+/**
+ * 측정이 시작되고 몇 초 지났는지. VU 마다 따로 도는 값을 쓰면 VU 별로 창이 닫히는 시각이
+ * 달라져서, 늦게 뜬 VU 가 임박 구간에 입찰을 넣고 마감을 밀어 버린다.
+ */
+function elapsedSeconds() {
+  return exec.instance.currentTestRunDuration / 1000
+}
+
 export function bidder() {
+
+  // 초반에는 마감 대상까지 함께 노린다. 그래야 마감이 낙찰로 닫히고 낙찰 후보 생성까지
+  // 마감 소요 시간에 들어온다. 창이 닫히면 마감 대상은 놔둬야 실제로 닫힌다.
+  if (CLOSE_BID_UNTIL > 0 && elapsedSeconds() < CLOSE_BID_UNTIL) {
+    bidOnce(CLOSE_ITEM_IDS)
+    return
+  }
+
   bidOnce(TARGETS.bid)
 }
 

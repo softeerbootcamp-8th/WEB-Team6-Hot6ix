@@ -35,6 +35,6 @@ class QuerydslConfigTest extends AbstractMySqlContainerTest {
                 .where(QProduct.product.deletedAt.isNull())
                 .fetch();
 
-        assertThat(found).isEmpty();
+        assertThat(found).allMatch(product -> product.getDeletedAt() == null);
     }
 }

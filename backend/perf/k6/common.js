@@ -27,16 +27,43 @@ export const BID_UNIT = Number(__ENV.BID_UNIT || 1000)
 // (실측: 그 상태에서 http_req_failed 가 99.9% 로 찍혔다). 이 함수로 init 단계에 걸어야 먹는다.
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 499 }))
 
-/** 모든 시나리오가 공유하는 실행 형태. 계단 하나 = 실행 하나 = VU 수 하나다. */
+/** 초당 도착 건수. 0 이면 닫힌 모델(constant-vus)로 돈다. run.sh 의 --rate 가 정한다. */
+export const RATE = Number(__ENV.RATE || 0)
+
+/**
+ * 모든 시나리오가 공유하는 실행 형태. 계단 하나 = 실행 하나다.
+ *
+ * **--rate 를 주면 열린 모델로 바뀐다.** 기본은 예전과 같은 constant-vus 다.
+ *
+ * 닫힌 모델은 VU 가 응답을 받은 뒤에 다음 요청을 보내서, 서버가 느려지면 부하가 자동으로
+ * 줄어든다. 큐가 쌓이는 모습과 붕괴 지점이 안 드러나고, "초당 몇 건까지 버티나"를 말할 수
+ * 없다. 실제 사용자는 서버 응답을 기다려 주지 않는다.
+ *
+ * 부수 효과가 더 크다. vus 는 사람 수가 아니라서(생각하는 시간이 없어 한 줄이 여러 명 몫을
+ * 한다) 발표에서 쓸 수 없는 단위인데, 도착률로 재면 "동시 참여자 200명이 평균 3초에 한 번
+ * 입찰 = 초당 66건"으로 환산해 말할 수 있다.
+ */
 export function baseOptions(extra = {}) {
   return {
     scenarios: {
-      main: {
-        executor: 'constant-vus',
-        vus: VUS,
-        duration: DURATION,
-        gracefulStop: '15s',
-      },
+      main: RATE > 0
+        ? {
+            executor: 'constant-arrival-rate',
+            rate: RATE,
+            timeUnit: '1s',
+            duration: DURATION,
+            // 도착률을 채울 VU 가 모자라면 k6 가 요청을 못 보내면서 "서버가 못 받은 것"처럼
+            // 보인다. VUS 를 여기 쓰는 이유고, run.sh 가 목표 rate 에 맞춰 넉넉히 넘긴다.
+            preAllocatedVUs: VUS,
+            maxVUs: VUS,
+            gracefulStop: '15s',
+          }
+        : {
+            executor: 'constant-vus',
+            vus: VUS,
+            duration: DURATION,
+            gracefulStop: '15s',
+          },
     },
     // 응답 본문을 안 들고 있는다. 물품 목록처럼 큰 응답을 VU 수백 개가 붙들면
     // 재는 대상이 서버가 아니라 k6 의 메모리가 된다.
@@ -60,6 +87,16 @@ export function baseOptions(extra = {}) {
 let sessionCookie = null
 
 /**
+ * 배포에서는 dev-login 이 토큰을 아는 요청만 받는다 (#266). 로컬 perf 는 토큰이 없어서
+ * 빈 객체가 나가고, 앱도 안 걸어 뒀으므로 지금까지와 똑같이 동작한다.
+ */
+function devLoginHeaders() {
+  const token = __ENV.DEV_LOGIN_TOKEN
+
+  return token ? { 'X-Dev-Login-Token': token } : {}
+}
+
+/**
  * dev-login 으로 세션을 받는다. key 가 곧 회원 하나라 VU 마다 다른 key 를 준다.
  *
  * key 없이 부르면 전원이 같은 회원이 되어 두 번째 입찰부터 ALREADY_TOP_BIDDER 로 거절된다.
@@ -72,6 +109,7 @@ export function ensureSession(key) {
   }
 
   const res = http.post(`${BASE}/auth/dev-login?key=${encodeURIComponent(key)}`, null, {
+    headers: devLoginHeaders(),
     tags: { name: 'dev-login' },
   })
 
@@ -79,7 +117,8 @@ export function ensureSession(key) {
 
   if (!cookie || cookie.length === 0) {
     throw new Error(`dev-login 이 SESSION 쿠키를 안 줬다 (status=${res.status}). ` +
-      'perf 프로파일에 DevAuthController 가 올라왔는지 본다.')
+      '로컬이면 perf 프로파일에 DevAuthController 가 올라왔는지, 배포면 DEV_LOGIN_TOKEN 을 ' +
+      '앱과 여기(DEV_LOGIN_TOKEN 환경변수) 양쪽에 같은 값으로 줬는지 본다.')
   }
 
   sessionCookie = cookie[0].value

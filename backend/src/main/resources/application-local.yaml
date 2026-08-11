@@ -10,6 +10,12 @@ server:
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
 
+spring:
+  flyway:
+    # 쓰던 로컬 DB 에는 create 가 만든 테이블만 있고 이력 테이블이 없다. 없으면 Flyway 가
+    # 기동을 거부해서 팀원 전원이 로컬 DB 를 지워야 한다 (#96).
+    baseline-on-migrate: true
+
 logging:
   level:
     # 자주 발생하는 정상 동작(SSE 연결·종료, 마감 건너뜀 등)은 debug로 남긴다.

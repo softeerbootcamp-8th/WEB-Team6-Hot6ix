@@ -106,6 +106,17 @@ jobs:
           #      값을 작은따옴표로 감싸야 $·백틱·#가 살아남는다.
           #      (따옴표를 빼면 `se$cret`이 `se`로 잘려 조용히 인증이 실패한다.)
           # 값 자체에 작은따옴표가 들어가면 이 방식이 깨지므로 그런 키는 쓰지 않는다.
+          #
+          # SLACK_WEBHOOK_URL 아래는 부하 측정용 손잡이다 (이슈 #266). 여기에 적어 두는 이유는
+          # 이 단계가 .env를 append가 아니라 `cat >`로 새로 쓰기 때문이다. 서버에서 손으로 넣으면
+          # 다음 배포에 지워지고, 그러면 재는 도중에 조건이 조용히 바뀐다.
+          #
+          # Repository variables라 값을 안 만들면 빈 문자열이 들어간다. compose가 전부
+          # ${VAR:-기본값} 꼴이고 :-는 빈 값도 기본값으로 받으므로, 변수를 하나도 안 만든 지금은
+          # 동작이 그대로다. 창구에서는 Actions 화면에서 변수만 바꾸고 재배포하면 된다.
+          #
+          # DEV_LOGIN_TOKEN만 secrets에 둔다. 이 값을 아는 요청은 아무 회원으로나 로그인할 수
+          # 있는데, variables는 읽기 권한이 있으면 다 보이고 로그에도 그대로 찍힌다.
           script: |
             set -e
             cd /home/ubuntu/app
@@ -125,6 +136,17 @@ jobs:
             NCP_SENDER_PHONE='${{ secrets.NCP_SENDER_PHONE }}'
             FRONTEND_URL='${{ secrets.FRONTEND_URL }}'
             SLACK_WEBHOOK_URL='${{ secrets.SLACK_WEBHOOK_URL }}'
+            ACTUATOR_EXPOSURE='${{ vars.ACTUATOR_EXPOSURE }}'
+            PERF_RUN_ID='${{ vars.PERF_RUN_ID }}'
+            DB_POOL_SIZE='${{ vars.DB_POOL_SIZE }}'
+            DB_JDBC_EXTRA='${{ vars.DB_JDBC_EXTRA }}'
+            SCHEDULER_POOL_SIZE='${{ vars.SCHEDULER_POOL_SIZE }}'
+            LOG_LEVEL='${{ vars.LOG_LEVEL }}'
+            APP_LOG_LEVEL='${{ vars.APP_LOG_LEVEL }}'
+            SSE_HEARTBEAT_MS='${{ vars.SSE_HEARTBEAT_MS }}'
+            SSE_TIMEOUT_MS='${{ vars.SSE_TIMEOUT_MS }}'
+            MAX_IN_PROGRESS_PER_ROOM='${{ vars.MAX_IN_PROGRESS_PER_ROOM }}'
+            DEV_LOGIN_TOKEN='${{ secrets.DEV_LOGIN_TOKEN }}'
             EOF
             docker compose pull app
             docker compose up -d

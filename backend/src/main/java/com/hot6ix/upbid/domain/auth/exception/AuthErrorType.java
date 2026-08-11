@@ -14,7 +14,6 @@ public enum AuthErrorType implements ErrorType {
     UNSUPPORTED_OAUTH_PROVIDER(HttpStatus.BAD_REQUEST, 1004, "지원하지 않는 로그인 방식입니다."),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, 1005, "로그인이 필요합니다."),
     OAUTH_LOGIN_FAILED(HttpStatus.UNAUTHORIZED, 1006, "소셜 로그인에 실패했습니다."),
-    WITHDRAWN_USER(HttpStatus.FORBIDDEN, 1007, "탈퇴한 회원입니다."),
     USER_INFO_INVALID(HttpStatus.UNPROCESSABLE_CONTENT, 1008, "사용자 정보가 정책에 위배되어 처리할 수 없습니다."),
     PENDING_SIGNUP_NOT_FOUND(HttpStatus.UNAUTHORIZED, 1009, "가입 진행 정보가 없거나 만료되었습니다. 다시 로그인해 주세요."),
     PHONE_NOT_VERIFIED(HttpStatus.BAD_REQUEST, 1010, "전화번호 인증이 완료되지 않았습니다.");

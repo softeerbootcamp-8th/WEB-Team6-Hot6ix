@@ -924,6 +924,11 @@
             <input id="p-pool" type="number" min="1" max="200" value="10">
           </div>
           <div class="knob">
+            <div class="k">앱·MySQL 코어 수 <small>두 컨테이너가 함께 움직입니다. 올려서 접수가 오르면 CPU가 묶고 있던 겁니다. <b>기본값으로 잰 줄과 나란히 비교하지 않습니다</b></small></div>
+            <div class="f mono">--cpus</div>
+            <input id="p-cpus" type="number" min="1" max="8" value="2">
+          </div>
+          <div class="knob">
             <div class="k">배경 실시간 접속 <small>입찰과 겹쳐 재는 5번이 쓰는 값입니다</small></div>
             <div class="f mono">--sse</div>
             <input id="p-sse" type="number" min="0" max="5000" value="0">
@@ -1897,6 +1902,7 @@ function knobs() {
     scenario: picked.scenario,
     vus, items, users,
     pool: Number(el('p-pool').value) || 10,
+    cpus: Number(el('p-cpus').value) || 2,
     sse: Number(el('p-sse').value) || 0,
     durationSeconds: Number(el('p-duration').value) || 180,
     schedulerPool: Number(el('p-sched').value) || 4,
@@ -1927,6 +1933,7 @@ function localCommand(k) {
   parts.push('--items', k.items)
 
   if (k.pool !== 10) parts.push('--pool', k.pool)
+  if (k.cpus !== 2) parts.push('--cpus', k.cpus)
   if (k.sse > 0) parts.push('--sse', k.sse)
   if (k.users !== 200) parts.push('--users', k.users)
   if (k.durationSeconds !== 180) parts.push('--duration', `${k.durationSeconds}s`)
@@ -1964,6 +1971,7 @@ function syncPerf() {
   const diffs = [
     ['p-items', String(picked.items), picked.main !== 'items'],
     ['p-pool', '10', true],
+    ['p-cpus', '2', true],
     ['p-sse', String(picked.sse), true],
     ['p-users', '200', true],
     ['p-duration', '180', true],
@@ -2033,7 +2041,7 @@ function syncPerf() {
   }
 }
 
-for (const id of ['p-main', 'p-items', 'p-pool', 'p-sse', 'p-users',
+for (const id of ['p-main', 'p-items', 'p-pool', 'p-cpus', 'p-sse', 'p-users',
                   'p-duration', 'p-sched', 'p-hb', 'p-xmx', 'p-who', 'p-skip',
                   'p-vus', 'p-virtual', 'p-iso', 'p-bulk', 'p-sweep']) {
   el(id).oninput = syncPerf
@@ -2050,6 +2058,7 @@ el('btn-copy').onclick = async () => {
 
 el('btn-perf-reset').onclick = () => {
   el('p-pool').value = 10
+  el('p-cpus').value = 2
   el('p-users').value = 200
   el('p-duration').value = 180
   el('p-sched').value = 4
@@ -2492,7 +2501,7 @@ for (const id of ['run-log', 'srv-log']) el(id).onscroll = updateLogFoot
 el('log-hint').textContent = 'run.sh 가 찍는 것을 그대로 보여줍니다'
 
 // ── 4. 결과 읽기 ─────────────────────────────────────────────────────
-// 칸이 28개라 다 보여주면 못 읽는다. 판정에 쓰는 것만 고르고, 배율 칸을 하나 만들어 붙인다.
+// 칸이 50개가 넘어 다 보여주면 못 읽는다. 판정에 쓰는 것만 고르고, 배율 칸을 하나 만들어 붙인다.
 //
 // 배율을 화면이 계산하는 이유: 판정 규칙이 "두 배 올렸는데 1.2배도 안 오르는 첫 줄"인데
 // 표에 절대값만 있으면 사람이 매번 암산해야 한다. 그 계산이 판정의 전부라 자동으로 한다.
@@ -2503,6 +2512,7 @@ const RES_COLUMNS = [
   ['vus', '요청 스트림'],
   ['items', '물품 수'],
   ['pool', 'DB 커넥션'],
+  ['cpus', '코어 수'],
   ['sse', '실시간 접속'],
   ['throughput_req_per_s', '처리량 (건/초)'],
   ['accepted_per_s', '접수 (건/초)'],
@@ -2513,6 +2523,8 @@ const RES_COLUMNS = [
   ['hikari_pending_max', 'DB 연결 대기 (최대)'],
   ['lock_wait_p95_ms', '락 대기 p95 (ms)'],
   ['k6_cpu_max', '부하 발생기 CPU (%)'],
+  ['app_cpu_avg', '앱 CPU (%)'],
+  ['mysql_cpu_avg', 'MySQL CPU (%)'],
   ['bottleneck', '판정 (직접 적기)'],
 ]
 
@@ -2536,9 +2548,12 @@ function attachRatio(header, rows) {
 
   for (const row of rows) {
     const isClose = at(row, 'scenario') === '4'
+    // 코어 수가 기준에 들어가야 한다. 빠지면 --cpus 2 로 잰 줄과 4 로 잰 줄이 한 그룹이
+    // 되어, 코어를 늘려서 오른 것을 계단을 올려서 오른 것으로 읽는다.
     const key = isClose
-      ? ['4', at(row, 'pool'), at(row, 'sse')].join('|')
-      : [at(row, 'scenario'), at(row, 'pool'), at(row, 'items'), at(row, 'sse')].join('|')
+      ? ['4', at(row, 'pool'), at(row, 'cpus'), at(row, 'sse')].join('|')
+      : [at(row, 'scenario'), at(row, 'pool'), at(row, 'cpus'),
+         at(row, 'items'), at(row, 'sse')].join('|')
 
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(row)

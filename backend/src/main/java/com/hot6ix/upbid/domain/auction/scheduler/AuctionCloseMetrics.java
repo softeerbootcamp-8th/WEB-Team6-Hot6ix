@@ -7,6 +7,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 물품 마감 계측만 아는 객체. 분리한 이유는 {@code BidMetrics}와 같다.
@@ -14,6 +16,10 @@ import org.springframework.stereotype.Component;
  * <p>마감을 두 구간으로 나눠 잰다. {@code delay}는 예정 시각부터 실행이 시작되기까지고
  * {@code duration}은 그 뒤 실행에 걸린 시간이다. 앞이 크면 스케줄러 스레드를 늘리는 게 답이고
  * 뒤가 크면 스레드를 늘려도 커넥션만 더 잡아먹으므로, 처방이 갈리는 만큼 지표도 갈라 둔다.
+ *
+ * <p><b>{@code duration}이 큰 것까지는 알아도 그 안 어디가 큰지는 못 가른다.</b> 그래서
+ * {@code lock.wait}과 {@code lock.hold}를 함께 잰다. 나머지 두 조각인 알림과 낙찰 후보 생성은
+ * 커밋 뒤 리스너에서 도는 것이라 {@code SseMetrics}와 {@code DealMetrics}가 맡는다.
  */
 @Component
 public class AuctionCloseMetrics {
@@ -35,11 +41,62 @@ public class AuctionCloseMetrics {
 
     private final Timer closeDurationRescheduled;
 
+    /**
+     * 마감이 물품 행 락을 잡기까지 기다린 시간. 입찰과 같은 행을 두고 줄을 서므로
+     * {@code upbid.bid.lock.wait}과 나란히 놓고 봐야 누가 누구를 기다리게 하는지 갈린다.
+     *
+     * <p>{@link #closeDelay}와 같은 이유로 생성자에서 미리 만든다.
+     */
+    private final Timer lockWait;
+
+    /**
+     * 마감이 락을 잡고 있던 시간. 기다린 시간만 재면 줄이 길어서 오래 걸린 것인지 앞사람이
+     * 오래 잡고 있어서인지 못 가른다. 앞쪽이면 요청을 흩어서 풀리고 뒤쪽이면 안 풀린다.
+     */
+    private final Timer lockHold;
+
     public AuctionCloseMetrics(MeterRegistry registry) {
         this.registry = registry;
         this.closeDelay = registry.timer("upbid.auction.close.delay");
         this.closeDurationClosed = registry.timer(DURATION, "result", "closed");
         this.closeDurationRescheduled = registry.timer(DURATION, "result", "rescheduled");
+        this.lockWait = registry.timer("upbid.auction.close.lock.wait");
+        this.lockHold = registry.timer("upbid.auction.close.lock.hold");
+    }
+
+    /**
+     * 마감이 물품 행 락을 잡는 동안 걸린 시간을 잰다. 락을 잡고 나면 보유 시간 측정을 이어서
+     * 시작한다. 예외가 나도 대기 시간을 기록하는 것까지 {@code BidMetrics}와 같은 방식이다.
+     */
+    public <T> T recordLockWait(Supplier<T> lockedRead) {
+
+        T locked = lockWait.record(lockedRead);
+
+        // 예외로 끝나면 락이 없으므로 여기까지 오지 않는다.
+        startLockHold();
+
+        return locked;
+    }
+
+    /**
+     * 락을 잡은 지금부터 <b>트랜잭션이 끝날 때까지</b>를 잰다. 행 락이 커밋 시점에 풀려서
+     * 메서드 리턴까지만 재면 커밋에 걸린 시간이 빠지기 때문이다. 트랜잭션 밖에서 불리면 잴 수가
+     * 없어 그냥 넘어간다. 자세한 이유는 {@code BidMetrics}에 적어 두었다.
+     */
+    private void startLockHold() {
+
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+
+        long acquiredAt = System.nanoTime();
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                lockHold.record(System.nanoTime() - acquiredAt, TimeUnit.NANOSECONDS);
+            }
+        });
     }
 
     /**

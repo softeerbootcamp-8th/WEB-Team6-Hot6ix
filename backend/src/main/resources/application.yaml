@@ -12,23 +12,26 @@ spring:
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 10은 HikariCP 기본값이라 지금 동작과 같다. 밖으로 뺀 이유는 부하 측정에서 이 값 하나만
+      # 바꿔 재야 하는데, 고정돼 있으면 대조 실험을 하려고 재배포를 해야 하기 때문이다.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
 
   # 기본값 1이면 마감 한 건이 입찰의 행 락을 기다리는 동안 다른 물품 마감과 SMS 정리 cron이
   # 함께 밀린다. 값의 근거와 전용 스케줄러 분리 여부는 3주차에 측정하고 정한다.
   task:
     scheduling:
       pool:
-        size: 4
+        size: ${SCHEDULER_POOL_SIZE:4}
 
   jpa:
     hibernate:
-      # 엔티티와 실제 스키마가 벌어져서 한 번 싹 맞추려고 create로 둔다.
-      # update는 컬럼 삭제·타입 변경을 반영하지 않아 어긋난 채로 쌓인다.
+      # 스키마는 Hibernate가 아니라 Flyway가 만든다 (#96). 엔티티를 바꾸면
+      # src/main/resources/db/migration에 V{다음번호}__{설명}.sql을 직접 추가해야 한다.
       #
-      # 주의: 한 번만 도는 게 아니라 **앱이 뜰 때마다** 테이블을 지우고 다시 만든다.
-      # 재배포는 물론 EC2 재부팅이나 컨테이너 재시작(restart: unless-stopped)에도
-      # 데이터가 사라진다. Flyway를 붙이면서 validate로 바꾼다.
-      ddl-auto: create
+      # 테스트도 이 값을 쓴다. src/test/resources에 yaml이 없어서 Testcontainers 테스트가
+      # 이 파일을 읽기 때문에, 마이그레이션이 엔티티와 어긋나면 CI가 잡는다.
+      ddl-auto: validate
     properties:
       hibernate:
         format_sql: true
@@ -38,6 +41,12 @@ spring:
 logging:
   pattern:
     correlation: "%correlationId{traceId(8)}"
+  # 둘 다 Boot 기본값인 INFO 라 지금 동작과 같다. 측정 창구에만 warn 으로 내린다.
+  # DomainEventSseListener 가 입찰 1건마다 한 줄을 응답 경로 안에서 쓰기 때문에, 로그를
+  # 안 내리면 재는 대상에 로그 출력이 섞인다 (perf 프로파일이 같은 이유로 warn 이다).
+  level:
+    root: ${LOG_LEVEL:info}
+    com.hot6ix.upbid: ${APP_LOG_LEVEL:info}
 
 server:
   forward-headers-strategy: framework
@@ -61,6 +70,10 @@ oauth:
 # 값 자체는 지금까지 코드에 상수로 박혀 있던 것과 같다. 밖으로 뺀 이유는 부하 측정에서
 # 이 셋이 대조 실험의 변수이기 때문이다 — 값 하나만 바꿔 재려면 재빌드 없이 바꿀 수 있어야 한다.
 upbid:
+  # 비어 있으면 local·perf 에서만 dev-login 이 열리고, 그때는 헤더도 안 본다 (지금 동작).
+  # 배포에서 값을 주면 그동안만 엔드포인트가 생기고 헤더가 맞는 요청만 세션을 받는다 (#266).
+  dev-login:
+    token: ${DEV_LOGIN_TOKEN:}
   sse:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}

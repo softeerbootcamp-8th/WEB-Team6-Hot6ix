@@ -15,4 +15,5 @@ export interface UserResponseDto {
   nickname?: string;
   email?: string;
   profileImageUrl?: string;
+  phoneNumber?: string;
 }
