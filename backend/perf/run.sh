@@ -1429,6 +1429,35 @@ if [ "$VIRTUAL_THREADS" = "true" ]; then
 "
 fi
 
+# 배포는 보류 조건이 하나 늘어난다. 자원 넷이 다 여유로운데 처리량이 안 오르는 그림이
+# 락 직렬화와 크레딧 소진에서 똑같이 나오기 때문이다. 로컬에는 없던 헷갈림이라 칸을 만들어 둔다.
+# 닫힌 모델 줄과 열린 모델 줄을 나란히 놓으면 안 된다. 무엇으로 잰 건지 표에 남긴다.
+if [ "$RATE" -gt 0 ] 2>/dev/null; then
+  LOAD_MODEL="열린 모델 — 초당 ${RATE}건 고정 (VU ${VUS}개로 채움)"
+else
+  LOAD_MODEL="닫힌 모델 — VU ${VUS}개"
+fi
+
+REMOTE_NOTE=""
+if [ "$REMOTE" = "1" ]; then
+  REMOTE_NOTE="## 배포 자원 (CloudWatch 에서 보고 손으로 적는다)
+
+run.sh 가 못 채우는 칸이다. \`docker stats\` 로 뜨던 값이라 배포에는 컨테이너가 없다.
+
+| | |
+|---|---|
+| 앱 CPU (EC2 CPUUtilization) | % |
+| 앱 CPU 크레딧 (CPUCreditBalance) | ← 소진 중이었으면 아래 판정을 보류한다 |
+| 배스천 CPU / 크레딧 | % / |
+| RDS CPU / 버스트 | % / |
+| 부하 건 주소 | $APP_URL |
+
+**보류 조건이 하나 늘어난다.** 처리량이 안 오른 줄에서 크레딧이 마르는 중이었거나 RDS 가
+버스트를 쓰고 있었으면 판정을 보류한다. 락 때문인지 스로틀 때문인지 이 자료로는 못 가른다.
+
+"
+fi
+
 cat >"$RESULT_DIR/note.md" <<EOF
 # $RUN_ID
 
@@ -1437,6 +1466,7 @@ cat >"$RESULT_DIR/note.md" <<EOF
 
 | | |
 |---|---|
+| 부하 모델 | ${LOAD_MODEL} |
 | 처리량 (주인공 요청만) | ${RPS} req/s |
 | **접수 처리량** | **${ACCEPTED_PER_S} 건/s** ← 계단 비교는 이 값으로 |
 | p95 (서버 / k6) | ${P95_MS} / ${K6_P95_MS} ms |
@@ -1484,7 +1514,7 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 그 밖의 거절 (401·403 등) | ${REJECTED_OTHER} ← 0이어야 한다. 크면 세팅이 잘못된 것 |
 | 실패 (5xx·타임아웃) | ${FAILED_5XX} |
 
-${VIRTUAL_THREADS_NOTE}## 판정
+${VIRTUAL_THREADS_NOTE}${REMOTE_NOTE}## 판정
 
 판정:  Y / N / ?  —
        (직전 계단 대비 처리량이 몇 배인지, 그때 자원 넷이 어땠는지)
