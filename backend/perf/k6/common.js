@@ -14,6 +14,31 @@ export const DURATION = __ENV.DURATION || '3m'
 export const SHARE_CODE = __ENV.SHARE_CODE || ''
 export const ITEM_IDS = (__ENV.ITEM_IDS || '').split(',').filter(Boolean)
 
+// ── 방이 여럿일 때 ────────────────────────────────────────────────
+// 서비스 규칙이 방당 동시 진행 3개라, 물품을 여러 개 진행하려면 방을 나눠야 한다.
+// seed.sh 가 --per-room 을 받으면 방을 여러 개 만들고 구매자 i 를 방 (i-1)%방수 에 붙인다.
+//
+// **VU 도 같은 규칙을 써야 한다.** 그 사람이 동의한 방이 아닌 곳에 입찰하면 전부
+// TERMS_NOT_AGREED 로 거절되는데, 4xx 라서 표에서는 정상 거절처럼 보인다.
+//
+// 방이 하나면 목록에 값이 하나씩만 들어와서 예전과 똑같이 돈다.
+const SHARE_CODES = (__ENV.SHARE_CODES || SHARE_CODE).split(',').filter(Boolean)
+const ROOM_ITEM_GROUPS = (__ENV.ROOM_ITEM_IDS || '')
+  .split(';').filter(Boolean)
+  .map((g) => g.split(',').filter(Boolean))
+
+export const ROOMS = SHARE_CODES.map((code, i) => ({
+  code,
+  itemIds: ROOM_ITEM_GROUPS[i] || [],
+}))
+
+/** 이 VU 가 맡은 방. seed.sh 의 배정 규칙과 같아야 한다. */
+export function roomOfVu() {
+  return ROOMS.length > 0
+    ? ROOMS[(__VU - 1) % ROOMS.length]
+    : { code: SHARE_CODE, itemIds: ITEM_IDS }
+}
+
 export const START_PRICE = Number(__ENV.START_PRICE || 10000)
 export const BID_UNIT = Number(__ENV.BID_UNIT || 1000)
 
@@ -143,8 +168,8 @@ export function authHeaders(extra) {
  * seed.sh 가 이미 만들어 두지만 여기서도 한 번 부른다. 스크립트만 따로 돌려 보는 사람이
  * 원인을 모른 채 전부 거절당하는 것을 막기 위해서다. 같은 사람이 여러 번 불러도 안전하다.
  */
-export function agree() {
-  return http.post(`${BASE}/auction-rooms/share/${SHARE_CODE}/agreement`, null, {
+export function agree(shareCode = SHARE_CODE) {
+  return http.post(`${BASE}/auction-rooms/share/${shareCode}/agreement`, null, {
     headers: authHeaders(),
     tags: { name: 'agreement' },
   })
