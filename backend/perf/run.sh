@@ -36,6 +36,7 @@ SKIP_BUILD=0
 VIRTUAL_THREADS=false
 BID_ITEMS=0
 ISOLATION=RR
+CPUS=2.0
 BULK_ITEMS=0
 SWEEP_INDEX=off
 
@@ -65,6 +66,9 @@ usage() {
   --virtual-threads  가상 스레드를 켠다. **톰캣도 함께 바뀐다**(전역 스위치)
   --bid-items N      시나리오 5 에서 입찰을 넣을 물품 수. 나머지는 마감 대상이 된다
                      (기본: 절반. 전부에 입찰하면 Soft Close 로 안 닫힌다)
+  --cpus N           앱과 MySQL 컨테이너에 줄 코어 수 (기본 2.0)
+                     둘을 함께 올린다. 한쪽만 올리면 어느 쪽이 CPU 에 묶였는지 못 가른다.
+                     **기본값으로 잰 결과와는 비교하지 않는다**
   --isolation RC|RR  MySQL 트랜잭션 격리 수준 (기본 RR = MySQL 기본값)
                      RR 은 갭 락을 걸고 RC 는 안 건다. 경합이 행 락 때문인지 갭 때문인지 가른다
   --bulk-items N     닫힌 물품 N 개를 SQL 로 밀어 넣어 표를 불린다 (기본 0)
@@ -97,6 +101,7 @@ while [ $# -gt 0 ]; do
     --xmx) JAVA_OPTS="-Xmx$2"; shift 2 ;;
     --virtual-threads) VIRTUAL_THREADS=true; shift ;;
     --bid-items) BID_ITEMS="$2"; shift 2 ;;
+    --cpus) CPUS="$2"; shift 2 ;;
     --isolation) ISOLATION="$2"; shift 2 ;;
     --bulk-items) BULK_ITEMS="$2"; shift 2 ;;
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
@@ -283,6 +288,7 @@ export SCHEDULER_POOL_SIZE="$SCHEDULER_POOL"
 export SSE_HEARTBEAT_MS="$HEARTBEAT_MS"
 export APP_JAVA_OPTS="$JAVA_OPTS"
 export VIRTUAL_THREADS
+export PERF_CPUS="$CPUS"
 
 # 일회성 컨테이너(docker compose run 으로 띄운 k6)는 down 이 안 지운다. 설계가 그렇다.
 # 안 지우면 직전 실행의 배경 SSE 가 새 앱에 그대로 붙어서, 이번 줄의 접속 수와 스레드가
@@ -521,6 +527,28 @@ row_lock_status() {
 }
 row_lock_status >"$RESULT_DIR/innodb_row_lock_before.txt"
 
+# 커밋이 느려진 이유를 MySQL 쪽에서 본다.
+#
+# 앱이 잰 upbid.bid.commit 은 "커밋이 몇 ms 걸렸나"까지만 알려주고 왜 그런지는 모른다.
+# innodb_flush_log_at_trx_commit=1 과 sync_binlog=1 이라 커밋 한 번에 디스크 동기화가 두 번
+# 일어나므로, 그 둘의 횟수와 시간을 따로 보면 커밋 지연이 fsync 에서 온 것인지 갈린다.
+#
+# performance_schema 의 타이머 단위는 피코초다. 1e9 로 나누면 ms 가 된다.
+#
+# COUNT_STAR 와 SUM_TIMER_WAIT 는 그 파일의 **모든** I/O 다 — 읽기와 쓰기와 동기화가 섞여
+# 있다. fsync 만 보려면 MISC 쪽을 봐야 한다. 둘 다 남기는 이유는, 총 I/O 는 이 칸이 생기기
+# 전에 잰 실행과도 나란히 놓을 수 있어서다.
+#
+# 실측으로 로그 파일 I/O 시간의 97 % 가 MISC(동기화)였다. 버퍼된 쓰기는 한 번에 0.005ms 인데
+# 동기화는 0.232ms 다.
+io_status() {
+  mysql_query "SELECT EVENT_NAME, COUNT_STAR, SUM_TIMER_WAIT, COUNT_MISC, SUM_TIMER_MISC
+               FROM performance_schema.file_summary_by_event_name
+               WHERE EVENT_NAME IN ('wait/io/file/innodb/innodb_log_file',
+                                    'wait/io/file/sql/binlog')"
+}
+io_status >"$RESULT_DIR/mysql_io_before.txt"
+
 # 입찰 한 건이 SELECT 를 몇 번 하는지 본다.
 #
 # 입찰 경로는 물품·경매방·참여자·최고가를 각각 읽는데, 그중 하나가 락 안에 들어가 있으면
@@ -548,15 +576,29 @@ WINDOW_START_EPOCH="$(date +%s)"
 
 echo "[7/8] k6 $SCRIPT (vus=$VUS, $DURATION)"
 
-# k6 컨테이너 CPU 를 따로 샘플링한다. k6 는 자기 CPU 를 지표로 안 내보내서,
-# "여기부턴 부하 발생기가 병목"을 판정하려면 밖에서 봐야 한다.
-CPU_LOG="$RESULT_DIR/k6_cpu.txt"
+# 컨테이너 CPU 를 밖에서 샘플링한다. 세 가지를 각각 봐야 한다.
+#
+#   k6    "여기부턴 부하 발생기가 병목" 판정. k6 는 자기 CPU 를 지표로 안 내보낸다.
+#   app   `process_cpu_usage` 로도 나오지만 index.csv 에 없으면 아무도 안 본다.
+#         실제로 pool 곡선을 20회 넘게 재는 동안 앱 CPU 를 한 번도 표에 안 올렸고,
+#         나중에 보니 pool 4 에서도 시간의 15 % 를 100 % 에 붙어 있었다.
+#   mysql **이 값만 다른 데서 못 구한다.** Prometheus 가 MySQL 을 안 긁어서,
+#         커밋이 느린 게 디스크 때문인지 CPU 때문인지 가를 근거가 여기밖에 없다.
+#
+# `docker stats` 의 `CPUPerc` 는 호스트 코어 기준이라 cpus=2 면 200 % 까지 올라간다.
+# 아래에서 --cpus 로 나눠 "준 코어를 몇 % 썼나" 로 바꾼다. 그래야 --cpus 를 바꾼 실행끼리
+# 비교가 된다.
+CPU_LOG="$RESULT_DIR/container_cpu.txt"
 : >"$CPU_LOG"
 (
   while true; do
     docker stats --no-stream --format '{{.Name}} {{.CPUPerc}}' 2>/dev/null \
-      | awk -v skip="$SSE_CONTAINER" \
-          'tolower($1) ~ /k6/ && (skip == "" || $1 != skip) { gsub(/%/, "", $2); print $2 }' \
+      | awk -v skip="$SSE_CONTAINER" '
+          { gsub(/%/, "", $2) }
+          # 배경 SSE 컨테이너는 뺀다. 안 그러면 k6 값이 둘 중 어느 쪽인지 모르는 값이 된다.
+          tolower($1) ~ /k6/ && (skip == "" || $1 != skip) { print "k6", $2; next }
+          $1 ~ /^upbid-perf-app-/   { print "app", $2; next }
+          $1 ~ /^upbid-perf-mysql-/ { print "mysql", $2; next }' \
       >>"$CPU_LOG" || true
     sleep 5
   done
@@ -572,6 +614,22 @@ disown "$CPU_SAMPLER" 2>/dev/null || true
 # --isolation 을 바꿔 가며 이 파일을 보면 갭이 실제로 사라졌는지 확인할 수 있다.
 LOCK_MODES_LOG="$RESULT_DIR/data_locks.txt"
 : >"$LOCK_MODES_LOG"
+
+# MySQL 안에서 실제로 몇 개가 동시에 일하고 있는지.
+#
+# 커넥션 풀 크기는 "몇 개까지 들여보낼 수 있나"이고 Threads_running 은 "지금 몇 개가 돌고
+# 있나"다. 둘이 다르다 — 커넥션을 잡고도 락을 기다리는 스레드는 running 이 아니다.
+# 이 값이 pool 을 따라 오르면 "풀을 키운 만큼 MySQL 이 더 바빠졌다"가 숫자로 나온다.
+#
+# Innodb_os_log_pending_fsyncs 는 디스크 동기화를 기다리며 쌓인 수다. 동시 작업량과 커밋
+# 지연을 잇는 자리라 같이 찍는다. 셋 다 게이지라 누적이 아니고 그 순간 값이다.
+#
+# Innodb_row_lock_current_waits 는 그 순간 행 락에 막혀 있는 수다. Threads_running 이
+# "자고 있지 않은 스레드"라 락을 기다리는 것도 세기 때문에, 이 값을 빼야 "실제로 일하는 수"가
+# 나온다. 실측으로 같은 pool 10 에서 Threads_running 이 9.0 과 8.6 으로 거의 같은데 로그 I/O 가
+# 1.57 배 차이 난 적이 있다 — 그때 갈라야 했던 것이 이 값이다.
+CONCURRENCY_LOG="$RESULT_DIR/mysql_concurrency.txt"
+: >"$CONCURRENCY_LOG"
 (
   while true; do
     {
@@ -579,6 +637,11 @@ LOCK_MODES_LOG="$RESULT_DIR/data_locks.txt"
       mysql_query "SELECT LOCK_TYPE, LOCK_MODE, COUNT(*) FROM performance_schema.data_locks
                    GROUP BY LOCK_TYPE, LOCK_MODE ORDER BY LOCK_TYPE, LOCK_MODE"
     } >>"$LOCK_MODES_LOG"
+
+    mysql_query "SHOW GLOBAL STATUS WHERE Variable_name IN
+                 ('Threads_running','Innodb_os_log_pending_fsyncs',
+                  'Innodb_row_lock_current_waits')" >>"$CONCURRENCY_LOG"
+
     sleep 5
   done
 ) &
@@ -606,6 +669,7 @@ WINDOW_END_EPOCH="$(date +%s)"
 WINDOW_SECONDS=$((WINDOW_END_EPOCH - WINDOW_START_EPOCH))
 
 row_lock_status >"$RESULT_DIR/innodb_row_lock_after.txt"
+io_status >"$RESULT_DIR/mysql_io_after.txt"
 COM_SELECT_AFTER="$(com_select)"
 
 # 표본에서 갭까지 잠근 락이 몇 번 보였는지 센다.
@@ -692,6 +756,15 @@ LOCK_WAIT_P95_MS="$(p95_of "upbid_bid_lock_wait_seconds_bucket{$RUN}")"
 # 기다린 시간과 짝이다. 대기가 길고 유지가 짧으면 줄이 긴 것이고, 유지도 같이 길면 앞사람이
 # 오래 잡고 있는 것이라 줄을 짧게 해도 안 풀린다.
 LOCK_HOLD_P95_MS="$(p95_of "upbid_bid_lock_hold_seconds_bucket{$RUN}")"
+# 접수와 거절은 락 안에서 하는 일이 다르다. 거절은 검증하고 롤백해서 짧고, 접수는 insert 와
+# update, 커밋까지 간다. 합친 p95 만 보면 거절이 다수인 조건에서 접수 경로의 값을 알 수 없다.
+LOCK_HOLD_ACC_P95_MS="$(p95_of "upbid_bid_lock_hold_seconds_bucket{$RUN, result=\"accepted\"}")"
+LOCK_HOLD_REJ_P95_MS="$(p95_of "upbid_bid_lock_hold_seconds_bucket{$RUN, result=\"rejected\"}")"
+# 락을 잡으러 가기 전에 쓴 시간. 커넥션 획득 + 락 없이 되는 SELECT 3개다.
+# 이 값에서 conn_acquire_p95 를 빼면 SELECT 3개가 얼마인지 나온다.
+BEFORE_LOCK_P95_MS="$(p95_of "upbid_bid_before_lock_seconds_bucket{$RUN}")"
+# 락 보유 중 커밋이 차지하는 몫. 쿼리를 빼서 줄일 수 있는 부분과 못 줄이는 부분을 가른다.
+COMMIT_P95_MS="$(p95_of "upbid_bid_commit_seconds_bucket{$RUN}")"
 CONN_ACQUIRE_P95_MS="$(p95_of "hikaricp_connections_acquire_seconds_bucket{$RUN}")"
 CLOSE_DELAY_P95_MS="$(p95_of "upbid_auction_close_delay_seconds_bucket{$RUN}")"
 SSE_HEARTBEAT_P95_MS="$(p95_of "upbid_sse_heartbeat_seconds_bucket{$RUN}")"
@@ -750,8 +823,19 @@ ACCEPTED_PER_S="$(awk -v a="$ACCEPTED" -v w="$WINDOW_SECONDS" 'BEGIN { printf "%
 # 둘이 벌어지면 그 차이가 네트워크와 부하 발생기 몫이라, 그 자체가 신호다.
 K6_P95_MS="$(jq -r '.metrics.http_req_duration.values["p(95)"] // "NaN"' "$RESULT_DIR/summary.json" 2>/dev/null || echo NaN)"
 
-K6_CPU_MAX="$(sort -g "$CPU_LOG" 2>/dev/null | tail -1)"
-K6_CPU_MAX="${K6_CPU_MAX:-NaN}"
+# 컨테이너별로 평균과 최대를 뽑는다. 앱과 MySQL 은 --cpus 로 나눠 "준 코어의 몇 %" 로
+# 바꾸고, k6 는 제한을 안 걸었으니 호스트 코어 기준 그대로 둔다.
+cpu_stat() {
+  awk -v role="$1" -v div="$2" '
+    $1 == role { n++; sum += $2; if ($2 > max) max = $2 }
+    END {
+      if (n == 0) { print "NaN NaN"; exit }
+      printf "%.1f %.1f\n", sum / n / div, max / div
+    }' "$CPU_LOG" 2>/dev/null || echo "NaN NaN"
+}
+read -r APP_CPU_AVG APP_CPU_MAX <<<"$(cpu_stat app "$CPUS")"
+read -r MYSQL_CPU_AVG MYSQL_CPU_MAX <<<"$(cpu_stat mysql "$CPUS")"
+read -r _ K6_CPU_MAX <<<"$(cpu_stat k6 1)"
 
 # 자릿수를 맞춘다. 시간은 ms 정수, 메모리는 MB 정수, 처리량은 소수 1자리, CPU 는 % 정수.
 # 다섯 명이 각자 소수점을 몇 자리까지 적을지 정하면 표가 안 읽힌다.
@@ -766,8 +850,14 @@ TOMCAT_BUSY_MAX="$(round "$TOMCAT_BUSY_MAX" 0)"
 HIKARI_ACTIVE_MAX="$(round "$HIKARI_ACTIVE_MAX" 0)"
 HIKARI_PENDING_MAX="$(round "$HIKARI_PENDING_MAX" 0)"
 HEAP_MB_MAX="$(round "$HEAP_MB_MAX" 0)"
-LOCK_WAIT_P95_MS="$(round "$LOCK_WAIT_P95_MS" 0)"
-LOCK_HOLD_P95_MS="$(round "$LOCK_HOLD_P95_MS" 0)"
+# 락 구간만 소수 첫째 자리까지 남긴다. 거절 경로가 1ms 안팎, 접수 경로가 5ms 안팎이라
+# 정수로 반올림하면 1 과 5 만 남고 그 사이의 변화를 볼 수 없다.
+LOCK_WAIT_P95_MS="$(round "$LOCK_WAIT_P95_MS" 1)"
+LOCK_HOLD_P95_MS="$(round "$LOCK_HOLD_P95_MS" 1)"
+LOCK_HOLD_ACC_P95_MS="$(round "$LOCK_HOLD_ACC_P95_MS" 1)"
+LOCK_HOLD_REJ_P95_MS="$(round "$LOCK_HOLD_REJ_P95_MS" 1)"
+BEFORE_LOCK_P95_MS="$(round "$BEFORE_LOCK_P95_MS" 1)"
+COMMIT_P95_MS="$(round "$COMMIT_P95_MS" 1)"
 CONN_ACQUIRE_P95_MS="$(round "$CONN_ACQUIRE_P95_MS" 0)"
 CLOSE_DELAY_P95_MS="$(round "$CLOSE_DELAY_P95_MS" 0)"
 SSE_HEARTBEAT_P95_MS="$(round "$SSE_HEARTBEAT_P95_MS" 0)"
@@ -781,6 +871,15 @@ SCHED_ACTIVE_MAX="$(round "$SCHED_ACTIVE_MAX" 0)"
 SCHED_QUEUED_MAX="$(round "$SCHED_QUEUED_MAX" 0)"
 GC_PAUSE_MS_PER_S="$(round "$GC_PAUSE_MS_PER_S" 1)"
 K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
+# 자리를 맞춰 둔다. 콘솔은 정수(4)로, 손으로 칠 때는 소수(4.0)로 보내기 쉬운데
+# 그대로 두면 같은 조건인 줄이 표에서 4 와 4.0 으로 갈라져 묶이지 않는다.
+CPUS="$(round "$CPUS" 1)"
+# 앱·MySQL 은 소수 첫째 자리까지 남긴다. --cpus 를 올렸을 때 몇 % 로 내려갔는지가
+# 이 실험의 답이라, 정수로 반올림하면 그 변화가 뭉개진다.
+APP_CPU_AVG="$(round "$APP_CPU_AVG" 1)"
+APP_CPU_MAX="$(round "$APP_CPU_MAX" 1)"
+MYSQL_CPU_AVG="$(round "$MYSQL_CPU_AVG" 1)"
+MYSQL_CPU_MAX="$(round "$MYSQL_CPU_MAX" 1)"
 K6_P95_MS="$(round "$K6_P95_MS" 0)"
 
 # 입찰 한 건이 SELECT 를 몇 번 했는지. Com_select 는 서버 전체 누적이라 배경 SSE 나 시딩까지
@@ -789,6 +888,59 @@ K6_P95_MS="$(round "$K6_P95_MS" 0)"
 # 나누는 값이 접수 건수가 아니라 시도 건수여야 한다. 분자에는 거절된 입찰이 던진 SELECT 도
 # 들어 있어서, 접수로 나누면 접수 비율(계단에 따라 1% 안팎까지 떨어진다)의 역수만큼 부풀고
 # **VU 를 올리는 것만으로 이 값이 따라 올라간다.** 총 처리량에서 걷어낸 함정과 같은 것이다.
+# ── MySQL 쪽에서 본 대기와 fsync ────────────────────────────────────
+#
+# 앱이 잰 값(upbid.bid.lock.wait, upbid.bid.commit)과 나란히 놓으려고 뽑는다. 앱은 "얼마나
+# 걸렸나"만 알고 MySQL 안에서 무엇을 기다렸는지는 모른다.
+#
+# 행 락 카운터는 SHOW GLOBAL STATUS 라 누적이다. 구간 차이를 낸다.
+# 측정 구간보다 대기 총합이 클 수 있다 — 여러 커넥션이 동시에 기다리면 합이 그렇게 된다.
+row_lock_delta() {
+  awk -v k="$1" 'FNR==NR { if ($1==k) b=$2; next } $1==k { print $2-b }' \
+    "$RESULT_DIR/innodb_row_lock_before.txt" "$RESULT_DIR/innodb_row_lock_after.txt"
+}
+ROW_LOCK_WAITS="$(row_lock_delta Innodb_row_lock_waits)"
+ROW_LOCK_TIME_MS="$(row_lock_delta Innodb_row_lock_time)"
+ROW_LOCK_TIME_MAX_MS="$(awk '$1=="Innodb_row_lock_time_max"{print $2}' \
+  "$RESULT_DIR/innodb_row_lock_after.txt")"
+
+# I/O 한 번에 걸린 평균. 커밋이 느려졌을 때 그게 로그 파일 때문인지 여기서 갈린다.
+# 타이머는 피코초라 1e9 로 나눠 ms 로 만든다.
+#
+# $2/$3 이 전체 I/O(COUNT_STAR, SUM_TIMER_WAIT), $4/$5 가 동기화만(COUNT_MISC, SUM_TIMER_MISC)이다.
+io_avg_ms() {
+  awk -v e="$1" -v cc="$2" -v tc="$3" '
+    FNR==NR { if ($1==e) { c=$(cc); t=$(tc) } ; next }
+    $1==e   { dc=$(cc)-c; if (dc>0) printf "%.3f", ($(tc)-t)/1e9/dc; else printf "NaN" }
+  ' "$RESULT_DIR/mysql_io_before.txt" "$RESULT_DIR/mysql_io_after.txt"
+}
+io_count() {
+  awk -v e="$1" -v cc="$2" 'FNR==NR { if ($1==e) c=$(cc); next } $1==e { print $(cc)-c }' \
+    "$RESULT_DIR/mysql_io_before.txt" "$RESULT_DIR/mysql_io_after.txt"
+}
+REDO_IO_COUNT="$(io_count 'wait/io/file/innodb/innodb_log_file' 2)"
+REDO_IO_AVG_MS="$(io_avg_ms 'wait/io/file/innodb/innodb_log_file' 2 3)"
+REDO_FSYNC_COUNT="$(io_count 'wait/io/file/innodb/innodb_log_file' 4)"
+REDO_FSYNC_AVG_MS="$(io_avg_ms 'wait/io/file/innodb/innodb_log_file' 4 5)"
+BINLOG_IO_COUNT="$(io_count 'wait/io/file/sql/binlog' 2)"
+BINLOG_IO_AVG_MS="$(io_avg_ms 'wait/io/file/sql/binlog' 2 3)"
+BINLOG_FSYNC_COUNT="$(io_count 'wait/io/file/sql/binlog' 4)"
+BINLOG_FSYNC_AVG_MS="$(io_avg_ms 'wait/io/file/sql/binlog' 4 5)"
+
+# 게이지 표본의 평균과 최대. 표본이 없으면 NaN 으로 둔다 (실행이 짧으면 그럴 수 있다).
+gauge_stat() {
+  awk -v k="$1" '$1==k { n++; s+=$2; if ($2>m) m=$2 }
+    END { if (n>0) printf "%.1f %d", s/n, m; else printf "NaN NaN" }' "$CONCURRENCY_LOG"
+}
+read -r THREADS_RUNNING_AVG THREADS_RUNNING_MAX <<<"$(gauge_stat Threads_running)"
+read -r LOG_PENDING_AVG LOG_PENDING_MAX <<<"$(gauge_stat Innodb_os_log_pending_fsyncs)"
+read -r ROW_LOCK_BLOCKED_AVG ROW_LOCK_BLOCKED_MAX <<<"$(gauge_stat Innodb_row_lock_current_waits)"
+
+# 실제로 일하고 있던 수. Threads_running 에서 행 락에 막혀 있던 수를 뺀다.
+# 커넥션을 쥐고 락을 기다리는 스레드는 MySQL 에 일을 안 시키므로 빼야 한다.
+THREADS_WORKING_AVG="$(awk -v r="$THREADS_RUNNING_AVG" -v b="$ROW_LOCK_BLOCKED_AVG" \
+  'BEGIN { if (r=="NaN" || b=="NaN") printf "NaN"; else printf "%.1f", r-b }')"
+
 SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER" \
                       -v attempts="$BID_ATTEMPTS" \
   'BEGIN { if (attempts + 0 <= 0 || after == "" || before == "") print "NaN";
@@ -850,7 +1002,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,lock_wait_p95_ms,lock_hold_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,vus,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_failures,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -880,15 +1032,18 @@ fi
 # k6 가 중간에 죽으면 summary.json 이 없어서 접수와 거절이 전부 0 인데 처리량은 그럴듯한
 # 숫자가 박혀서, 그 줄만 봐서는 아무도 못 알아본다. 실측으로 겪었다 — 구간 128초짜리
 # aborted 줄에 처리량 3490.7 이 들어갔고 접수는 0 이었다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
   "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
-  "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
+  "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" \
+  "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
+  "$LOCK_HOLD_ACC_P95_MS" "$LOCK_HOLD_REJ_P95_MS" "$COMMIT_P95_MS" \
   "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS" \
   "$CLOSE_DELAY_P50_MS" "$CLOSE_DELAY_P95_MS" "$CLOSE_DELAY_MAX_MS" \
   "$CLOSE_DURATION_P95_MS" "$CLOSE_FAILURES" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
-  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
+  "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" \
+  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" \
   >>"$INDEX"
 
@@ -923,8 +1078,23 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 커넥션 active / pending max | ${HIKARI_ACTIVE_MAX} / ${HIKARI_PENDING_MAX} |
 | 커넥션 획득 p95 | ${CONN_ACQUIRE_P95_MS} ms |
 | 힙 max | ${HEAP_MB_MAX} MB |
-| 락 대기 p95 | ${LOCK_WAIT_P95_MS} ms |
-| 락 유지 p95 (커밋까지) | ${LOCK_HOLD_P95_MS} ms |
+| **T2** 락 앞 (커넥션 획득 + SELECT 3개) p95 | ${BEFORE_LOCK_P95_MS} ms |
+| **T3** 락 대기 p95 | ${LOCK_WAIT_P95_MS} ms |
+| **T4** 락 유지 p95 (커밋까지) — 전체 | ${LOCK_HOLD_P95_MS} ms |
+| &nbsp;&nbsp;└ 접수 경로 | ${LOCK_HOLD_ACC_P95_MS} ms |
+| &nbsp;&nbsp;└ 거절 경로 | ${LOCK_HOLD_REJ_P95_MS} ms |
+| &nbsp;&nbsp;└ 그중 커밋 (접수만) | ${COMMIT_P95_MS} ms |
+| **MySQL — 동시 작업** \`Threads_running\` 평균 / 최대 | ${THREADS_RUNNING_AVG} / ${THREADS_RUNNING_MAX} |
+| &nbsp;&nbsp;└ 그중 행 락에 막힌 수 \`Innodb_row_lock_current_waits\` 평균 / 최대 | ${ROW_LOCK_BLOCKED_AVG} / ${ROW_LOCK_BLOCKED_MAX} |
+| &nbsp;&nbsp;└ **실제로 일한 수** (위 둘의 차) | **${THREADS_WORKING_AVG}** |
+| **MySQL — 대기** 행 락 대기 횟수 | ${ROW_LOCK_WAITS} 회 |
+| &nbsp;&nbsp;└ 행 락 대기 총 시간 | ${ROW_LOCK_TIME_MS} ms |
+| &nbsp;&nbsp;└ 행 락 대기 최대 | ${ROW_LOCK_TIME_MAX_MS} ms |
+| **MySQL — 커밋** redo 로그 I/O 전체 횟수 / 평균 | ${REDO_IO_COUNT} / ${REDO_IO_AVG_MS} ms |
+| &nbsp;&nbsp;└ 그중 fsync 횟수 / 평균 | ${REDO_FSYNC_COUNT} / ${REDO_FSYNC_AVG_MS} ms |
+| &nbsp;&nbsp;└ binlog I/O 전체 횟수 / 평균 | ${BINLOG_IO_COUNT} / ${BINLOG_IO_AVG_MS} ms |
+| &nbsp;&nbsp;└ 그중 fsync 횟수 / 평균 | ${BINLOG_FSYNC_COUNT} / ${BINLOG_FSYNC_AVG_MS} ms |
+| &nbsp;&nbsp;└ fsync 대기 \`Innodb_os_log_pending_fsyncs\` 평균 / 최대 | ${LOG_PENDING_AVG} / ${LOG_PENDING_MAX} |
 | 입찰 한 건당 SELECT | ${SELECT_PER_BID} 회 |
 | 격리 수준 / 갭 락 표본 | ${ISOLATION} / ${GAP_LOCKS} |
 | 마감 지연 p50 / p95 / 최대 | ${CLOSE_DELAY_P50_MS} / ${CLOSE_DELAY_P95_MS} / ${CLOSE_DELAY_MAX_MS} ms |
@@ -935,6 +1105,8 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | SSE heartbeat p95 | ${SSE_HEARTBEAT_P95_MS} ms |
 | SSE broadcast p95 | ${SSE_BROADCAST_P95_MS} ms |
 | k6 CPU max | ${K6_CPU_MAX} % |
+| 앱 CPU (준 ${CPUS} 코어 기준) | 평균 ${APP_CPU_AVG} % / 최대 ${APP_CPU_MAX} % |
+| MySQL CPU (준 ${CPUS} 코어 기준) | 평균 ${MYSQL_CPU_AVG} % / 최대 ${MYSQL_CPU_MAX} % |
 | 접수 (201) | ${ACCEPTED} |
 | 거절 — 금액 규칙 (7004·7005) | ${REJECTED_AMOUNT} |
 | 거절 — 이미 최고 입찰자 (7003) | ${REJECTED_ALREADY_TOP} |
@@ -967,12 +1139,16 @@ echo "결과   $RESULT_DIR"
 echo "그래프 $GRAFANA_LINK  ← 열어서 grafana.png 로 저장"
 echo "표     $INDEX"
 echo
-printf '처리량 %s req/s   p95 %s ms   락대기 p95 %s ms   락유지 p95 %s ms\n' \
-  "$RPS" "$P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS"
+printf '처리량 %s req/s   p95 %s ms\n' "$RPS" "$P95_MS"
+printf '락앞 p95 %s ms → 락대기 p95 %s ms → 락유지 p95 %s ms (접수 %s / 거절 %s, 커밋 %s)\n' \
+  "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
+  "$LOCK_HOLD_ACC_P95_MS" "$LOCK_HOLD_REJ_P95_MS" "$COMMIT_P95_MS"
 printf '입찰당 SELECT %s 회   격리 %s   갭 락 표본 %s\n' \
   "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS"
 printf '스레드 %s   커넥션 %s active / %s pending (획득 p95 %s ms)   힙 %s MB   k6 CPU %s%%\n' \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$K6_CPU_MAX"
+printf 'CPU %s 코어   앱 평균 %s%% 최대 %s%%   MySQL 평균 %s%% 최대 %s%%\n' \
+  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX"
 printf 'SSE 접속 max %s   마감 지연 p95 %s ms\n' "$SSE_CONN_MAX" "$CLOSE_DELAY_P95_MS"
 echo
 printf '접수 %s   경합충돌(7006) %s   그밖의거절 %s   실패5xx %s\n' \
