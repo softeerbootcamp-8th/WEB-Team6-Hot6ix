@@ -5,6 +5,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.scheduler.AuctionCloseMetrics;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -30,6 +31,7 @@ public class AuctionItemCloseService {
     private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final DomainEventPublisher domainEventPublisher;
+    private final AuctionCloseMetrics auctionCloseMetrics;
 
     /**
      * 진행 중인 물품을 <b>마감 시각과 관계없이 지금</b> 마감한다. 입찰이 있으면 낙찰({@code SOLD}),
@@ -78,7 +80,7 @@ public class AuctionItemCloseService {
     @Transactional
     public Optional<LocalDateTime> closeIfDue(Long auctionItemId) {
 
-        AuctionItem auctionItem = lockClosableItem(auctionItemId);
+        AuctionItem auctionItem = auctionCloseMetrics.recordLockWait(() -> lockClosableItem(auctionItemId));
 
         if (auctionItem == null) {
             return Optional.empty();
