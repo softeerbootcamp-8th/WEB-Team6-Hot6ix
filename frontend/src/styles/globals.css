@@ -314,25 +314,21 @@
 }
 
 /*
- * 새 이벤트가 들어온 직후에만 옅은 브랜드색이 깔렸다가 빠진다.
+ * 새 이벤트가 들어온 직후에만 옅은 브랜드색이 깔렸다가 천천히 빠진다.
  * 줄이 그냥 나타나기만 하면 어느 줄이 새로 온 건지 알 수 없다.
- * 깜빡임으로 읽히지 않도록 사라지는 쪽(65%~100%)을 깔리는 쪽보다 길게 잡았다.
- *
- * **덮개가 걷혀야 줄 본래 색이 보이므로 오래 끌지 않는다.** 예전에는 840ms 를
- * 그대로 깔고 560ms 에 걸쳐 걷어서, 이벤트 종류별 배경색(`resolveEventTone` 의
- * `row`)이 1.5 초 뒤에야 나타났다. 새 줄이라는 신호는 이 길이로도 충분하다.
+ * 깜빡임으로 읽히지 않도록 사라지는 쪽을 길게(1.4s) 잡았다.
  *
  * **줄 자신이 아니라 덮개(`::after`)에 건다.** 줄에 직접 걸면 `both` 로 끝나는
- * 이 애니메이션이 마지막 프레임의 `transparent` 를 줄에 고정시켜서, 종류별
- * 배경색이 영영 가려진다. 실시간으로 들어온 줄만 색이 빠져 있고 새로고침하면
- * 돌아오는 증상이 여기서 나왔다.
+ * 이 애니메이션이 마지막 프레임의 `transparent` 를 줄에 고정시켜서, 이벤트
+ * 종류별 배경색(`resolveEventTone` 의 `row`)이 영영 가려진다. 실시간으로 들어온
+ * 줄만 색이 빠져 있고 새로고침하면 돌아오는 증상이 여기서 나왔다.
  */
 @keyframes event-highlight {
   0% {
     background-color: var(--brand-50);
     box-shadow: inset 0 0 0 1px var(--brand-200);
   }
-  35% {
+  60% {
     background-color: var(--brand-50);
     box-shadow: inset 0 0 0 1px var(--brand-200);
   }
@@ -373,7 +369,7 @@
     inset: 0;
     border-radius: inherit;
     pointer-events: none;
-    animation: event-highlight 620ms var(--ease-in-out-soft) 60ms both;
+    animation: event-highlight 1400ms var(--ease-in-out-soft) 120ms both;
   }
 }
 
