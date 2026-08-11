@@ -35,8 +35,12 @@ DB_PORT=3306
 DB_NAME=upbid
 DB_USER=""
 DB_PASS=""
-# 앱이 부팅 때 받은 PERF_RUN_ID. 조회 필터로 쓴다.
-RUN_LABEL=""
+# 앱이 부팅 때 받은 PERF_RUN_ID 다. 조회 필터로 쓴다.
+#
+# 기본값이 unknown 인 이유. application-prod.yaml 이 ${PERF_RUN_ID:unknown} 이라, 서버에
+# 아무것도 안 넣으면 앱은 run="unknown" 을 붙인다. 계단은 구간 시각으로 갈리므로 그걸로 충분하다.
+# 서버에 값을 넣었으면 그 값을 여기 그대로 준다.
+RUN_LABEL="unknown"
 ITEMS=1
 SSE=0
 USERS=200
@@ -136,7 +140,8 @@ usage() {
                      앱 직접:     http://10.0.1.88:8080/api/v1  (프록시와 TLS 를 뺀 값)
   --app-url URL      관측용 주소. 배스천은 /actuator 를 막으므로 **앱 사설 IP** 를 준다
                      예: http://10.0.1.88:8080
-  --run-label V      앱이 부팅 때 받은 PERF_RUN_ID. 안 맞으면 모든 지표가 NaN 이다
+  --run-label V      앱이 부팅 때 받은 PERF_RUN_ID (기본 unknown). 서버에 그 값을 안
+                     넣었으면 기본값 그대로 두면 된다. 안 맞으면 모든 지표가 NaN 이다
   --db-host H        RDS 주소. --db-user / --db-pass 와 함께 준다
                      (--db-port 3306, --db-name upbid 이 기본)
 
@@ -202,7 +207,6 @@ fi
 if [ -n "$BASE_TARGET" ]; then
   MISSING=""
   [ -z "$ADMIN_TARGET" ] && MISSING="$MISSING --app-url"
-  [ -z "$RUN_LABEL" ] && MISSING="$MISSING --run-label"
   [ -z "$DB_HOST" ]   && MISSING="$MISSING --db-host"
   [ -z "$DB_USER" ]   && MISSING="$MISSING --db-user"
   [ -z "$DB_PASS" ]   && MISSING="$MISSING --db-pass"
@@ -211,9 +215,6 @@ if [ -n "$BASE_TARGET" ]; then
     cat >&2 <<MSG
 --base 를 줬으면 아래도 있어야 한다:$MISSING
 
-  --run-label  앱이 부팅 때 받은 PERF_RUN_ID. 이게 안 맞으면 조회가 아무것도 안 잡아서
-               모든 지표가 NaN 이 된다. 서버에서 확인:
-                 docker exec app-app-1 printenv PERF_RUN_ID
   --db-*       RDS 접속. run.sh 가 MySQL 내부 카운터를 SQL 로 직접 읽어야
                select_per_bid, lock_wait, gap_locks 가 채워진다
 MSG
