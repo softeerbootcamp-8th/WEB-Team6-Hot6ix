@@ -90,7 +90,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(http_server_requests_seconds_count{run=\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
           "legendFormat": "전체",
           "range": true,
           "refId": "A"
@@ -101,7 +101,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(http_server_requests_seconds_count{run=\"$run\", uri=~\".*bids\"}[30s]))",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=~\"$run\", uri=~\".*bids\"}[30s]))",
           "legendFormat": "입찰",
           "range": true,
           "refId": "B"
@@ -161,7 +161,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))) * 1000",
           "legendFormat": "p95 전체",
           "range": true,
           "refId": "A"
@@ -172,7 +172,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=\"$run\", uri=~\".*bids\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri=~\".*bids\"}[30s]))) * 1000",
           "legendFormat": "p95 입찰",
           "range": true,
           "refId": "B"
@@ -245,7 +245,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "tomcat_threads_busy_threads{run=\"$run\"}",
+          "expr": "tomcat_threads_busy_threads{run=~\"$run\"}",
           "legendFormat": "busy {{instance}}",
           "range": true,
           "refId": "A"
@@ -256,7 +256,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "tomcat_threads_config_max_threads{run=\"$run\"}",
+          "expr": "tomcat_threads_config_max_threads{run=~\"$run\"}",
           "legendFormat": "max",
           "range": true,
           "refId": "B"
@@ -316,7 +316,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_active{run=\"$run\"}",
+          "expr": "hikaricp_connections_active{run=~\"$run\"}",
           "legendFormat": "active {{instance}}",
           "range": true,
           "refId": "A"
@@ -327,7 +327,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_idle{run=\"$run\"}",
+          "expr": "hikaricp_connections_idle{run=~\"$run\"}",
           "legendFormat": "idle",
           "range": true,
           "refId": "B"
@@ -338,7 +338,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_pending{run=\"$run\"}",
+          "expr": "hikaricp_connections_pending{run=~\"$run\"}",
           "legendFormat": "pending",
           "range": true,
           "refId": "C"
@@ -349,7 +349,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_max{run=\"$run\"}",
+          "expr": "hikaricp_connections_max{run=~\"$run\"}",
           "legendFormat": "max",
           "range": true,
           "refId": "D"
@@ -362,7 +362,7 @@
           "editorMode": "code",
           "range": true,
           "refId": "E",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "획득 p95 (ms)"
         }
       ]
@@ -420,7 +420,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(jvm_memory_used_bytes{run=\"$run\", area=\"heap\"}) / 1024 / 1024",
+          "expr": "sum(jvm_memory_used_bytes{run=~\"$run\", area=\"heap\"}) / 1024 / 1024",
           "legendFormat": "heap used (MB)",
           "range": true,
           "refId": "A"
@@ -431,7 +431,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(jvm_gc_pause_seconds_sum{run=\"$run\"}[30s]) * 1000",
+          "expr": "rate(jvm_gc_pause_seconds_sum{run=~\"$run\"}[30s]) * 1000",
           "legendFormat": "GC pause (ms/s)",
           "range": true,
           "refId": "B"
@@ -504,7 +504,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "p95",
           "range": true,
           "refId": "A"
@@ -515,7 +515,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "p50",
           "range": true,
           "refId": "B"
@@ -575,7 +575,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "upbid_sse_connections{run=\"$run\"}",
+          "expr": "upbid_sse_connections{run=~\"$run\"}",
           "legendFormat": "접속 {{instance}}",
           "range": true,
           "refId": "A"
@@ -586,7 +586,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "upbid_sse_rooms{run=\"$run\"}",
+          "expr": "upbid_sse_rooms{run=~\"$run\"}",
           "legendFormat": "방",
           "range": true,
           "refId": "B"
@@ -646,7 +646,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_heartbeat_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_heartbeat_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "heartbeat p95",
           "range": true,
           "refId": "A"
@@ -657,7 +657,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_broadcast_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_broadcast_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "broadcast p95",
           "range": true,
           "refId": "B"
@@ -717,7 +717,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "p95",
           "range": true,
           "refId": "A"
@@ -728,7 +728,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(1.00, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(1.00, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "max",
           "range": true,
           "refId": "B"
@@ -788,7 +788,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_duration_seconds_bucket{run=\"$run\", result=\"closed\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_duration_seconds_bucket{run=~\"$run\", result=\"closed\"}[30s]))) * 1000",
           "legendFormat": "닫힘 p95",
           "range": true,
           "refId": "A"
@@ -799,7 +799,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_duration_seconds_bucket{run=\"$run\", result=\"rescheduled\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_duration_seconds_bucket{run=~\"$run\", result=\"rescheduled\"}[30s]))) * 1000",
           "legendFormat": "재예약 p95",
           "range": true,
           "refId": "B"
@@ -859,7 +859,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "executor_active_threads{run=\"$run\", name=\"taskScheduler\"}",
+          "expr": "executor_active_threads{run=~\"$run\", name=\"taskScheduler\"}",
           "legendFormat": "일하는 중",
           "range": true,
           "refId": "A"
@@ -870,7 +870,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "executor_pool_size_threads{run=\"$run\", name=\"taskScheduler\"}",
+          "expr": "executor_pool_size_threads{run=~\"$run\", name=\"taskScheduler\"}",
           "legendFormat": "일꾼 총 수",
           "range": true,
           "refId": "B"
@@ -881,7 +881,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "executor_queued_tasks{run=\"$run\", name=\"taskScheduler\"}",
+          "expr": "executor_queued_tasks{run=~\"$run\", name=\"taskScheduler\"}",
           "legendFormat": "대기열",
           "range": true,
           "refId": "C"
@@ -941,7 +941,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (reason) (upbid_auction_close_failures_total{run=\"$run\"})",
+          "expr": "sum by (reason) (upbid_auction_close_failures_total{run=~\"$run\"})",
           "legendFormat": "{{reason}}",
           "range": true,
           "refId": "A"
@@ -1096,7 +1096,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (status) (rate(http_server_requests_seconds_count{run=\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "expr": "sum by (status) (rate(http_server_requests_seconds_count{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
           "legendFormat": "{{status}}",
           "range": true,
           "refId": "A"
@@ -1109,7 +1109,7 @@
       {
         "name": "run",
         "label": "실행",
-        "description": "어느 실행을 볼지. 최신이 맨 위다. 로컬은 run.sh 가 실행마다 다른 값을 붙이고, 배포는 앱이 부팅 때 받은 값(PERF_RUN_ID, 기본 unknown)을 창구 내내 단다. 배포에서는 계단이 라벨이 아니라 시간 범위로 갈린다.",
+        "description": "어느 실행을 볼지. 기본은 전체라 아무것도 안 고르면 서버에 있는 모든 실행이 보인다. 한 실행만 떼어 보고 싶을 때 고른다. 로컬은 run.sh 가 실행마다 다른 값을 붙이고, 배포는 앱이 부팅 때 받은 값(PERF_RUN_ID, 기본 unknown)을 창구 내내 단다.",
         "type": "query",
         "datasource": {
           "type": "prometheus",
@@ -1123,10 +1123,15 @@
         },
         "sort": 2,
         "refresh": 2,
-        "includeAll": false,
+        "includeAll": true,
         "multi": false,
-        "current": {},
-        "options": []
+        "current": {
+          "selected": true,
+          "text": "전체",
+          "value": "$__all"
+        },
+        "options": [],
+        "allValue": ".*"
       }
     ]
   }
