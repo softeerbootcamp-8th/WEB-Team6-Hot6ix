@@ -138,9 +138,8 @@ export function ItemEventList({ events }: { events: RoomEvent[] }) {
                        * 안쪽 여백만으로 배경을 만든다.
                        */
                       'flex items-start gap-3 rounded-2xl px-3 py-2',
-                      entranceOf(event.id) === 'incoming'
-                        ? 'animate-event'
-                        : 'animate-rise',
+                      // 실시간으로 들어온 줄은 연출 없이 바로 읽힌다 (event-feed 참고)
+                      entranceOf(event.id) === 'initial' && 'animate-rise',
                     )}
                     style={
                       entranceOf(event.id) === 'incoming'
@@ -152,8 +151,6 @@ export function ItemEventList({ events }: { events: RoomEvent[] }) {
                       className={cn(
                         'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
                         style.chip,
-                        entranceOf(event.id) === 'incoming' &&
-                          'animate-event-chip',
                       )}
                     >
                       {style.icon}
