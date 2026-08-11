@@ -333,7 +333,13 @@ results/2026-08-08T14-00_s1_vus40_pool10_items1_sse0/
 | `bulk_items` | SQL 로 채워 넣은 닫힌 물품 수 | `--bulk-items` 로 정한 값 |
 | `sweep_index` | 마감 조회 인덱스를 켰는지 (`on`/`off`) | `--sweep-index` 로 정한 값 |
 | `close_delay_p95_ms` | 마감이 예정 시각보다 늦은 시간 p95 | 시나리오 4의 주인공 |
+| `close_lock_wait_p95_ms` | 마감이 물품 행 락을 기다린 시간 p95 | `lock_wait_p95_ms`(입찰 쪽)와 나란히 놓고 누가 누구를 기다리게 했는지 봅니다 |
+| `close_lock_hold_p95_ms` | 마감이 락을 잡고 있던 시간 p95 (커밋까지) | 이게 크면 그동안 입찰이 못 들어갑니다 |
+| `close_notify_p95_ms` | 마감 알림(`ITEM_ENDED`)을 방 전원에게 쏘는 데 걸린 시간 p95 | 커밋 뒤 같은 스레드에서 돌아 마감 소요에 그대로 들어갑니다 |
+| `close_award_p95_ms` | 낙찰 후보 스냅샷을 만드는 데 걸린 시간 p95 | 후보를 입찰자 수만큼 만들어서 입찰이 몰린 물품일수록 길어집니다 |
+| `closes`, `awards` | 구간 안에 실제로 닫힌 물품 수와 낙찰 건수 | **표본 수입니다.** 이게 작으면 위 p95 들이 크게 흔들립니다 |
 | `sse_heartbeat_p95_ms` | 30초마다 전원에게 신호 보내는 데 걸린 시간 | 접속이 늘면 같이 커집니다 |
+| `heartbeat_runs`, `heartbeat_expected` | heartbeat 가 실제로 돈 횟수와 돌았어야 할 횟수 | 실제가 모자라면 스케줄러 스레드가 굶은 것입니다 |
 | `sse_broadcast_p95_ms` | 입찰 하나를 방 전원에게 쏘는 데 걸린 시간 | 시나리오 5의 주인공 (#234) |
 | `sse_conn_max` | 동시에 열려 있던 실시간 접속 수(최대) | 시나리오 3의 주인공 |
 | `virtual_threads` | 가상 스레드를 켰는지 | 켜면 톰캣도 함께 바뀝니다 |
