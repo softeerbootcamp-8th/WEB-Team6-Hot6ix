@@ -777,6 +777,7 @@ if [ "$SSE" -gt 0 ]; then
   # 컨테이너 이름을 받아 둔다. 안 그러면 뒤의 CPU 샘플러가 이 컨테이너와 본 부하 컨테이너를
   # 구분 못 해서, k6_cpu_max 가 둘 중 어느 쪽인지 모르는 값이 된다.
   SSE_CID="$("${COMPOSE[@]}" run --rm -d --no-deps \
+    --user "$(id -u):$(id -g)" \
     -e "VUS=$SSE" -e "SHARE_CODE=$SHARE_CODE" -e "RUN_ID=" -e "DURATION=30m" \
     -e "BASE_URL=$APP_URL/api/v1" -e "DEV_LOGIN_TOKEN=${DEV_LOGIN_TOKEN:-}" \
     k6 run /scripts/scenario3.js)"
@@ -821,6 +822,11 @@ fi
 # k6 를 한 번 돌린다. 워밍업과 본 측정이 같은 함수를 지나야 워밍업이 실제로 같은 경로를
 # 데운 것이 된다 — 다른 경로를 데우면 데운 셈만 치는 것이다.
 #
+# --user 로 호스트 사용자를 물려준다. k6 이미지는 uid 12345 로 도는데 results/ 는 우리
+# 소유(755)라, 그대로 두면 마지막에 summary.json 을 못 쓴다. 그러면 접수와 거절이 전부 0 이고
+# k6_p95_ms 가 NaN 인데 처리량은 그럴듯해서, 표만 보면 서버가 일을 안 한 것처럼 읽힌다.
+# 맥은 Docker Desktop 이 uid 를 매핑해 줘서 안 걸리고 리눅스 측정 서버에서만 드러났다.
+#
 #   $1 VU 수   $2 길이   $3 RUN_ID (빈 값이면 summary.json 을 안 남긴다)
 #   $4 로그 파일   나머지 인자는 k6 에 그대로 넘어간다
 K6_EXIT=0
@@ -837,6 +843,7 @@ run_k6() {
   DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" RATE="${RUN_RATE:-$RATE}" \
   BASE_URL="$APP_URL/api/v1" \
     "${COMPOSE[@]}" run --rm \
+      --user "$(id -u):$(id -g)" \
       -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
       -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
       -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN -e RATE -e BASE_URL \
@@ -1434,7 +1441,9 @@ printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
 
 # var-run 을 박아야 이 실행의 시계열만 보인다. 안 붙이면 대시보드가 여태 돌린 실행을
 # 전부 겹쳐 그려서, 계단 하나를 보려는데 다른 계단이 같이 나온다.
-GRAFANA_LINK="$GRAFANA_URL/d/upbid-perf?var-run=$RUN_ID&from=${WINDOW_START_EPOCH}000&to=${WINDOW_END_EPOCH}000"
+# 대시보드가 run 라벨로 거르므로 조회에 쓴 값과 같아야 한다. 원격은 앱이 부팅 때 받은
+# 값(기본 unknown)이라 실행 이름과 다르고, RUN_ID 를 넣으면 화면이 전부 no data 가 된다.
+GRAFANA_LINK="$GRAFANA_URL/d/upbid-perf?var-run=${RUN_LABEL:-$RUN_ID}&from=${WINDOW_START_EPOCH}000&to=${WINDOW_END_EPOCH}000"
 
 # 가상 스레드는 전역 스위치라 톰캣도 함께 바뀐다. 이 단서를 안 적으면 나중에 이 숫자를
 # 스케줄러 근거로 잘못 쓴다. 스케줄러가 SimpleAsyncTaskScheduler 로 바뀌어 풀도 큐도
