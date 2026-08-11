@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.scheduler.AuctionCloseMetrics;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -32,6 +33,7 @@ public class AuctionItemCloseService {
     private final SellerProfileRepository sellerProfileRepository;
     private final DomainEventPublisher domainEventPublisher;
     private final AuctionCloseMetrics auctionCloseMetrics;
+    private final AuctionRedisStore auctionRedisStore;
 
     /**
      * 진행 중인 물품을 <b>마감 시각과 관계없이 지금</b> 마감한다. 입찰이 있으면 낙찰({@code SOLD}),
@@ -144,6 +146,10 @@ public class AuctionItemCloseService {
         if (!auctionItem.closeEarly(now)) {
             throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_ALREADY_CLOSING_SOON);
         }
+
+        // 입찰 판정은 Redis의 endAt으로 한다(이슈 #246의 비교군 C). 앞당긴 값을 안 옮기면
+        // 원래 마감 시각까지 입찰이 계속 접수된다.
+        auctionRedisStore.updateEndAt(auctionItemId, auctionItem.getEndAt());
 
         AuctionItemCloseEarlyResponseDto response =
                 AuctionItemCloseEarlyResponseDto.of(auctionItem, now);

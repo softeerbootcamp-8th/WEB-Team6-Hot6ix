@@ -15,6 +15,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.scheduler.AuctionCloseMetrics;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
@@ -60,6 +61,10 @@ class AuctionItemCloseServiceTest {
     /** 계측은 목이 아니라 진짜를 쓴다. 목이면 넘긴 조회를 실행하지 않아 락 조회 자체가 안 일어난다. */
     @Spy
     private AuctionCloseMetrics auctionCloseMetrics = new AuctionCloseMetrics(new SimpleMeterRegistry());
+
+    /** 조기 마감이 앞당긴 endAt을 Redis에도 쓴다(이슈 #246의 비교군 C). 여기서는 호출만 받는다. */
+    @Mock
+    private AuctionRedisStore auctionRedisStore;
 
     @InjectMocks
     private AuctionItemCloseService auctionItemCloseService;

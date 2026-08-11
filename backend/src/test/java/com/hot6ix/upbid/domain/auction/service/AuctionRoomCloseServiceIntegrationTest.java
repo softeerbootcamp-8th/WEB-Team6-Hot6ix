@@ -11,6 +11,7 @@ import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.auction.scheduler.AuctionCloseMetrics;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -88,6 +89,10 @@ class AuctionRoomCloseServiceIntegrationTest extends AbstractMySqlContainerTest 
 
     @MockitoBean
     private DomainEventPublisher domainEventPublisher;
+
+    /** @DataJpaTest 컨텍스트에는 Redis 연결이 없다. 마감 경로가 부르기만 하므로 목으로 둔다. */
+    @MockitoBean
+    private AuctionRedisStore auctionRedisStore;
 
     @Test
     @DisplayName("방을 종료하면 진행 중이던 물품이 마감되고 방 상태가 DB에 남는다")
