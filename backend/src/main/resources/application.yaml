@@ -70,6 +70,10 @@ oauth:
 # 값 자체는 지금까지 코드에 상수로 박혀 있던 것과 같다. 밖으로 뺀 이유는 부하 측정에서
 # 이 셋이 대조 실험의 변수이기 때문이다 — 값 하나만 바꿔 재려면 재빌드 없이 바꿀 수 있어야 한다.
 upbid:
+  # 비어 있으면 local·perf 에서만 dev-login 이 열리고, 그때는 헤더도 안 본다 (지금 동작).
+  # 배포에서 값을 주면 그동안만 엔드포인트가 생기고 헤더가 맞는 요청만 세션을 받는다 (#266).
+  dev-login:
+    token: ${DEV_LOGIN_TOKEN:}
   sse:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}

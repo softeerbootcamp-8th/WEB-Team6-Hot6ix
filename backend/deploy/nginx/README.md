@@ -56,3 +56,24 @@ sudo nginx -t && sudo systemctl reload nginx
   여기에 `allow` 를 넣을 일이 없습니다.** 사설 IP 쪽은 보안 그룹으로 막습니다.
 - 공통 프록시 헤더를 `snippets/upbid-proxy.conf` 로 뺐습니다. location 이 둘로 갈리면서
   한쪽에만 헤더가 빠지는 일을 막으려는 것입니다.
+
+## 측정 창구에만 넣었다가 빼는 것
+
+아래 둘은 **커밋해 두지 않습니다.** 측정하는 동안만 서버에서 넣고 끝나면 되돌립니다.
+평소에 들어가 있으면 안 되는 값이라 파일에 남겨 두면 언젠가 그대로 배포됩니다.
+
+**1. `dev-login` 을 측정 서버에서만 부를 수 있게 합니다.** 앱 쪽 토큰 게이트가 1차이고
+이게 2차입니다. `server` 블록 안에 넣습니다.
+
+```nginx
+    location = /api/v1/auth/dev-login {
+        allow 3.35.0.0;          # ← 측정 EC2 의 공인 IP 로 바꿉니다
+        deny all;
+        include /etc/nginx/snippets/upbid-proxy.conf;
+    }
+```
+
+**2. `access_log` 를 끕니다.** 부하를 걸면 초당 수천 줄이 디스크로 가서 재는 대상에 로그
+I/O 가 섞입니다. `server` 블록 안에 `access_log off;` 를 넣습니다.
+
+넣은 뒤에도 똑같이 검사하고 reload 합니다. 끝나면 두 블록을 지우고 다시 reload 합니다.

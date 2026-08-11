@@ -29,6 +29,8 @@ services:
       # ACTUATOR_EXPOSURE 를 열기 전에 nginx 에서 /actuator 를 측정 서버 IP 로 제한한다.
       # 8080 이 호스트에 그대로 뚫려 있어서 프록시를 안 거치는 경로가 남는다.
       - ACTUATOR_EXPOSURE=${ACTUATOR_EXPOSURE:-health}
+      # 비워 두면 dev-login 엔드포인트 자체가 안 생긴다. 측정 창구에만 값을 주고 끝나면 지운다.
+      - DEV_LOGIN_TOKEN=${DEV_LOGIN_TOKEN:-}
       - PERF_RUN_ID=${PERF_RUN_ID:-unknown}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - SCHEDULER_POOL_SIZE=${SCHEDULER_POOL_SIZE:-4}

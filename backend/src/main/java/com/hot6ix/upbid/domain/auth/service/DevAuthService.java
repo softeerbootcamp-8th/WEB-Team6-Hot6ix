@@ -1,14 +1,15 @@
 package com.hot6ix.upbid.domain.auth.service;
 
+import com.hot6ix.upbid.domain.auth.config.DevLoginCondition;
 import com.hot6ix.upbid.domain.auth.domain.OauthProvider;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Profile;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-@Profile({"local", "perf"})
+@Conditional(DevLoginCondition.class)
 @Service
 @RequiredArgsConstructor
 public class DevAuthService {

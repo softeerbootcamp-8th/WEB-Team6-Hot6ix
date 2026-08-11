@@ -60,6 +60,16 @@ export function baseOptions(extra = {}) {
 let sessionCookie = null
 
 /**
+ * 배포에서는 dev-login 이 토큰을 아는 요청만 받는다 (#266). 로컬 perf 는 토큰이 없어서
+ * 빈 객체가 나가고, 앱도 안 걸어 뒀으므로 지금까지와 똑같이 동작한다.
+ */
+function devLoginHeaders() {
+  const token = __ENV.DEV_LOGIN_TOKEN
+
+  return token ? { 'X-Dev-Login-Token': token } : {}
+}
+
+/**
  * dev-login 으로 세션을 받는다. key 가 곧 회원 하나라 VU 마다 다른 key 를 준다.
  *
  * key 없이 부르면 전원이 같은 회원이 되어 두 번째 입찰부터 ALREADY_TOP_BIDDER 로 거절된다.
@@ -72,6 +82,7 @@ export function ensureSession(key) {
   }
 
   const res = http.post(`${BASE}/auth/dev-login?key=${encodeURIComponent(key)}`, null, {
+    headers: devLoginHeaders(),
     tags: { name: 'dev-login' },
   })
 
@@ -79,7 +90,8 @@ export function ensureSession(key) {
 
   if (!cookie || cookie.length === 0) {
     throw new Error(`dev-login 이 SESSION 쿠키를 안 줬다 (status=${res.status}). ` +
-      'perf 프로파일에 DevAuthController 가 올라왔는지 본다.')
+      '로컬이면 perf 프로파일에 DevAuthController 가 올라왔는지, 배포면 DEV_LOGIN_TOKEN 을 ' +
+      '앱과 여기(DEV_LOGIN_TOKEN 환경변수) 양쪽에 같은 값으로 줬는지 본다.')
   }
 
   sessionCookie = cookie[0].value
