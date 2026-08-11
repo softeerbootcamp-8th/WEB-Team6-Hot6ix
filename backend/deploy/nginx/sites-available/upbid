@@ -24,6 +24,22 @@ server {
         proxy_send_timeout 3600s;
     }
 
+    # dev-login 은 비밀번호 없이 세션을 주는 문이라 측정 서버에서만 부를 수 있게 한다.
+    # 앱의 토큰 게이트가 1차이고 이게 2차다 (DevPageGuard 가 방어선을 둘 두는 것과 같은 이유).
+    #
+    # 3.36.33.153 은 이 배스천 자신이다. 측정 EC2(10.0.1.119)가 프라이빗 서브넷이라 여기를
+    # NAT 로 쓰고, 그래서 요청이 도착할 때 출발지가 배스천으로 보인다 (access.log 로 확인).
+    # 즉 이 줄은 "VPC 안에서 나간 요청만" 이라는 뜻이고 인터넷에서는 못 닿는다.
+    # 실제로 access.log 에 /wp-admin 을 훑는 스캐너가 계속 붙는다.
+    #
+    # 쿼리스트링(?key=bidder-1)은 location 매칭에 안 들어가므로 = 정확히 일치로 충분하다.
+    location = /api/v1/auth/dev-login {
+        allow 3.36.33.153;
+        deny all;
+
+        include /etc/nginx/snippets/upbid-proxy.conf;
+    }
+
     # /actuator 에는 인증이 없다. AuthInterceptor 가 /api/v1 아래만 보기 때문에, 노출을 켜면
     # 힙과 DB 풀, 엔드포인트 목록이 그대로 공개된다.
     #
