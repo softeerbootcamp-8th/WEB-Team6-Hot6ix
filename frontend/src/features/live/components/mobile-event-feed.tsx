@@ -86,17 +86,14 @@ export function MobileEventFeed({
                     className={cn(
                       'flex min-h-[52px] items-center gap-3 rounded-xl px-2',
                       tone.row,
-                      entranceOf(event.id) === 'incoming'
-                        ? 'animate-event'
-                        : 'animate-rise',
+                      // 실시간으로 들어온 줄은 연출 없이 바로 읽힌다 (event-feed 참고)
+                      entranceOf(event.id) === 'initial' && 'animate-rise',
                     )}
                   >
                     <span
                       className={cn(
                         'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
                         tone.chip,
-                        entranceOf(event.id) === 'incoming' &&
-                          'animate-event-chip',
                       )}
                     >
                       {tone.icon}

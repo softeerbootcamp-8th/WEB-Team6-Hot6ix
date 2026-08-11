@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import {
   useCallback,
   useEffect,
@@ -24,14 +24,13 @@ import { getGetListQueryKey } from '@/api/generated/상품/상품'
 import type { AuctionItemAddRequestDto } from '@/api/generated/model'
 import {
   getGetRoomByShareCodeQueryKey,
+  getGetRoomByShareCodeQueryOptions,
   useClose,
-  useGetResults,
   useGetRoomByShareCode,
 } from '@/api/generated/경매방/경매방'
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { useGetRecentEvents } from '@/api/generated/sse/sse'
 import { mergeItemDetail, toAuctionItems } from '@/features/live/adapt-item'
-import { toRoomResult } from '@/features/live/adapt-result'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import { retryOnNetworkError } from '@/features/live/api-error'
 import {
@@ -52,7 +51,6 @@ import {
 import type { PickedItem } from '@/features/seller/components/item-picker-modal'
 
 import { BidConfirmPanel } from '@/features/live/components/bid-confirm-panel'
-import { ClosedRoomView } from '@/features/live/components/closed-room-view'
 import { EventFeed } from '@/features/live/components/event-feed'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
@@ -65,8 +63,6 @@ import { MobileItemDetailView } from '@/features/live/components/mobile-item-det
 import { MobileLiveView } from '@/features/live/components/mobile-live-view'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { EmptyState } from '@/components/page-header'
-import { GuestShell } from '@/components/layout/page-shell'
 import { Modal } from '@/components/ui/modal'
 import { QuickBidOverlay } from '@/features/live/components/quick-bid-overlay'
 import { RouteError, RoutePending } from '@/components/route-states'
@@ -91,6 +87,35 @@ import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
  * 오른쪽 열은 상황에 따라 리더보드 / 빠른 입찰 / 입찰 확인 / 공유로 바뀐다.
  */
 export const Route = createFileRoute('/rooms/$shareCode/')({
+  /*
+   * 종료된 방은 결과 화면으로 보낸다. 이 화면은 진행 중인 방 전용이다.
+   *
+   * 컴포넌트 안에서 걸러도 화면은 맞게 나오지만, 방 상태를 알기 전에 이미 한 번
+   * 렌더되면서 SSE 가 붙는다. 종료된 방 구독은 서버가 거절하고 그 실패가
+   * "실시간 연결이 끊겼어요" 경고로 뜬다. 라우트에서 막으면 컴포넌트 자체가
+   * 뜨지 않아 연결이 생길 일이 없다.
+   */
+  loader: async ({ context, params }) => {
+    let status: string | undefined
+
+    try {
+      const room = await context.queryClient.ensureQueryData(
+        getGetRoomByShareCodeQueryOptions(params.shareCode),
+      )
+      status = room.data?.status
+    } catch {
+      // 방을 못 읽었으면 여기서 판단하지 않는다. 없는 공유 코드(404)를 비롯한
+      // 조회 실패는 지금까지처럼 컴포넌트의 에러 화면이 받는다.
+      return
+    }
+
+    if (status === 'CLOSED') {
+      throw redirect({
+        to: '/rooms/$shareCode/result',
+        params: { shareCode: params.shareCode },
+      })
+    }
+  },
   component: LiveRoomPage,
 })
 
@@ -197,17 +222,29 @@ function LiveRoomPage() {
   const roomClosed = room.status === 'CLOSED'
 
   /*
+   * 방송 중에 방이 닫히면 결과 화면으로 옮긴다. 이 화면은 진행 중인 방 전용이라
+   * 종료 상태를 그리지 않는다. 라우트를 옮기면 이 화면이 언마운트되면서 실시간
+   * 연결·타이머도 같이 정리된다.
+   *
+   * 처음부터 종료된 방으로 들어오는 경우는 여기까지 오지 않는다 — 라우트 loader 가
+   * 컴포넌트를 띄우기 전에 돌려보낸다.
+   */
+  useEffect(() => {
+    if (!roomClosed) return
+    void navigate({
+      to: '/rooms/$shareCode/result',
+      params: { shareCode },
+      replace: true,
+    })
+  }, [roomClosed, shareCode, navigate])
+
+  /*
    * 판매자 조작(방 종료·물품 추가/제외·설정 수정)은 여전히 숫자 ID 를 받는다. 인증과 소유
    * 검증이 있어 열거 위험이 없고, 이번 식별자 교체는 익명으로 열리는 공개 경로만 대상이라서다.
    * 그래서 이 화면은 URL 의 shareCode 와 응답의 숫자 ID 를 함께 들고 있는다.
    * 방을 아직 못 읽었으면 0 이지만, 판매자 조작 UI 자체가 방을 읽은 뒤에야 나타난다.
    */
   const auctionRoomId = room.id
-
-  // 진행 중인 방에서는 결과를 볼 일이 없다. 방이 닫혔을 때만 요청한다.
-  const resultsQuery = useGetResults(shareCode, {
-    query: { enabled: roomClosed },
-  })
 
   /**
    * 새로고침 등으로 화면을 다시 열면 알림 피드(extraEvents)가 비어 있다.
@@ -812,7 +849,7 @@ function LiveRoomPage() {
    * 판매자가 방송을 끝내고 경매방을 종료한다. 되돌릴 수 없다.
    *
    * 서버가 진행 중이던 물품까지 함께 마감하므로 **방과 물품을 모두 다시 읽어온다.**
-   * 방 상태가 `CLOSED` 로 오면 화면이 종료 화면(`ClosedRoomView`)으로 바뀐다.
+   * 방 상태가 `CLOSED` 로 오면 위 effect 가 결과 화면으로 옮긴다.
    *
    * 서버가 받아주기 전에는 화면을 종료로 그리지 않는다 — 실패하면 방송이 계속되는데
    * 화면만 끝난 것으로 보인다.
@@ -1172,33 +1209,8 @@ function LiveRoomPage() {
 
   if (roomQuery.isPending) return <RoutePending />
 
-  if (roomClosed) {
-    if (resultsQuery.isPending) return <RoutePending />
-    if (resultsQuery.isError) {
-      return (
-        <RouteError
-          error={resultsQuery.error}
-          reset={() => void resultsQuery.refetch()}
-        />
-      )
-    }
-
-    const result = toRoomResult(resultsQuery.data?.data)
-    if (!result) {
-      return (
-        <GuestShell title="종료된 경매방" back>
-          <EmptyState
-            title="결과를 찾을 수 없어요"
-            description="삭제되었거나 존재하지 않는 경매방입니다."
-          />
-        </GuestShell>
-      )
-    }
-
-    return (
-      <ClosedRoomView result={result} isGuest={isGuest} isOwner={isOwner} />
-    )
-  }
+  // 방이 닫히면 위 effect 가 결과 화면으로 옮긴다. 그 사이 한 프레임을 비워 둔다.
+  if (roomClosed) return <RoutePending />
 
   /*
    * 모바일은 웹 3열을 접은 게 아니라 별도 구성이다 (Figma `MOB-04`).
@@ -1691,7 +1703,7 @@ function LiveRoomPage() {
 
             <EventFeed events={roomEvents} />
 
-            {/* 종료된 방은 위에서 ClosedRoomView 로 빠지므로 여기는 진행 중만 온다 */}
+            {/* 종료된 방은 결과 화면으로 빠지므로 여기는 진행 중만 온다 */}
             <button
               type="button"
               onClick={() => setPanel('quickBid')}

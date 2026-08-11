@@ -65,9 +65,12 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
                   'flex items-center gap-3 rounded-2xl px-3 py-2',
                   // 줄 배경도 모바일과 같은 색을 쓴다.
                   tone.row,
-                  entranceOf(event.id) === 'incoming'
-                    ? 'animate-event'
-                    : 'animate-rise',
+                  /*
+                   * 실시간으로 들어온 줄에는 등장 연출을 걸지 않는다. 덮개가
+                   * 글자 위까지 덮어서 박스만 먼저 뜨고 문구가 1.5초 뒤에
+                   * 나타났다. 알림은 도착 즉시 읽히는 쪽이 맞다.
+                   */
+                  entranceOf(event.id) === 'initial' && 'animate-rise',
                 )}
                 style={
                   entranceOf(event.id) === 'incoming'
@@ -79,7 +82,6 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
                   className={cn(
                     'flex size-9 shrink-0 items-center justify-center rounded-[10px]',
                     tone.chip,
-                    entranceOf(event.id) === 'incoming' && 'animate-event-chip',
                   )}
                 >
                   {tone.icon}
