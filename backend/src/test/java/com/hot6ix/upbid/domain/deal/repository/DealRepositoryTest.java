@@ -139,6 +139,18 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(deal.getMyTurn()).isZero();
     }
 
+    /** 구매자는 판매자를 사람이 아니라 상점으로 알아본다. 개인 닉네임("승민")이 아니라 상점명("승민상점")을 준다. */
+    @Test
+    @DisplayName("구매 건의 거래 상대 표시는 판매자의 개인 닉네임이 아니라 상점명이다")
+    void findDealsShowsStoreNameNotSellerNicknameForBuyer() {
+
+        AuctionItem item = newItem("포토카드", AuctionItemStatus.SOLD, END_AT);
+        User buyer = newUser("buyer@hot6ix.com", "원기");
+        newCandidate(item, buyer, 1, 15_000L);
+
+        assertThat(findDeals(buyer).getFirst().getPartnerNickname()).isEqualTo("승민상점");
+    }
+
     @Test
     @DisplayName("구매 건: 앞 순위가 모두 실패하면 내 차례가 된다")
     void findDealsMyTurnIsTrueWhenPreviousFailed() {
@@ -274,7 +286,7 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
 
     /** 상대가 나갔다고 내 기록이 없어지면 안 된다. 구매자 쪽이 판매자에 매달려 있던 부분이다. */
     @Test
-    @DisplayName("판매자가 탈퇴하고 프로필을 지워도 구매 내역은 남는다")
+    @DisplayName("판매자가 탈퇴하고 프로필을 지워도 구매 내역과 상점명은 남는다")
     void findDealsKeepsPurchaseWhenSellerWithdraws() {
 
         AuctionItem item = newItem("포토카드", AuctionItemStatus.SOLD, END_AT);
@@ -288,7 +300,7 @@ class DealRepositoryTest extends AbstractMySqlContainerTest {
         assertThat(findDeals(buyer))
                 .extracting(DealSummaryProjection::getProductName,
                         DealSummaryProjection::getPartnerNickname)
-                .containsExactly(tuple("포토카드", "승민"));
+                .containsExactly(tuple("포토카드", "승민상점"));
     }
 
     /** 후보 목록에서 탈퇴자를 건너뛰므로, 거래 상대 표시도 같은 사람을 가리켜야 한다. */

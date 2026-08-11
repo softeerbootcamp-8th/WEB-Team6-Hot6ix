@@ -23,6 +23,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SellerProfile extends BaseEntity {
 
+    /** 회원탈퇴 시 storePhoneNumber에 채우는 값. 실제 연락처를 지우면서도 화면에는 빈 줄 대신 이유를 보여준다. */
+    private static final String WITHDRAWN_STORE_PHONE_NUMBER = "탈퇴한 가게";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "seller_profile_id")
@@ -88,5 +91,15 @@ public class SellerProfile extends BaseEntity {
         this.snsUrl = request.snsUrl();
         this.storePhoneNumber = request.storePhoneNumber();
         this.storeDescription = request.storeDescription();
+    }
+
+    /**
+     * 회원탈퇴 시 연락처를 "탈퇴한 가게"로 바꾼다. soft delete는 조회 경로를 막아 주지만
+     * DB에는 값이 그대로 남으므로, 실제 연락처는 지우고 화면에는 그 이유를 남긴다.
+     * storeName 등 나머지 필드는 낙찰 결과·거래 내역처럼 이력으로 남는 화면과 무관해
+     * 그대로 둔다.
+     */
+    public void withdrawStorePhoneNumber() {
+        this.storePhoneNumber = WITHDRAWN_STORE_PHONE_NUMBER;
     }
 }

@@ -6,9 +6,13 @@ import com.hot6ix.upbid.domain.user.dto.response.UserResponseDto;
 import com.hot6ix.upbid.domain.user.service.UserService;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
+import com.hot6ix.upbid.global.session.SessionManager;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController implements UserApi {
 
     private final UserService userService;
+    private final SessionManager sessionManager;
 
     @Override
     @GetMapping("/me")
@@ -40,5 +45,16 @@ public class UserController implements UserApi {
         UserResponseDto response = userService.updateMe(userId, request);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "프로필이 수정되었습니다."));
+    }
+
+    @Override
+    @DeleteMapping("/me")
+    public ResponseEntity<CommonResponse<Void>> withdraw(
+            HttpServletRequest request, HttpServletResponse response, @LoginUserId Long userId) {
+
+        userService.withdraw(userId);
+        sessionManager.invalidate(request, response);
+
+        return ResponseEntity.ok(CommonResponse.ok("회원 탈퇴가 완료되었습니다."));
     }
 }

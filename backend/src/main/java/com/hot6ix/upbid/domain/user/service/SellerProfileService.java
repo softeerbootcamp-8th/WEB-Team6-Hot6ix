@@ -14,6 +14,7 @@ import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.CommonErrorType;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -155,6 +156,31 @@ public class SellerProfileService {
         }
 
         sellerProfile.softDelete(LocalDateTime.now());
+    }
+
+    /**
+     * 회원탈퇴 시 판매자 프로필을 정리한다. 판매자 등록을 한 적 없는 회원(대다수)은
+     * 조용히 넘어간다 — {@link #delete}와 달리 프로필이 없는 게 오류가 아니다.
+     *
+     * <p>있으면 {@link #delete}를 그대로 호출해 같은 OPEN 경매방 가드를 탄다. soft delete
+     * 만으로는 DB에 남는 연락처까지 지워지지 않으므로
+     * {@link SellerProfile#withdrawStorePhoneNumber} 로 실제 번호를 지우고 "탈퇴한 가게"로
+     * 바꾼다.
+     *
+     * @throws ApplicationException 진행 중인 경매방이 있을 때(SELLER_PROFILE_IN_USE)
+     */
+    @Transactional
+    public void withdraw(Long userId) {
+
+        Optional<SellerProfile> sellerProfile =
+                sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(userId);
+
+        if (sellerProfile.isEmpty()) {
+            return;
+        }
+
+        delete(userId);
+        sellerProfile.get().withdrawStorePhoneNumber();
     }
 
     private SellerProfile findActiveByUserId(Long userId) {
