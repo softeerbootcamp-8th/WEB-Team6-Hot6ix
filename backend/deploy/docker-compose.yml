@@ -24,6 +24,14 @@ services:
       - SPRING_DATASOURCE_USERNAME=${RDS_USERNAME}
       - SPRING_DATASOURCE_PASSWORD=${RDS_PASSWORD}
       - SPRING_PROFILES_ACTIVE=prod
+      # Redis (ElastiCache 등 외부 관리형) — 연결 환경만 구축한 상태다 (#277).
+      # 프로비저닝과 REDIS_ENDPOINT/REDIS_PASSWORD 시크릿 생성은 인프라 담당자 몫이다.
+      # 값이 없으면 REDIS_HOST가 빈 문자열이 되는데, 아직 Redis를 쓰는 코드가 없어
+      # 연결 시도 자체가 없으므로 배포는 그대로 동작한다.
+      - REDIS_HOST=${REDIS_ENDPOINT:-}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_SSL_ENABLED=${REDIS_SSL_ENABLED:-true}
       # 아래는 전부 부하 측정용 손잡이다 (이슈 #266). 값을 안 주면 지금과 동작이 같다.
       #
       # ACTUATOR_EXPOSURE 를 열기 전에 nginx 에서 /actuator 를 측정 서버 IP 로 제한한다.
