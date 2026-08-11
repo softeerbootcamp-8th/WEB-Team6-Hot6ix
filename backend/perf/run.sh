@@ -1434,7 +1434,9 @@ printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
 
 # var-run 을 박아야 이 실행의 시계열만 보인다. 안 붙이면 대시보드가 여태 돌린 실행을
 # 전부 겹쳐 그려서, 계단 하나를 보려는데 다른 계단이 같이 나온다.
-GRAFANA_LINK="$GRAFANA_URL/d/upbid-perf?var-run=$RUN_ID&from=${WINDOW_START_EPOCH}000&to=${WINDOW_END_EPOCH}000"
+# 대시보드가 run 라벨로 거르므로 조회에 쓴 값과 같아야 한다. 원격은 앱이 부팅 때 받은
+# 값(기본 unknown)이라 실행 이름과 다르고, RUN_ID 를 넣으면 화면이 전부 no data 가 된다.
+GRAFANA_LINK="$GRAFANA_URL/d/upbid-perf?var-run=${RUN_LABEL:-$RUN_ID}&from=${WINDOW_START_EPOCH}000&to=${WINDOW_END_EPOCH}000"
 
 # 가상 스레드는 전역 스위치라 톰캣도 함께 바뀐다. 이 단서를 안 적으면 나중에 이 숫자를
 # 스케줄러 근거로 잘못 쓴다. 스케줄러가 SimpleAsyncTaskScheduler 로 바뀌어 풀도 큐도
