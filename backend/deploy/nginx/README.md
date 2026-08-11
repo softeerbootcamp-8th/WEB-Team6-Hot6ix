@@ -37,10 +37,19 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## 지금 값에서 눈여겨볼 것
 
-- **`upstream app` 의 `keepalive 128` 은 원래부터 들어가 있었습니다.** 요청마다 TCP 를 새로
-  여는 문제는 없습니다. `worker_connections` 도 4096 이라 기본값(768)보다 큽니다.
+- **`keepalive 128` 과 `worker_connections 4096` 은 2026-08-11 에 서버에서 손으로 넣은
+  것입니다.** 그전에는 keepalive 가 아예 없어서 요청마다 앱으로 TCP 를 새로 열었고, 끊은
+  포트가 60초 잠기므로 포트 범위(약 28,000개) ÷ 60 = **초당 약 470건에서 포트가 마르는
+  상태**였습니다. 로컬에서 앱만 재면 2,900 req/s 가 나오는데 앞단이 6분의 1로 막고
+  있었습니다. 같은 날 `proxy_http_version 1.1` 과 클라이언트 HTTP/2 도 함께 켰습니다.
+  자세한 경위와 검증은 `backend/plans/242-부하-측정-환경/인프라-현황.md` 에 있습니다.
+- **`keepalive_timeout` 을 15초로 둔 것은 톰캣 기본 keep-alive 가 20초이기 때문입니다.**
+  nginx 쪽을 더 길게 잡으면 톰캣이 먼저 닫은 커넥션으로 요청을 보내 간헐적 502 가 납니다.
+  **`perf/nginx.conf` 의 `keepalive_timeout 300s` 를 운영에 그대로 옮기면 안 됩니다.**
 - SSE 응답 버퍼링은 앱이 `X-Accel-Buffering: no` 를 보내서 이미 꺼집니다
   (`SseController`). nginx 설정으로 따로 끌 필요가 없습니다.
+- SSE 동시 접속 상한은 `worker_processes(2) × worker_connections(4096) ÷ 2` 로 약 4,096 개
+  입니다. SSE 하나가 슬롯을 둘(클라이언트 쪽, 앱으로 가는 쪽) 씁니다.
 - **`access_log` 는 켜 둔 채입니다.** 부하를 걸면 초당 수천 줄이 디스크로 가서 재는 대상에
   로그 I/O 가 섞이는데, 끄면 운영 기록도 같이 없어집니다. 측정 창구에만 `access_log off;`
   를 넣었다가 되돌립니다.

@@ -13,7 +13,10 @@ services:
   prometheus:
     image: prom/prometheus:v3.6.0
     ports:
-      - "${PERF_PROM_PORT:-19090}:9090"
+      # 127.0.0.1 에 묶는다. 보안 그룹을 잘못 열어도 인터넷에서 안 닿는다.
+      # remote-write receiver 가 켜져 있어서 열리면 아무나 가짜 시계열을 써넣을 수 있고,
+      # 그러면 그 실행은 통째로 못 쓴다. 볼 때는 SSH 터널로 본다.
+      - "127.0.0.1:${PERF_PROM_PORT:-19090}:9090"
     volumes:
       - ./prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
       # 앱 사설 IP 는 커밋하지 않는다. targets.yml.example 을 복사해 만든다.
@@ -27,7 +30,11 @@ services:
   grafana:
     image: grafana/grafana:12.2.0
     ports:
-      - "${PERF_GRAFANA_PORT:-13000}:3000"
+      # 여기도 127.0.0.1 이다. 익명 로그인을 Admin 으로 켜 둔 채라 열리면 누구나 들어와
+      # 대시보드를 고칠 수 있다. 로컬에서는 도커 네트워크 안이라 괜찮던 설정이다.
+      #
+      #   ssh -L 13000:localhost:13000 upbid-perf
+      - "127.0.0.1:${PERF_GRAFANA_PORT:-13000}:3000"
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
