@@ -80,6 +80,9 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
 	testImplementation 'org.testcontainers:testcontainers-mysql'
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	// GenericContainer로 Redis를 직접 띄우는 ShedLock 락 테스트용. testcontainers-mysql이 코어를
+	// 전이 의존성으로 끌고 오지만, MySQL 모듈의 의존 그래프가 바뀌면 깨질 수 있어 명시한다.
+	testImplementation 'org.testcontainers:testcontainers'
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	testAnnotationProcessor 'org.projectlombok:lombok'
