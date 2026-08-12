@@ -109,6 +109,9 @@ management:
         # 이건 "얼마나 오래 기다렸나"를 알려줘서, 커넥션이 모자란 것과 락 때문에
         # 커넥션을 오래 붙잡는 것을 가른다.
         hikaricp.connections.acquire: true
+        # 커넥션을 빌린 뒤 반환할 때까지. 비관적 락 대기가 DB 커넥션 점유
+        # 시간을 늘렸는지 직접 보려면 acquire와 별도로 이 histogram이 필요하다.
+        hikaricp.connections.usage: true
       percentiles:
         http.server.requests: 0.5, 0.95, 0.99
 

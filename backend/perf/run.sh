@@ -76,6 +76,7 @@ ISOLATION=RR
 CPUS=2.0
 BULK_ITEMS=0
 SWEEP_INDEX=off
+BURST_MODE=same
 
 # perf 는 측정용 포트를 따로 쓴다. 개발 백엔드(8080)나 프론트(5173)와 안 겹치게 한다.
 # 겹치면 측정을 시작하는 순간 개발 환경이 죽고, 프론트가 조용히 perf 앱에 붙는다.
@@ -90,7 +91,7 @@ usage() {
 
   --scenario N       0=부하 발생기 한계, 1~5=시나리오 (기본 1)
                      5 는 마감과 입찰을 겹친다. --items 로 마감할 물품 수를 준다
-                     6=탐색 램프(무릎 찾기), 7=스파이크(절벽). 둘 다 판정에 안 쓴다
+                     6=탐색 램프, 7=스파이크, 8=동시 출발 정합성
   --vus N            가상 사용자 수. 계단은 10/20/40/80/160 (기본 40)
                      --rate 와 같이 주면 도착률을 채울 VU 수(preAllocatedVUs)가 된다
   --rate N           초당 도착 건수를 고정한다 (열린 모델). 안 주면 예전처럼 닫힌 모델
@@ -127,6 +128,7 @@ usage() {
                      마감 대상을 찾는 조회가 표 전체를 훑는지 보려면 표가 커야 한다
   --sweep-index on|off  auction_items(status, end_at) 인덱스를 만들지 (기본 off)
                      --bulk-items 와 짝으로 켜고 끄면서 조회 시간이 어떻게 달라지는지 본다
+  --burst-mode same|increasing  시나리오 8의 금액. 동일 금액 또는 VU별 증가 금액 (기본 same)
 
   --duration D       측정 길이 (기본 3m)
   --warmup N         워밍업 초 (기본 30)
@@ -182,6 +184,7 @@ while [ $# -gt 0 ]; do
     --isolation) ISOLATION="$2"; shift 2 ;;
     --bulk-items) BULK_ITEMS="$2"; shift 2 ;;
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
+    --burst-mode) BURST_MODE="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
     --warmup-vus) WARMUP_VUS="$2"; shift 2 ;;
@@ -199,6 +202,16 @@ if [ "$SCENARIO" = "7" ] && [ "$RATE" -le 0 ] 2>/dev/null; then
   echo "시나리오 7(스파이크)은 --rate 가 있어야 한다. 예: --scenario 7 --rate 200" >&2
   exit 1
 fi
+
+if [ "$SCENARIO" = "8" ] && [ "$RATE" -gt 0 ] 2>/dev/null; then
+  echo "시나리오 8은 VU마다 한 번 동시에 보내므로 --rate와 함께 쓸 수 없다." >&2
+  exit 1
+fi
+
+case "$BURST_MODE" in
+  same|increasing) ;;
+  *) echo "--burst-mode는 same 또는 increasing이다 (받은 값: $BURST_MODE)" >&2; exit 1 ;;
+esac
 
 # 원격 모드에 빠진 값이 있으면 여기서 멈춘다.
 #
@@ -399,7 +412,7 @@ preflight() {
   fi
 
   case "$SCENARIO" in
-    1|2|5)
+    1|2|5|8)
       if [ "$USERS" -lt "$VUS" ] 2>/dev/null; then
         echo "※ 시딩할 회원(${USERS})이 VU(${VUS})보다 적다. 남는 VU 는 약관 동의가 없어" >&2
         echo "  전부 TERMS_NOT_AGREED 로 거절된다. --users 를 올린다." >&2
@@ -742,7 +755,10 @@ for _ in $(seq 1 10); do
   MISSING=""
   for metric in tomcat_threads_busy_threads \
                 hikaricp_connections_active hikaricp_connections_pending \
+                hikaricp_connections_usage_seconds_bucket \
+                hikaricp_connections_timeout_total \
                 http_server_requests_seconds_bucket \
+                process_cpu_usage system_cpu_usage system_load_average_1m \
                 upbid_sse_connections upbid_sse_rooms \
                 upbid_bid_lock_wait_seconds_bucket \
                 upbid_bid_lock_hold_seconds_bucket \
@@ -807,7 +823,8 @@ case "$SCENARIO" in
   5) SCRIPT="scenario5.js" ;;
   6) SCRIPT="explore.js" ;;
   7) SCRIPT="spike.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~7)" >&2; exit 1 ;;
+  8) SCRIPT="burst.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~8)" >&2; exit 1 ;;
 esac
 
 # 6(탐색 램프)과 7(스파이크)은 램프라서 p95 가 구간 평균이 되고 max 계열이 램프 끝 값만
@@ -840,6 +857,7 @@ run_k6() {
   BID_ITEMS="$BID_ITEMS" BID_START="$BID_START" CLOSE_BID_UNTIL="$CLOSE_BID_UNTIL" \
   CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
   START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
+  BURST_MODE="$BURST_MODE" \
   DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" RATE="${RUN_RATE:-$RATE}" \
   BASE_URL="$APP_URL/api/v1" \
     "${COMPOSE[@]}" run --rm \
@@ -847,6 +865,7 @@ run_k6() {
       -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
       -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
       -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN -e RATE -e BASE_URL \
+      -e BURST_MODE \
       k6 run ${@+"$@"} "/scripts/$SCRIPT" \
       2>&1 | tee "$log"
   K6_EXIT="${PIPESTATUS[0]}"
@@ -1053,7 +1072,7 @@ NOT_ACTUATOR="$RUN, uri!=\"/actuator/prometheus\", uri!~\".*subscribe\""
 # 46.70 -> 46.56ms), 시나리오 4 는 전체 요청이 수십 건뿐이라 물품 시작이 처리량 그 자체가 된다.
 case "$SCENARIO" in
   0)     MAIN_URI=', uri="/actuator/health"' ;;
-  1|2|5) MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/bids"' ;;
+  1|2|5|8) MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/bids"' ;;
   4)     MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/start"' ;;
   # 3 은 SSE 구독이 주인공인데 끝나지 않는 스트림이라 응답 시간에 안 잡힌다. 그래서 안 좁힌다.
   *)     MAIN_URI='' ;;
@@ -1086,6 +1105,7 @@ p95_of() {
 
 RPS="$(promq "sum($(delta "http_server_requests_seconds_count{$MAIN}")) / $WINDOW_SECONDS")"
 P95_MS="$(p95_of "http_server_requests_seconds_bucket{$MAIN}")"
+P99_MS="$(quantile_of "http_server_requests_seconds_bucket{$MAIN}" 0.99)"
 TOMCAT_BUSY_MAX="$(promq "max(max_over_time(tomcat_threads_busy_threads{$RUN}[$W]))")"
 HIKARI_ACTIVE_MAX="$(promq "max(max_over_time(hikaricp_connections_active{$RUN}[$W]))")"
 HIKARI_PENDING_MAX="$(promq "max(max_over_time(hikaricp_connections_pending{$RUN}[$W]))")"
@@ -1104,6 +1124,10 @@ BEFORE_LOCK_P95_MS="$(p95_of "upbid_bid_before_lock_seconds_bucket{$RUN}")"
 # 락 보유 중 커밋이 차지하는 몫. 쿼리를 빼서 줄일 수 있는 부분과 못 줄이는 부분을 가른다.
 COMMIT_P95_MS="$(p95_of "upbid_bid_commit_seconds_bucket{$RUN}")"
 CONN_ACQUIRE_P95_MS="$(p95_of "hikaricp_connections_acquire_seconds_bucket{$RUN}")"
+CONN_ACQUIRE_P99_MS="$(quantile_of "hikaricp_connections_acquire_seconds_bucket{$RUN}" 0.99)"
+CONN_USAGE_P95_MS="$(p95_of "hikaricp_connections_usage_seconds_bucket{$RUN}")"
+CONN_USAGE_P99_MS="$(quantile_of "hikaricp_connections_usage_seconds_bucket{$RUN}" 0.99)"
+CONN_TIMEOUT_COUNT="$(promq "sum($(delta "hikaricp_connections_timeout_total{$RUN}")) or vector(0)")"
 CLOSE_DELAY_P95_MS="$(p95_of "upbid_auction_close_delay_seconds_bucket{$RUN}")"
 SSE_HEARTBEAT_P95_MS="$(p95_of "upbid_sse_heartbeat_seconds_bucket{$RUN}")"
 
@@ -1152,6 +1176,15 @@ SCHED_ACTIVE_MAX="$(promq "max(max_over_time(executor_active_threads{$SCHED}[$W]
 SCHED_QUEUED_MAX="$(promq "max(max_over_time(executor_queued_tasks{$SCHED}[$W]))")"
 GC_PAUSE_MS_PER_S="$(promq "sum($(delta "jvm_gc_pause_seconds_sum{$RUN}")) / $WINDOW_SECONDS * 1000")"
 
+# 컨테이너가 없는 배포에서도 앱 CPU를 같은 정의로 남긴다. process는 JVM, system은 EC2 호스트
+# 전체다. 로컬·배포 비교의 주 지표는 process CPU이고 둘의 차이는 JVM 밖 비용이다.
+PROCESS_CPU_AVG="$(promq "avg(avg_over_time(process_cpu_usage{$RUN}[$W])) * 100")"
+PROCESS_CPU_MAX="$(promq "max(max_over_time(process_cpu_usage{$RUN}[$W])) * 100")"
+SYSTEM_CPU_AVG="$(promq "avg(avg_over_time(system_cpu_usage{$RUN}[$W])) * 100")"
+SYSTEM_CPU_MAX="$(promq "max(max_over_time(system_cpu_usage{$RUN}[$W])) * 100")"
+SYSTEM_LOAD_AVG="$(promq "avg(avg_over_time(system_load_average_1m{$RUN}[$W]))")"
+SYSTEM_LOAD_MAX="$(promq "max(max_over_time(system_load_average_1m{$RUN}[$W]))")"
+
 # 입찰 결과는 k6 요약에서 읽는다.
 #
 # 서버 지표로는 못 가른다 — 입찰 거절이 BID_AMOUNT_TOO_LOW 도 CONCURRENT_BID_CONFLICT 도
@@ -1168,9 +1201,11 @@ if [ -f "$RESULT_DIR/summary.json" ]; then
   CONCURRENT_CONFLICT="$(k6sum bid_concurrent_conflict)"
   REJECTED_OTHER="$(k6sum bid_rejected_other)"
   FAILED_5XX="$(k6sum bid_failed)"
+  DROPPED_ITERATIONS="$(k6sum dropped_iterations)"
 else
   ACCEPTED=0; REJECTED_AMOUNT=0; REJECTED_ALREADY_TOP=0; REJECTED_CLOSED=0
   CONCURRENT_CONFLICT=0; REJECTED_OTHER=0; FAILED_5XX=0
+  DROPPED_ITERATIONS=0
 fi
 
 REJECTED_4XX=$((REJECTED_AMOUNT + REJECTED_ALREADY_TOP + REJECTED_CLOSED + CONCURRENT_CONFLICT + REJECTED_OTHER))
@@ -1184,10 +1219,13 @@ BID_ATTEMPTS=$((ACCEPTED + REJECTED_4XX + FAILED_5XX))
 # 실측: vus 20 에서 1.04%, vus 40 에서 0.61% 였고 접수 건수는 6159 -> 3217 로 반토막이었다.
 # 총 처리량만 보면 0.86배라 "약간 하락"으로 읽히는데, 실제로 한 일은 절반이다.
 ACCEPTED_PER_S="$(awk -v a="$ACCEPTED" -v w="$WINDOW_SECONDS" 'BEGIN { printf "%.1f", (w > 0 ? a / w : 0) }')"
+BID_ATTEMPT_PER_S="$(awk -v a="$BID_ATTEMPTS" -v w="$WINDOW_SECONDS" 'BEGIN { printf "%.1f", (w > 0 ? a / w : 0) }')"
+BID_ACCEPT_RATE="$(awk -v a="$ACCEPTED" -v n="$BID_ATTEMPTS" 'BEGIN { printf "%.1f", (n > 0 ? a / n * 100 : 0) }')"
 
 # k6 가 클라이언트에서 본 p95. 서버 p95 와 나란히 두면 서로 검산이 된다.
 # 둘이 벌어지면 그 차이가 네트워크와 부하 발생기 몫이라, 그 자체가 신호다.
 K6_P95_MS="$(jq -r '.metrics.http_req_duration.values["p(95)"] // "NaN"' "$RESULT_DIR/summary.json" 2>/dev/null || echo NaN)"
+K6_P99_MS="$(jq -r '.metrics.http_req_duration.values["p(99)"] // "NaN"' "$RESULT_DIR/summary.json" 2>/dev/null || echo NaN)"
 
 # 컨테이너별로 평균과 최대를 뽑는다. 앱과 MySQL 은 --cpus 로 나눠 "준 코어의 몇 %" 로
 # 바꾸고, k6 는 제한을 안 걸었으니 호스트 코어 기준 그대로 둔다.
@@ -1212,6 +1250,7 @@ round() {
 
 RPS="$(round "$RPS" 1)"
 P95_MS="$(round "$P95_MS" 0)"
+P99_MS="$(round "$P99_MS" 0)"
 TOMCAT_BUSY_MAX="$(round "$TOMCAT_BUSY_MAX" 0)"
 HIKARI_ACTIVE_MAX="$(round "$HIKARI_ACTIVE_MAX" 0)"
 HIKARI_PENDING_MAX="$(round "$HIKARI_PENDING_MAX" 0)"
@@ -1225,6 +1264,10 @@ LOCK_HOLD_REJ_P95_MS="$(round "$LOCK_HOLD_REJ_P95_MS" 1)"
 BEFORE_LOCK_P95_MS="$(round "$BEFORE_LOCK_P95_MS" 1)"
 COMMIT_P95_MS="$(round "$COMMIT_P95_MS" 1)"
 CONN_ACQUIRE_P95_MS="$(round "$CONN_ACQUIRE_P95_MS" 0)"
+CONN_ACQUIRE_P99_MS="$(round "$CONN_ACQUIRE_P99_MS" 0)"
+CONN_USAGE_P95_MS="$(round "$CONN_USAGE_P95_MS" 0)"
+CONN_USAGE_P99_MS="$(round "$CONN_USAGE_P99_MS" 0)"
+CONN_TIMEOUT_COUNT="$(round "$CONN_TIMEOUT_COUNT" 0)"
 CLOSE_DELAY_P95_MS="$(round "$CLOSE_DELAY_P95_MS" 0)"
 SSE_HEARTBEAT_P95_MS="$(round "$SSE_HEARTBEAT_P95_MS" 0)"
 HEARTBEAT_RUNS="$(round "$HEARTBEAT_RUNS" 0)"
@@ -1248,6 +1291,14 @@ APP_CPU_MAX="$(round "$APP_CPU_MAX" 1)"
 MYSQL_CPU_AVG="$(round "$MYSQL_CPU_AVG" 1)"
 MYSQL_CPU_MAX="$(round "$MYSQL_CPU_MAX" 1)"
 K6_P95_MS="$(round "$K6_P95_MS" 0)"
+K6_P99_MS="$(round "$K6_P99_MS" 0)"
+PROCESS_CPU_AVG="$(round "$PROCESS_CPU_AVG" 1)"
+PROCESS_CPU_MAX="$(round "$PROCESS_CPU_MAX" 1)"
+SYSTEM_CPU_AVG="$(round "$SYSTEM_CPU_AVG" 1)"
+SYSTEM_CPU_MAX="$(round "$SYSTEM_CPU_MAX" 1)"
+SYSTEM_LOAD_AVG="$(round "$SYSTEM_LOAD_AVG" 2)"
+SYSTEM_LOAD_MAX="$(round "$SYSTEM_LOAD_MAX" 2)"
+DROPPED_ITERATIONS="$(round "$DROPPED_ITERATIONS" 0)"
 
 # 입찰 한 건이 SELECT 를 몇 번 했는지. Com_select 는 서버 전체 누적이라 배경 SSE 나 시딩까지
 # 섞이지 않도록 k6 직전과 직후의 차이만 쓴다. 입찰이 하나도 안 붙은 실행은 나눌 수가 없다.
@@ -1322,6 +1373,10 @@ SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER
     "tomcat_threads_busy_threads{$RUN}|tomcat_busy" \
     "hikaricp_connections_active{$RUN}|hikari_active" \
     "hikaricp_connections_pending{$RUN}|hikari_pending" \
+    "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_usage_seconds_bucket{$RUN}[30s])))|hikari_usage_p95_s" \
+    "process_cpu_usage{$RUN}|process_cpu_usage" \
+    "system_cpu_usage{$RUN}|system_cpu_usage" \
+    "system_load_average_1m{$RUN}|system_load_average_1m" \
     "sum(jvm_memory_used_bytes{$RUN, area=\"heap\"})|heap_bytes" \
     "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{$RUN}[30s])))|lock_wait_p95_s" \
     "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_hold_seconds_bucket{$RUN}[30s])))|lock_hold_p95_s" \
@@ -1392,7 +1447,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,vus,rate,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -1422,10 +1477,12 @@ fi
 # k6 가 중간에 죽으면 summary.json 이 없어서 접수와 거절이 전부 0 인데 처리량은 그럴듯한
 # 숫자가 박혀서, 그 줄만 봐서는 아무도 못 알아본다. 실측으로 겪었다 — 구간 128초짜리
 # aborted 줄에 처리량 3490.7 이 들어갔고 접수는 0 이었다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+VALUES=( \
   "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$RATE" "$POOL" "$ITEMS" "$SSE" \
-  "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
-  "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" \
+  "$RPS" "$BID_ATTEMPT_PER_S" "$ACCEPTED_PER_S" "$BID_ACCEPT_RATE" \
+  "$P95_MS" "$P99_MS" "$K6_P95_MS" "$K6_P99_MS" \
+  "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
+  "$CONN_ACQUIRE_P95_MS" "$CONN_ACQUIRE_P99_MS" "$CONN_USAGE_P95_MS" "$CONN_USAGE_P99_MS" "$CONN_TIMEOUT_COUNT" "$HEAP_MB_MAX" \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
   "$LOCK_HOLD_ACC_P95_MS" "$LOCK_HOLD_REJ_P95_MS" "$COMMIT_P95_MS" \
   "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS" \
@@ -1435,9 +1492,11 @@ printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
   "$CLOSE_FAILURES" "$CLOSES" "$AWARDS" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$HEARTBEAT_RUNS" "$HEARTBEAT_EXPECTED" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
   "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" \
+  "$PROCESS_CPU_AVG" "$PROCESS_CPU_MAX" "$SYSTEM_CPU_AVG" "$SYSTEM_CPU_MAX" "$SYSTEM_LOAD_AVG" "$SYSTEM_LOAD_MAX" \
   "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
-  "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" \
-  >>"$INDEX"
+  "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" "$DROPPED_ITERATIONS" "" "" \
+)
+(IFS=,; echo "${VALUES[*]}") >>"$INDEX"
 
 # var-run 을 박아야 이 실행의 시계열만 보인다. 안 붙이면 대시보드가 여태 돌린 실행을
 # 전부 겹쳐 그려서, 계단 하나를 보려는데 다른 계단이 같이 나온다.
@@ -1496,11 +1555,15 @@ cat >"$RESULT_DIR/note.md" <<EOF
 |---|---|
 | 부하 모델 | ${LOAD_MODEL} |
 | 처리량 (주인공 요청만) | ${RPS} req/s |
+| **입찰 시도율 / 접수율** | **${BID_ATTEMPT_PER_S} 건/s / ${BID_ACCEPT_RATE}%** |
 | **접수 처리량** | **${ACCEPTED_PER_S} 건/s** ← 계단 비교는 이 값으로 |
 | p95 (서버 / k6) | ${P95_MS} / ${K6_P95_MS} ms |
+| p99 (서버 / k6) | ${P99_MS} / ${K6_P99_MS} ms |
 | 톰캣 스레드 max | ${TOMCAT_BUSY_MAX} |
 | 커넥션 active / pending max | ${HIKARI_ACTIVE_MAX} / ${HIKARI_PENDING_MAX} |
-| 커넥션 획득 p95 | ${CONN_ACQUIRE_P95_MS} ms |
+| 커넥션 획득 p95 / p99 | ${CONN_ACQUIRE_P95_MS} / ${CONN_ACQUIRE_P99_MS} ms |
+| 커넥션 사용 p95 / p99 | ${CONN_USAGE_P95_MS} / ${CONN_USAGE_P99_MS} ms |
+| 커넥션 timeout | ${CONN_TIMEOUT_COUNT} 회 |
 | 힙 max | ${HEAP_MB_MAX} MB |
 | **T2** 락 앞 (커넥션 획득 + SELECT 3개) p95 | ${BEFORE_LOCK_P95_MS} ms |
 | **T3** 락 대기 p95 | ${LOCK_WAIT_P95_MS} ms |
@@ -1530,6 +1593,9 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | **heartbeat 실행 횟수** | **${HEARTBEAT_RUNS} / ${HEARTBEAT_EXPECTED} 회** ← 모자라면 굶은 것 |
 | SSE broadcast p95 | ${SSE_BROADCAST_P95_MS} ms |
 | **앱 CPU max** | **${APP_CPU_MAX} %** ← 천장이 200%(cpus: 2.0). 여기 붙었으면 이 줄은 CPU 실험이다 |
+| JVM process CPU 평균 / 최대 | ${PROCESS_CPU_AVG} / ${PROCESS_CPU_MAX} % |
+| 호스트 system CPU 평균 / 최대 | ${SYSTEM_CPU_AVG} / ${SYSTEM_CPU_MAX} % |
+| system load average 1m 평균 / 최대 | ${SYSTEM_LOAD_AVG} / ${SYSTEM_LOAD_MAX} |
 | MySQL CPU max | ${MYSQL_CPU_MAX} % ← 천장 200% |
 | k6 CPU max | ${K6_CPU_MAX} % |
 | 앱 CPU (준 ${CPUS} 코어 기준) | 평균 ${APP_CPU_AVG} % / 최대 ${APP_CPU_MAX} % |
@@ -1541,6 +1607,7 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | **경합 충돌 (7006)** | **${CONCURRENT_CONFLICT}** ← 0이 정상. 0보다 크면 그게 발견이다 |
 | 그 밖의 거절 (401·403 등) | ${REJECTED_OTHER} ← 0이어야 한다. 크면 세팅이 잘못된 것 |
 | 실패 (5xx·타임아웃) | ${FAILED_5XX} |
+| k6 dropped iteration | ${DROPPED_ITERATIONS} |
 
 ${VIRTUAL_THREADS_NOTE}${REMOTE_NOTE}## 판정
 

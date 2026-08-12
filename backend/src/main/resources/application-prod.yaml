@@ -45,6 +45,7 @@ management:
         http.server.requests: true
         upbid: true
         hikaricp.connections.acquire: true
+        hikaricp.connections.usage: true
       percentiles:
         http.server.requests: 0.5, 0.95, 0.99
 

@@ -364,13 +364,24 @@
           "refId": "E",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
           "legendFormat": "획득 p95 (ms)"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "range": true,
+          "refId": "F",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_usage_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "legendFormat": "사용 p95 (ms)"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "힙과 GC pause",
-      "description": "GC 가 돌고도 힙이 안 내려가면 메모리다. GC pause 가 1초당 수십 ms 를 넘으면 힙이 빡빡한 것이다.\n접속당 힙은 0명일 때와 800명일 때를 각각 jcmd GC.run 뒤에 읽어 차이를 나눈다.",
+      "title": "힙·GC와 앱 CPU",
+      "description": "GC 가 돌고도 힙이 안 내려가면 메모리다. process CPU는 JVM, system CPU는 호스트 전체다. 둘의 차이가 크면 JVM 밖 비용을 본다.",
       "id": 7,
       "datasource": {
         "type": "prometheus",
@@ -435,6 +446,28 @@
           "legendFormat": "GC pause (ms/s)",
           "range": true,
           "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "process_cpu_usage{run=\"$run\"} * 100",
+          "legendFormat": "JVM CPU (%)",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "system_cpu_usage{run=\"$run\"} * 100",
+          "legendFormat": "system CPU (%)",
+          "range": true,
+          "refId": "D"
         }
       ]
     },

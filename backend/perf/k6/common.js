@@ -68,6 +68,7 @@ export function baseOptions(extra = {}) {
     // 응답 본문을 안 들고 있는다. 물품 목록처럼 큰 응답을 VU 수백 개가 붙들면
     // 재는 대상이 서버가 아니라 k6 의 메모리가 된다.
     discardResponseBodies: true,
+    summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(95)', 'p(99)'],
     ...extra,
   }
 }
