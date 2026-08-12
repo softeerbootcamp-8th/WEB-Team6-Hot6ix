@@ -40,6 +40,20 @@ export function setupCheck() {
  * 물품은 CLOSE_ITEM_IDS 에 담겨 온다. 기본값을 두어 시나리오 1·2 는 그대로 쓴다.
  */
 export function bidOnce(itemIds = null) {
+  const prepared = prepareBid(itemIds)
+
+  if (prepared === null) {
+    return null
+  }
+
+  return submitBid(prepared.itemId, prepared.currentPrice + prepared.bidIncrement)
+}
+
+/**
+ * 입찰 직전까지 필요한 로그인·동의·현재가 조회를 끝낸다.
+ * burst 시나리오는 이 단계까지 각 VU가 마친 뒤 공통 시각에 POST만 동시에 보낸다.
+ */
+export function prepareBid(itemIds = null) {
   // 이 VU 가 맡은 방. 방이 하나면 늘 같은 방이라 예전과 똑같이 돈다.
   const room = roomOfVu()
 
@@ -88,11 +102,14 @@ export function bidOnce(itemIds = null) {
   // 상세를 못 읽으면 금액을 만들 수 없다. 아무 값이나 보내면 그 요청이 거절 통계에 섞여
   // 접수율을 흐린다. 이번 반복은 건너뛴다.
   if (item === null) {
-    return detail
+    return null
   }
 
-  const amount = item.currentPrice + item.bidIncrement
+  return { itemId, currentPrice: item.currentPrice, bidIncrement: item.bidIncrement }
+}
 
+/** 준비가 끝난 입찰 POST를 보내고 기존과 같은 결과 counter에 기록한다. */
+export function submitBid(itemId, amount) {
   const res = http.post(`${BASE}/auction-items/${itemId}/bids`, JSON.stringify({ amount }), {
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     // 전역 discardResponseBodies 를 여기서만 뒤집는다. code 를 읽어야 거절 종류를 가른다.

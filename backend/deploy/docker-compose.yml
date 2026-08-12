@@ -12,6 +12,15 @@ services:
     ports:
       - "8080:8080"
     mem_limit: 700m
+    # /actuator/health가 DOWN인 채로 계속 떠 있어도 감지할 방법이 없었다 (#299).
+    # unhealthy가 된다고 docker가 자동으로 재시작해주지는 않지만, 최소한 `docker ps`와
+    # 모니터링에서 상태가 보이게 한다.
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     environment:
       # 베이스 이미지 기본값이 UTC라 LocalDateTime이 UTC 벽시계로 만들어진다.
       # 응답에는 오프셋이 없어서(예: "2026-08-04T07:55:00") 브라우저가 KST로 읽고,

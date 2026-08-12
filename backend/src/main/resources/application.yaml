@@ -17,16 +17,28 @@ spring:
       # 바꿔 재야 하는데, 고정돼 있으면 대조 실험을 하려고 재배포를 해야 하기 때문이다.
       maximum-pool-size: ${DB_POOL_SIZE:10}
 
-  # 연결 환경만 구축한 상태다 (#277). 아직 이 값을 읽는 코드가 없어 연결을 시도하지 않으므로,
-  # 로컬에 Redis가 없어도 기동에는 영향이 없다. 실제 세션 스토어·캐시·락 등을 붙일 때
-  # 목적·TTL·fallback을 정해서 코드를 추가한다.
+  # 실제로 이 연결을 쓰는 것 — ShedLock 분산 락(#286)과 물품 마감 예약(#289).
+  # 마감 예약은 Redis 에만 있어서, 이 연결이 죽으면 마감 시각이 지난 물품이 안 닫힌다.
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+      # 기본값(60s)이면 연결 하나가 응답 없이 멈춰도 커맨드마다 60초씩 물고 있는다 (#299).
+      timeout: ${REDIS_COMMAND_TIMEOUT:5000}
       ssl:
         enabled: ${REDIS_SSL_ENABLED:false}
+        # 운영 Redis(자체 호스팅 EC2)가 자체 서명 인증서를 쓰기 때문에 JVM 기본 트러스트스토어가
+        # 신뢰하지 않는다. ssl.enabled=false인 local·perf에서는 무시된다.
+        bundle: redis
+
+  # 운영 Redis의 자체 서명 CA. 개인키는 Redis 서버에만 있고 여기 담긴 건 공개 인증서뿐이다.
+  ssl:
+    bundle:
+      pem:
+        redis:
+          truststore:
+            certificate: classpath:redis-ca.crt
 
   # 기본값 1이면 마감 한 건이 입찰의 행 락을 기다리는 동안 다른 물품 마감과 SMS 정리 cron이
   # 함께 밀린다. 값의 근거와 전용 스케줄러 분리 여부는 3주차에 측정하고 정한다.
@@ -54,19 +66,6 @@ spring:
         format_sql: true
         default_batch_fetch_size: 100
     open-in-view: false
-
-# Redis 를 쓰는 코드가 아직 없는데 spring-data-redis 가 클래스패스에 있으면 Boot 가 Redis
-# 헬스 인디케이터를 자동으로 켠다. 붙을 Redis 가 없으니 검사가 실패하고 전체 health 가 DOWN 이
-# 되는데, 앱 기능은 멀쩡한 채로 "나 DOWN 이야"라고만 답하는 상태가 된다.
-#
-# 그러면 run.sh 의 기동 대기(curl -sf /actuator/health)가 503 에서 죽어서 부하 측정을 아예
-# 못 돌린다. 실제로 로컬과 배포 양쪽이 이 상태였다.
-#
-# Redis 를 실제로 붙일 때 이 줄을 지운다 (#277).
-management:
-  health:
-    redis:
-      enabled: false
 
 logging:
   pattern:
