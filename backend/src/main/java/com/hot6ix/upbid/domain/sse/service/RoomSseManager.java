@@ -35,6 +35,7 @@ public class RoomSseManager {
     private final SseEventBuffer sseEventBuffer;
     /** 브로드캐스트 전용 가상 스레드 실행기(#234). 필드 이름이 빈 이름과 같아야 스프링이 이걸로 골라준다. */
     private final Executor sseExecutor;
+    private static final Long ROOM_CLOSED_EVENT_ID = 1L;
 
     /**
      * 지금 열려 있는 연결 수를 지표로 내보낸다. 게이지는 스크랩할 때 위 Map 을 읽어 가는
@@ -260,24 +261,40 @@ public class RoomSseManager {
     }
 
     /**
-     * 경매방 종료 처리.
+     * 경매방 종료 처리. ROOM_CLOSED를 전원에게 보내고 모든 SSE 연결을 종료한다.
      *
-     * <p>모든 SSE 연결을 종료하고 이벤트 버퍼를 비운다.
-     * 단순히 emitter를 Map에서 제거하면 HTTP 연결은 살아있고
-     * EventSource가 자동 재연결할 수 있으므로 {@code complete()}를 호출한다.
+     * <p>emitter마다 {@code ROOM_CLOSED} 전송이 <b>실제로 끝난 뒤에만</b> 그 emitter를
+     * {@code complete()}한다(#307) — {@code sendBroadCast}와 달리 이 브로드캐스트는 마지막
+     * 이벤트라, 전송이 끝나기 전에 연결을 끊으면 클라이언트가 ROOM_CLOSED를 못 받고 연결만
+     * 끊긴다. emitter별로 독립적으로 처리해서, 느린 emitter 하나가 이미 전송이 끝난 다른
+     * emitter들의 연결 종료를 지연시키지 않는다.
      *
-     * <p>종료된 방에 대한 재연결은 구독 시점의 방 상태 검증으로 차단한다.
+     * <p>단순히 emitter를 Map에서 제거하면 HTTP 연결은 살아있고 EventSource가 자동
+     * 재연결할 수 있으므로 {@code complete()}를 호출한다.
+     *
+     * <p>종료된 방에 대한 재연결은 구독 시점의 방 상태 검증으로 차단한다. 그래서
+     * {@code sseEventBuffer}를 읽으러 올 사람이 없고, 전송이 다 끝나길 기다렸다가 지울
+     * 이유도 없어서 {@code roomEmitters}를 지운 직후 곧바로 지운다.
+     *
+     * <p>이 방을 종료하는 이벤트라 버퍼에 넣을 이유도 없다 — 넣는 순간 곧바로
+     * {@code clear}로 지워질 값이고, 재연결도 막혀 있어 그 순번({@code id})을 읽으러
+     * 올 사람이 없다. 그래서 {@code send}에는 의미 없는 값(0)을 그대로 넘긴다.
      */
-    public void closeRoom(Long roomId) {
+    public void closeRoom(String name, Long roomId, Object data) {
         Set<SseEmitter> closing = roomEmitters.remove(roomId);
-
-        if (closing != null) {
-            closing.forEach(this::complete);
-        }
-
         sseEventBuffer.clear(roomId);
 
-        log.info("sse 방 종료: roomId={}, 끊은 연결={}", roomId, closing == null ? 0 : closing.size());
+        if (closing == null) {
+            log.info("sse 방 종료: roomId={}, 끊은 연결=0", roomId);
+            return;
+        }
+
+        for (SseEmitter emitter : closing) {
+            sendAsync(roomId, emitter, name, ROOM_CLOSED_EVENT_ID, data)
+                    .thenRun(() -> complete(emitter));
+        }
+
+        log.info("sse 방 종료: roomId={}, 끊은 연결={}", roomId, closing.size());
     }
 
     /**

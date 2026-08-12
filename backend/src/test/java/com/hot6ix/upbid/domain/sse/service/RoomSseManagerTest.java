@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
@@ -27,6 +28,7 @@ class RoomSseManagerTest {
 
     private static final Long ROOM_ID = 1L;
     private static final String EVENT_NAME = "TEST_EVENT";
+    private static final String ROOM_CLOSED_EVENT = "ROOM_CLOSED";
     private static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
     private static final long EMITTER_TIMEOUT_MS = 60 * 60 * 1000L;
 
@@ -36,8 +38,8 @@ class RoomSseManagerTest {
      * 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다.
      *
      * <p>{@code Runnable::run}으로 브로드캐스트를 호출 스레드에서 바로 실행시킨다 — 실제
-     * {@code sseExecutor}를 쓰면 전송이 비동기로 미뤄져서, sendBroadCast 호출 직후 상태를
-     * 확인하는 아래 테스트들이 타이밍에 따라 흔들린다.
+     * {@code sseExecutor}를 쓰면 전송이 비동기로 미뤄져서, sendBroadCast·closeRoom 호출
+     * 직후 상태를 확인하는 아래 테스트들이 타이밍에 따라 흔들린다.
      */
     private static RoomSseManager newRoomSseManager() {
         SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
@@ -184,7 +186,7 @@ class RoomSseManagerTest {
         SseEmitter first = roomSseManager.subscribe(ROOM_ID, null);
         SseEmitter second = roomSseManager.subscribe(ROOM_ID, null);
 
-        roomSseManager.closeRoom(ROOM_ID);
+        roomSseManager.closeRoom(ROOM_CLOSED_EVENT, ROOM_ID, "payload");
 
         assertThat(roomSseManager.getParticipantCount(ROOM_ID)).isZero();
 
@@ -208,7 +210,7 @@ class RoomSseManagerTest {
         manager.sendBroadCast(EVENT_NAME, ROOM_ID, "payload");
         assertThat(buffer.getEventsAfter(ROOM_ID, 0L)).isNotEmpty();
 
-        manager.closeRoom(ROOM_ID);
+        manager.closeRoom(ROOM_CLOSED_EVENT, ROOM_ID, "payload");
 
         assertThat(buffer.getEventsAfter(ROOM_ID, 0L))
                 .as("끝난 방은 재연결 replay 대상이 아니므로 메모리를 붙잡고 있을 이유가 없다")
@@ -225,7 +227,7 @@ class RoomSseManagerTest {
                 new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer, Runnable::run);
 
         manager.subscribe(ROOM_ID, null);
-        manager.closeRoom(ROOM_ID);
+        manager.closeRoom(ROOM_CLOSED_EVENT, ROOM_ID, "payload");
 
         manager.sendBroadCast(EVENT_NAME, ROOM_ID, "payload");
 
@@ -236,7 +238,8 @@ class RoomSseManagerTest {
     @DisplayName("연결이 없는 방을 닫아도 예외가 발생하지 않는다")
     void closesRoomWithoutSubscribers() {
 
-        assertThatCode(() -> roomSseManager.closeRoom(ROOM_ID)).doesNotThrowAnyException();
+        assertThatCode(() -> roomSseManager.closeRoom(ROOM_CLOSED_EVENT, ROOM_ID, "payload"))
+                .doesNotThrowAnyException();
     }
 
     @Test
@@ -289,5 +292,24 @@ class RoomSseManagerTest {
 
         assertThat(emitters).doesNotContainNull();
         assertThat(roomSseManager.getParticipantCount(ROOM_ID)).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("방을 닫을 때 실행기가 거부해도 emitter는 끊긴다")
+    void closeRoomStillCompletesEmitterWhenExecutorRejects() {
+
+        SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
+        RoomSseManager manager = new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()),
+                new SseEventBuffer(props), rejecting -> {
+                    throw new RejectedExecutionException("test");
+                });
+
+        SseEmitter emitter = manager.subscribe(ROOM_ID, null);
+
+        manager.closeRoom(ROOM_CLOSED_EVENT, ROOM_ID, "payload");
+
+        // sseExecutor가 거부해서 ROOM_CLOSED 전송 자체는 못 나갔어도, emitter는 열어둔 채로
+        // 두지 않고 끊는다 — 안 그러면 앱이 셧다운되는 중에도 연결이 계속 남아 있게 된다.
+        assertThatThrownBy(() -> emitter.send("payload")).isInstanceOf(IllegalStateException.class);
     }
 }

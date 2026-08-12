@@ -3,7 +3,6 @@ package com.hot6ix.upbid.global.event.listener;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -21,7 +20,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -81,22 +79,21 @@ class DomainEventSseListenerTest {
 
         domainEventSseListener.on(RoomClosed.of(ROOM_ID, "승민의 경매방", OCCURRED_AT));
 
-        assertThat(sentDto("ROOM_CLOSED"))
+        assertThat(closedDto("ROOM_CLOSED"))
                 .isEqualTo(new RoomClosedDto("승민의 경매방", OCCURRED_AT));
     }
 
     @Test
-    @DisplayName("경매방 종료는 ROOM_CLOSED를 내보낸 뒤에 연결을 끊는다")
-    void closesRoomAfterRoomClosedBroadcast() {
+    @DisplayName("경매방 종료는 closeRoom 하나로 전송과 연결 종료를 함께 처리한다")
+    void closesRoomInsteadOfBroadcasting() {
 
         domainEventSseListener.on(RoomClosed.of(ROOM_ID, "승민의 경매방", OCCURRED_AT));
 
-        // 순서가 뒤집히면 마지막 이벤트가 도착하기 전에 연결이 끊긴다. 두 동작을 별도
-        // @TransactionalEventListener로 나누면 실행 순서가 정해지지 않아, 한 메서드 안에서
-        // 문장 순서로 고정한다.
-        InOrder inOrder = inOrder(roomSseManager);
-        inOrder.verify(roomSseManager).sendBroadCast(eq("ROOM_CLOSED"), eq(ROOM_ID), any());
-        inOrder.verify(roomSseManager).closeRoom(ROOM_ID);
+        // sendBroadCast는 전송을 emitter별 가상 스레드에 맡기고 기다리지 않고 돌아오므로,
+        // 그 뒤에 따로 closeRoom을 부르면 전송이 끝나기 전에 연결이 끊길 수 있다(#307).
+        // 그래서 방 종료는 sendBroadCast를 거치지 않고 closeRoom 하나가 전송까지 책임진다.
+        verify(roomSseManager).closeRoom(eq("ROOM_CLOSED"), eq(ROOM_ID), any());
+        verify(roomSseManager, never()).sendBroadCast(any(), any(), any());
     }
 
     @Test
@@ -106,7 +103,7 @@ class DomainEventSseListenerTest {
         domainEventSseListener.on(
                 ItemEnded.of(ROOM_ID, ITEM_ID, "한정판 피규어", 12_000L, "한기", OCCURRED_AT));
 
-        verify(roomSseManager, never()).closeRoom(any());
+        verify(roomSseManager, never()).closeRoom(any(), any(), any());
     }
 
     @Test
@@ -123,6 +120,13 @@ class DomainEventSseListenerTest {
     private Object sentDto(String eventName) {
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(roomSseManager).sendBroadCast(eq(eventName), eq(ROOM_ID), captor.capture());
+        return captor.getValue();
+    }
+
+    /** {@code closeRoom}으로 나간 payload를 꺼낸다. RoomClosed는 sendBroadCast를 안 타서 따로 둔다. */
+    private Object closedDto(String eventName) {
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(roomSseManager).closeRoom(eq(eventName), eq(ROOM_ID), captor.capture());
         return captor.getValue();
     }
 }

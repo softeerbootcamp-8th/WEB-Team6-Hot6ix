@@ -56,12 +56,13 @@ public class DomainEventSseListener {
             return;
         }
 
-        roomSseManager.sendBroadCast(sseEventName(event), event.roomId(), dto);
-
-        // 방 종료는 마지막 이벤트라 내보낸 뒤 연결을 끊는다.
-        // 별도의 리스너를 추가하면, 리스너 순서를 보장해야 해서 on 리스너 마지막에 closeRoom을 직접 호출하도록 했다.
+        // 방 종료는 마지막 이벤트라 전송과 연결 종료를 closeRoom() 하나가 함께 책임진다(#307).
+        // sendBroadCast는 전송을 emitter별 가상 스레드에 맡기고 기다리지 않고 돌아오므로,
+        // 그 뒤에 따로 closeRoom을 부르면 전송이 끝나기 전에 연결이 끊길 수 있다.
         if (event instanceof RoomClosed) {
-            roomSseManager.closeRoom(event.roomId());
+            roomSseManager.closeRoom(sseEventName(event), event.roomId(), dto);
+        } else {
+            roomSseManager.sendBroadCast(sseEventName(event), event.roomId(), dto);
         }
     }
 
