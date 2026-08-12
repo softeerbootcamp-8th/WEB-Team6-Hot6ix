@@ -70,8 +70,20 @@ services:
       # 프론트를 안 띄우므로 CORS 는 의미가 없지만 값이 없으면 부팅이 안 된다.
       - FRONTEND_URL=http://localhost:5173
       - JAVA_TOOL_OPTIONS=${APP_JAVA_OPTS:-}
+      # 마감 예약이 여기 있다 (#289). 앱을 2대로 늘렸을 때 둘이 같은 목록을 보는 것이
+      # 이 측정의 전제라, 인스턴스마다 따로 두면 안 된다.
+      - REDIS_HOST=redis
+      - CLOSE_POLL_INTERVAL_MS=${CLOSE_POLL_INTERVAL_MS:-100}
+      - CLOSE_VISIBILITY_TIMEOUT=${CLOSE_VISIBILITY_TIMEOUT:-30s}
+      - CLOSE_WORKER_POOL_SIZE=${CLOSE_WORKER_POOL_SIZE:-4}
+      # perf 프로파일은 로그를 warn 으로 눌러 둔다. 재는 대상에 로그 출력이 섞이면 안 되기
+      # 때문인데, 2대로 늘렸을 때 어느 인스턴스가 무엇을 처리했는지 보려면 열어야 한다.
+      # 측정할 때는 기본값(warn) 그대로 둔다.
+      - LOGGING_LEVEL_COM_HOT6IX_UPBID=${APP_LOG_LEVEL:-warn}
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   mysql:
@@ -103,6 +115,20 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p1234"]
       interval: 5s
       timeout: 5s
+      retries: 20
+
+  redis:
+    # 마감 예약과 ShedLock 이 쓴다. 앱을 2대로 늘리면 둘이 이 하나를 같이 본다.
+    #
+    # 볼륨을 안 붙이는 이유는 mysql 과 같다. 실행마다 예약이 비어 있어야 앞 실행에서 남은
+    # 물품이 이번 실행 초반에 마감되면서 숫자를 흐리지 않는다.
+    image: redis:8.10.0
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
       retries: 20
 
   prometheus:

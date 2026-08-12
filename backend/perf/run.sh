@@ -23,6 +23,8 @@ VUS=40
 # 0 이면 닫힌 모델(constant-vus). 값을 주면 초당 도착 건수를 고정하는 열린 모델이 된다.
 RATE=0
 POOL=10
+# 앱 인스턴스 수. 2 이상이면 예약이 Redis 에 있어야 동작한다 (#289).
+APPS=1
 
 # ── 원격(배포) 측정용 ──────────────────────────────────────────────
 # 비어 있으면 예전처럼 로컬 컨테이너를 띄워 잰다. 값을 주면 그쪽을 재고 아무것도 안 띄운다.
@@ -175,6 +177,7 @@ while [ $# -gt 0 ]; do
     --sse) SSE="$2"; shift 2 ;;
     --users) USERS="$2"; shift 2 ;;
     --pool) POOL="$2"; shift 2 ;;
+    --apps) APPS="$2"; shift 2 ;;
     --scheduler-pool) SCHEDULER_POOL="$2"; shift 2 ;;
     --heartbeat-ms) HEARTBEAT_MS="$2"; shift 2 ;;
     --xmx) JAVA_OPTS="-Xmx$2"; shift 2 ;;
@@ -538,8 +541,14 @@ if [ "$REMOTE" = "1" ]; then
   # 증가분이 음수가 되고, 다시 뜨는 동안 JIT 와 커넥션 풀이 식어서 첫 계단만 나쁘게 나온다.
   "${COMPOSE[@]}" up -d prometheus grafana
 else
-  "${COMPOSE[@]}" rm -sfv nginx app mysql >/dev/null 2>&1 || true
-  "${COMPOSE[@]}" up -d --build nginx app mysql prometheus grafana
+  "${COMPOSE[@]}" rm -sfv nginx app mysql redis >/dev/null 2>&1 || true
+  "${COMPOSE[@]}" up -d --build --scale app="$APPS" nginx app mysql redis prometheus grafana
+
+  # nginx 는 upstream 이름을 기동할 때 한 번만 풀어서 들고 있다. 앱을 2대로 늘려도
+  # 다시 안 시작하면 계속 처음 본 한 대에만 보낸다.
+  if [ "$APPS" -gt 1 ]; then
+    "${COMPOSE[@]}" restart nginx >/dev/null 2>&1 || true
+  fi
 fi
 
 # Prometheus 가 실행 사이에 살아남게 됐으므로 설정 파일을 다시 읽게 한다.
