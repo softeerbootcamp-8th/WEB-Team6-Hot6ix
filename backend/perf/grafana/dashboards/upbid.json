@@ -180,12 +180,207 @@
     },
     {
       "type": "row",
+      "title": "API 별",
+      "id": 21,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "API 별 응답 p95 (ms)",
+      "description": "어느 엔드포인트가 느린지 본다. 전체 p95 는 요청이 많은 API 에 끌려가서 느린 API 하나가 묻힌다.\n그 구간에 호출이 없던 API 는 NaN 이라 선이 안 그려진다. 계측이 깨진 것이 아니다.",
+      "id": 22,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "전체"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))) * 1000",
+          "legendFormat": "{{uri}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))) * 1000",
+          "legendFormat": "전체",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "API 별 처리량 (req/s)",
+      "description": "위 p95 와 나란히 본다. 느린데 호출이 거의 없는 API 와 느리면서 많이 불리는 API 는 손볼 순서가 다르다.",
+      "id": 23,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "reqps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "전체"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (uri) (rate(http_server_requests_seconds_count{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "legendFormat": "{{uri}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "legendFormat": "전체",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "row",
       "title": "자원",
       "id": 4,
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 19,
         "w": 24,
         "h": 1
       },
@@ -202,7 +397,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 20,
         "w": 8,
         "h": 8
       },
@@ -273,7 +468,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 10,
+        "y": 20,
         "w": 8,
         "h": 8
       },
@@ -377,7 +572,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 10,
+        "y": 20,
         "w": 8,
         "h": 8
       },
@@ -448,7 +643,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 28,
         "w": 12,
         "h": 8
       },
@@ -521,7 +716,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 18,
+        "y": 28,
         "w": 12,
         "h": 8
       },
@@ -588,7 +783,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 36,
         "w": 24,
         "h": 1
       },
@@ -605,7 +800,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 27,
+        "y": 37,
         "w": 12,
         "h": 8
       },
@@ -676,7 +871,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 27,
+        "y": 37,
         "w": 12,
         "h": 8
       },
@@ -747,7 +942,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 45,
         "w": 12,
         "h": 8
       },
@@ -818,7 +1013,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 45,
         "w": 12,
         "h": 8
       },
@@ -889,7 +1084,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 53,
         "w": 8,
         "h": 8
       },
@@ -960,7 +1155,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 43,
+        "y": 53,
         "w": 8,
         "h": 8
       },
@@ -1042,7 +1237,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 43,
+        "y": 53,
         "w": 8,
         "h": 8
       },
@@ -1098,7 +1293,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 51,
+        "y": 61,
         "w": 24,
         "h": 1
       },
@@ -1115,7 +1310,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 62,
         "w": 12,
         "h": 8
       },
@@ -1197,7 +1392,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 52,
+        "y": 62,
         "w": 12,
         "h": 8
       },
@@ -1278,5 +1473,5 @@
       }
     ]
   },
-  "version": 3
+  "version": 5
 }
