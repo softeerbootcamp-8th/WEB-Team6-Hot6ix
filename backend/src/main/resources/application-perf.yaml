@@ -77,6 +77,14 @@ ncp:
     send-from: 00000000000
 
 management:
+  # perf 컨테이너에는 Redis가 없다 (docker-compose.perf.yml 참고). spring-data-redis가
+  # 클래스패스에 있으면 Boot가 Redis 헬스 인디케이터를 자동으로 켜는데, 붙을 Redis가 없으니
+  # 검사가 실패해서 앱은 멀쩡한데 health가 DOWN이 되고, run.sh의 기동 대기(curl -sf
+  # /actuator/health)가 503으로 죽어 부하 측정을 아예 못 돌린다. base(application.yaml)에는
+  # 두지 않는다 — prod는 ShedLock이 실제로 Redis를 쓰므로 거기서는 진짜 상태를 봐야 한다.
+  health:
+    redis:
+      enabled: false
   endpoints:
     web:
       exposure:
