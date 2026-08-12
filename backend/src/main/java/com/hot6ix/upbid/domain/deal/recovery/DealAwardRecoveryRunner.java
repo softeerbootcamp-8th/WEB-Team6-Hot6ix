@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.deal.service.DealCandidateService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -28,8 +29,13 @@ public class DealAwardRecoveryRunner {
      * <p>조회 자체가 실패해도 예외를 삼킨다. 복구에 실패했다고 애플리케이션 기동까지 막으면
      * 그 서버는 경매를 아예 받지 못하는데, 그건 후보 몇 건이 안 만들어지는 것보다 나쁘다
      * ({@code AuctionRecoveryRunner}와 같은 이유).
+     *
+     * <p>서버가 여러 대여도 {@code @SchedulerLock}(ShedLock, Redis 기반)이 한 tick에 한
+     * 인스턴스만 실행되게 막는다. {@code AuctionRecoveryRunner}의 동일한 다중 인스턴스
+     * 문제는 아직 이 락을 쓰지 않는다.
      */
     @Scheduled(fixedDelayString = "${upbid.deal.award-recovery.interval-ms}")
+    @SchedulerLock(name = "award-recovery", lockAtLeastFor = "5m", lockAtMostFor = "10m")
     public void restoreMissingAwards() {
 
         try {
