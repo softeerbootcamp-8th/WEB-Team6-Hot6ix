@@ -23,6 +23,8 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+      # 기본값(60s)이면 연결 하나가 응답 없이 멈춰도 커맨드마다 60초씩 물고 있는다 (#299).
+      timeout: ${REDIS_COMMAND_TIMEOUT:5000}
       ssl:
         enabled: ${REDIS_SSL_ENABLED:false}
         # 운영 Redis(자체 호스팅 EC2)가 자체 서명 인증서를 쓰기 때문에 JVM 기본 트러스트스토어가
