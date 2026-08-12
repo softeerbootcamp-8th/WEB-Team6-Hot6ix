@@ -63,6 +63,18 @@ JFR=0
 VIRTUAL_THREADS=false
 BID_ITEMS=0
 
+# 시나리오 9 전용 (방 입장 램프 + SSE 브로드캐스트). 방당 물품 수는 운영 규칙(3개)에
+# 고정하고 --items/--per-room/--vus 는 노출하지 않는다 — 아래 시나리오 9 진입 검증에서
+# 이 값들로부터 파생시킨다.
+ROOMS=20
+RAMP="1m30s"
+BID_TIMING="after-ramp"
+# --users/--rate 는 다른 시나리오와 똑같이 "총합"을 뜻한다 — 시나리오마다 뜻이 갈리면
+# index.csv 의 users/rate 칸을 나중에 못 믿는다. 방 하나 기준으로 편하게 주고 싶을 때만
+# 이 둘을 쓴다. 0 이면 안 쓴 것이고, 0 보다 크면 아래에서 --users/--rate 를 덮어쓴다.
+USERS_PER_ROOM=0
+RATE_PER_ROOM=0
+
 # 시나리오 5 전용. 방을 만들 때 주는 마감 임박 설정과, 마감 대상 물품에 입찰을 언제까지
 # 넣을지다. 기본값을 60/60 으로 두면 물품이 태어나자마자 임박 구간이라(물품 길이 하한이
 # 1분) 입찰이 들어온 물품은 영영 안 닫힌다. 아래 --scenario 5 기본값에서 낮춰 준다.
@@ -97,6 +109,9 @@ usage() {
                      8=SSE 브로드캐스트 A/B. 요청 하나가 접수 하나가 되게 만들어
                      --rate 를 초당 브로드캐스트 수로 쓴다. --vus 와 --items 를 같게,
                      --users 를 물품의 2배 이상으로, --per-room 0 으로 준다
+                     9=방 입장 램프 + SSE 브로드캐스트. --rooms 개 방에 유저를 점진적으로
+                     입장시키고(--ramp) 그 위에 입찰까지 겹쳐(--bid-timing) 잰다.
+                     --items/--per-room/--vus 는 노출하지 않고 내부에서(방 수 × 3)으로 맞춘다
   --vus N            가상 사용자 수. 계단은 10/20/40/80/160 (기본 40)
                      --rate 와 같이 주면 도착률을 채울 VU 수(preAllocatedVUs)가 된다
   --rate N           초당 도착 건수를 고정한다 (열린 모델). 안 주면 예전처럼 닫힌 모델
@@ -107,6 +122,16 @@ usage() {
                      한 방에 더 넣으면 넘친 물품이 조용히 거절된다
   --sse N            같이 붙여 둘 SSE 접속 수. 5번(겹쳐 재기)에서 쓴다 (기본 0)
   --users N          시딩할 구매자 수. --vus 보다 커야 한다 (기본 200)
+                     9번에서는 목표 접속 인원 총합 겸 입찰자 풀 크기다. "방마다 100명" =
+                     --users (방 수 × 100)
+  --rooms N          9번 전용. 방 수 (기본 20). "방마다 N건/초" = --rate (방 수 × N)
+  --ramp T           9번 전용. 0명 → --users 까지 램프업하는 시간 (기본 1m30s)
+  --bid-timing M     9번 전용. after-ramp(기본, 램프가 끝난 뒤 입찰 시작) 또는
+                     overlap(램프와 동시에 입찰 시작)
+  --users-per-room N 9번 전용. 방 하나 기준 접속 인원. 주면 --users(총합)를
+                     (방 수 × N)으로 덮어쓴다 — 총합을 직접 계산하기 귀찮을 때 쓴다
+  --rate-per-room N  9번 전용. 방 하나 기준 초당 입찰 건수. 주면 --rate(총합)를
+                     (방 수 × N)으로 덮어쓴다
 
   대조 실험용 (한 번에 하나만 바꾼다)
   --pool N           DB_POOL_SIZE (기본 10)
@@ -138,7 +163,9 @@ usage() {
                      --bulk-items 와 짝으로 켜고 끄면서 조회 시간이 어떻게 달라지는지 본다
 
   --duration D       측정 길이 (기본 3m)
-  --warmup N         워밍업 초 (기본 30)
+  --warmup N         워밍업 초 (기본 30, 9번은 10)
+  --warmup-vus N     워밍업 동시 VU 수 (기본 5, 9번은 2). 닫힌 모델이라 속도 제한이 없어서
+                     이 값과 무관하게 반복은 최대한 빠르게 돈다
   --who NAME         결과에 남길 이름 (기본 whoami)
   --skip-build       jar 를 다시 안 만든다. 같은 커밋으로 계단만 올릴 때
   --port N           perf nginx 를 띄울 호스트 포트 (기본 18080)
@@ -177,6 +204,11 @@ while [ $# -gt 0 ]; do
     --per-room) PER_ROOM="$2"; shift 2 ;;
     --sse) SSE="$2"; shift 2 ;;
     --users) USERS="$2"; shift 2 ;;
+    --rooms) ROOMS="$2"; shift 2 ;;
+    --ramp) RAMP="$2"; shift 2 ;;
+    --bid-timing) BID_TIMING="$2"; shift 2 ;;
+    --users-per-room) USERS_PER_ROOM="$2"; shift 2 ;;
+    --rate-per-room) RATE_PER_ROOM="$2"; shift 2 ;;
     --pool) POOL="$2"; shift 2 ;;
     --scheduler-pool) SCHEDULER_POOL="$2"; shift 2 ;;
     --heartbeat-ms) HEARTBEAT_MS="$2"; shift 2 ;;
@@ -246,6 +278,49 @@ if [ "$SCENARIO" = "8" ]; then
     echo "※ --sse 0 이다. 구독자가 없으면 브로드캐스트가 빈 방으로 나가 전송 비용이 0 이다." >&2
     echo "  대조군(접속 0)으로 한 줄 재는 것이면 맞다. 아니면 --sse 100/200/400 을 준다." >&2
   fi
+fi
+
+# 9번은 방당 물품 3개(운영 규칙)를 그대로 쓰고 --items/--per-room/--vus 를 노출하지 않는다.
+# 8번처럼 "VU 를 물품 수랑 맞춰야 한다" 같은 제약을 사용자가 신경 쓸 필요가 없게, 여기서
+# --rooms 하나로부터 파생시킨다.
+if [ "$SCENARIO" = "9" ]; then
+  # --users-per-room/--rate-per-room 을 줬으면 --users/--rate(총합)를 덮어쓴다.
+  # 다른 시나리오와 뜻이 갈리면 index.csv 의 users/rate 칸을 나중에 못 믿으니,
+  # "총합"이라는 기존 뜻은 그대로 두고 방당 값은 이 둘로만 받는다.
+  if [ "$USERS_PER_ROOM" -gt 0 ] 2>/dev/null; then
+    USERS=$((ROOMS * USERS_PER_ROOM))
+  fi
+  if [ "$RATE_PER_ROOM" -gt 0 ] 2>/dev/null; then
+    RATE=$((ROOMS * RATE_PER_ROOM))
+  fi
+
+  if [ "$RATE" -le 0 ] 2>/dev/null; then
+    echo "시나리오 9는 --rate 나 --rate-per-room 이 있어야 한다." >&2
+    echo "  예: --scenario 9 --rooms 20 --users-per-room 100 --rate-per-room 50 --ramp 1m30s" >&2
+    exit 1
+  fi
+
+  if [ "$BID_TIMING" != "after-ramp" ] && [ "$BID_TIMING" != "overlap" ]; then
+    echo "시나리오 9의 --bid-timing 은 after-ramp 또는 overlap 이어야 한다 (지금 $BID_TIMING)." >&2
+    exit 1
+  fi
+
+  # 방마다 최소 2명은 있어야 director 가 "최고 입찰자 제외"로 매번 다른 사람을 고를 수 있다.
+  if [ "$USERS" -lt "$((ROOMS * 2))" ] 2>/dev/null; then
+    echo "시나리오 9는 --users 가 방 수(${ROOMS})의 2배 이상이어야 한다 (지금 users=$USERS)." >&2
+    exit 1
+  fi
+
+  PER_ROOM=3
+  ITEMS=$((ROOMS * 3))
+  VUS="$ITEMS"
+
+  # 워밍업은 닫힌 모델(constant-vus)이라 속도 제한이 없다. 기본값(30초·WARMUP_VUS 5)
+  # 그대로면 실측으로 5VU·10초에 7500건이 나갔다 — 본 측정에 쓸 물품에 그대로 꽂혀서
+  # 현재가를 필요 이상으로 밀어 올린다. 그래서 시나리오 9는 강도를 낮춘 기본값을 쓴다.
+  # --warmup/--warmup-vus 를 직접 줬으면(전역 기본값과 다르면) 그 값을 그대로 존중한다.
+  [ "$WARMUP" = "30" ] && WARMUP=10
+  [ "$WARMUP_VUS" = "5" ] && WARMUP_VUS=2
 fi
 
 # 원격 모드에 빠진 값이 있으면 여기서 멈춘다.
@@ -876,7 +951,8 @@ case "$SCENARIO" in
   6) SCRIPT="explore.js" ;;
   7) SCRIPT="spike.js" ;;
   8) SCRIPT="broadcast.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~8)" >&2; exit 1 ;;
+  9) SCRIPT="entry.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~9)" >&2; exit 1 ;;
 esac
 
 # 6(탐색 램프)과 7(스파이크)은 램프라서 p95 가 구간 평균이 되고 max 계열이 램프 끝 값만
@@ -911,6 +987,7 @@ run_k6() {
   CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
   START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
   DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" RATE="${RUN_RATE:-$RATE}" \
+  SEEDED_USERS="${SEEDED_USERS:-0}" RAMP="$RAMP" BID_TIMING="$BID_TIMING" \
   BASE_URL="$K6_BASE_URL" \
     "${COMPOSE[@]}" run --rm \
       --user "$(id -u):$(id -g)" \
@@ -918,6 +995,7 @@ run_k6() {
       -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
       -e SHARE_CODES -e ROOM_ITEM_IDS \
       -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN -e RATE -e BASE_URL \
+      -e SEEDED_USERS -e RAMP -e BID_TIMING \
       k6 run ${@+"$@"} "/scripts/$SCRIPT" \
       2>&1 | tee "$log"
   K6_EXIT="${PIPESTATUS[0]}"
@@ -934,9 +1012,13 @@ run_k6() {
 # 마감 측정에서 특히 중요하다. 마감은 3분에 표본이 90건뿐이라 입찰보다 훨씬 크게 흔들린다.
 #
 # 부하를 주는 워밍업은 입찰 시나리오에서만 한다. 3(SSE)과 4·5(마감)는 부하 모양이 달라
-# 같은 스크립트로 데울 수가 없어서 예전처럼 기다리기만 한다.
+# 같은 스크립트로 데울 수가 없어서 예전처럼 기다리기만 한다. 9(방 입장 램프)는 입찰
+# 경로만 이 그룹에 낀다 — entry.js 가 RUN_ID 가 비어 있으면(워밍업 신호) audience(SSE
+# 램프)를 빼고 director 만 돌리게 되어 있다. SSE·PARTICIPANT_COUNT_UPDATED 브로드캐스트
+# 경로는 이 워밍업으로 안 데워진다(entry.js 상단 주석 참고).
 if [ "$SCENARIO" = "1" ] || [ "$SCENARIO" = "2" ] \
-  || [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ] || [ "$SCENARIO" = "8" ]; then
+  || [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ] || [ "$SCENARIO" = "8" ] \
+  || [ "$SCENARIO" = "9" ]; then
   echo "[6/8] 워밍업 ${WARMUP}초 (vus=$WARMUP_VUS 로 실제 부하를 준다)"
 
   # 워밍업은 항상 닫힌 모델로 돈다. --rate 를 그대로 물려받으면 VU 몇 개로 목표 도착률을
@@ -1126,7 +1208,9 @@ case "$SCENARIO" in
   0)     MAIN_URI=', uri="/actuator/health"' ;;
   # 8 도 입찰이 주인공이다. 안 좁히면 setup 의 로그인·약관 동의가 p95 에 섞이는데,
   # 8 은 전체 요청이 수천 건뿐이라 그 몫이 1% 가까이 된다 (1·2 는 40만 건이라 안 보였다).
-  1|2|5|8) MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/bids"' ;;
+  # 9 는 SSE 구독(subscribe)도 같이 도는데, subscribe 는 NOT_ACTUATOR 가 이미 전역으로
+  # 뺀다. 남는 건 입찰과 director 의 dev-login·약관 동의뿐이라 8 과 같은 이유로 좁힌다.
+  1|2|5|8|9) MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/bids"' ;;
   4)     MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/start"' ;;
   # 3 은 SSE 구독이 주인공인데 끝나지 않는 스트림이라 응답 시간에 안 잡힌다. 그래서 안 좁힌다.
   *)     MAIN_URI='' ;;
@@ -1456,12 +1540,14 @@ jq -n \
   --arg isolation "$ISOLATION" --arg sweep_index "$SWEEP_INDEX" \
   --argjson bulk_items "$BULK_ITEMS" \
   --argjson window_seconds "$WINDOW_SECONDS" \
+  --argjson rooms "$ROOMS" --arg ramp "$RAMP" --arg bid_timing "$BID_TIMING" \
   '{run_id:$run_id, scenario:$scenario, commit:$commit, dirty:($dirty=="true"), who:$who,
     params:{vus:$vus, rate:$rate, pool_size:$pool, items:$items, sse:$sse, users:$users,
             heartbeat_ms:$heartbeat_ms, scheduler_pool:$scheduler_pool,
             virtual_threads:($virtual_threads=="true"), xmx:$xmx,
             isolation:$isolation, bulk_items:$bulk_items,
-            sweep_index:($sweep_index=="on")},
+            sweep_index:($sweep_index=="on"),
+            rooms:$rooms, ramp:$ramp, bid_timing:$bid_timing},
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
@@ -1696,6 +1782,21 @@ if [ "$SCENARIO" = "8" ]; then
 
   [ "$BROADCAST_OK" = "1" ] && \
     echo "✓ 브로드캐스트 불변식 통과 — 접수 ${ACCEPTED}건이 그대로 전송 ${ACCEPTED}회다."
+fi
+
+# ── 9번 정보 ────────────────────────────────────────────────────────
+# 8번과 달리 리젝트를 0으로 강제하지 않는다 — 얼마나 나왔는지 보여만 주면 된다는 요구사항이다.
+# 그래도 dropped_iterations 는 알려 준다. 이게 0이 아니면 방당 물품 3개 워커의 처리 한계를
+# --rate 가 넘어서 실제 발생률이 목표보다 낮았다는 뜻이라, "이 시나리오가 못 채웠다"는 사실
+# 자체는 숨기지 않는다.
+if [ "$SCENARIO" = "9" ]; then
+  DROPPED="$(k6sum dropped_iterations)"
+  echo "9번: 접수 ${ACCEPTED}건 / 거절 ${REJECTED_4XX}건(경합 ${CONCURRENT_CONFLICT}) / dropped_iterations ${DROPPED}"
+
+  if [ "$DROPPED" != "0" ] && [ -n "$DROPPED" ]; then
+    echo "※ k6 가 도착 ${DROPPED}건을 못 보냈다. 방당 물품 3개 워커의 처리 한계를 --rate 가 넘었을 수 있다." >&2
+    echo "  --rate 를 낮추거나, 이 한계 자체가 재려던 것이면 그대로 기록한다." >&2
+  fi
 fi
 
 # 붙여넣을 줄은 성공한 실행에서만 찍는다.

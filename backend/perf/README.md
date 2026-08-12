@@ -225,6 +225,10 @@ KAKAO_REDIRECT_URI=http://localhost:8080/api/v1/oauth/kakao/callback
 ./perf/run.sh --scenario 5 --vus 40 --items 20  # 6번. 마감 + 입찰 겹치기
 ./perf/run.sh --scenario 6 --items 1            # 탐색 램프. 무릎 찾기 (판정에 안 씁니다)
 ./perf/run.sh --scenario 7 --rate 200 --items 1 # 스파이크. 절벽 (판정에 안 씁니다)
+./perf/run.sh --scenario 9 --rooms 20 --users 2000 --rate 1000 --ramp 1m30s
+                                                 # 9번. 방 입장 램프 + SSE 브로드캐스트.
+                                                 # "방마다 유저 100명" = --users (방 수 × 100)
+                                                 # "방마다 초당 50건" = --rate (방 수 × 50)
 ```
 
 계단은 **10 / 20 / 40 / 80 / 160**입니다. 한 번에 하나만 올리고 나머지는 그대로 둡니다.
@@ -241,6 +245,29 @@ Soft Close 가 마감을 계속 미루기 때문입니다. 실제로 `--items 20
 시나리오 1과 2는 입찰이라 **`--vus`가 `--users`(기본 200)보다 크면 `run.sh`가 막습니다.**
 남는 VU는 약관 동의가 없어서 전부 `TERMS_NOT_AGREED`로 거절되기 때문입니다. 160을 넘겨서
 재려면 `--users`도 같이 올립니다. 나머지 시나리오는 회원이 필요 없어서 그대로 둡니다.
+
+### 9번은 방당 물품 수를 3개(운영 규칙)로 고정합니다
+
+`--items`/`--per-room`/`--vus`를 이 시나리오에서는 받지 않습니다. `--rooms`(방 수) 하나로부터
+`run.sh`가 내부에서 (방 수 × 3)을 계산해 채웁니다. 물품마다 전담 워커를 하나씩 붙여서(8번과
+같은 기법), 그 방에 배정된 구매자 풀 중 **현재 최고 입찰자를 제외**하고 무작위로 골라
+입찰하게 만듭니다 — 리젝트를 0으로 강제하지는 않지만 최대한 줄이려는 설계입니다. 그래도 나오는
+리젝트는 `note.md`/`index.csv`의 기존 칸(`rejected_4xx`, `concurrent_conflict` 등)에 그대로
+찍힙니다.
+
+`--bid-timing after-ramp`(기본)는 접속 램프가 다 끝난 뒤에 입찰을 시작하고, `overlap`은 램프와
+동시(t=0)에 시작합니다. 어느 쪽이든 측정 구간은 **램프를 포함한 실행 전체**입니다 — 유저가
+들어오는 과정 자체가 `PARTICIPANT_COUNT_UPDATED` 브로드캐스트를 만들기 때문에, 그 구간을
+빼면 정작 재려던 것 하나를 놓칩니다.
+
+```bash
+./perf/run.sh --scenario 9 --rooms 20 --users 2000 --rate 1000 --ramp 1m30s --bid-timing after-ramp
+./perf/run.sh --scenario 9 --rooms 20 --users 2000 --rate 1000 --ramp 1m30s --bid-timing overlap
+```
+
+`--rate`가 방당 물품 3개 워커의 처리 한계를 넘으면 k6가 그 도착률을 못 채우고
+`dropped_iterations`로 드러납니다(실행 끝에 알려 줍니다). 워밍업은 3·4·5번처럼 `sleep`만
+하므로, 측정 구간 초반 입찰 응답시간에는 콜드스타트 영향이 섞일 수 있습니다.
 
 ### 닫힌 모델과 열린 모델
 

@@ -39,6 +39,28 @@ export function roomOfVu() {
     : { code: SHARE_CODE, itemIds: ITEM_IDS }
 }
 
+/** seed.sh 가 시딩한 총 구매자 수. 9번(방 입장 램프)이 방별 구매자 풀을 역산하는 데 쓴다. */
+export const SEEDED_USERS = Number(__ENV.SEEDED_USERS || 0)
+
+/**
+ * roomIndex(0-based)에 배정된 구매자의 dev-login key 목록.
+ *
+ * seed.sh 의 라운드로빈 배정(`구매자 i → 방 (i-1) % 방수`)을 그대로 역산한 것이라, seed.sh 가
+ * 바뀌면 여기도 같이 바뀌어야 한다. 새 env 를 추가하는 대신 이미 있는 SEEDED_USERS 와
+ * ROOMS.length 로 계산하는 이유는, 이 값이 방마다 정확히 몇 명인지 세는 게 아니라 "이 방을
+ * 담당한 사람이 누구누구인가"만 필요해서다.
+ */
+export function biddersOfRoom(roomIndex) {
+  const roomCount = ROOMS.length
+  const keys = []
+
+  for (let i = roomIndex + 1; i <= SEEDED_USERS; i += roomCount) {
+    keys.push(`bidder-${i}`)
+  }
+
+  return keys
+}
+
 export const START_PRICE = Number(__ENV.START_PRICE || 10000)
 export const BID_UNIT = Number(__ENV.BID_UNIT || 1000)
 

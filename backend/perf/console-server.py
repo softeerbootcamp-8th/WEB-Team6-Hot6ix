@@ -117,15 +117,33 @@ def build_command(body):
 
     # run.sh 의 case 문이 받는 범위와 같아야 한다. 벗어난 값을 보내면 컨테이너 기동과
     # 시딩을 다 하고 나서 "모르는 시나리오" 로 죽는다. 여기서 먼저 막는다.
-    scenario = num("scenario", 1, 0, 5)
+    scenario = num("scenario", 1, 0, 9)
     args = ["./perf/run.sh", "--scenario", str(scenario)]
 
-    # 4 는 올리는 값이 사람 수가 아니라 물품 수라 --vus 를 안 보낸다.
-    if scenario != 4:
+    # 4 는 올리는 값이 사람 수가 아니라 물품 수라 --vus 를 안 보낸다. 9 는 --vus/--items 를
+    # run.sh 가 --rooms 로부터 자동 계산하므로 둘 다 안 보낸다.
+    if scenario not in (4, 9):
         args += ["--vus", str(num("vus", 40, 1, 5000))]
 
     # 물품 수는 기본값이어도 붙인다. 시나리오 1과 2를 가르는 값이라 명령에 보여야 한다.
-    args += ["--items", str(num("items", 1, 1, 50))]
+    if scenario != 9:
+        args += ["--items", str(num("items", 1, 1, 50))]
+
+    # 9는 방당 물품 수가 운영 규칙(3개)으로 고정돼 있어서 --rooms 하나로만 정한다.
+    # --users-per-room/--rate-per-room 이 총합(--users/--rate)을 대신한다.
+    if scenario == 9:
+        args += ["--rooms", str(num("rooms", 20, 1, 200))]
+        args += ["--users-per-room", str(num("usersPerRoom", 20, 1, 5000))]
+        args += ["--rate-per-room", str(num("ratePerRoom", 10, 1, 5000))]
+
+        # run.sh 에 --ramp 로 그대로 들어가는 duration 문자열이다("1m30s" 같은 모양).
+        # 숫자와 s/m/h 만 남겨서 셸에 임의 문자열이 들어가지 않게 한다.
+        ramp = re.sub(r"[^0-9smh]", "", str(body.get("ramp", "1m30s"))[:16])
+        if ramp and ramp != "1m30s":
+            args += ["--ramp", ramp]
+
+        if str(body.get("bidTiming", "after-ramp")) == "overlap":
+            args += ["--bid-timing", "overlap"]
 
     # 나머지는 기본값이면 안 붙인다. 화면이 보여주는 "실행될 명령"과 실제로 도는 명령이
     # 같아야 하는데, 안 바꾼 값까지 붙으면 무엇을 바꿨는지가 명령에서 안 보인다.
@@ -140,12 +158,15 @@ def build_command(body):
     if cpus != 2:
         args += ["--cpus", str(cpus)]
 
+    # 9는 자체 SSE 램프(audience)가 있다. --sse 를 같이 보내면 run.sh 가 그것과 무관한
+    # 배경 SSE 컨테이너를 하나 더 띄워서 방 하나에 접속을 몰아넣는다 — 9번엔 안 맞는다.
     sse = num("sse", 0, 0, 5000)
-    if sse:
+    if sse and scenario != 9:
         args += ["--sse", str(sse)]
 
+    # 9는 --users-per-room 이 총합(--users)을 대신한다.
     users = num("users", 200, 1, 2000)
-    if users != 200:
+    if users != 200 and scenario != 9:
         args += ["--users", str(users)]
 
     duration = num("durationSeconds", 180, 10, 3600)

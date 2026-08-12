@@ -918,6 +918,29 @@
             <div class="f mono">--vus</div>
             <input id="p-vus" type="number" min="1" max="5000" value="40">
           </div>
+          <div class="knob off" id="knob-rooms">
+            <div class="k">방 수 <small>9번 전용. 방당 물품 3개(운영 규칙)로 고정되고 총 물품 수는 여기서 자동 계산됩니다</small></div>
+            <div class="f mono">--rooms</div>
+            <input id="p-rooms" type="number" min="1" max="200" value="20">
+          </div>
+          <div class="knob off" id="knob-rate-per-room">
+            <div class="k">방당 초당 입찰 <small>9번 전용. 방 수를 곱한 값이 --rate로 나갑니다</small></div>
+            <div class="f mono">--rate-per-room</div>
+            <input id="p-rate-per-room" type="number" min="1" max="5000" value="10">
+          </div>
+          <div class="knob off" id="knob-ramp">
+            <div class="k">입장 램프 시간 <small>9번 전용. 0명 → 목표 인원까지 서서히 접속시키는 시간</small></div>
+            <div class="f mono">--ramp</div>
+            <input id="p-ramp" type="text" value="1m30s">
+          </div>
+          <div class="knob off" id="knob-bid-timing">
+            <div class="k">입찰 시작 시점 <small>9번 전용. after-ramp는 입장이 끝난 뒤, overlap은 입장과 동시에 입찰을 시작합니다</small></div>
+            <div class="f mono">--bid-timing</div>
+            <select id="p-bid-timing">
+              <option value="after-ramp">after-ramp (기본)</option>
+              <option value="overlap">overlap</option>
+            </select>
+          </div>
           <div class="knob">
             <div class="k">DB 커넥션 풀 <small>줄여서 다시 재면 커넥션이 범인인지 갈립니다</small></div>
             <div class="f mono">--pool</div>
@@ -928,13 +951,13 @@
             <div class="f mono">--cpus</div>
             <input id="p-cpus" type="number" min="1" max="8" value="2">
           </div>
-          <div class="knob">
-            <div class="k">배경 실시간 접속 <small>입찰과 겹쳐 재는 5번이 쓰는 값입니다</small></div>
+          <div class="knob" id="knob-sse">
+            <div class="k">배경 실시간 접속 <small>입찰과 겹쳐 재는 5번이 쓰는 값입니다. 9번은 자체 SSE 램프가 있어서 이 값을 안 씁니다</small></div>
             <div class="f mono">--sse</div>
             <input id="p-sse" type="number" min="0" max="5000" value="0">
           </div>
-          <div class="knob">
-            <div class="k">시딩할 회원 수 <small>요청 스트림 수보다 많아야 합니다. 모자라면 남는 사람의 입찰이 전부 거절됩니다</small></div>
+          <div class="knob" id="knob-users">
+            <div class="k">시딩할 회원 수 <small>요청 스트림 수보다 많아야 합니다. 모자라면 남는 사람의 입찰이 전부 거절됩니다. 9번은 방당 접속 인원(계단)이 이 값을 대신합니다</small></div>
             <div class="f mono">--users</div>
             <input id="p-users" type="number" min="1" max="2000" value="200">
           </div>
@@ -1681,6 +1704,10 @@ const MAIN = {
     flag: '--items', label: '동시에 닫히는 물품 수', ladder: [5, 10, 20, 50], def: 20,
     help: '이 시나리오만 사람 수가 아니라 <b>물품 수</b>를 올립니다. 같은 시각에 닫히는 물품이 늘 때 마감이 밀리는지를 봅니다.',
   },
+  roomEntry: {
+    flag: '--users-per-room', label: '방당 접속 인원', ladder: [20, 40, 60, 80, 100], def: 20,
+    help: '방 하나에 서서히 입장시킬 목표 인원입니다. 방당 초당 입찰 수(<code>--rate-per-room</code>)도 이 계단의 절반으로 같이 올라갑니다(세부 조정에서 따로 바꿀 수 있습니다).',
+  },
 }
 
 const SCENARIOS = [
@@ -1768,6 +1795,18 @@ const SCENARIOS = [
       ['볼 지표', '마감 소요 시간(<code>upbid_auction_close_duration</code>)과 스케줄러 대기열(<code>executor_queued_tasks</code>)'],
     ],
   },
+  {
+    key: 's9', scenario: 9, tag: '9번', name: '방 입장 램프 + 실시간 브로드캐스트',
+    main: 'roomEntry', items: 1, sse: 0, rooms: 20, ratePerRoom: 10, ramp: '1m30s', bidTiming: 'after-ramp',
+    one: '방 여러 개에 유저를 서서히 입장시키면서, 입장 자체와 입찰이 만드는 실시간 알림 부하를 함께 봅니다.',
+    answer: '<b>유저가 점진적으로 들어오는 것 자체가 만드는 알림 부하</b>와 <b>입찰이 겹칠 때의 부하</b>를 같이 봅니다. 방당 물품 3개(운영 규칙)는 고정이고, 방당 접속 인원·초당 입찰 수만 계단으로 올립니다.',
+    detail: [
+      ['어느 기능', '경매방 입장 시 실시간 연결과, 그 위의 입찰'],
+      ['올리는 값', '방당 접속 인원(계단)과 방당 초당 입찰 수(세부 조정, 절반 비율로 같이 오름)'],
+      ['왜 느려지나', '유저가 들어올 때마다 그 방 전원에게 참여자 수 변경을 알려야 합니다. 입찰이 겹치면 알림이 더 늘어납니다'],
+      ['볼 지표', '실시간 접속 수(<code>upbid_sse_connections</code>)와 알림 전송 시간(<code>upbid_sse_broadcast</code>), 거절 건수'],
+    ],
+  },
 ]
 
 // run.sh 가 찍는 8단계. 이름을 미리 보여줘야 "지금 어디쯤이고 얼마나 남았는지"를 안다.
@@ -1843,6 +1882,10 @@ function pickScenario(key, keepKnobs) {
     el('p-main').value = MAIN[picked.main].def
     el('p-items').value = picked.items
     el('p-sse').value = picked.sse
+    el('p-rooms').value = picked.rooms || 20
+    el('p-rate-per-room').value = picked.ratePerRoom || 10
+    el('p-ramp').value = picked.ramp || '1m30s'
+    el('p-bid-timing').value = picked.bidTiming || 'after-ramp'
   }
 
   renderLadder()
@@ -1868,15 +1911,29 @@ function renderLadder() {
   for (const chip of el('ladder').children) {
     chip.onclick = () => {
       el('p-main').value = chip.dataset.value
+      // 9번은 방당 접속 인원 계단에 맞춰 방당 초당 입찰 수도 절반 비율로 같이 올린다.
+      // 두 값이 따로 놀면 "계단을 올렸는데 왜 입찰 부하는 그대로지"가 된다.
+      if (picked.scenario === 9) {
+        el('p-rate-per-room').value = Math.max(1, Math.round(Number(chip.dataset.value) / 2))
+      }
       syncPerf()
     }
   }
 
   // 물품 수가 계단 그 자체인 시나리오에서는 세부 조정의 물품 수를 숨긴다.
   // 같은 값을 두 군데서 만지게 두면 어느 쪽이 이겼는지 알 수 없다.
-  el('knob-items').classList.toggle('off', picked.main === 'items')
+  el('knob-items').classList.toggle('off', picked.main === 'items' || picked.scenario === 9)
   // 계단이 물품 수인데 입찰도 하는 시나리오에서만 사람 수를 따로 받는다.
   el('knob-vus').classList.toggle('off', !(picked.main === 'items' && picked.scenario === 5))
+  // 9번 전용 knob 넷. 방당 물품 수가 운영 규칙(3개)으로 고정돼 있어서 --items/--vus/--users/
+  // --sse 는 노출하지 않고 이 넷으로 대신한다.
+  const isRoomEntry = picked.scenario === 9
+  el('knob-rooms').classList.toggle('off', !isRoomEntry)
+  el('knob-rate-per-room').classList.toggle('off', !isRoomEntry)
+  el('knob-ramp').classList.toggle('off', !isRoomEntry)
+  el('knob-bid-timing').classList.toggle('off', !isRoomEntry)
+  el('knob-sse').classList.toggle('off', isRoomEntry)
+  el('knob-users').classList.toggle('off', isRoomEntry)
 }
 
 /** 지금 화면의 값. 시나리오가 정하는 값과 사람이 만진 값을 여기서 합친다. */
@@ -1886,8 +1943,8 @@ function knobs() {
 
   const items = isItemLadder ? main : (Number(el('p-items').value) || picked.items)
 
-  // 4번만 사람 수가 아예 없다. 6번은 계단이 물품 수지만 입찰자도 있어야 락이 걸린다.
-  const vus = picked.scenario === 4
+  // 4번은 사람 수가 아예 없고, 9번은 --vus/--items 자체를 안 보낸다(방 수로부터 자동 계산).
+  const vus = (picked.scenario === 4 || picked.scenario === 9)
     ? null
     : (isItemLadder ? (Number(el('p-vus').value) || 40) : main)
 
@@ -1901,6 +1958,12 @@ function knobs() {
   return {
     scenario: picked.scenario,
     vus, items, users,
+    // 9번 전용. p-main 은 이 시나리오에서 방당 접속 인원(계단)을 담는다.
+    rooms: Number(el('p-rooms').value) || 20,
+    usersPerRoom: main,
+    ratePerRoom: Number(el('p-rate-per-room').value) || 10,
+    ramp: el('p-ramp').value.trim() || '1m30s',
+    bidTiming: el('p-bid-timing').value,
     pool: Number(el('p-pool').value) || 10,
     cpus: Number(el('p-cpus').value) || 2,
     sse: Number(el('p-sse').value) || 0,
@@ -1929,13 +1992,23 @@ function knobs() {
 function localCommand(k) {
   const parts = ['./perf/run.sh', '--scenario', k.scenario]
 
-  if (k.scenario !== 4) parts.push('--vus', k.vus)
-  parts.push('--items', k.items)
+  if (k.scenario === 9) {
+    // 9번은 --vus/--items/--users/--sse 를 안 보낸다 — run.sh 가 --rooms 로부터
+    // 자동 계산하고, SSE 는 이 시나리오 자체의 방 입장 램프가 대신한다.
+    parts.push('--rooms', k.rooms)
+    parts.push('--users-per-room', k.usersPerRoom)
+    parts.push('--rate-per-room', k.ratePerRoom)
+    if (k.ramp !== '1m30s') parts.push('--ramp', k.ramp)
+    if (k.bidTiming !== 'after-ramp') parts.push('--bid-timing', k.bidTiming)
+  } else {
+    if (k.scenario !== 4) parts.push('--vus', k.vus)
+    parts.push('--items', k.items)
+    if (k.sse > 0) parts.push('--sse', k.sse)
+    if (k.users !== 200) parts.push('--users', k.users)
+  }
 
   if (k.pool !== 10) parts.push('--pool', k.pool)
   if (k.cpus !== 2) parts.push('--cpus', k.cpus)
-  if (k.sse > 0) parts.push('--sse', k.sse)
-  if (k.users !== 200) parts.push('--users', k.users)
   if (k.durationSeconds !== 180) parts.push('--duration', `${k.durationSeconds}s`)
   if (k.schedulerPool !== 4) parts.push('--scheduler-pool', k.schedulerPool)
   if (k.heartbeatMs !== 30000) parts.push('--heartbeat-ms', k.heartbeatMs)
@@ -1968,12 +2041,14 @@ function syncPerf() {
 
   // 기본값에서 벗어난 줄을 파랗게 하고 개수를 배지로 올린다.
   // 접어 두면 잊기 때문이다 — 접힌 채로 "기본값이겠지" 하고 잰 줄이 제일 위험하다.
+  const isRoomEntry = picked.scenario === 9
+
   const diffs = [
-    ['p-items', String(picked.items), picked.main !== 'items'],
+    ['p-items', String(picked.items), picked.main !== 'items' && !isRoomEntry],
     ['p-pool', '10', true],
     ['p-cpus', '2', true],
-    ['p-sse', String(picked.sse), true],
-    ['p-users', '200', true],
+    ['p-sse', String(picked.sse), !isRoomEntry],
+    ['p-users', '200', !isRoomEntry],
     ['p-duration', '180', true],
     ['p-sched', '4', true],
     ['p-hb', '30000', true],
@@ -1981,6 +2056,10 @@ function syncPerf() {
     ['p-iso', 'RR', true],
     ['p-bulk', '0', true],
     ['p-vus', '40', picked.main === 'items' && picked.scenario === 5],
+    ['p-rooms', '20', isRoomEntry],
+    ['p-rate-per-room', '10', isRoomEntry],
+    ['p-ramp', '1m30s', isRoomEntry],
+    ['p-bid-timing', 'after-ramp', isRoomEntry],
   ]
 
   let changed = 0
@@ -2153,7 +2232,12 @@ async function restoreRun() {
 
   if (restored) {
     pickScenario(restored.key, true)
-    el('p-main').value = restored.key === 's4' ? restored.items : restored.vus
+    // run_id 에는 vus(=9번은 총 물품 수)/items/pool/sse 만 박혀 있다. 9번의 방당 접속
+    // 인원·방 수·방당 입찰·램프·입찰 시점은 여기서 못 되살리니 기본값으로 둔다 —
+    // 틀린 숫자(예: 총 물품 수를 방당 인원인 것처럼)를 보여주는 것보다 낫다.
+    el('p-main').value = restored.key === 's4' ? restored.items
+      : restored.key === 's9' ? MAIN.roomEntry.def
+      : restored.vus
     el('p-items').value = restored.items
     el('p-pool').value = restored.pool
     el('p-sse').value = restored.sse
@@ -2308,6 +2392,7 @@ const TILE_SETS = {
   default: ['throughput', 'p95Ms', 'hikariPending', 'lockWaitP95Ms'],
   s3: ['sseConnections', 'p95Ms', 'tomcatBusy', 'hikariPending'],
   s4: ['throughput', 'p95Ms', 'tomcatBusy', 'hikariPending'],
+  s9: ['sseConnections', 'throughput', 'p95Ms', 'hikariPending'],
 }
 
 const TILE_SPEC = {
@@ -2322,6 +2407,7 @@ const TILE_SPEC = {
 function tileKeys() {
   if (picked.key === 's3') return TILE_SETS.s3
   if (picked.key === 's4') return TILE_SETS.s4
+  if (picked.key === 's9') return TILE_SETS.s9
   return TILE_SETS.default
 }
 
@@ -2511,6 +2597,7 @@ const RES_COLUMNS = [
   ['scenario', '시나리오'],
   ['vus', '요청 스트림'],
   ['items', '물품 수'],
+  ['rate', '초당 도착 건수'],
   ['pool', 'DB 커넥션'],
   ['cpus', '코어 수'],
   ['sse', '실시간 접속'],
@@ -2563,7 +2650,10 @@ function attachRatio(header, rows) {
 
   for (const group of groups.values()) {
     const isClose = at(group[0], 'scenario') === '4'
-    const step = (row) => asNumber(row, isClose ? 'items' : 'vus') || 0
+    // 9번은 방 수를 고정해 두면 vus(=총 물품 수)가 계단 내내 그대로다 — 실제로 올리는
+    // 값은 방당 접속 인원과 짝지어 오르는 rate(초당 입찰 총량)라 그걸로 순서를 매긴다.
+    const isRoomEntry = at(group[0], 'scenario') === '9'
+    const step = (row) => asNumber(row, isClose ? 'items' : (isRoomEntry ? 'rate' : 'vus')) || 0
 
     const ordered = group.slice().sort((a, b) => step(a) - step(b))
 
