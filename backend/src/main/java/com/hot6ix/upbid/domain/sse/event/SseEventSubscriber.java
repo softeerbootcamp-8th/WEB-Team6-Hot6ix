@@ -22,10 +22,6 @@ public class SseEventSubscriber implements MessageListener {
     private final RoomSseManager roomSseManager;
     private final SseEventBuffer sseEventBuffer;
 
-    /**
-     * 이 메서드는 Redis 구독 스레드에서 불린다. 예외를 올리면 그 스레드가 이벤트 하나 때문에
-     * 흔들리므로, 한 건의 실패가 다음 이벤트 수신을 막지 않도록 여기서 끊는다.
-     */
     @Override
     public void onMessage(Message message, byte[] pattern) {
         try {
@@ -41,8 +37,6 @@ public class SseEventSubscriber implements MessageListener {
 
         roomSseManager.deliverLocal(event.roomId(), event.eventName(), event.id(), event.data());
 
-        // 방 종료는 마지막 이벤트다. 내보낸 뒤 이 인스턴스에 남은 연결을 끊는다. 인스턴스마다
-        // 자기 연결만 알기 때문에, 발행한 쪽이 아니라 받은 쪽 전부가 각자 끊어야 한다.
         if (EventType.ROOM_CLOSED.name().equals(event.eventName())) {
             roomSseManager.closeRoom(event.roomId());
         }
