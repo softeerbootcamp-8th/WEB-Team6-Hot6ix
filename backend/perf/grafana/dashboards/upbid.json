@@ -8,7 +8,6 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
   "editable": true,
   "refresh": "5s",
   "time": {
@@ -90,7 +89,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(http_server_requests_seconds_count{run=\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
           "legendFormat": "전체",
           "range": true,
           "refId": "A"
@@ -101,7 +100,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(http_server_requests_seconds_count{run=\"$run\", uri=~\".*bids\"}[30s]))",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=~\"$run\", uri=~\".*bids\"}[30s]))",
           "legendFormat": "입찰",
           "range": true,
           "refId": "B"
@@ -161,7 +160,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))) * 1000",
           "legendFormat": "p95 전체",
           "range": true,
           "refId": "A"
@@ -172,8 +171,203 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=\"$run\", uri=~\".*bids\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri=~\".*bids\"}[30s]))) * 1000",
           "legendFormat": "p95 입찰",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "API 별",
+      "id": 21,
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "API 별 응답 p95 (ms)",
+      "description": "어느 엔드포인트가 느린지 본다. 전체 p95 는 요청이 많은 API 에 끌려가서 느린 API 하나가 묻힌다.\n그 구간에 호출이 없던 API 는 NaN 이라 선이 안 그려진다. 계측이 깨진 것이 아니다.",
+      "id": 22,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "ms"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "전체"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))) * 1000",
+          "legendFormat": "{{uri}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))) * 1000",
+          "legendFormat": "전체",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "API 별 처리량 (req/s)",
+      "description": "위 p95 와 나란히 본다. 느린데 호출이 거의 없는 API 와 느리면서 많이 불리는 API 는 손볼 순서가 다르다.",
+      "id": 23,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "reqps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "전체"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (uri) (rate(http_server_requests_seconds_count{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "legendFormat": "{{uri}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "legendFormat": "전체",
           "range": true,
           "refId": "B"
         }
@@ -186,7 +380,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 9,
+        "y": 19,
         "w": 24,
         "h": 1
       },
@@ -203,7 +397,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 20,
         "w": 8,
         "h": 8
       },
@@ -245,7 +439,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "tomcat_threads_busy_threads{run=\"$run\"}",
+          "expr": "tomcat_threads_busy_threads{run=~\"$run\"}",
           "legendFormat": "busy {{instance}}",
           "range": true,
           "refId": "A"
@@ -256,7 +450,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "tomcat_threads_config_max_threads{run=\"$run\"}",
+          "expr": "tomcat_threads_config_max_threads{run=~\"$run\"}",
           "legendFormat": "max",
           "range": true,
           "refId": "B"
@@ -274,7 +468,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 10,
+        "y": 20,
         "w": 8,
         "h": 8
       },
@@ -316,7 +510,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_active{run=\"$run\"}",
+          "expr": "hikaricp_connections_active{run=~\"$run\"}",
           "legendFormat": "active {{instance}}",
           "range": true,
           "refId": "A"
@@ -327,7 +521,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_idle{run=\"$run\"}",
+          "expr": "hikaricp_connections_idle{run=~\"$run\"}",
           "legendFormat": "idle",
           "range": true,
           "refId": "B"
@@ -338,7 +532,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_pending{run=\"$run\"}",
+          "expr": "hikaricp_connections_pending{run=~\"$run\"}",
           "legendFormat": "pending",
           "range": true,
           "refId": "C"
@@ -349,7 +543,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "hikaricp_connections_max{run=\"$run\"}",
+          "expr": "hikaricp_connections_max{run=~\"$run\"}",
           "legendFormat": "max",
           "range": true,
           "refId": "D"
@@ -362,7 +556,7 @@
           "editorMode": "code",
           "range": true,
           "refId": "E",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_acquire_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "획득 p95 (ms)"
         },
         {
@@ -373,7 +567,7 @@
           "editorMode": "code",
           "range": true,
           "refId": "F",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_usage_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(hikaricp_connections_usage_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "사용 p95 (ms)"
         }
       ]
@@ -389,7 +583,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 10,
+        "y": 20,
         "w": 8,
         "h": 8
       },
@@ -431,7 +625,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(jvm_memory_used_bytes{run=\"$run\", area=\"heap\"}) / 1024 / 1024",
+          "expr": "sum(jvm_memory_used_bytes{run=~\"$run\", area=\"heap\"}) / 1024 / 1024",
           "legendFormat": "heap used (MB)",
           "range": true,
           "refId": "A"
@@ -442,7 +636,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(jvm_gc_pause_seconds_sum{run=\"$run\"}[30s]) * 1000",
+          "expr": "rate(jvm_gc_pause_seconds_sum{run=~\"$run\"}[30s]) * 1000",
           "legendFormat": "GC pause (ms/s)",
           "range": true,
           "refId": "B"
@@ -453,7 +647,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "process_cpu_usage{run=\"$run\"} * 100",
+          "expr": "process_cpu_usage{run=~\"$run\"} * 100",
           "legendFormat": "JVM CPU (%)",
           "range": true,
           "refId": "C"
@@ -464,10 +658,165 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "system_cpu_usage{run=\"$run\"} * 100",
+          "expr": "system_cpu_usage{run=~\"$run\"} * 100",
           "legendFormat": "system CPU (%)",
           "range": true,
           "refId": "D"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM CPU (프로세스)",
+      "id": 19,
+      "description": "JVM 프로세스가 쓴 CPU 다. 코어 전체를 100% 로 본다.\nAWS CloudWatch CPUUtilization 과 다른 값이다. 저쪽은 인스턴스 전체(OS, 도커 데몬 포함)를 1~5분 평균으로 재고, 이건 JVM 만 5초마다 잰다. 항상 CloudWatch 보다 낮게 나온다.\n보는 이유는 \"앱이 CPU 에 묶였나\" 를 CloudWatch 로는 못 가르기 때문이다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "range": true,
+          "refId": "A",
+          "expr": "process_cpu_usage{run=~\"$run\"} * 100",
+          "legendFormat": "JVM 프로세스"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "range": true,
+          "refId": "B",
+          "expr": "system_cpu_usage{run=~\"$run\"} * 100",
+          "legendFormat": "호스트 전체"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "range": true,
+          "refId": "C",
+          "expr": "jvm_threads_live_threads{run=~\"$run\"}",
+          "legendFormat": "살아있는 스레드 (개)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx 와 에러 로그",
+      "description": "진짜 실패만 모은다. 입찰 거절은 4xx 라 여기 안 잡힌다.\n둘이 같이 튀면 예외가 응답까지 나간 것이고, 로그만 튀면 삼켜진 예외다.",
+      "id": 20,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=~\"$run\", status=~\"5..\"}[30s]))",
+          "legendFormat": "5xx (건/s)",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(logback_events_total{run=~\"$run\", level=\"error\"}[30s]))",
+          "legendFormat": "에러 로그 (건/s)",
+          "range": true,
+          "refId": "B"
         }
       ]
     },
@@ -478,7 +827,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 36,
         "w": 24,
         "h": 1
       },
@@ -495,7 +844,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 37,
         "w": 12,
         "h": 8
       },
@@ -537,7 +886,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "p95",
           "range": true,
           "refId": "A"
@@ -548,7 +897,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "p50",
           "range": true,
           "refId": "B"
@@ -566,7 +915,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 19,
+        "y": 37,
         "w": 12,
         "h": 8
       },
@@ -608,7 +957,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "upbid_sse_connections{run=\"$run\"}",
+          "expr": "upbid_sse_connections{run=~\"$run\"}",
           "legendFormat": "접속 {{instance}}",
           "range": true,
           "refId": "A"
@@ -619,7 +968,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "upbid_sse_rooms{run=\"$run\"}",
+          "expr": "upbid_sse_rooms{run=~\"$run\"}",
           "legendFormat": "방",
           "range": true,
           "refId": "B"
@@ -637,7 +986,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 27,
+        "y": 45,
         "w": 12,
         "h": 8
       },
@@ -679,7 +1028,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_heartbeat_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_heartbeat_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "heartbeat p95",
           "range": true,
           "refId": "A"
@@ -690,7 +1039,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_broadcast_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_broadcast_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "broadcast p95",
           "range": true,
           "refId": "B"
@@ -708,7 +1057,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 27,
+        "y": 45,
         "w": 12,
         "h": 8
       },
@@ -750,7 +1099,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "p95",
           "range": true,
           "refId": "A"
@@ -761,7 +1110,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(1.00, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=\"$run\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(1.00, sum by (le) (rate(upbid_auction_close_delay_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
           "legendFormat": "max",
           "range": true,
           "refId": "B"
@@ -779,7 +1128,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 53,
         "w": 8,
         "h": 8
       },
@@ -821,7 +1170,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_duration_seconds_bucket{run=\"$run\", result=\"closed\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_duration_seconds_bucket{run=~\"$run\", result=\"closed\"}[30s]))) * 1000",
           "legendFormat": "닫힘 p95",
           "range": true,
           "refId": "A"
@@ -832,7 +1181,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_duration_seconds_bucket{run=\"$run\", result=\"rescheduled\"}[30s]))) * 1000",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_auction_close_duration_seconds_bucket{run=~\"$run\", result=\"rescheduled\"}[30s]))) * 1000",
           "legendFormat": "재예약 p95",
           "range": true,
           "refId": "B"
@@ -850,7 +1199,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 35,
+        "y": 53,
         "w": 8,
         "h": 8
       },
@@ -892,7 +1241,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "executor_active_threads{run=\"$run\", name=\"taskScheduler\"}",
+          "expr": "executor_active_threads{run=~\"$run\", name=\"taskScheduler\"}",
           "legendFormat": "일하는 중",
           "range": true,
           "refId": "A"
@@ -903,7 +1252,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "executor_pool_size_threads{run=\"$run\", name=\"taskScheduler\"}",
+          "expr": "executor_pool_size_threads{run=~\"$run\", name=\"taskScheduler\"}",
           "legendFormat": "일꾼 총 수",
           "range": true,
           "refId": "B"
@@ -914,7 +1263,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "executor_queued_tasks{run=\"$run\", name=\"taskScheduler\"}",
+          "expr": "executor_queued_tasks{run=~\"$run\", name=\"taskScheduler\"}",
           "legendFormat": "대기열",
           "range": true,
           "refId": "C"
@@ -932,7 +1281,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 35,
+        "y": 53,
         "w": 8,
         "h": 8
       },
@@ -974,7 +1323,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (reason) (upbid_auction_close_failures_total{run=\"$run\"})",
+          "expr": "sum by (reason) (upbid_auction_close_failures_total{run=~\"$run\"})",
           "legendFormat": "{{reason}}",
           "range": true,
           "refId": "A"
@@ -988,7 +1337,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 61,
         "w": 24,
         "h": 1
       },
@@ -1005,7 +1354,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 62,
         "w": 12,
         "h": 8
       },
@@ -1087,7 +1436,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 44,
+        "y": 62,
         "w": 12,
         "h": 8
       },
@@ -1129,7 +1478,7 @@
             "uid": "upbid-prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (status) (rate(http_server_requests_seconds_count{run=\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
+          "expr": "sum by (status) (rate(http_server_requests_seconds_count{run=~\"$run\", uri!=\"/actuator/prometheus\", uri!~\".*subscribe\"}[30s]))",
           "legendFormat": "{{status}}",
           "range": true,
           "refId": "A"
@@ -1142,7 +1491,7 @@
       {
         "name": "run",
         "label": "실행",
-        "description": "어느 실행을 볼지. 최신이 맨 위다. 로컬은 run.sh 가 실행마다 다른 값을 붙이고, 배포는 앱이 부팅 때 받은 값(PERF_RUN_ID, 기본 unknown)을 창구 내내 단다. 배포에서는 계단이 라벨이 아니라 시간 범위로 갈린다.",
+        "description": "어느 실행을 볼지. 기본은 전체라 아무것도 안 고르면 서버에 있는 모든 실행이 보인다. 한 실행만 떼어 보고 싶을 때 고른다. 로컬은 run.sh 가 실행마다 다른 값을 붙이고, 배포는 앱이 부팅 때 받은 값(PERF_RUN_ID, 기본 unknown)을 창구 내내 단다.",
         "type": "query",
         "datasource": {
           "type": "prometheus",
@@ -1156,11 +1505,17 @@
         },
         "sort": 2,
         "refresh": 2,
-        "includeAll": false,
+        "includeAll": true,
         "multi": false,
-        "current": {},
-        "options": []
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "allValue": ".*"
       }
     ]
-  }
+  },
+  "version": 7
 }

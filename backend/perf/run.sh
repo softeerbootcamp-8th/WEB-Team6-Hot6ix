@@ -42,6 +42,9 @@ DB_PASS=""
 # 안 넣으면 앱이 그 값을 붙인다). 서버에 값을 넣었으면 --run-label 로 그 값을 준다.
 RUN_LABEL=""
 ITEMS=1
+# 방 하나에 넣을 물품 수. 0 이면 전부 한 방이다 (로컬 기본).
+# 원격은 아래에서 3 으로 채운다. 배포 앱이 방당 3개까지만 진행시키기 때문이다.
+PER_ROOM=0
 SSE=0
 USERS=200
 HEARTBEAT_MS=30000
@@ -97,6 +100,9 @@ usage() {
   --rate N           초당 도착 건수를 고정한다 (열린 모델). 안 주면 예전처럼 닫힌 모델
                      "동시 참여자 200명이 평균 3초에 한 번" = --rate 66 처럼 환산한다
   --items N          물품 수. 시나리오 1은 1, 2는 20 (기본 1)
+  --per-room N       방 하나에 넣을 물품 수. 0 이면 전부 한 방 (로컬 기본)
+                     원격은 기본 3 이다. 서비스 규칙이 방당 동시 진행 3개라
+                     한 방에 더 넣으면 넘친 물품이 조용히 거절된다
   --sse N            같이 붙여 둘 SSE 접속 수. 5번(겹쳐 재기)에서 쓴다 (기본 0)
   --users N          시딩할 구매자 수. --vus 보다 커야 한다 (기본 200)
 
@@ -167,6 +173,7 @@ while [ $# -gt 0 ]; do
     --db-user) DB_USER="$2"; shift 2 ;;
     --db-pass) DB_PASS="$2"; shift 2 ;;
     --items) ITEMS="$2"; shift 2 ;;
+    --per-room) PER_ROOM="$2"; shift 2 ;;
     --sse) SSE="$2"; shift 2 ;;
     --users) USERS="$2"; shift 2 ;;
     --pool) POOL="$2"; shift 2 ;;
@@ -275,11 +282,23 @@ if [ -n "$BASE_TARGET" ]; then
   COMPOSE_PROJECT="upbid-perf-prod"
   # 배포 앱은 부팅 때 받은 라벨을 창구 내내 달고 있다. 안 넣었으면 unknown 이다.
   RUN_LABEL="${RUN_LABEL:-unknown}"
+  # 배포는 서비스 규칙(방당 동시 진행 3개)이 그대로 살아 있다. 한 방에 더 넣으면 넘친 물품이
+  # 4008 로 거절되는데 표에는 아무 표시도 안 남는다. 그래서 기본을 3 으로 둔다.
+  [ "$PER_ROOM" -eq 0 ] 2>/dev/null && PER_ROOM=3
 else
   REMOTE=0
   APP_URL="http://localhost:$PERF_HTTP_PORT"
   ADMIN_URL="$APP_URL"
   COMPOSE_PROJECT="upbid-perf"
+fi
+
+# k6 가 때릴 주소. **로컬은 컨테이너 안에서 도는 것이라 호스트 주소를 주면 안 된다.**
+# APP_URL 은 이 셸에서 쓰는 주소(localhost:18080)라 컨테이너에서는 연결이 거부된다.
+# 같은 도커 네트워크의 서비스 이름으로 부른다.
+if [ "$REMOTE" = "1" ]; then
+  K6_BASE_URL="$APP_URL/api/v1"
+else
+  K6_BASE_URL="http://nginx/api/v1"
 fi
 
 PROM_URL="http://localhost:$PERF_PROM_PORT"
@@ -474,7 +493,14 @@ export SSE_HEARTBEAT_MS="$HEARTBEAT_MS"
 # 올려 두었는데, 그것도 --items 를 그 위로 주면 넘친다. 넘친 물품은 4008 로 거절되고 그대로
 # 마감 표본이 줄어드는데, k6 쪽 check 만 실패하고 결과 표에는 아무 표시도 안 남아서 알아채기
 # 어렵다(실측으로 --items 100 을 줬다가 50개만 시작돼서 마감이 41건만 나왔다).
-export MAX_IN_PROGRESS_PER_ROOM="$ITEMS"
+#
+# --per-room 을 주면 그 값을 그대로 앱에도 준다. 그래야 로컬에서도 배포와 같은 제한으로
+# 재게 되고, "정책 안에서 재는 것"을 로컬에서 먼저 검증할 수 있다.
+if [ "$PER_ROOM" -gt 0 ] 2>/dev/null; then
+  export MAX_IN_PROGRESS_PER_ROOM="$PER_ROOM"
+else
+  export MAX_IN_PROGRESS_PER_ROOM="$ITEMS"
+fi
 # JFR(Java Flight Recorder)은 JDK 에 들어 있어서 따로 깔 게 없다. 10ms 마다 스레드가
 # 어느 코드에 있는지 찍어서 "CPU 를 어디서 태웠나"를 순위로 뽑을 수 있다.
 #
@@ -669,7 +695,7 @@ SEED_START="all"
 case "$SCENARIO" in 4|5) SEED_START="none" ;; esac
 
 BASE_URL="$APP_URL/api/v1" "$PERF_DIR/seed.sh" \
-  --users "$USERS" --items "$ITEMS" \
+  --users "$USERS" --items "$ITEMS" --per-room "$PER_ROOM" \
   --start-price "$START_PRICE" --unit "$BID_UNIT" \
   --start "$SEED_START" --out "$SEED_ENV" \
   --soft-close-trigger "$SOFT_CLOSE_TRIGGER" --soft-close-extend "$SOFT_CLOSE_EXTEND"
@@ -795,7 +821,8 @@ if [ "$SSE" -gt 0 ]; then
   SSE_CID="$("${COMPOSE[@]}" run --rm -d --no-deps \
     --user "$(id -u):$(id -g)" \
     -e "VUS=$SSE" -e "SHARE_CODE=$SHARE_CODE" -e "RUN_ID=" -e "DURATION=30m" \
-    -e "BASE_URL=$APP_URL/api/v1" -e "DEV_LOGIN_TOKEN=${DEV_LOGIN_TOKEN:-}" \
+    -e "BASE_URL=$K6_BASE_URL" -e "DEV_LOGIN_TOKEN=${DEV_LOGIN_TOKEN:-}" \
+    -e "SHARE_CODES=${SHARE_CODES:-$SHARE_CODE}" -e "ROOM_ITEM_IDS=${ROOM_ITEM_IDS:-}" \
     k6 run /scripts/scenario3.js)"
   SSE_CONTAINER="$(docker inspect --format '{{.Name}}' "$SSE_CID" 2>/dev/null | sed 's#^/##')"
 
@@ -854,16 +881,18 @@ run_k6() {
   set +e
   VUS="$vus" DURATION="$duration" RUN_ID="$run_id" \
   SHARE_CODE="$SHARE_CODE" ITEM_IDS="$ITEM_IDS" CLOSE_ITEM_IDS="$CLOSE_ITEM_IDS" \
+  SHARE_CODES="${SHARE_CODES:-$SHARE_CODE}" ROOM_ITEM_IDS="${ROOM_ITEM_IDS:-}" \
   BID_ITEMS="$BID_ITEMS" BID_START="$BID_START" CLOSE_BID_UNTIL="$CLOSE_BID_UNTIL" \
   CLOSE_DURATION_MINUTES="$CLOSE_DURATION_MINUTES" \
   START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
   BURST_MODE="$BURST_MODE" \
   DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" RATE="${RUN_RATE:-$RATE}" \
-  BASE_URL="$APP_URL/api/v1" \
+  BASE_URL="$K6_BASE_URL" \
     "${COMPOSE[@]}" run --rm \
       --user "$(id -u):$(id -g)" \
       -e VUS -e DURATION -e RUN_ID -e SHARE_CODE -e ITEM_IDS -e CLOSE_ITEM_IDS -e BID_ITEMS \
       -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
+      -e SHARE_CODES -e ROOM_ITEM_IDS \
       -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN -e RATE -e BASE_URL \
       -e BURST_MODE \
       k6 run ${@+"$@"} "/scripts/$SCRIPT" \

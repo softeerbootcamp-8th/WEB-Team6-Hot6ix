@@ -19,7 +19,7 @@
 import http from 'k6/http'
 import exec from 'k6/execution'
 import { check, sleep } from 'k6'
-import { BASE, DURATION, VUS, authHeaders, ensureSession, summaryTo } from './common.js'
+import { BASE, DURATION, ROOMS, VUS, authHeaders, ensureSession, summaryTo } from './common.js'
 import { bidOnce } from './bid.js'
 
 // 시딩을 --start none 으로 하므로 물품은 여기 담겨 온다. ITEM_IDS 는 비어 있다.
@@ -53,16 +53,44 @@ const BID_ITEMS = Number(__ENV.BID_ITEMS || 0)
 // 0 이면 예전 그대로 마감 대상에 입찰을 안 넣는다.
 const CLOSE_BID_UNTIL = Number(__ENV.CLOSE_BID_UNTIL || 0)
 
-function splitTargets(ids) {
+/** 한 무리를 입찰용과 마감용으로 가른다. 최소 하나는 마감 쪽에 남겨야 마감 지표가 나온다. */
+function splitGroup(ids, wanted) {
   if (ids.length < 2) {
     return { bid: [], close: ids }
   }
 
-  // 안 주면 반씩. 최소 하나는 마감 쪽에 남겨야 마감 지표가 나온다.
-  const wanted = BID_ITEMS > 0 ? BID_ITEMS : Math.floor(ids.length / 2)
   const k = Math.min(Math.max(wanted, 1), ids.length - 1)
 
   return { bid: ids.slice(0, k), close: ids.slice(k) }
+}
+
+// ── 방이 여럿이면 방마다 따로 가른다 ──────────────────────────────
+// 목록을 통째로 앞에서 자르면 안 된다. seed 가 물품을 방마다 연속으로 담기 때문에, 앞에서
+// 자른 입찰 대상이 앞쪽 방 몇 개에 전부 몰린다. 뒤쪽 방을 맡은 VU 는 자기 방에 입찰 대상이
+// 없어서 요청을 한 건도 못 보내는데, 4xx 도 에러도 안 남아서 결과만 봐서는 모른다.
+// (VU 20 으로 적혀 있지만 실제로 부하를 만드는 건 절반뿐인 상태가 된다.)
+//
+// 방마다 가르면 어느 방에 붙은 VU 든 입찰 대상을 갖는다.
+function splitTargets(ids) {
+  const groups = ROOMS.map((r) => r.itemIds).filter((g) => g.length > 0)
+
+  if (groups.length < 2) {
+    return splitGroup(ids, BID_ITEMS > 0 ? BID_ITEMS : Math.floor(ids.length / 2))
+  }
+
+  // --bid-items 는 전체 개수라 방 수로 나눠 쓴다. 안 주면 방마다 반씩.
+  const perRoom = BID_ITEMS > 0 ? Math.round(BID_ITEMS / groups.length) : 0
+  const bid = []
+  const close = []
+
+  for (const group of groups) {
+    const part = splitGroup(group, perRoom > 0 ? perRoom : Math.floor(group.length / 2))
+
+    bid.push(...part.bid)
+    close.push(...part.close)
+  }
+
+  return { bid, close }
 }
 
 const TARGETS = splitTargets(CLOSE_ITEM_IDS)
@@ -103,6 +131,17 @@ export function setup() {
   }
 
   console.log(`입찰 대상 ${TARGETS.bid.length}개 / 마감 대상 ${TARGETS.close.length}개`)
+
+  // 물품이 하나뿐인 방은 통째로 마감 쪽으로 간다. 그 방을 맡은 VU 는 CLOSE_BID_UNTIL 구간이
+  // 지나면 놀게 되므로, 부하가 왜 모자란지 나중에 헤매지 않도록 여기서 알린다.
+  const roomsWithoutBid = ROOMS.filter((r) => r.itemIds.length === 1).length
+
+  if (roomsWithoutBid > 0) {
+    console.warn(
+      `물품이 1개뿐인 방이 ${roomsWithoutBid}개 있다. 그 방을 맡은 VU 는 입찰 대상이 없다. ` +
+      '--items 를 --per-room 의 배수로 주면 없어진다.',
+    )
+  }
 }
 
 /** 판매자 한 명이 물품을 모두 시작해서 같은 시각에 닫히게 만든다. 시나리오 4 와 같다. */
@@ -166,11 +205,18 @@ export function bidder() {
   // 초반에는 마감 대상까지 함께 노린다. 그래야 마감이 낙찰로 닫히고 낙찰 후보 생성까지
   // 마감 소요 시간에 들어온다. 창이 닫히면 마감 대상은 놔둬야 실제로 닫힌다.
   if (CLOSE_BID_UNTIL > 0 && elapsedSeconds() < CLOSE_BID_UNTIL) {
-    bidOnce(CLOSE_ITEM_IDS)
+    if (bidOnce(CLOSE_ITEM_IDS) === null) {
+      sleep(1)
+    }
+
     return
   }
 
-  bidOnce(TARGETS.bid)
+  // 이 방에 입찰 대상이 없으면 bidOnce 가 요청 없이 바로 null 을 준다. 그대로 두면 반복이
+  // 즉시 끝나고 다시 시작하는 빈 루프가 되어, 부하는 안 만들면서 k6 CPU 만 태운다.
+  if (bidOnce(TARGETS.bid) === null) {
+    sleep(1)
+  }
 }
 
 export function handleSummary(data) {

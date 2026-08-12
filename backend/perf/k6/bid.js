@@ -10,7 +10,7 @@
 
 import http from 'k6/http'
 import { Counter } from 'k6/metrics'
-import { BASE, ITEM_IDS, SHARE_CODE, agree, authHeaders, ensureSession } from './common.js'
+import { BASE, ITEM_IDS, agree, authHeaders, ensureSession, roomOfVu } from './common.js'
 
 // ── 왜 상태 코드로 세면 안 되는가 ────────────────────────────────────
 // 입찰 거절이 전부 409 다. BID_AMOUNT_TOO_LOW(7004)도 409, CONCURRENT_BID_CONFLICT(7006)도
@@ -39,7 +39,7 @@ export function setupCheck() {
  * 시나리오 6(마감 + 입찰)은 시딩을 `--start none` 으로 하기 때문에 ITEM_IDS 가 비어 있고,
  * 물품은 CLOSE_ITEM_IDS 에 담겨 온다. 기본값을 두어 시나리오 1·2 는 그대로 쓴다.
  */
-export function bidOnce(itemIds = ITEM_IDS) {
+export function bidOnce(itemIds = null) {
   const prepared = prepareBid(itemIds)
 
   if (prepared === null) {
@@ -53,15 +53,28 @@ export function bidOnce(itemIds = ITEM_IDS) {
  * 입찰 직전까지 필요한 로그인·동의·현재가 조회를 끝낸다.
  * burst 시나리오는 이 단계까지 각 VU가 마친 뒤 공통 시각에 POST만 동시에 보낸다.
  */
-export function prepareBid(itemIds = ITEM_IDS) {
+export function prepareBid(itemIds = null) {
+  // 이 VU 가 맡은 방. 방이 하나면 늘 같은 방이라 예전과 똑같이 돈다.
+  const room = roomOfVu()
+
   // VU 마다 회원 하나. 세션이 없을 때만 로그인하고 약관에 동의한다.
   // __ITER === 0 으로 판단하면 안 된다 — 쿠키 항아리가 반복마다 비워져서 두 번째 반복부터
   // 401 이 된다 (common.js 의 ensureSession 설명 참고).
   if (ensureSession(`bidder-${__VU}`)) {
-    agree()
+    agree(room.code)
   }
 
-  const itemId = itemIds[Math.floor(Math.random() * itemIds.length)]
+  // 부르는 쪽이 목록을 주면(시나리오 5 의 마감 대상) 그중 이 방 것만 남긴다.
+  // 남의 방 물품에 입찰하면 동의를 안 한 방이라 전부 TERMS_NOT_AGREED 로 거절된다.
+  const pool = itemIds
+    ? (room.itemIds.length ? itemIds.filter((id) => room.itemIds.indexOf(id) !== -1) : itemIds)
+    : (room.itemIds.length ? room.itemIds : ITEM_IDS)
+
+  if (pool.length === 0) {
+    return null
+  }
+
+  const itemId = pool[Math.floor(Math.random() * pool.length)]
 
   // ── 왜 현재가를 읽고 나서 입찰하는가 ──────────────────────────────
   // 예전에는 VU 의 반복 횟수로 금액을 만들었다 (START_PRICE + BID_UNIT * (__ITER * VUS + __VU)).
@@ -75,7 +88,7 @@ export function prepareBid(itemIds = ITEM_IDS) {
   // 요청이 GET + POST 로 두 배가 되므로 판정은 throughput 이 아니라 accepted_per_s 로 한다.
   // ─────────────────────────────────────────────────────────────────
   const detail = http.get(
-    `${BASE}/auction-rooms/share/${SHARE_CODE}/auction-items/${itemId}`,
+    `${BASE}/auction-rooms/share/${room.code}/auction-items/${itemId}`,
     {
       headers: authHeaders(),
       // 전역 discardResponseBodies 를 여기서만 뒤집는다. 현재가를 읽어야 한다.
