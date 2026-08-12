@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.sse.service;
 
 import com.hot6ix.upbid.global.event.EventType;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -37,10 +38,14 @@ public class SseMetrics {
      */
     private final Map<String, Timer> broadcasts;
 
+    /** {@code sseExecutor}의 큐와 풀이 다 차서 브로드캐스트를 못 보내고 거부당한 횟수(#234). */
+    private final Counter rejected;
+
     public SseMetrics(MeterRegistry registry) {
         this.registry = registry;
         this.heartbeat = registry.timer("upbid.sse.heartbeat");
         this.broadcasts = broadcastTimers(registry);
+        this.rejected = registry.counter("upbid.sse.broadcast.rejected");
     }
 
     private static Map<String, Timer> broadcastTimers(MeterRegistry registry) {
@@ -87,5 +92,9 @@ public class SseMetrics {
     public void recordBroadcast(String eventName, Runnable send) {
         broadcasts.getOrDefault(eventName, registry.timer(BROADCAST, "event", eventName))
                 .record(send);
+    }
+
+    public void recordRejected() {
+        rejected.increment();
     }
 }

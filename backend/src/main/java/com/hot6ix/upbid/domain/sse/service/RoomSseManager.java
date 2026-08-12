@@ -7,7 +7,10 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -30,6 +33,8 @@ public class RoomSseManager {
     /** 계측은 이 객체가 안다. 이 클래스는 Micrometer 를 모른다. */
     private final SseMetrics sseMetrics;
     private final SseEventBuffer sseEventBuffer;
+    /** 브로드캐스트 전용 풀(#234). 필드 이름이 빈 이름과 같아야 스프링이 이걸로 골라준다. */
+    private final Executor sseExecutor;
 
     /**
      * 지금 열려 있는 연결 수를 지표로 내보낸다. 게이지는 스크랩할 때 위 Map 을 읽어 가는
@@ -77,9 +82,20 @@ public class RoomSseManager {
     /**
      * 방에 붙어 있는 모든 연결에 이벤트를 쏜다.
      *
-     * <p>지금은 부르는 스레드가 직접 다 쏘고 나서 돌아간다. 입찰을 처리한 톰캣 스레드가
-     * 커밋 뒤에 이 메서드를 부르므로, 여기 걸린 시간이 그대로 입찰 응답 시간에 얹힌다.
-     * {@code upbid.sse.broadcast}로 그 비용을 잰다(#234).
+     * <p>emitter마다 따로 전용 풀 {@code sseExecutor}에 위임한다(#234) — 한 구독자가 느려도
+     * 같은 이벤트를 받는 다른 구독자들은 그 사람을 안 기다리고, 입찰을 처리하던 스레드나
+     * 마감 스케줄러 스레드도 전송이 끝나길 기다리지 않는다. {@code upbid.sse.broadcast}로
+     * emitter 하나에 보내는 데 걸린 시간을 잰다.
+     *
+     * <p>버퍼에 쌓이는 순서({@code id})는 이 메서드를 부른 스레드가 정하므로 안전하지만,
+     * <b>emitter로 실제 전송되는 순서까지는 보장하지 않는다.</b> 같은 방에 이벤트 두 개가
+     * 거의 동시에 오면, 어느 워커가 어느 emitter를 먼저 처리하느냐에 따라 도착 순서가
+     * 뒤바뀔 수 있다. 큐를 두면 해결되는데, 우선 이 상태로 실측해서 얼마나 자주 어긋나는지
+     * 보고 판단한다.
+     *
+     * <p>그 풀의 큐(50)와 최대 스레드(10)가 다 차면 emitter별 제출이 개별로 거부될 수 있다.
+     * 못 보낸 emitter만 실패한 것이라 나머지 emitter 전송은 그대로 진행하고,
+     * {@code upbid.sse.broadcast.rejected}로 세고 로그만 남긴다.
      *
      * <p>쏠 대상이 없으면 재지 않는다. 0에 가까운 값이 히스토그램에 섞이면 p95가 실제보다
      * 낮게 나온다.
@@ -93,11 +109,16 @@ public class RoomSseManager {
 
         long id = sseEventBuffer.add(roomId, name, data);
 
-        sseMetrics.recordBroadcast(name, () -> {
-            for (SseEmitter emitter : emitters) {
-                send(roomId, emitter, name, id, data);
+        for (SseEmitter emitter : emitters) {
+            try {
+                CompletableFuture.runAsync(
+                        () -> sseMetrics.recordBroadcast(name, () -> send(roomId, emitter, name, id, data)),
+                        sseExecutor);
+            } catch (RejectedExecutionException e) {
+                sseMetrics.recordRejected();
+                log.warn("sse 브로드캐스트 거부됨: roomId={}, name={}", roomId, name, e);
             }
-        });
+        }
     }
 
     public int getParticipantCount(Long roomId) {
@@ -117,8 +138,8 @@ public class RoomSseManager {
                     .data(data));
         } catch (IOException | IllegalStateException e) {
             unregister(roomId, emitter);
-            log.debug("sse 전송 중 끊긴 연결 정리: roomId={}, name={}, remaining={}, cause={}",
-                    roomId, name, getParticipantCount(roomId), cause(e));
+            log.debug("sse 전송 중 끊긴 연결 정리: roomId={}, name={}, remaining={}, thread={}, cause={}",
+                    roomId, name, getParticipantCount(roomId), Thread.currentThread().getName(), cause(e));
             emitter.completeWithError(e);
         }
     }
