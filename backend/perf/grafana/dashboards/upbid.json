@@ -634,6 +634,90 @@
     },
     {
       "type": "timeseries",
+      "title": "JVM CPU (프로세스)",
+      "id": 19,
+      "description": "JVM 프로세스가 쓴 CPU 다. 코어 전체를 100% 로 본다.\nAWS CloudWatch CPUUtilization 과 다른 값이다. 저쪽은 인스턴스 전체(OS, 도커 데몬 포함)를 1~5분 평균으로 재고, 이건 JVM 만 5초마다 잰다. 항상 CloudWatch 보다 낮게 나온다.\n보는 이유는 \"앱이 CPU 에 묶였나\" 를 CloudWatch 로는 못 가르기 때문이다.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "range": true,
+          "refId": "A",
+          "expr": "process_cpu_usage{run=~\"$run\"} * 100",
+          "legendFormat": "JVM 프로세스"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "range": true,
+          "refId": "B",
+          "expr": "system_cpu_usage{run=~\"$run\"} * 100",
+          "legendFormat": "호스트 전체"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "range": true,
+          "refId": "C",
+          "expr": "jvm_threads_live_threads{run=~\"$run\"}",
+          "legendFormat": "살아있는 스레드 (개)"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
       "title": "5xx 와 에러 로그",
       "description": "진짜 실패만 모은다. 입찰 거절은 4xx 라 여기 안 잡힌다.\n둘이 같이 튀면 예외가 응답까지 나간 것이고, 로그만 튀면 삼켜진 예외다.",
       "id": 20,
@@ -642,9 +726,9 @@
         "uid": "upbid-prometheus"
       },
       "gridPos": {
-        "x": 0,
+        "x": 12,
         "y": 28,
-        "w": 24,
+        "w": 12,
         "h": 8
       },
       "fieldConfig": {
@@ -1400,5 +1484,5 @@
       }
     ]
   },
-  "version": 6
+  "version": 7
 }
