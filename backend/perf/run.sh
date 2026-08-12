@@ -1185,9 +1185,21 @@ AWARDS="$(promq "sum($(delta "upbid_deal_award_seconds_count{$RUN}")) or vector(
 
 # 스케줄러 일꾼. Boot 가 ThreadPoolTaskScheduler 를 자동으로 계측해 줘서 직접 만들 게 없었다.
 # 가상 스레드를 켜면 SimpleAsyncTaskScheduler 로 바뀌어 풀도 큐도 없어지므로 여기는 NaN 이 된다.
+#
+# **이 두 칸은 이제 마감 부하를 안 보여준다.** 마감 실행이 전용 풀(auctionCloseExecutor)로
+# 빠졌기 때문이다(#289). 여기 남는 건 SSE 하트비트와 재동기화, SMS 정리 cron 이다.
 SCHED="$RUN, name=\"taskScheduler\""
 SCHED_ACTIVE_MAX="$(promq "max(max_over_time(executor_active_threads{$SCHED}[$W]))")"
 SCHED_QUEUED_MAX="$(promq "max(max_over_time(executor_queued_tasks{$SCHED}[$W]))")"
+
+# 마감을 실제로 실행하는 풀. worker-pool-size 를 실측으로 정하려면 이쪽을 봐야 한다.
+CLOSE_POOL="$RUN, name=\"auctionCloseExecutor\""
+CLOSE_ACTIVE_MAX="$(promq "max(max_over_time(executor_active_threads{$CLOSE_POOL}[$W]))")"
+CLOSE_QUEUED_MAX="$(promq "max(max_over_time(executor_queued_tasks{$CLOSE_POOL}[$W]))")"
+
+# 실행 시각이 지났는데 아직 처리 안 된 예약. 폴링 주기가 마감 지연의 바닥으로 깔려서
+# close_delay 만으로는 밀리는 것을 못 본다. -1 은 Redis 를 못 읽었다는 뜻이다.
+CLOSE_BACKLOG_MAX="$(promq "max(max_over_time(upbid_auction_close_backlog{$RUN}[$W]))")"
 GC_PAUSE_MS_PER_S="$(promq "sum($(delta "jvm_gc_pause_seconds_sum{$RUN}")) / $WINDOW_SECONDS * 1000")"
 
 # 입찰 결과는 k6 요약에서 읽는다.
@@ -1274,6 +1286,9 @@ CLOSE_DURATION_P95_MS="$(round "$CLOSE_DURATION_P95_MS" 0)"
 CLOSE_FAILURES="$(round "$CLOSE_FAILURES" 0)"
 SCHED_ACTIVE_MAX="$(round "$SCHED_ACTIVE_MAX" 0)"
 SCHED_QUEUED_MAX="$(round "$SCHED_QUEUED_MAX" 0)"
+CLOSE_ACTIVE_MAX="$(round "$CLOSE_ACTIVE_MAX" 0)"
+CLOSE_QUEUED_MAX="$(round "$CLOSE_QUEUED_MAX" 0)"
+CLOSE_BACKLOG_MAX="$(round "$CLOSE_BACKLOG_MAX" 0)"
 GC_PAUSE_MS_PER_S="$(round "$GC_PAUSE_MS_PER_S" 1)"
 K6_CPU_MAX="$(round "$K6_CPU_MAX" 0)"
 # 자리를 맞춰 둔다. 콘솔은 정수(4)로, 손으로 칠 때는 소수(4.0)로 보내기 쉬운데
@@ -1430,7 +1445,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,vus,rate,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,accepted_per_s,p95_ms,k6_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -1460,8 +1475,8 @@ fi
 # k6 가 중간에 죽으면 summary.json 이 없어서 접수와 거절이 전부 0 인데 처리량은 그럴듯한
 # 숫자가 박혀서, 그 줄만 봐서는 아무도 못 알아본다. 실측으로 겪었다 — 구간 128초짜리
 # aborted 줄에 처리량 3490.7 이 들어갔고 접수는 0 이었다.
-printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
-  "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$VUS" "$RATE" "$POOL" "$ITEMS" "$SSE" \
+printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,,\n' \
+  "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$APPS" "$VUS" "$RATE" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$ACCEPTED_PER_S" "$P95_MS" "$K6_P95_MS" "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
@@ -1471,6 +1486,7 @@ printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
   "$CLOSE_DURATION_P95_MS" \
   "$CLOSE_LOCK_WAIT_P95_MS" "$CLOSE_LOCK_HOLD_P95_MS" "$CLOSE_NOTIFY_P95_MS" "$CLOSE_AWARD_P95_MS" \
   "$CLOSE_FAILURES" "$CLOSES" "$AWARDS" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
+  "$CLOSE_ACTIVE_MAX" "$CLOSE_QUEUED_MAX" "$CLOSE_BACKLOG_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$HEARTBEAT_RUNS" "$HEARTBEAT_EXPECTED" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
   "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" \
   "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
@@ -1563,6 +1579,8 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 마감 소요 p95 (락 대기 포함) | ${CLOSE_DURATION_P95_MS} ms |
 | 마감 실패 | ${CLOSE_FAILURES} 건 |
 | 스케줄러 일꾼 / 대기열 max | ${SCHED_ACTIVE_MAX} / ${SCHED_QUEUED_MAX} |
+| 마감 일꾼 / 대기열 max | ${CLOSE_ACTIVE_MAX} / ${CLOSE_QUEUED_MAX} |
+| 밀린 마감 예약 max | ${CLOSE_BACKLOG_MAX} |
 | SSE 접속 max | ${SSE_CONN_MAX} |
 | SSE heartbeat p95 | ${SSE_HEARTBEAT_P95_MS} ms |
 | **heartbeat 실행 횟수** | **${HEARTBEAT_RUNS} / ${HEARTBEAT_EXPECTED} 회** ← 모자라면 굶은 것 |
