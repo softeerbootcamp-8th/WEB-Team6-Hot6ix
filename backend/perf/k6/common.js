@@ -133,22 +133,38 @@ export function ensureSession(key) {
     return false
   }
 
+  sessionCookie = loginAs(key)
+
+  return true
+}
+
+/**
+ * dev-login 으로 세션 쿠키 값을 받아 돌려준다. <b>모듈 상태를 건드리지 않는다.</b>
+ *
+ * {@link ensureSession} 은 "VU 하나 = 사람 하나"를 전제로 하는데, 8번(브로드캐스트)은 한
+ * 물품에 두 사람을 교대로 붙여야 해서 — 같은 사람이 연달아 넣으면 ALREADY_TOP_BIDDER 다 —
+ * VU 하나가 쿠키를 여럿 들어야 한다. 그래서 반환형으로 갈라 두었다.
+ */
+export function loginAs(key, jar = null) {
   const res = http.post(`${BASE}/auth/dev-login?key=${encodeURIComponent(key)}`, null, {
     headers: devLoginHeaders(),
+    // 빈 항아리를 주면 앞사람 세션이 딸려 나가지 않는다. 자세한 이유는 broadcast.js 참고.
+    jar: jar || undefined,
     tags: { name: 'dev-login' },
   })
 
-  const cookie = res.cookies['SESSION']
+  // 값이 빈 Set-Cookie 는 세션을 지우는 쪽이다. 남은 것 중 마지막이 이번에 발급된 세션이다.
+  const values = (res.cookies['SESSION'] || [])
+    .map((c) => c.value)
+    .filter((v) => v && v.length > 0)
 
-  if (!cookie || cookie.length === 0) {
+  if (values.length === 0) {
     throw new Error(`dev-login 이 SESSION 쿠키를 안 줬다 (status=${res.status}). ` +
       '로컬이면 perf 프로파일에 DevAuthController 가 올라왔는지, 배포면 DEV_LOGIN_TOKEN 을 ' +
       '앱과 여기(DEV_LOGIN_TOKEN 환경변수) 양쪽에 같은 값으로 줬는지 본다.')
   }
 
-  sessionCookie = cookie[0].value
-
-  return true
+  return values[values.length - 1]
 }
 
 /** 로그인한 사람으로 요청하려면 이걸 거쳐야 한다. 세션이 없으면 그냥 비로그인 요청이 된다. */
@@ -168,9 +184,11 @@ export function authHeaders(extra) {
  * seed.sh 가 이미 만들어 두지만 여기서도 한 번 부른다. 스크립트만 따로 돌려 보는 사람이
  * 원인을 모른 채 전부 거절당하는 것을 막기 위해서다. 같은 사람이 여러 번 불러도 안전하다.
  */
-export function agree(shareCode = SHARE_CODE) {
+export function agree(shareCode = SHARE_CODE, cookie = null, jar = null) {
   return http.post(`${BASE}/auction-rooms/share/${shareCode}/agreement`, null, {
-    headers: authHeaders(),
+    // cookie 를 주면 그 사람으로 동의한다. 모듈 세션(ensureSession)을 안 쓰는 8번용이다.
+    headers: cookie ? { Cookie: `SESSION=${cookie}` } : authHeaders(),
+    jar: jar || undefined,
     tags: { name: 'agreement' },
   })
 }
