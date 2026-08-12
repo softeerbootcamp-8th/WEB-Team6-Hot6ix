@@ -35,7 +35,7 @@ public class DealAwardRecoveryRunner {
      * 문제는 아직 이 락을 쓰지 않는다.
      */
     @Scheduled(fixedDelayString = "${upbid.deal.award-recovery.interval-ms}")
-    @SchedulerLock(name = "award-recovery", lockAtLeastFor = "5m", lockAtMostFor = "10m")
+    @SchedulerLock(name = "award-recovery", lockAtLeastFor = "30s", lockAtMostFor = "10m")
     public void restoreMissingAwards() {
 
         try {
