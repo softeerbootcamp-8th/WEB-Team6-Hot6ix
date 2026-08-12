@@ -438,13 +438,157 @@
       ]
     },
     {
+      "type": "timeseries",
+      "title": "CPU",
+      "description": "앱은 process_cpu_usage 다. 호스트 코어 전체를 100% 로 본다.\n배포는 docker stats 를 못 쓰므로 이 값이 앱 CPU 의 유일한 창구다. RDS 와 EC2 호스트는 CloudWatch 로 따로 본다.",
+      "id": 19,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "percent",
+          "max": 100,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "process_cpu_usage{run=~\"$run\"} * 100",
+          "legendFormat": "앱 프로세스",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "system_cpu_usage{run=~\"$run\"} * 100",
+          "legendFormat": "호스트 전체",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx 와 에러 로그",
+      "description": "진짜 실패만 모은다. 입찰 거절은 4xx 라 여기 안 잡힌다.\n둘이 같이 튀면 예외가 응답까지 나간 것이고, 로그만 튀면 삼켜진 예외다.",
+      "id": 20,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "upbid-prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 18,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "max",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(http_server_requests_seconds_count{run=~\"$run\", status=~\"5..\"}[30s]))",
+          "legendFormat": "5xx (건/s)",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "upbid-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(logback_events_total{run=~\"$run\", level=\"error\"}[30s]))",
+          "legendFormat": "에러 로그 (건/s)",
+          "range": true,
+          "refId": "B"
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "직접 만든 지표",
       "id": 8,
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 26,
         "w": 24,
         "h": 1
       },
@@ -461,7 +605,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 19,
+        "y": 27,
         "w": 12,
         "h": 8
       },
@@ -532,7 +676,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 19,
+        "y": 27,
         "w": 12,
         "h": 8
       },
@@ -603,7 +747,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 27,
+        "y": 35,
         "w": 12,
         "h": 8
       },
@@ -674,7 +818,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 27,
+        "y": 35,
         "w": 12,
         "h": 8
       },
@@ -745,7 +889,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 43,
         "w": 8,
         "h": 8
       },
@@ -816,7 +960,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 35,
+        "y": 43,
         "w": 8,
         "h": 8
       },
@@ -898,7 +1042,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 35,
+        "y": 43,
         "w": 8,
         "h": 8
       },
@@ -954,7 +1098,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 43,
+        "y": 51,
         "w": 24,
         "h": 1
       },
@@ -971,7 +1115,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 44,
+        "y": 52,
         "w": 12,
         "h": 8
       },
@@ -1053,7 +1197,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 44,
+        "y": 52,
         "w": 12,
         "h": 8
       },
@@ -1134,5 +1278,5 @@
       }
     ]
   },
-  "version": 2
+  "version": 3
 }
