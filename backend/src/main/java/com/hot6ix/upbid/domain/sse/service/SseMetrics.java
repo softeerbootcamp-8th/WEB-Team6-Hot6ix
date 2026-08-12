@@ -38,7 +38,11 @@ public class SseMetrics {
      */
     private final Map<String, Timer> broadcasts;
 
-    /** {@code sseExecutor}의 큐와 풀이 다 차서 브로드캐스트를 못 보내고 거부당한 횟수(#234). */
+    /**
+     * {@code sseExecutor}가 거부한 브로드캐스트 횟수(#234). 가상 스레드로 바꾼 뒤로는 풀·큐가
+     * 없어 사실상 항상 0이다 — {@code sched_active_max}가 가상 스레드 스케줄러에서 NaN이 되는
+     * 것과 같은 이유로, 지표 자체는 지우지 않고 그대로 둔다.
+     */
     private final Counter rejected;
 
     public SseMetrics(MeterRegistry registry) {
