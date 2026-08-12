@@ -6,12 +6,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
+import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -30,12 +32,27 @@ class RoomSseManagerTest {
     private static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
     private static final long EMITTER_TIMEOUT_MS = 60 * 60 * 1000L;
 
+    private static final SseProperties PROPS = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
+
     private final RoomSseManager roomSseManager = newRoomSseManager();
 
-    /** 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다. */
+    /**
+     * 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다.
+     *
+     * <p>발행은 mock 이다. 이 클래스가 보는 것은 <b>이 인스턴스에 붙은 연결</b>을 어떻게
+     * 다루는지이고, Redis 왕복은 그 관심사가 아니다.
+     */
     private static RoomSseManager newRoomSseManager() {
-        SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
-        return new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), new SseEventBuffer(props));
+        return newRoomSseManager(new SseEventBuffer(PROPS), mock(SseEventPublisher.class));
+    }
+
+    private static RoomSseManager newRoomSseManager(SseEventBuffer buffer, SseEventPublisher publisher) {
+        return newRoomSseManager(buffer, publisher, new SimpleMeterRegistry());
+    }
+
+    private static RoomSseManager newRoomSseManager(
+            SseEventBuffer buffer, SseEventPublisher publisher, SimpleMeterRegistry registry) {
+        return new RoomSseManager(PROPS, new SseMetrics(registry), buffer, publisher);
     }
 
     @Test
@@ -84,7 +101,7 @@ class RoomSseManagerTest {
         Thread broadcaster = new Thread(() -> {
             try {
                 for (int i = 0; i < 200; i++) {
-                    roomSseManager.sendBroadCast(EVENT_NAME, ROOM_ID, "payload");
+                    roomSseManager.deliverLocal(ROOM_ID, EVENT_NAME, i + 1, "payload");
                 }
             } catch (Throwable t) {
                 broadcastFailure.set(t);
@@ -118,7 +135,7 @@ class RoomSseManagerTest {
         // 이 emitter 에 쓰면 ResponseBodyEmitter 가 IllegalStateException 을 던진다.
         dead.complete();
 
-        assertThatCode(() -> roomSseManager.sendBroadCast(EVENT_NAME, ROOM_ID, "payload"))
+        assertThatCode(() -> roomSseManager.deliverLocal(ROOM_ID, EVENT_NAME, 1L, "payload"))
                 .doesNotThrowAnyException();
 
         assertThat(roomSseManager.getParticipantCount(ROOM_ID)).isEqualTo(2);
@@ -142,32 +159,35 @@ class RoomSseManagerTest {
     @DisplayName("heartbeat 로 구독을 걷어내면 남은 구독에 참여자 수를 다시 알린다")
     void broadcastsCountAfterHeartbeatSweep() {
 
-        RoomSseManager manager = spy(newRoomSseManager());
+        SseEventPublisher publisher = mock(SseEventPublisher.class);
+        RoomSseManager manager = newRoomSseManager(new SseEventBuffer(PROPS), publisher);
 
         manager.subscribe(ROOM_ID, null);
         SseEmitter dead = manager.subscribe(ROOM_ID, null);
         dead.complete();
 
-        clearInvocations(manager);
+        clearInvocations(publisher);
 
         manager.sendHeartbeat();
 
-        verify(manager).sendBroadCast(eq(PARTICIPANT_COUNT_EVENT), eq(ROOM_ID), any());
+        // 참여자 수도 Redis 채널을 거쳐 돌아온다. 여기서 직접 쏘면 다른 인스턴스는 모른다.
+        verify(publisher).publish(eq(PARTICIPANT_COUNT_EVENT), eq(ROOM_ID), any());
     }
 
     @Test
     @DisplayName("걷어낼 구독이 없으면 참여자 수를 다시 알리지 않는다")
     void doesNotBroadcastCountWhenNothingSwept() {
 
-        RoomSseManager manager = spy(newRoomSseManager());
+        SseEventPublisher publisher = mock(SseEventPublisher.class);
+        RoomSseManager manager = newRoomSseManager(new SseEventBuffer(PROPS), publisher);
 
         manager.subscribe(ROOM_ID, null);
 
-        clearInvocations(manager);
+        clearInvocations(publisher);
 
         manager.sendHeartbeat();
 
-        verify(manager, never()).sendBroadCast(eq(PARTICIPANT_COUNT_EVENT), eq(ROOM_ID), any());
+        verify(publisher, never()).publish(eq(PARTICIPANT_COUNT_EVENT), eq(ROOM_ID), any());
     }
 
     @Test
@@ -189,16 +209,15 @@ class RoomSseManagerTest {
     }
 
     @Test
-    @DisplayName("방을 닫으면 이벤트 버퍼도 비워진다")
-    void clearsBufferOnRoomClose() {
+    @DisplayName("방을 닫으면 이벤트 버퍼와 Redis 순차 ID 카운터가 모두 정리된다")
+    void clearsBufferAndSequenceOnRoomClose() {
 
-        SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
-        SseEventBuffer buffer = new SseEventBuffer(props);
-        RoomSseManager manager =
-                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer);
+        SseEventBuffer buffer = new SseEventBuffer(PROPS);
+        SseEventPublisher publisher = mock(SseEventPublisher.class);
+        RoomSseManager manager = newRoomSseManager(buffer, publisher);
 
         manager.subscribe(ROOM_ID, null);
-        manager.sendBroadCast(EVENT_NAME, ROOM_ID, "payload");
+        buffer.add(ROOM_ID, 1L, EVENT_NAME, "payload", Instant.now());
         assertThat(buffer.getEventsAfter(ROOM_ID, 0L)).isNotEmpty();
 
         manager.closeRoom(ROOM_ID);
@@ -206,23 +225,22 @@ class RoomSseManagerTest {
         assertThat(buffer.getEventsAfter(ROOM_ID, 0L))
                 .as("끝난 방은 재연결 replay 대상이 아니므로 메모리를 붙잡고 있을 이유가 없다")
                 .isEmpty();
+        // 카운터는 Redis 에 있어 인스턴스 메모리를 지우는 것만으로는 안 사라진다.
+        verify(publisher).clearSequence(ROOM_ID);
     }
 
     @Test
-    @DisplayName("닫은 방에는 브로드캐스트가 나가지 않는다")
-    void doesNotBroadcastToClosedRoom() {
+    @DisplayName("닫은 방에 전달을 시도해도 남은 연결이 없어 아무 일도 일어나지 않는다")
+    void deliversNothingToClosedRoom() {
 
-        SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
-        SseEventBuffer buffer = new SseEventBuffer(props);
-        RoomSseManager manager =
-                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer);
+        SseEmitter emitter = roomSseManager.subscribe(ROOM_ID, null);
+        roomSseManager.closeRoom(ROOM_ID);
 
-        manager.subscribe(ROOM_ID, null);
-        manager.closeRoom(ROOM_ID);
+        assertThatCode(() -> roomSseManager.deliverLocal(ROOM_ID, EVENT_NAME, 1L, "payload"))
+                .doesNotThrowAnyException();
 
-        manager.sendBroadCast(EVENT_NAME, ROOM_ID, "payload");
-
-        assertThat(buffer.getEventsAfter(ROOM_ID, 0L)).isEmpty();
+        assertThat(roomSseManager.getParticipantCount(ROOM_ID)).isZero();
+        assertThatThrownBy(() -> emitter.send("payload")).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -244,8 +262,8 @@ class RoomSseManagerTest {
     void reportsZeroRoomsAfterLastSubscriberLeaves() {
 
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        RoomSseManager manager = new RoomSseManager(
-                new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50), new SseMetrics(registry), new SseEventBuffer(new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50)));
+        RoomSseManager manager = newRoomSseManager(
+                new SseEventBuffer(PROPS), mock(SseEventPublisher.class), registry);
 
         // 게이지는 @PostConstruct 에서 붙는다. 직접 생성한 객체에서는 안 불리므로 여기서 부른다.
         manager.bindMetrics();

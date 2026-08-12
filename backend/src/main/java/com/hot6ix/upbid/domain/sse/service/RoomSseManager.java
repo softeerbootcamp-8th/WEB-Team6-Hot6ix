@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.sse.service;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
+import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.util.List;
@@ -30,6 +31,8 @@ public class RoomSseManager {
     /** 계측은 이 객체가 안다. 이 클래스는 Micrometer 를 모른다. */
     private final SseMetrics sseMetrics;
     private final SseEventBuffer sseEventBuffer;
+    /** 참여자 수도 다른 이벤트와 같은 경로로 나간다. 여기서 직접 쏘면 다른 인스턴스가 모른다. */
+    private final SseEventPublisher sseEventPublisher;
 
     /**
      * 지금 열려 있는 연결 수를 지표로 내보낸다. 게이지는 스크랩할 때 위 Map 을 읽어 가는
@@ -75,23 +78,28 @@ public class RoomSseManager {
     }
 
     /**
-     * 방에 붙어 있는 모든 연결에 이벤트를 쏜다.
+     * <b>이 인스턴스에</b> 붙어 있는 연결에만 이벤트를 쏜다. 다른 인스턴스에는 Redis 채널이
+     * 이미 같은 이벤트를 날랐고, 거기서도 각자 이 메서드가 불린다.
      *
-     * <p>지금은 부르는 스레드가 직접 다 쏘고 나서 돌아간다. 입찰을 처리한 톰캣 스레드가
-     * 커밋 뒤에 이 메서드를 부르므로, 여기 걸린 시간이 그대로 입찰 응답 시간에 얹힌다.
-     * {@code upbid.sse.broadcast}로 그 비용을 잰다(#234).
+     * <p>{@code SseEventSubscriber}가 부르는 것이 유일한 경로다. 이벤트를 만든 쪽이 여기를
+     * 직접 부르면 자기 방 클라이언트에게 같은 이벤트가 두 번 간다.
+     *
+     * <p><b>여기서 붙는 연결이 없다고 돌아가도 이벤트는 안 사라진다.</b> 버퍼 저장과 발행은
+     * 이미 끝난 뒤라, 이 인스턴스에 구독자가 없다는 사실만 뜻한다.
+     *
+     * <p>{@code upbid.sse.broadcast}로 이 인스턴스의 fan-out 비용을 잰다(#234). 다만 이제
+     * 이 시간은 입찰 응답 시간에 얹히지 않는다. 톰캣 스레드는 발행까지만 하고 돌아가고,
+     * 실제 쓰기는 Redis 구독 스레드가 한다.
      *
      * <p>쏠 대상이 없으면 재지 않는다. 0에 가까운 값이 히스토그램에 섞이면 p95가 실제보다
      * 낮게 나온다.
      */
-    public void sendBroadCast(String name, Long roomId, Object data) {
+    public void deliverLocal(Long roomId, String name, long id, Object data) {
         Set<SseEmitter> emitters = roomEmitters.get(roomId);
 
         if (emitters == null || emitters.isEmpty()) {
             return;
         }
-
-        long id = sseEventBuffer.add(roomId, name, data);
 
         sseMetrics.recordBroadcast(name, () -> {
             for (SseEmitter emitter : emitters) {
@@ -168,8 +176,14 @@ public class RoomSseManager {
         });
     }
 
+    /**
+     * <b>여기서 세는 수는 이 인스턴스에 붙은 연결 수다.</b> 서버가 여러 대면 실제 참여자보다
+     * 작게 나오고, 인스턴스마다 자기 값을 발행하므로 화면 숫자가 그 값들 사이로 움직인다.
+     * 전역 집계는 후속 작업으로 남긴다. 서버가 한 대인 동안은 지금까지와 같은 값이다.
+     */
     private void broadcastParticipantCount(Long roomId) {
-        sendBroadCast(PARTICIPANT_COUNT_EVENT, roomId, new ParticipantCountDto(getParticipantCount(roomId)));
+        sseEventPublisher.publish(
+                PARTICIPANT_COUNT_EVENT, roomId, new ParticipantCountDto(getParticipantCount(roomId)));
     }
 
     /**
@@ -233,6 +247,10 @@ public class RoomSseManager {
      * EventSource가 자동 재연결할 수 있으므로 {@code complete()}를 호출한다.
      *
      * <p>종료된 방에 대한 재연결은 구독 시점의 방 상태 검증으로 차단한다.
+     *
+     * <p>{@code SseEventSubscriber}가 {@code ROOM_CLOSED}를 받고 부른다. 인스턴스는 자기에게
+     * 붙은 연결만 알기 때문에, 방을 닫은 인스턴스 하나가 아니라 이벤트를 받은 전부가 각자
+     * 불러야 모든 연결이 끊긴다.
      */
     public void closeRoom(Long roomId) {
         Set<SseEmitter> closing = roomEmitters.remove(roomId);
@@ -242,6 +260,7 @@ public class RoomSseManager {
         }
 
         sseEventBuffer.clear(roomId);
+        sseEventPublisher.clearSequence(roomId);
 
         log.info("sse 방 종료: roomId={}, 끊은 연결={}", roomId, closing == null ? 0 : closing.size());
     }

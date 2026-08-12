@@ -6,7 +6,6 @@ import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -20,6 +19,14 @@ import org.springframework.stereotype.Component;
  *
  * <p>이벤트 ID는 방별 순차 ID다. UUID와 달리 유실 규모를 로그로 파악할 수 있어
  * 운영 후 N을 데이터 기반으로 조정할 수 있다.
+ *
+ * <p><b>ID는 이 클래스가 매기지 않는다.</b> 발행 시점에 Redis {@code INCR}로 한 번만 뽑은 값을
+ * 받아 적는다. 인스턴스마다 세면 같은 이벤트가 인스턴스별로 다른 ID를 달고 나가서,
+ * 브라우저가 돌려주는 {@code Last-Event-ID}가 다른 인스턴스에서는 뜻이 달라진다.
+ *
+ * <p>버퍼 자체는 아직 인스턴스 로컬이다. 모든 인스턴스가 같은 채널을 구독하므로 떠 있는 동안의
+ * 내용은 서로 같아지지만, 늦게 뜬 인스턴스는 그 전 이벤트를 모른다. 버퍼를 Redis로 옮기는
+ * 것은 별도 작업이다.
  */
 @Slf4j
 @Component
@@ -28,18 +35,17 @@ import org.springframework.stereotype.Component;
 public class SseEventBuffer {
 
     private final Map<Long, ArrayDeque<BufferedEvent>> buffers = new ConcurrentHashMap<>();
-    private final Map<Long, AtomicLong> counters = new ConcurrentHashMap<>();
 
     private final SseProperties sseProperties;
 
     /**
      * 이벤트를 버퍼에 추가한다. N개를 초과하면 가장 오래된 것을 제거한다.
      *
-     * @return 할당된 순차 ID (SSE {@code id} 필드로 클라이언트에게 전달해야 한다)
+     * @param id         발행 시점에 정해진 방별 순차 ID
+     * @param occurredAt 발행 시각. 인스턴스마다 다시 재면 같은 이벤트의 시각이 서로 달라진다.
      */
-    public long add(Long roomId, String eventName, Object data) {
-        long id = nextId(roomId);
-        BufferedEvent event = new BufferedEvent(id, eventName, data, Instant.now());
+    public void add(Long roomId, long id, String eventName, Object data, Instant occurredAt) {
+        BufferedEvent event = new BufferedEvent(id, eventName, data, occurredAt);
 
         ArrayDeque<BufferedEvent> queue =
                 buffers.computeIfAbsent(roomId, k -> new ArrayDeque<>());
@@ -50,8 +56,6 @@ public class SseEventBuffer {
                 queue.pollFirst();
             }
         }
-
-        return id;
     }
 
     /**
@@ -98,18 +102,11 @@ public class SseEventBuffer {
     }
 
     /**
-     * 경매 종료 시 방 버퍼와 ID 카운터를 삭제한다.
+     * 경매 종료 시 방 버퍼를 삭제한다. 순차 ID 카운터는 Redis에 있어 발행 쪽이 지운다.
      */
     public void clear(Long roomId) {
         buffers.remove(roomId);
-        counters.remove(roomId);
         log.debug("sse 버퍼 삭제: roomId={}", roomId);
-    }
-
-    private long nextId(Long roomId) {
-        return counters
-                .computeIfAbsent(roomId, k -> new AtomicLong(0))
-                .incrementAndGet();
     }
 
     private void logIfLoss(Long roomId, long lastEventId,
