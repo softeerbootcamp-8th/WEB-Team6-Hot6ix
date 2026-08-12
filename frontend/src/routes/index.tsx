@@ -24,16 +24,20 @@ export const Route = createFileRoute('/')({
 const VALUE_POINTS = [
   {
     title: '링크·QR 로 참여',
-    description: '초대 링크만 있으면\n로그인 없이 둘러볼 수 있어요.',
+    description: '초대 링크만 있으면 로그인 없이 둘러볼 수 있어요.',
   },
   {
     title: '실시간 입찰',
-    description: '현재가와 순위가 바로 보여서\n망설일 시간이 없어요.',
+    description: '현재가와 순위가 바로 보여서 망설일 시간이 없어요.',
   },
   {
-    // 우리는 결제를 받지 않는다. 중개까지가 서비스 범위다.
-    title: '거래는 직접, 연결은 저희가',
-    description: '낙찰되면 판매자와 낙찰자를\n이어드려요. 결제는 두 분이 직접.',
+    /*
+     * 결제를 대행하지 않는다는 안내는 로그인 카드 아래에 따로 있다. 여기는
+     * 서비스를 쓸 이유를 적는 자리라 남는 기록을 내세운다.
+     */
+    title: '투명한 거래 기록',
+    description:
+      '입찰 순위와 낙찰가, 거래 진행 상태가 그대로 남아 언제든 다시 확인할 수 있어요.',
   },
 ] as const
 
@@ -94,9 +98,7 @@ function LandingPage() {
             className="mt-4 text-[14px] leading-[1.6] font-medium text-neutral-tertiary md:text-[15px]"
           >
             SNS 에 올린 물건을 경매방으로 만들어 공유하세요. 참여자는 링크로
-            들어와
-            <br className="hidden md:inline" />
-            실시간으로 입찰하고, 낙찰되면 판매자와 바로 연결됩니다.
+            들어와 실시간으로 입찰하고, 낙찰되면 판매자와 바로 연결됩니다.
           </Reveal>
 
           <Reveal
@@ -124,7 +126,7 @@ function LandingPage() {
                 <h2 className="mt-4 text-[16px] font-extrabold text-foreground">
                   {point.title}
                 </h2>
-                <p className="mt-2 text-[13px] leading-[1.6] font-medium whitespace-pre-line text-neutral-tertiary">
+                <p className="mt-2 text-[13px] leading-[1.6] font-medium text-neutral-tertiary">
                   {point.description}
                 </p>
               </Reveal>
