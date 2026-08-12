@@ -94,6 +94,9 @@ usage() {
   --scenario N       0=부하 발생기 한계, 1~5=시나리오 (기본 1)
                      5 는 마감과 입찰을 겹친다. --items 로 마감할 물품 수를 준다
                      6=탐색 램프(무릎 찾기), 7=스파이크(절벽). 둘 다 판정에 안 쓴다
+                     8=SSE 브로드캐스트 A/B. 요청 하나가 접수 하나가 되게 만들어
+                     --rate 를 초당 브로드캐스트 수로 쓴다. --vus 와 --items 를 같게,
+                     --users 를 물품의 2배 이상으로, --per-room 0 으로 준다
   --vus N            가상 사용자 수. 계단은 10/20/40/80/160 (기본 40)
                      --rate 와 같이 주면 도착률을 채울 VU 수(preAllocatedVUs)가 된다
   --rate N           초당 도착 건수를 고정한다 (열린 모델). 안 주면 예전처럼 닫힌 모델
@@ -205,6 +208,44 @@ done
 if [ "$SCENARIO" = "7" ] && [ "$RATE" -le 0 ] 2>/dev/null; then
   echo "시나리오 7(스파이크)은 --rate 가 있어야 한다. 예: --scenario 7 --rate 200" >&2
   exit 1
+fi
+
+# 8번은 "요청 하나 = 접수 하나 = 브로드캐스트 하나"가 전제다. 아래 넷 중 하나라도 어긋나면
+# 그 전제가 조용히 깨지고, 거절이 섞인 채 3분을 다 재고 나서야 알게 된다.
+if [ "$SCENARIO" = "8" ]; then
+  if [ "$RATE" -le 0 ] 2>/dev/null; then
+    echo "시나리오 8 은 --rate 가 있어야 한다. 그 값이 곧 초당 브로드캐스트 수다." >&2
+    echo "  예: --scenario 8 --rate 100 --items 40 --vus 40 --sse 400" >&2
+    exit 1
+  fi
+
+  # VU 하나가 물품 하나를 독점해야 금액 격자가 안 어긋난다.
+  if [ "$VUS" != "$ITEMS" ]; then
+    echo "시나리오 8 은 --vus 와 --items 가 같아야 한다 (지금 vus=$VUS items=$ITEMS)." >&2
+    echo "  VU 하나가 물품 하나를 독점해야 현재가를 안 읽고도 접수율 100%가 나온다." >&2
+    exit 1
+  fi
+
+  # 물품마다 사람 둘. 같은 사람이 연달아 넣으면 ALREADY_TOP_BIDDER 로 거절된다.
+  if [ "$USERS" -lt "$((ITEMS * 2))" ] 2>/dev/null; then
+    echo "시나리오 8 은 --users 가 물품의 2배 이상이어야 한다 (지금 users=$USERS items=$ITEMS)." >&2
+    echo "  물품마다 두 사람이 교대로 넣는다. 한 사람이면 두 번째부터 전부 7003 이다." >&2
+    exit 1
+  fi
+
+  # 브로드캐스트는 방 단위인데 배경 SSE 는 방 하나에만 붙는다. 방이 나뉘면 나머지 방의
+  # 전송은 구독자 없는 곳으로 나가서 실제 부하가 --rate 보다 조용히 낮아진다.
+  if [ "$PER_ROOM" -gt 0 ] 2>/dev/null && [ "$ITEMS" -gt "$PER_ROOM" ] 2>/dev/null; then
+    echo "시나리오 8 은 물품이 한 방에 다 있어야 한다 (--per-room 0)." >&2
+    echo "  지금 --per-room $PER_ROOM 이라 방이 나뉘고, 배경 SSE 가 붙지 않은 방의" >&2
+    echo "  브로드캐스트는 구독자가 없어 전송 부하가 --rate 보다 낮아진다." >&2
+    exit 1
+  fi
+
+  if [ "$SSE" -eq 0 ] 2>/dev/null; then
+    echo "※ --sse 0 이다. 구독자가 없으면 브로드캐스트가 빈 방으로 나가 전송 비용이 0 이다." >&2
+    echo "  대조군(접속 0)으로 한 줄 재는 것이면 맞다. 아니면 --sse 100/200/400 을 준다." >&2
+  fi
 fi
 
 # 원격 모드에 빠진 값이 있으면 여기서 멈춘다.
@@ -834,7 +875,8 @@ case "$SCENARIO" in
   5) SCRIPT="scenario5.js" ;;
   6) SCRIPT="explore.js" ;;
   7) SCRIPT="spike.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~7)" >&2; exit 1 ;;
+  8) SCRIPT="broadcast.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~8)" >&2; exit 1 ;;
 esac
 
 # 6(탐색 램프)과 7(스파이크)은 램프라서 p95 가 구간 평균이 되고 max 계열이 램프 끝 값만
@@ -894,7 +936,7 @@ run_k6() {
 # 부하를 주는 워밍업은 입찰 시나리오에서만 한다. 3(SSE)과 4·5(마감)는 부하 모양이 달라
 # 같은 스크립트로 데울 수가 없어서 예전처럼 기다리기만 한다.
 if [ "$SCENARIO" = "1" ] || [ "$SCENARIO" = "2" ] \
-  || [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ]; then
+  || [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ] || [ "$SCENARIO" = "8" ]; then
   echo "[6/8] 워밍업 ${WARMUP}초 (vus=$WARMUP_VUS 로 실제 부하를 준다)"
 
   # 워밍업은 항상 닫힌 모델로 돈다. --rate 를 그대로 물려받으면 VU 몇 개로 목표 도착률을
@@ -1082,7 +1124,9 @@ NOT_ACTUATOR="$RUN, uri!=\"/actuator/prometheus\", uri!~\".*subscribe\""
 # 46.70 -> 46.56ms), 시나리오 4 는 전체 요청이 수십 건뿐이라 물품 시작이 처리량 그 자체가 된다.
 case "$SCENARIO" in
   0)     MAIN_URI=', uri="/actuator/health"' ;;
-  1|2|5) MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/bids"' ;;
+  # 8 도 입찰이 주인공이다. 안 좁히면 setup 의 로그인·약관 동의가 p95 에 섞이는데,
+  # 8 은 전체 요청이 수천 건뿐이라 그 몫이 1% 가까이 된다 (1·2 는 40만 건이라 안 보였다).
+  1|2|5|8) MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/bids"' ;;
   4)     MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/start"' ;;
   # 3 은 SSE 구독이 주인공인데 끝나지 않는 스트림이라 응답 시간에 안 잡힌다. 그래서 안 좁힌다.
   *)     MAIN_URI='' ;;
@@ -1627,6 +1671,31 @@ fi
 
 if [ "$CONCURRENT_CONFLICT" != "0" ]; then
   echo "※ CONCURRENT_BID_CONFLICT 가 ${CONCURRENT_CONFLICT}건 나왔다. 행 락이 있으면 안 나오는 게 정상이라 그 자체가 발견이다." >&2
+fi
+
+# ── 8번의 불변식 ────────────────────────────────────────────────────
+# 이 시나리오는 "요청 = 접수 = 브로드캐스트"를 만들어 --rate 를 손잡이로 쓰는 것이라,
+# 거절이 섞이거나 k6 가 도착을 못 채우면 실제 전송 부하가 --rate 보다 낮다. 그 줄로 동기·비동기를
+# 비교하면 전에 겪은 함정(접수율이 7배 갈려서 절대값 비교가 무의미했던 것)을 그대로 반복한다.
+if [ "$SCENARIO" = "8" ]; then
+  DROPPED="$(k6sum dropped_iterations)"
+  BROADCAST_OK=1
+
+  if [ "$REJECTED_4XX" != "0" ]; then
+    echo "※ 거절이 ${REJECTED_4XX}건이다. 8번은 0이어야 한다 — 실제 브로드캐스트가 목표(${RATE}/s)보다 적었다." >&2
+    echo "  금액(7004·7005)이면 VU 와 물품이 1:1 이 아닌 것이고, 7003 이면 사람 배정이," >&2
+    echo "  7001·7002 면 물품이 측정 중에 닫힌 것이다. note.md 에 적고 이 줄은 A/B 에 쓰지 않는다." >&2
+    BROADCAST_OK=0
+  fi
+
+  if [ "$DROPPED" != "0" ] && [ -n "$DROPPED" ]; then
+    echo "※ k6 가 도착 ${DROPPED}건을 못 보냈다(dropped_iterations). VU 가 모자라거나 응답이 느린 것이라" >&2
+    echo "  실제 발생률이 --rate ${RATE} 보다 낮다. 이 줄도 A/B 에 쓰지 않는다." >&2
+    BROADCAST_OK=0
+  fi
+
+  [ "$BROADCAST_OK" = "1" ] && \
+    echo "✓ 브로드캐스트 불변식 통과 — 접수 ${ACCEPTED}건이 그대로 전송 ${ACCEPTED}회다."
 fi
 
 # 붙여넣을 줄은 성공한 실행에서만 찍는다.

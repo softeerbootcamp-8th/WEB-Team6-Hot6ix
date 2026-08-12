@@ -105,7 +105,11 @@ export function bidOnce(itemIds = null) {
   return res
 }
 
-function countResult(res) {
+/**
+ * 입찰 응답 하나를 종류별 카운터에 넣는다. 8번(브로드캐스트)도 이 함수를 쓴다 —
+ * 세는 방법이 갈리면 실행끼리 접수·거절 건수를 나란히 못 놓는다.
+ */
+export function countResult(res) {
   if (res.status === 201) {
     accepted.add(1)
     return
