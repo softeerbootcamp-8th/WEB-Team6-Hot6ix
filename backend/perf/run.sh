@@ -1232,6 +1232,16 @@ read -r APP_CPU_AVG APP_CPU_MAX <<<"$(cpu_stat app "$CPUS")"
 read -r MYSQL_CPU_AVG MYSQL_CPU_MAX <<<"$(cpu_stat mysql "$CPUS")"
 read -r _ K6_CPU_MAX <<<"$(cpu_stat k6 1)"
 
+# 배포에는 앱 컨테이너가 이 서버에 없어서 docker stats 가 아무것도 못 뜬다. 앱이 이미 내보내는
+# process_cpu_usage 로 대신 채운다. 0~1 이 코어 전부를 쓴 상태라 100 을 곱하면 로컬 칸과
+# 같은 "준 코어의 몇 %" 가 되어 나란히 놓을 수 있다.
+#
+# MySQL 은 RDS 라 여전히 못 잰다. CloudWatch 를 봐야 한다.
+if [ "$REMOTE" = "1" ]; then
+  APP_CPU_AVG="$(promq "avg_over_time(process_cpu_usage{$RUN}[${WINDOW_SECONDS}s]) * 100")"
+  APP_CPU_MAX="$(promq "max_over_time(process_cpu_usage{$RUN}[${WINDOW_SECONDS}s]) * 100")"
+fi
+
 # 자릿수를 맞춘다. 시간은 ms 정수, 메모리는 MB 정수, 처리량은 소수 1자리, CPU 는 % 정수.
 # 다섯 명이 각자 소수점을 몇 자리까지 적을지 정하면 표가 안 읽힌다.
 # NaN 은 그대로 둔다 — 0으로 바꾸면 "안 나온 값"과 "0이었던 값"이 구분되지 않는다.
@@ -1653,9 +1663,10 @@ if [ "$REMOTE" = "1" ]; then
   cat >&2 <<MSG
 
 ※ 원격 실행이라 아래 칸은 이 스크립트가 못 채운다 (NaN 이 정상이다).
-  app_cpu_*, mysql_cpu_*, cpus  docker stats 로 뜨던 값이다. 배포는 컨테이너가 여기 없다.
-                                앱은 Grafana 의 process_cpu_usage, RDS 와 EC2 는
+  mysql_cpu_*, cpus             docker stats 로 뜨던 값이다. RDS 는 컨테이너가 아니라
                                 CloudWatch CPUUtilization 으로 본다.
+  app_cpu_* 는 채운다           앱이 내보내는 process_cpu_usage 로 대신 뽑는다.
+                                호스트 코어 전체 기준이라 로컬 칸과 같은 눈금이다.
   T 계열 크레딧이 남아 있었는지도 CloudWatch CPUCreditBalance 로 함께 본다.
   크레딧이 마르는 중이었으면 그 줄은 판정을 보류한다.
 MSG
