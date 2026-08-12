@@ -77,6 +77,14 @@ ncp:
     send-from: 00000000000
 
 management:
+  # perf 컨테이너에는 Redis가 없다 (docker-compose.perf.yml 참고). spring-data-redis가
+  # 클래스패스에 있으면 Boot가 Redis 헬스 인디케이터를 자동으로 켜는데, 붙을 Redis가 없으니
+  # 검사가 실패해서 앱은 멀쩡한데 health가 DOWN이 되고, run.sh의 기동 대기(curl -sf
+  # /actuator/health)가 503으로 죽어 부하 측정을 아예 못 돌린다. base(application.yaml)에는
+  # 두지 않는다 — prod는 ShedLock이 실제로 Redis를 쓰므로 거기서는 진짜 상태를 봐야 한다.
+  health:
+    redis:
+      enabled: false
   endpoints:
     web:
       exposure:
@@ -109,6 +117,9 @@ management:
         # 이건 "얼마나 오래 기다렸나"를 알려줘서, 커넥션이 모자란 것과 락 때문에
         # 커넥션을 오래 붙잡는 것을 가른다.
         hikaricp.connections.acquire: true
+        # 커넥션을 빌린 뒤 반환할 때까지. 비관적 락 대기가 DB 커넥션 점유
+        # 시간을 늘렸는지 직접 보려면 acquire와 별도로 이 histogram이 필요하다.
+        hikaricp.connections.usage: true
       percentiles:
         http.server.requests: 0.5, 0.95, 0.99
 

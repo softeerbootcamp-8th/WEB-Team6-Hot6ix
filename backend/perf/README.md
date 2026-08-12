@@ -225,6 +225,8 @@ KAKAO_REDIRECT_URI=http://localhost:8080/api/v1/oauth/kakao/callback
 ./perf/run.sh --scenario 5 --vus 40 --items 20  # 6번. 마감 + 입찰 겹치기
 ./perf/run.sh --scenario 6 --items 1            # 탐색 램프. 무릎 찾기 (판정에 안 씁니다)
 ./perf/run.sh --scenario 7 --rate 200 --items 1 # 스파이크. 절벽 (판정에 안 씁니다)
+./perf/run.sh --scenario 8 --vus 50 --burst-mode same       # 동일 금액 동시 출발 정합성
+./perf/run.sh --scenario 8 --vus 50 --burst-mode increasing # 증가 금액 동시 출발 정합성
 ```
 
 계단은 **10 / 20 / 40 / 80 / 160**입니다. 한 번에 하나만 올리고 나머지는 그대로 둡니다.
@@ -258,6 +260,13 @@ Soft Close 가 마감을 계속 미루기 때문입니다. 실제로 `--items 20
 `--rate` 와 함께 준 `--vus` 는 **도착률을 채울 VU 수**(`preAllocatedVUs`)입니다. 모자라면 k6 가
 도착률을 못 채우면서 **서버가 못 받은 것처럼 보입니다.** 목표 rate × 예상 응답시간(초)보다
 넉넉히 줍니다.
+
+### 동시 출발 정합성
+
+시나리오 8은 처리량 계단이 아닙니다. 각 VU가 로그인·약관 동의·현재가 조회를 먼저 끝내고,
+공통 시각에 입찰 POST를 한 번만 보냅니다. `same`은 같은 금액 중복 접수를, `increasing`은
+서로 다른 금액의 처리 순서가 뒤섞여도 최종 현재가와 최고 입찰자가 맞는지를 확인합니다.
+실행 후 개발 콘솔의 동시 입찰 검증 또는 DB 조회로 최종 불변식을 함께 확인합니다.
 
 발표에서 쓸 단위가 생기는 게 더 큰 이득입니다. `vus` 는 사람 수가 아니라서(생각하는 시간이
 없어 한 줄이 여러 명 몫을 합니다) 그대로 말할 수 없는데, 도착률은 **"동시 참여자 200명이 평균
@@ -379,6 +388,7 @@ results/2026-08-08T14-00_s1_vus40_pool10_items1_sse0/
 
 헤더는 영문입니다. 도구가 읽는 파일이라 그대로 두고, 뜻은 여기와 개발 콘솔 화면에 적습니다.
 개발 콘솔의 "쌓인 결과" 표는 이 중 판정에 쓰는 칸만 골라 한글 이름으로 보여 줍니다.
+Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율**(`bid_attempt_per_s`)로 맞춥니다.
 
 | 칸 | 뜻 | 어떻게 보나 |
 |---|---|---|
@@ -393,13 +403,18 @@ results/2026-08-08T14-00_s1_vus40_pool10_items1_sse0/
 | `items` | 물품 수 | 입찰이 몰리는지 흩어지는지를 가릅니다 |
 | `sse` | 배경에 붙여 둔 실시간 접속 수 | 내가 정한 값 |
 | **`throughput_req_per_s`** | 그 시나리오의 주인공 요청만 센 처리량 | 참고용 |
+| **`bid_attempt_per_s`** | 초당 입찰 POST 시도 수. 시나리오 1·2는 상세 GET도 함께 보내므로 전체 HTTP 처리량과 다릅니다 | **Redis 전후 입력량은 이 값으로 맞춥니다** |
 | **`accepted_per_s`** | **1초에 접수된 입찰 수** | **계단 비교는 이 값으로 합니다** |
+| `bid_accept_rate` | 입찰 시도 중 접수된 비율 | 워크로드 구성이 달라졌는지 확인합니다 |
 | `k6_p95_ms` | k6 가 클라이언트에서 본 p95 | 서버 p95 와 벌어지면 그 차이가 부하 발생기 몫 |
 | **`p95_ms`** | **응답 시간 p95. 100번 중 95번은 이 안에 끝났다** | 작을수록 좋습니다 |
+| `p99_ms`, `k6_p99_ms` | 서버와 k6가 본 응답 시간 p99 | 락 경합의 긴 꼬리를 봅니다 |
 | `tomcat_busy_max` | 톰캣이 동시에 쓴 스레드 수(최대) | 200에 붙으면 스레드 고갈 |
 | `hikari_active_max` | 실제로 쓰인 DB 커넥션 수(최대) | `pool`에 붙으면 풀이 꽉 찬 것 |
 | `hikari_pending_max` | 커넥션을 못 받고 줄 선 스레드 수(최대) | **0이 정상.** 0보다 크면 풀이 마른 것 |
 | `conn_acquire_p95_ms` | 커넥션 하나 받는 데 걸린 시간 p95 | 커지면 풀 경합 |
+| `conn_usage_p95_ms`, `conn_usage_p99_ms` | 커넥션을 빌린 뒤 반환할 때까지 걸린 시간 | 락 대기가 커넥션 점유를 늘렸는지 봅니다 |
+| `conn_timeout_count` | 측정 구간의 Hikari connection timeout 수 | 0보다 크면 성공 요청의 p95만으로 판정하지 않습니다 |
 | `heap_mb_max` | 힙 사용량(최대, MB) | GC 뒤에도 안 내려가면 메모리 |
 | `before_lock_p95_ms` | `place()` 에 들어와서 락을 잡으러 가기까지 p95. 락 없이 되는 SELECT 3개(회원·판매자·참여 여부)입니다 | **커넥션 획득은 안 들어갑니다.** 실측으로 이 값(평균 1.7ms)이 `conn_acquire`(평균 22.2ms)보다 작습니다. `@Transactional` 프록시가 메서드 본문 전에 트랜잭션을 열면서 커넥션을 먼저 잡기 때문입니다 |
 | `lock_wait_p95_ms` | 입찰이 물품 행 락을 기다린 시간 p95 | 커지면 입찰이 한 줄로 선 것 |
@@ -427,11 +442,13 @@ results/2026-08-08T14-00_s1_vus40_pool10_items1_sse0/
 | **`k6_cpu_max`** | **부하 발생기가 쓴 CPU(%)** | **100에 가까우면 그 줄은 버립니다** |
 | `cpus` | 앱과 MySQL 에 준 코어 수 | `--cpus` 로 정한 값. 기본 2.0. **다른 값끼리 비교하지 않습니다** |
 | **`app_cpu_avg`**, **`app_cpu_max`** | **앱 컨테이너가 쓴 CPU. 준 코어의 몇 %인지** | 100이면 준 코어를 다 쓴 것입니다 |
+| `process_cpu_avg/max`, `system_cpu_avg/max`, `system_load_avg/max` | JVM CPU, 호스트 CPU, 1분 load average | 배포에서도 같은 정의로 앱 포화를 판정합니다 |
 | **`mysql_cpu_avg`**, **`mysql_cpu_max`** | **MySQL 컨테이너가 쓴 CPU. 준 코어의 몇 %인지** | **이 값은 다른 데서 못 구합니다.** Prometheus 가 MySQL 을 안 긁습니다 |
 | `accepted` | 접수된 입찰 수 | |
 | `rejected_4xx` | 규칙대로 거절된 수 | **실패가 아닙니다.** 이미 최고가, 금액 부족 등 |
 | `concurrent_conflict` | `7006`(경합 충돌)로 거절된 수 | 0이 정상. 0보다 크면 발견입니다 |
 | `failed_5xx` | 서버 오류와 응답 없음 | **이것만 진짜 실패입니다** |
+| `dropped_iterations` | 열린 모델의 dropped iteration 수 | 0보다 크면 VU가 부족했는지 먼저 확인하고 그 실행의 도착률 판정을 보류합니다 |
 | `bottleneck` | 병목이 어디였는지 | **사람이 적는 칸** |
 | `note` | 남길 말 | **사람이 적는 칸** |
 
