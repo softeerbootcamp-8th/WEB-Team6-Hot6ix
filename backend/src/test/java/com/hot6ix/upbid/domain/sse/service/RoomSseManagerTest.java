@@ -32,10 +32,17 @@ class RoomSseManagerTest {
 
     private final RoomSseManager roomSseManager = newRoomSseManager();
 
-    /** 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다. */
+    /**
+     * 지표는 이 테스트의 관심사가 아니라 아무 데도 안 내보내는 레지스트리를 준다.
+     *
+     * <p>{@code Runnable::run}으로 브로드캐스트를 호출 스레드에서 바로 실행시킨다 — 실제
+     * {@code sseExecutor}를 쓰면 전송이 비동기로 미뤄져서, sendBroadCast 호출 직후 상태를
+     * 확인하는 아래 테스트들이 타이밍에 따라 흔들린다.
+     */
     private static RoomSseManager newRoomSseManager() {
         SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
-        return new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), new SseEventBuffer(props));
+        return new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), new SseEventBuffer(props),
+                Runnable::run);
     }
 
     @Test
@@ -195,7 +202,7 @@ class RoomSseManagerTest {
         SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
         SseEventBuffer buffer = new SseEventBuffer(props);
         RoomSseManager manager =
-                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer);
+                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer, Runnable::run);
 
         manager.subscribe(ROOM_ID, null);
         manager.sendBroadCast(EVENT_NAME, ROOM_ID, "payload");
@@ -215,7 +222,7 @@ class RoomSseManagerTest {
         SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
         SseEventBuffer buffer = new SseEventBuffer(props);
         RoomSseManager manager =
-                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer);
+                new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()), buffer, Runnable::run);
 
         manager.subscribe(ROOM_ID, null);
         manager.closeRoom(ROOM_ID);
@@ -245,7 +252,8 @@ class RoomSseManagerTest {
 
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         RoomSseManager manager = new RoomSseManager(
-                new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50), new SseMetrics(registry), new SseEventBuffer(new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50)));
+                new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50), new SseMetrics(registry),
+                new SseEventBuffer(new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50)), Runnable::run);
 
         // 게이지는 @PostConstruct 에서 붙는다. 직접 생성한 객체에서는 안 불리므로 여기서 부른다.
         manager.bindMetrics();

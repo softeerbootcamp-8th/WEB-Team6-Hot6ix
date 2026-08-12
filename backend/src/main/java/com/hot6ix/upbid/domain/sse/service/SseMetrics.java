@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.sse.service;
 
 import com.hot6ix.upbid.global.event.EventType;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -37,10 +38,18 @@ public class SseMetrics {
      */
     private final Map<String, Timer> broadcasts;
 
+    /**
+     * {@code sseExecutor}가 거부해서 브로드캐스트를 못 보낸 횟수(#234). 가상 스레드
+     * 실행기는 풀·큐가 없어 거부가 실질적으로 실행기가 종료된 경우(앱 셧다운)뿐이라
+     * 사실상 항상 0이다 — 그래도 지표 자체는 지우지 않고 그대로 둔다.
+     */
+    private final Counter rejected;
+
     public SseMetrics(MeterRegistry registry) {
         this.registry = registry;
         this.heartbeat = registry.timer("upbid.sse.heartbeat");
         this.broadcasts = broadcastTimers(registry);
+        this.rejected = registry.counter("upbid.sse.broadcast.rejected");
     }
 
     private static Map<String, Timer> broadcastTimers(MeterRegistry registry) {
@@ -87,5 +96,9 @@ public class SseMetrics {
     public void recordBroadcast(String eventName, Runnable send) {
         broadcasts.getOrDefault(eventName, registry.timer(BROADCAST, "event", eventName))
                 .record(send);
+    }
+
+    public void recordRejected() {
+        rejected.increment();
     }
 }
