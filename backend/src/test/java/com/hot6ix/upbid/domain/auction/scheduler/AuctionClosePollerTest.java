@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.scheduler;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -55,9 +56,11 @@ class AuctionClosePollerTest {
     private AuctionClosePoller auctionClosePoller;
 
     private ThreadPoolTaskExecutor executor;
+    private SimpleMeterRegistry registry;
 
     @BeforeEach
     void setUp() {
+        registry = new SimpleMeterRegistry();
         executor = sameThreadExecutor(WORKERS, QUEUE_CAPACITY);
         auctionClosePoller = pollerWith(executor);
     }
@@ -92,7 +95,7 @@ class AuctionClosePollerTest {
         return new AuctionClosePoller(
                 closeDelayQueue,
                 auctionItemCloseService,
-                new AuctionCloseMetrics(new SimpleMeterRegistry()),
+                new AuctionCloseMetrics(registry),
                 new AuctionProperties(3, new AuctionProperties.Close(BATCH, VISIBILITY, WORKERS, QUEUE_CAPACITY)),
                 executor);
     }
@@ -217,6 +220,78 @@ class AuctionClosePollerTest {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    @Test
+    @DisplayName("마감한 실행의 소요 시간은 closed 로 기록된다")
+    void recordsDurationAsClosed() {
+        givenClaimed(ITEM_ID);
+        when(auctionItemCloseService.closeIfDue(ITEM_ID)).thenReturn(Optional.empty());
+
+        auctionClosePoller.pollAndClose();
+
+        assertThat(durationCount("closed")).isEqualTo(1);
+        assertThat(durationCount("rescheduled")).isZero();
+    }
+
+    @Test
+    @DisplayName("재예약으로 끝난 실행은 rescheduled 로 기록된다")
+    void recordsDurationAsRescheduled() {
+        givenClaimed(ITEM_ID);
+        when(auctionItemCloseService.closeIfDue(ITEM_ID))
+                .thenReturn(Optional.of(SCHEDULED_FOR.plusSeconds(10)));
+
+        auctionClosePoller.pollAndClose();
+
+        assertThat(durationCount("rescheduled"))
+                .as("재예약을 closed 에 섞으면 실제로 닫은 마감의 p95 가 흐려진다")
+                .isEqualTo(1);
+        assertThat(durationCount("closed")).isZero();
+    }
+
+    @Test
+    @DisplayName("마감이 실패하면 예외 종류를 이유로 세어 둔다")
+    void countsFailureWithReason() {
+        givenClaimed(ITEM_ID);
+        when(auctionItemCloseService.closeIfDue(ITEM_ID))
+                .thenThrow(new IllegalStateException("DB 연결 끊김"));
+
+        auctionClosePoller.pollAndClose();
+
+        assertThat(registry.find("upbid.auction.close.failures")
+                .tag("reason", "IllegalStateException")
+                .counter().count())
+                .as("락 타임아웃과 그 밖의 실패를 갈라야 재시도가 의미 있는지 말할 수 있다")
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("마감이 한 번도 안 일어나도 두 소요 시간 지표가 미리 만들어져 있다")
+    void registersDurationTimersUpFront() {
+        // 시계열이 측정 도중에 생기면 run.sh 가 구간 증가분을 못 구한다.
+        assertThat(registry.find("upbid.auction.close.duration").tag("result", "closed").timer())
+                .isNotNull();
+        assertThat(registry.find("upbid.auction.close.duration").tag("result", "rescheduled").timer())
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("밀린 예약 수가 게이지로 나가고, Redis 를 못 읽으면 -1 이 된다")
+    void publishesBacklogGauge() {
+        when(closeDelayQueue.backlogSize(any())).thenReturn(7L);
+        auctionClosePoller.bindMetrics();
+
+        assertThat(registry.find("upbid.auction.close.backlog").gauge().value()).isEqualTo(7.0);
+
+        when(closeDelayQueue.backlogSize(any())).thenThrow(new IllegalStateException("Redis 접속 실패"));
+
+        assertThat(registry.find("upbid.auction.close.backlog").gauge().value())
+                .as("0 으로 눕히면 \"밀린 게 없다\" 와 \"못 읽었다\" 를 그래프에서 못 가른다")
+                .isEqualTo(-1.0);
+    }
+
+    private long durationCount(String result) {
+        return registry.find("upbid.auction.close.duration").tag("result", result).timer().count();
     }
 
     private void givenClaimed(Long... itemIds) {
