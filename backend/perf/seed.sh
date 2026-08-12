@@ -23,6 +23,9 @@ set -euo pipefail
 BASE="${BASE_URL:-http://localhost:8080/api/v1}"
 USERS=200
 ITEMS=20
+# 방 하나에 넣을 물품 수. 0 이면 전부 한 방에 넣는다 (예전 동작).
+# 서비스 규칙이 방당 동시 진행 3개라, 그 안에서 재려면 3 을 준다.
+PER_ROOM=0
 START_PRICE=10000
 UNIT=1000
 START_MODE="all"
@@ -57,6 +60,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --users) USERS="$2"; shift 2 ;;
     --items) ITEMS="$2"; shift 2 ;;
+    --per-room) PER_ROOM="$2"; shift 2 ;;
     --start-price) START_PRICE="$2"; shift 2 ;;
     --unit) UNIT="$2"; shift 2 ;;
     --start) START_MODE="$2"; shift 2 ;;
@@ -121,16 +125,40 @@ curl -sS -o /dev/null -X POST "$BASE/seller-profiles" -b "$SELLER_JAR" -c "$SELL
   -H 'Content-Type: application/json' \
   -d '{"storeName":"부하측정상점"}' || true
 
-echo "[seed] 경매방 생성"
-ROOM_JSON="$(api "$SELLER_JAR" POST "/auction-rooms" \
-  "$(jq -nc --argjson unit "$UNIT" \
-       --argjson trigger "$SOFT_CLOSE_TRIGGER" --argjson extend "$SOFT_CLOSE_EXTEND" \
-    '{name:"부하측정방", bidIncrement:$unit,
-      softCloseTriggerSeconds:$trigger, softCloseExtendSeconds:$extend}')")"
+# 방을 몇 개 만들지 정한다.
+#
+# --per-room 0 이면 예전처럼 한 방에 다 넣는다. 값을 주면 그 수만큼씩 나눠 담아서
+# 서비스 규칙(방당 동시 진행 3개) 안에서도 물품을 여러 개 진행할 수 있게 한다.
+# 제한을 넘겨 넣으면 4008 로 거절되는데 표에는 아무 표시도 안 남아서 알아채기 어렵다.
+if [ "$PER_ROOM" -gt 0 ] 2>/dev/null; then
+  ROOM_COUNT=$(( (ITEMS + PER_ROOM - 1) / PER_ROOM ))
+else
+  ROOM_COUNT=1
+fi
 
-ROOM_ID="$(printf '%s' "$ROOM_JSON" | jq -r '.data.auctionRoomId')"
-SHARE_CODE="$(printf '%s' "$ROOM_JSON" | jq -r '.data.shareCode')"
+echo "[seed] 경매방 $ROOM_COUNT 개 생성"
+declare -a ROOM_IDS=()
+declare -a ROOM_CODES=()
+
+r=1
+while [ "$r" -le "$ROOM_COUNT" ]; do
+  ROOM_JSON="$(api "$SELLER_JAR" POST "/auction-rooms" \
+    "$(jq -nc --argjson unit "$UNIT" \
+         --arg name "부하측정방-$r" \
+         --argjson trigger "$SOFT_CLOSE_TRIGGER" --argjson extend "$SOFT_CLOSE_EXTEND" \
+      '{name:$name, bidIncrement:$unit,
+        softCloseTriggerSeconds:$trigger, softCloseExtendSeconds:$extend}')")"
+
+  ROOM_IDS+=("$(printf '%s' "$ROOM_JSON" | jq -r '.data.auctionRoomId')")
+  ROOM_CODES+=("$(printf '%s' "$ROOM_JSON" | jq -r '.data.shareCode')")
+  r=$((r + 1))
+done
+
+# 뒤쪽 코드와 emit 이 쓰는 대표값. 방이 하나면 예전과 완전히 같다.
+ROOM_ID="${ROOM_IDS[0]}"
+SHARE_CODE="${ROOM_CODES[0]}"
 echo "[seed]   roomId=$ROOM_ID shareCode=$SHARE_CODE"
+[ "$ROOM_COUNT" -gt 1 ] && echo "[seed]   방 $ROOM_COUNT 개, 방당 물품 $PER_ROOM 개"
 
 echo "[seed] 상품 $ITEMS 개"
 PRODUCT_IDS=""
@@ -146,29 +174,55 @@ done
 # 벌크 API 는 한 번에 100개까지만 받는다(2002 로 거절된다). 그래서 100개씩 끊어 보낸다.
 BULK_CHUNK=100
 
+# 방 하나가 가져갈 상품 수. 방이 하나면 전부 그 방으로 간다.
+if [ "$ROOM_COUNT" -gt 1 ]; then
+  SLICE="$PER_ROOM"
+else
+  SLICE="$ITEMS"
+fi
+
 echo "[seed] 경매방 물품 $ITEMS 개 (벌크 ${BULK_CHUNK}개씩)"
 ITEM_IDS_ALL=""
-OFFSET=0
+# 방마다 어떤 물품이 들어갔는지. 방 사이는 ; 로, 방 안은 , 로 나눈다.
+# k6 가 이걸 읽어 VU 를 방에 배정한다.
+ROOM_ITEM_GROUPS=""
 
-while [ "$OFFSET" -lt "$ITEMS" ]; do
-  BULK_BODY="$(jq -nc \
-    --arg ids "$PRODUCT_IDS" \
-    --argjson price "$START_PRICE" \
-    --argjson from "$OFFSET" --argjson size "$BULK_CHUNK" \
-    '{items: [$ids | split(",") | .[$from:($from + $size)] | .[]
-              | {productId: (. | tonumber), startingPrice: $price}]}')"
+r=0
+while [ "$r" -lt "$ROOM_COUNT" ]; do
+  ROOM_START=$((r * SLICE))
+  ROOM_END=$((ROOM_START + SLICE))
+  [ "$ROOM_END" -gt "$ITEMS" ] && ROOM_END="$ITEMS"
 
-  BULK_JSON="$(api "$SELLER_JAR" POST "/auction-rooms/$ROOM_ID/auction-items/bulk" "$BULK_BODY")"
+  GROUP_IDS=""
+  OFFSET="$ROOM_START"
 
-  if [ "$(printf '%s' "$BULK_JSON" | jq -r '.data.failed | length')" != "0" ]; then
-    echo "[seed] 물품 추가가 일부 거절됐다:" >&2
-    printf '%s' "$BULK_JSON" | jq -r '.data.failed' >&2
-    exit 1
-  fi
+  while [ "$OFFSET" -lt "$ROOM_END" ]; do
+    TAKE=$((ROOM_END - OFFSET))
+    [ "$TAKE" -gt "$BULK_CHUNK" ] && TAKE="$BULK_CHUNK"
 
-  CHUNK_IDS="$(printf '%s' "$BULK_JSON" | jq -r '[.data.added[].auctionItemId] | join(",")')"
-  ITEM_IDS_ALL="${ITEM_IDS_ALL:+$ITEM_IDS_ALL,}$CHUNK_IDS"
-  OFFSET=$((OFFSET + BULK_CHUNK))
+    BULK_BODY="$(jq -nc \
+      --arg ids "$PRODUCT_IDS" \
+      --argjson price "$START_PRICE" \
+      --argjson from "$OFFSET" --argjson size "$TAKE" \
+      '{items: [$ids | split(",") | .[$from:($from + $size)] | .[]
+                | {productId: (. | tonumber), startingPrice: $price}]}')"
+
+    BULK_JSON="$(api "$SELLER_JAR" POST "/auction-rooms/${ROOM_IDS[$r]}/auction-items/bulk" "$BULK_BODY")"
+
+    if [ "$(printf '%s' "$BULK_JSON" | jq -r '.data.failed | length')" != "0" ]; then
+      echo "[seed] 물품 추가가 일부 거절됐다:" >&2
+      printf '%s' "$BULK_JSON" | jq -r '.data.failed' >&2
+      exit 1
+    fi
+
+    CHUNK_IDS="$(printf '%s' "$BULK_JSON" | jq -r '[.data.added[].auctionItemId] | join(",")')"
+    GROUP_IDS="${GROUP_IDS:+$GROUP_IDS,}$CHUNK_IDS"
+    OFFSET=$((OFFSET + TAKE))
+  done
+
+  ITEM_IDS_ALL="${ITEM_IDS_ALL:+$ITEM_IDS_ALL,}$GROUP_IDS"
+  ROOM_ITEM_GROUPS="${ROOM_ITEM_GROUPS:+$ROOM_ITEM_GROUPS;}$GROUP_IDS"
+  r=$((r + 1))
 done
 
 STARTED_IDS=""
@@ -193,8 +247,12 @@ echo "[seed] 구매자 $USERS 명 로그인 + 약관 동의 (동시 $CONCURRENCY
 #
 # -f 를 붙여 4xx·5xx 를 실패로 만든다. 없으면 로그인이나 동의가 거절돼도 조용히 넘어가고,
 # 3분을 다 재고 나서야 "그 밖의 거절" 경고로 드러난다. 그 실행은 통째로 버려야 한다.
+#
+# 두 번째 인자가 그 사람이 동의할 방이다. 방이 여러 개면 구매자를 방마다 나눠 붙인다.
+# 전원이 모든 방에 동의하게 하면 요청이 사람 수 x 방 수로 늘어 시딩만 몇 배가 된다.
 seed_one_buyer() {
   jar="$WORK/buyer-$1.cookie"
+  code="$2"
 
   local -a auth=()
   if [ -n "${DEV_LOGIN_TOKEN:-}" ]; then
@@ -203,18 +261,27 @@ seed_one_buyer() {
 
   curl -fsS -o /dev/null -X POST "$BASE/auth/dev-login?key=bidder-$1" \
     ${auth[@]+"${auth[@]}"} -c "$jar" || return 1
-  curl -fsS -o /dev/null -X POST "$BASE/auction-rooms/share/$SHARE_CODE/agreement" -b "$jar" || return 1
+  curl -fsS -o /dev/null -X POST "$BASE/auction-rooms/share/$code/agreement" -b "$jar" || return 1
 }
 export -f seed_one_buyer
-export BASE SHARE_CODE WORK
+export BASE WORK
 # 자식 셸에서도 헤더를 붙이려면 넘겨야 한다. 안 넘기면 구매자 시딩만 전부 401 이 된다.
 export DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}"
 
 # 실패한 사람 수를 센다. xargs 는 자식이 실패하면 123 으로 끝나지만 몇 명인지는 안 알려준다.
 FAIL_LOG="$WORK/failed"
 : >"$FAIL_LOG"
-seq 1 "$USERS" \
-  | xargs -P "$CONCURRENCY" -I{} bash -c 'seed_one_buyer "$@" || echo "$1" >>"'"$FAIL_LOG"'"' _ {} {} \
+# "번호 방코드" 를 한 줄씩 만들어 넘긴다. 배열은 export 가 안 돼서 부모가 미리 짝지어 준다.
+buyer_list() {
+  local i=1
+  while [ "$i" -le "$USERS" ]; do
+    printf '%s %s\n' "$i" "${ROOM_CODES[$(( (i - 1) % ROOM_COUNT ))]}"
+    i=$((i + 1))
+  done
+}
+
+buyer_list \
+  | xargs -P "$CONCURRENCY" -n 2 bash -c 'seed_one_buyer "$1" "$2" || echo "$1" >>"'"$FAIL_LOG"'"' _ \
   || true
 
 FAILED="$(wc -l <"$FAIL_LOG" | tr -d ' ')"
@@ -226,14 +293,21 @@ fi
 
 echo "[seed] 완료"
 
+# run.sh 가 이 파일을 source 한다. **값을 반드시 따옴표로 감싼다.**
+# ROOM_ITEM_IDS 는 방 사이를 ; 로 나누는데, 따옴표가 없으면 셸이 그걸 명령 구분자로 읽어서
+# 뒷부분을 명령으로 실행하려다 죽는다 (실측: "4,5,6: command not found").
 emit() {
-  echo "SHARE_CODE=$SHARE_CODE"
-  echo "ROOM_ID=$ROOM_ID"
-  echo "ITEM_IDS=$STARTED_IDS"
-  echo "CLOSE_ITEM_IDS=$READY_IDS"
-  echo "SEEDED_USERS=$USERS"
-  echo "START_PRICE=$START_PRICE"
-  echo "BID_UNIT=$UNIT"
+  echo "SHARE_CODE='$SHARE_CODE'"
+  echo "ROOM_ID='$ROOM_ID'"
+  echo "ITEM_IDS='$STARTED_IDS'"
+  echo "CLOSE_ITEM_IDS='$READY_IDS'"
+  # 방이 여럿일 때 k6 가 VU 를 방에 배정하는 데 쓴다. 방 하나면 값이 하나씩만 들어간다.
+  echo "SHARE_CODES='$(IFS=,; echo "${ROOM_CODES[*]}")'"
+  echo "ROOM_ITEM_IDS='$ROOM_ITEM_GROUPS'"
+  echo "ROOM_COUNT='$ROOM_COUNT'"
+  echo "SEEDED_USERS='$USERS'"
+  echo "START_PRICE='$START_PRICE'"
+  echo "BID_UNIT='$UNIT'"
 }
 
 if [ -n "$OUT" ]; then

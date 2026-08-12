@@ -49,6 +49,19 @@ spring:
         default_batch_fetch_size: 100
     open-in-view: false
 
+# Redis 를 쓰는 코드가 아직 없는데 spring-data-redis 가 클래스패스에 있으면 Boot 가 Redis
+# 헬스 인디케이터를 자동으로 켠다. 붙을 Redis 가 없으니 검사가 실패하고 전체 health 가 DOWN 이
+# 되는데, 앱 기능은 멀쩡한 채로 "나 DOWN 이야"라고만 답하는 상태가 된다.
+#
+# 그러면 run.sh 의 기동 대기(curl -sf /actuator/health)가 503 에서 죽어서 부하 측정을 아예
+# 못 돌린다. 실제로 로컬과 배포 양쪽이 이 상태였다.
+#
+# Redis 를 실제로 붙일 때 이 줄을 지운다 (#277).
+management:
+  health:
+    redis:
+      enabled: false
+
 logging:
   pattern:
     correlation: "%correlationId{traceId(8)}"
