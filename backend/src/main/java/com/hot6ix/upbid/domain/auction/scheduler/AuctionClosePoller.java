@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.auction.config.AuctionProperties;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
 import com.hot6ix.upbid.global.redis.DueEntry;
 import com.hot6ix.upbid.global.redis.RedisDelayQueue;
+import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -37,8 +38,31 @@ public class AuctionClosePoller {
     private final AuctionProperties auctionProperties;
     private final Executor auctionCloseExecutor;
 
-    /** 0.5 초마다 도는 작업이라 실패할 때마다 찍으면 로그가 분당 백 줄씩 쌓인다. */
+    /** 주기가 짧아서 실패할 때마다 찍으면 로그가 분당 수백 줄씩 쌓인다. */
     private final AtomicBoolean claimFailing = new AtomicBoolean();
+
+    /**
+     * 밀린 예약 수를 지표로 내보낸다. 게이지는 스크랩할 때 Redis 를 읽어 가는 방식이라
+     * 폴링 경로에는 계측이 안 들어간다. {@code RoomSseManager} 가 연결 수를 내보내는 것과
+     * 같은 방식이다.
+     */
+    @PostConstruct
+    void bindMetrics() {
+        auctionCloseMetrics.bindBacklog(this::backlogSize);
+    }
+
+    /**
+     * Redis 를 못 읽으면 {@code -1} 을 준다. 여기서 예외를 올리면 그 스크랩이 통째로 실패해서
+     * <b>다른 지표까지 같이 안 나간다.</b> 0 으로 눕히지 않는 것은 "밀린 게 없다" 와 "못 읽었다"
+     * 를 그래프에서 갈라 보기 위해서다.
+     */
+    private long backlogSize() {
+        try {
+            return closeDelayQueue.backlogSize(LocalDateTime.now());
+        } catch (Exception e) {
+            return -1;
+        }
+    }
 
     /**
      * 마감할 물품을 집어 실행 풀로 넘긴다.
