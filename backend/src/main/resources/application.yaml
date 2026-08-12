@@ -31,6 +31,12 @@ spring:
   # 기본값 1이면 마감 한 건이 입찰의 행 락을 기다리는 동안 다른 물품 마감과 SMS 정리 cron이
   # 함께 밀린다. 값의 근거와 전용 스케줄러 분리 여부는 3주차에 측정하고 정한다.
   task:
+    # 마감 실행용 Executor 빈을 따로 등록하면서 넣었다. Boot 는 Executor 빈이 하나라도 있으면
+    # applicationTaskExecutor 를 안 만드는데(OnExecutorCondition), 그게 없어지면 Spring MVC 의
+    # 비동기 처리가 스레드를 매번 새로 만드는 기본값으로 떨어진다. SSE 연결이 그 경로를 타므로
+    # force 로 기본 실행자를 그대로 두게 한다.
+    execution:
+      mode: force
     scheduling:
       pool:
         size: ${SCHEDULER_POOL_SIZE:4}
@@ -104,6 +110,24 @@ upbid:
     buffer-size: ${SSE_BUFFER_SIZE:50}
   auction:
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:3}
+    close:
+      # 마감 예약을 Redis 에서 꺼내 실행하는 값들. 배포에서 재보고 조정할 값이라 env 로 뺀다.
+      #
+      # poll-interval-ms 는 마감 지연의 바닥이 된다. 예정 시각과 실행 사이에 이 주기가 통째로
+      # 깔리기 때문이다. 배포 실측 마감 지연이 입찰이 겹칠 때 127~358ms, 안 겹칠 때 1ms 라
+      # (8/12) 500ms 를 얹으면 지연이 몇 배가 된다. 훑는 비용 자체는 서버 3대 기준 초당 30회라
+      # 무시할 수준이므로 짧게 잡고, 배포에서 close.delay 를 보며 더 내릴지 정한다.
+      poll-interval-ms: ${CLOSE_POLL_INTERVAL_MS:100}
+      claim-batch-size: ${CLOSE_CLAIM_BATCH_SIZE:50}
+      # 마감 한 건이 배포에서 389~492ms 였다. 처리 중에 예약이 다시 떠오르면 다른 서버가 같은
+      # 물품에 달라붙으므로 그보다 충분히 크게 잡는다.
+      visibility-timeout: ${CLOSE_VISIBILITY_TIMEOUT:30s}
+      # 지금 spring.task.scheduling.pool 과 같은 수다. 배포에서 스케줄러 일꾼이 최대 1개만
+      # 돌아서(8/12) 늘릴 이유가 없고, 이번 변경으로 스레드 조건이 달라지지 않게 맞춘다.
+      worker-pool-size: ${CLOSE_WORKER_POOL_SIZE:4}
+      # 예약이 Redis 에만 있어서, Redis 가 비면 진행중 물품이 영영 안 닫힌다. 그때 DB 를 보고
+      # 다시 채우는 안전망이다. 이 주기마다 진행중 물품을 전부 읽으므로 짧게 잡지 않는다.
+      resync-interval-ms: ${CLOSE_RESYNC_INTERVAL_MS:60000}
   deal:
     award-recovery:
       enabled: ${AWARD_RECOVERY_ENABLED:true}

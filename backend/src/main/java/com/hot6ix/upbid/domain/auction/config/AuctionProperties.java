@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.config;
 
+import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -8,6 +9,27 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "upbid.auction")
 public record AuctionProperties(
-        int maxInProgressPerRoom
+        int maxInProgressPerRoom,
+        Close close
 ) {
+
+    /**
+     * 마감 예약을 Redis 에서 꺼내 실행하는 데 쓰는 값들. 전부 측정하고 정할 값이라 밖으로 뺐다.
+     *
+     * @param claimBatchSize    한 번에 집어올 최대 예약 수
+     * @param visibilityTimeout 집어온 예약을 얼마나 미뤄 둘지. <b>마감 한 건에 걸리는 시간보다
+     *                          넉넉해야 한다.</b> 처리 도중에 다시 떠오르면 다른 서버가 같은
+     *                          물품에 달라붙어 행 락 경합만 늘어난다. 반대로 너무 크면 서버가
+     *                          죽었을 때 그 예약을 남이 집어가는 게 그만큼 늦어진다
+     * @param workerPoolSize    마감을 실제로 실행하는 스레드 수. <b>커넥션 풀의 절반을 넘기지
+     *                          않는다</b> — 마감 뒤 낙찰 후보 생성이 커넥션을 따로 잡아서, 넘기면
+     *                          사용자 입찰이 커넥션을 못 얻고 5xx 가 난다. 배포에서는 일꾼이
+     *                          최대 1개만 돌아서 지금 값도 남는다
+     */
+    public record Close(
+            int claimBatchSize,
+            Duration visibilityTimeout,
+            int workerPoolSize
+    ) {
+    }
 }
