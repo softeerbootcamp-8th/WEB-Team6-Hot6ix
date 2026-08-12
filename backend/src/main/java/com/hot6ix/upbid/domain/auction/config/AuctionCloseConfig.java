@@ -1,7 +1,6 @@
 package com.hot6ix.upbid.domain.auction.config;
 
 import com.hot6ix.upbid.global.redis.RedisDelayQueue;
-import java.util.concurrent.Executor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -36,11 +35,11 @@ public class AuctionCloseConfig {
      * 다시 집히기 때문이다. 무한 큐로 두면 밀리는 동안 같은 물품이 계속 쌓이는데, 그게 실행될
      * 때는 이미 다른 서버가 닫은 뒤다.
      *
-     * <p>큐 크기를 한 번에 집는 개수에 맞춰 <b>한 배치는 들어가되 그 이상은 안 쌓이게</b> 한다.
-     * 거절이 나기 시작하면 처리가 못 따라간다는 신호다.
+     * <p>반환 타입이 구현 클래스인 것은 {@code AuctionClosePoller} 가 <b>남은 자리를 물어보고
+     * 그만큼만 집기</b> 때문이다. {@code Executor} 로 받으면 그걸 물어볼 방법이 없다.
      */
     @Bean
-    public Executor auctionCloseExecutor(AuctionProperties auctionProperties) {
+    public ThreadPoolTaskExecutor auctionCloseExecutor(AuctionProperties auctionProperties) {
 
         AuctionProperties.Close close = auctionProperties.close();
 
@@ -48,7 +47,7 @@ public class AuctionCloseConfig {
 
         executor.setCorePoolSize(close.workerPoolSize());
         executor.setMaxPoolSize(close.workerPoolSize());
-        executor.setQueueCapacity(close.claimBatchSize());
+        executor.setQueueCapacity(close.queueCapacity());
         executor.setThreadNamePrefix("auction-close-");
         executor.initialize();
 

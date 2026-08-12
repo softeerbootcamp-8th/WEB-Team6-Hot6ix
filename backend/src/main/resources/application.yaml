@@ -118,7 +118,12 @@ upbid:
       # (8/12) 500ms 를 얹으면 지연이 몇 배가 된다. 훑는 비용 자체는 서버 3대 기준 초당 30회라
       # 무시할 수준이므로 짧게 잡고, 배포에서 close.delay 를 보며 더 내릴지 정한다.
       poll-interval-ms: ${CLOSE_POLL_INTERVAL_MS:100}
+      # Redis 는 스크립트가 도는 동안 다른 명령을 못 받는다. 한 번에 너무 많이 집으면 그만큼
+      # Redis 가 멈추므로 상한을 둔다. 50 은 아직 재보고 정한 값이 아니다.
       claim-batch-size: ${CLOSE_CLAIM_BATCH_SIZE:50}
+      # 일꾼을 기다리는 마감이 몇 건까지 쌓일지. 집는 개수가 여기 남은 자리에 맞춰지므로,
+      # 마감이 몰렸을 때 한 번에 얼마나 받아낼지가 이 값으로 정해진다.
+      queue-capacity: ${CLOSE_QUEUE_CAPACITY:50}
       # 마감 한 건이 배포에서 389~492ms 였다. 처리 중에 예약이 다시 떠오르면 다른 서버가 같은
       # 물품에 달라붙으므로 그보다 충분히 크게 잡는다.
       visibility-timeout: ${CLOSE_VISIBILITY_TIMEOUT:30s}

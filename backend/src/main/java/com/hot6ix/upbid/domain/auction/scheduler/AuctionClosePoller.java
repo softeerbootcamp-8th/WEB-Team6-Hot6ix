@@ -9,12 +9,13 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
 /**
@@ -36,7 +37,11 @@ public class AuctionClosePoller {
     /** 계측은 이 객체가 안다. 이 클래스는 Micrometer 를 모른다. */
     private final AuctionCloseMetrics auctionCloseMetrics;
     private final AuctionProperties auctionProperties;
-    private final Executor auctionCloseExecutor;
+    /**
+     * {@code Executor} 가 아니라 구현 타입으로 받는다. <b>넘기기 전에 대기 줄에 자리가 몇 개
+     * 남았는지 물어봐야 하기 때문</b>이다.
+     */
+    private final ThreadPoolTaskExecutor auctionCloseExecutor;
 
     /** 주기가 짧아서 실패할 때마다 찍으면 로그가 분당 수백 줄씩 쌓인다. */
     private final AtomicBoolean claimFailing = new AtomicBoolean();
@@ -67,6 +72,11 @@ public class AuctionClosePoller {
     /**
      * 마감할 물품을 집어 실행 풀로 넘긴다.
      *
+     * <p><b>대기 줄에 자리가 남은 만큼만 집는다.</b> 처리할 수 있는 것보다 많이 집으면 넘긴
+     * 만큼이 거절당하는데, 거절된 물품은 집히면서 미뤄진 뒤라 <b>가시성 타임아웃이 지나야</b>
+     * 다시 집힌다. 그건 죽은 서버를 되살리라고 둔 시간이라 "잠깐 바빴다"에 쓰기엔 너무 길다.
+     * 애초에 못 넘길 것을 안 집으면 그 상황이 생기지 않는다.
+     *
      * <p>예외를 삼키는 것은 스케줄러 스레드에서 예외가 올라가면 이 작업이 아예 멈추기
      * 때문이다. Redis 를 못 읽는 동안은 물품이 닫히지 않지만 예약은 그대로 남아 있어, 복구되면
      * 밀린 것부터 집힌다.
@@ -75,10 +85,15 @@ public class AuctionClosePoller {
     public void pollAndClose() {
 
         AuctionProperties.Close close = auctionProperties.close();
+        int claimSize = Math.min(close.claimBatchSize(), freeSlots());
+
+        if (claimSize <= 0) {
+            return;
+        }
 
         try {
             List<DueEntry> due = closeDelayQueue.claimDue(
-                    LocalDateTime.now(), close.claimBatchSize(), close.visibilityTimeout());
+                    LocalDateTime.now(), claimSize, close.visibilityTimeout());
 
             if (claimFailing.compareAndSet(true, false)) {
                 log.info("마감 예약 조회가 복구됐다");
@@ -93,8 +108,26 @@ public class AuctionClosePoller {
     }
 
     /**
-     * 마감 한 건을 실행 풀로 넘긴다. 풀이 가득 차 거절당하면 <b>아무것도 하지 않는다.</b>
-     * 그 물품은 집히면서 뒤로 미뤄진 상태라 다음 기회에 다시 집힌다.
+     * 지금 실행 풀에 더 넣을 수 있는 개수. <b>대기 줄의 빈자리에 노는 일꾼 수를 더한 값</b>이다.
+     * 일꾼이 놀고 있으면 넘긴 작업이 줄에 안 쌓이고 바로 실행되므로 그만큼 더 넣을 수 있다.
+     *
+     * <p>폴링이 스레드 하나로 도는 동안 자리가 줄어들 일은 없다. 일꾼은 처리를 끝내며 자리를
+     * 비우기만 하므로, 여기서 센 값보다 실제 자리가 적어지지 않는다.
+     */
+    private int freeSlots() {
+
+        ThreadPoolExecutor pool = auctionCloseExecutor.getThreadPoolExecutor();
+
+        int idleWorkers = pool.getMaximumPoolSize() - pool.getActiveCount();
+
+        return pool.getQueue().remainingCapacity() + idleWorkers;
+    }
+
+    /**
+     * 마감 한 건을 실행 풀로 넘긴다.
+     *
+     * <p>자리를 보고 집기 때문에 거절은 원칙적으로 안 난다. 그래도 잡아 두는 것은 여기서
+     * 예외가 올라가면 <b>같은 배치의 나머지 물품이 통째로 안 넘어가기</b> 때문이다.
      */
     private void submit(DueEntry entry, Duration visibilityTimeout) {
         try {

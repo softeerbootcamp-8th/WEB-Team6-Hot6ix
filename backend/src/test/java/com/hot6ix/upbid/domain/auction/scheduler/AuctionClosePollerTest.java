@@ -18,14 +18,16 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
  * 집어온 예약을 결과에 따라 어떻게 정리하는지 검증한다. <b>여기가 이 클래스의 알맹이다</b> —
@@ -41,6 +43,8 @@ class AuctionClosePollerTest {
     private static final LocalDateTime SCHEDULED_FOR = LocalDateTime.of(2026, 8, 12, 10, 0);
     private static final Duration VISIBILITY = Duration.ofSeconds(30);
     private static final int BATCH = 50;
+    private static final int WORKERS = 4;
+    private static final int QUEUE_CAPACITY = 50;
 
     @Mock
     private RedisDelayQueue closeDelayQueue;
@@ -50,20 +54,47 @@ class AuctionClosePollerTest {
 
     private AuctionClosePoller auctionClosePoller;
 
+    private ThreadPoolTaskExecutor executor;
+
     @BeforeEach
     void setUp() {
-        AuctionProperties properties =
-                new AuctionProperties(3, new AuctionProperties.Close(BATCH, VISIBILITY, 4));
+        executor = sameThreadExecutor(WORKERS, QUEUE_CAPACITY);
+        auctionClosePoller = pollerWith(executor);
+    }
 
-        // 넘긴 작업을 부른 스레드에서 그대로 실행한다.
-        Executor sameThreadExecutor = Runnable::run;
+    @AfterEach
+    void shutDownExecutor() {
+        executor.shutdown();
+    }
 
-        auctionClosePoller = new AuctionClosePoller(
+    /**
+     * 넘긴 작업을 부른 스레드에서 그대로 실행한다. 스레드를 실제로 띄우면 검증이 타이밍에
+     * 걸리는데, 남은 자리를 세는 부분은 진짜 풀이 있어야 검증되므로 풀은 진짜로 만든다.
+     */
+    private ThreadPoolTaskExecutor sameThreadExecutor(int workers, int queueCapacity) {
+
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor() {
+            @Override
+            public void execute(Runnable task) {
+                task.run();
+            }
+        };
+
+        executor.setCorePoolSize(workers);
+        executor.setMaxPoolSize(workers);
+        executor.setQueueCapacity(queueCapacity);
+        executor.initialize();
+
+        return executor;
+    }
+
+    private AuctionClosePoller pollerWith(ThreadPoolTaskExecutor executor) {
+        return new AuctionClosePoller(
                 closeDelayQueue,
                 auctionItemCloseService,
                 new AuctionCloseMetrics(new SimpleMeterRegistry()),
-                properties,
-                sameThreadExecutor);
+                new AuctionProperties(3, new AuctionProperties.Close(BATCH, VISIBILITY, WORKERS, QUEUE_CAPACITY)),
+                executor);
     }
 
     @Test
@@ -136,28 +167,56 @@ class AuctionClosePollerTest {
     }
 
     @Test
-    @DisplayName("실행 풀이 가득 차면 건너뛰고 예약을 건드리지 않는다")
-    void skipsWhenExecutorRejects() {
-        AuctionProperties properties =
-                new AuctionProperties(3, new AuctionProperties.Close(BATCH, VISIBILITY, 4));
+    @DisplayName("대기 줄에 자리가 남은 만큼만 집는다")
+    void claimsOnlyAsManyAsThePoolCanTake() {
+        ThreadPoolTaskExecutor small = sameThreadExecutor(WORKERS, 6);
+        givenClaimed();
 
-        Executor rejectingExecutor = task -> {
-            throw new RejectedExecutionException("풀이 가득 참");
-        };
+        pollerWith(small).pollAndClose();
 
-        AuctionClosePoller poller = new AuctionClosePoller(
-                closeDelayQueue,
-                auctionItemCloseService,
-                new AuctionCloseMetrics(new SimpleMeterRegistry()),
-                properties,
-                rejectingExecutor);
+        // 줄 6칸 + 노는 일꾼 4명 = 10. 배치 50 이 아니라 이만큼만 집어야 거절이 안 난다.
+        verify(closeDelayQueue).claimDue(any(LocalDateTime.class), eq(10), eq(VISIBILITY));
 
-        givenClaimed(ITEM_ID);
+        small.shutdown();
+    }
 
-        assertThatCode(poller::pollAndClose).doesNotThrowAnyException();
+    @Test
+    @DisplayName("자리가 없으면 아예 집지 않는다")
+    void doesNotClaimWhenPoolIsFull() throws Exception {
 
-        verify(auctionItemCloseService, never()).closeIfDue(anyLong());
-        verify(closeDelayQueue, never()).cancel(anyLong());
+        // 여기만 진짜 스레드로 돌린다. 자리가 없는 상태는 일꾼이 실제로 붙잡혀 있어야 만들어진다.
+        ThreadPoolTaskExecutor busy = new ThreadPoolTaskExecutor();
+        busy.setCorePoolSize(1);
+        busy.setMaxPoolSize(1);
+        busy.setQueueCapacity(1);
+        busy.initialize();
+
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+
+        busy.execute(() -> {
+            started.countDown();
+            await(release);
+        });
+        started.await(5, TimeUnit.SECONDS);
+        busy.execute(() -> await(release));
+
+        try {
+            pollerWith(busy).pollAndClose();
+
+            verify(closeDelayQueue, never()).claimDue(any(), anyInt(), any());
+        } finally {
+            release.countDown();
+            busy.shutdown();
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void givenClaimed(Long... itemIds) {
