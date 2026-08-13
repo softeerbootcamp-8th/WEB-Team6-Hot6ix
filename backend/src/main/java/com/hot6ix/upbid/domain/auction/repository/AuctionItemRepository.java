@@ -215,11 +215,12 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
      * 없지만, 있더라도 예약을 걸 시각이 없어 어차피 아무것도 할 수 없다.
      *
      * <p>경매방을 조인하는 것은 <b>알림 시각이 {@code endAt - softCloseTriggerSeconds}</b>인데
-     * 트리거가 방에 있는 값이기 때문이다. {@code notifiedAt}까지 함께 읽어야 이미 알린 물품을
-     * 걸러낼 수 있다 — 안 읽으면 재동기화가 주기마다 끝난 알림을 다시 큐에 넣는다.
+     * 트리거가 방에 있는 값이기 때문이다. {@code startedAt}과 {@code notifiedAt}까지 함께 읽어야
+     * <b>일부러 예약을 안 걸어둔 물품</b>을 걸러낼 수 있다 — 안 읽으면 재동기화가 주기마다 끝난
+     * 알림을 다시 큐에 넣거나, 취소해 둔 예약을 되살린다.
      */
     @Query("select new com.hot6ix.upbid.domain.auction.repository.InProgressAuctionItemProjection("
-            + "  ai.auctionItemId, ai.endAt, ar.softCloseTriggerSeconds, ai.notifiedAt) "
+            + "  ai.auctionItemId, ai.endAt, ai.startedAt, ar.softCloseTriggerSeconds, ai.notifiedAt) "
             + "from AuctionItem ai "
             + "join ai.auctionRoom ar "
             + "where ai.status = :status and ai.endAt is not null "
