@@ -67,7 +67,7 @@ import { QuickBidOverlay } from '@/features/live/components/quick-bid-overlay'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { SharePanel } from '@/features/live/components/share-panel'
 import { cn } from '@/lib/utils'
-import { useCountdown } from '@/hooks/use-countdown'
+import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { formatClosingLead, formatRemaining, formatWon } from '@/lib/format'
 import { toast } from '@/lib/toast'
 import { useDevTools } from '@/lib/dev-tools'
@@ -708,6 +708,12 @@ function LiveRoomPage() {
     : 0
   // 상세가 닫혀 있거나 시작 전 물품이면 null 이라 0 초다(훅은 늘 같은 순서로).
   const detailRemaining = useCountdown(detailItem?.endsAt ?? null)
+  /*
+   * 층으로 띄운 상세도 마감 임박이면 빨갛게 물든다. 예전에는 `false` 로 박혀
+   * 있어서, 목록 카드는 빨간데 그 물품을 열면 회색으로 돌아갔다.
+   */
+  const detailUrgent =
+    detailItem?.status === 'ACTIVE' && isClosingSoon(detailRemaining)
 
   /*
    * 앞당기기 확인 다이얼로그가 "지금 남은 시간 → 앞당긴 뒤 남은 시간"을 보여준다.
@@ -1366,7 +1372,7 @@ function LiveRoomPage() {
               remaining={detailRemaining}
               closed={detailItem.status === 'CLOSED'}
               ready={detailItem.status === 'READY'}
-              urgent={false}
+              urgent={detailUrgent}
               amount={detailAmount}
               minimum={detailMinimum}
               onAmountChange={setDetailAmount}
@@ -1487,7 +1493,7 @@ function LiveRoomPage() {
                   isGuest={isGuest}
                   closed={detailItem.status === 'CLOSED'}
                   ready={detailItem.status === 'READY'}
-                  urgent={false}
+                  urgent={detailUrgent}
                   remaining={detailRemaining}
                   amount={detailAmount}
                   minimum={detailMinimum}
