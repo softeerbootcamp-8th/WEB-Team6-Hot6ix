@@ -259,8 +259,8 @@ public class RoomSseManager {
             closing.forEach(this::complete);
         }
 
+        // 버퍼와 순차 ID 카운터는 둘 다 Redis 에 있어 이 한 번으로 함께 지워진다.
         sseEventBuffer.clear(roomId);
-        sseEventPublisher.clearSequence(roomId);
 
         log.info("sse 방 종료: roomId={}, 끊은 연결={}", roomId, closing == null ? 0 : closing.size());
     }

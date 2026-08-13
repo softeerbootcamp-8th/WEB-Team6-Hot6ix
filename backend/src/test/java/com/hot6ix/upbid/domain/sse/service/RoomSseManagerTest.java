@@ -13,7 +13,6 @@ import static org.mockito.Mockito.verify;
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -43,7 +42,7 @@ class RoomSseManagerTest {
      * 다루는지이고, Redis 왕복은 그 관심사가 아니다.
      */
     private static RoomSseManager newRoomSseManager() {
-        return newRoomSseManager(new SseEventBuffer(PROPS), mock(SseEventPublisher.class));
+        return newRoomSseManager(mock(SseEventBuffer.class), mock(SseEventPublisher.class));
     }
 
     private static RoomSseManager newRoomSseManager(SseEventBuffer buffer, SseEventPublisher publisher) {
@@ -160,7 +159,7 @@ class RoomSseManagerTest {
     void broadcastsCountAfterHeartbeatSweep() {
 
         SseEventPublisher publisher = mock(SseEventPublisher.class);
-        RoomSseManager manager = newRoomSseManager(new SseEventBuffer(PROPS), publisher);
+        RoomSseManager manager = newRoomSseManager(mock(SseEventBuffer.class), publisher);
 
         manager.subscribe(ROOM_ID, null);
         SseEmitter dead = manager.subscribe(ROOM_ID, null);
@@ -179,7 +178,7 @@ class RoomSseManagerTest {
     void doesNotBroadcastCountWhenNothingSwept() {
 
         SseEventPublisher publisher = mock(SseEventPublisher.class);
-        RoomSseManager manager = newRoomSseManager(new SseEventBuffer(PROPS), publisher);
+        RoomSseManager manager = newRoomSseManager(mock(SseEventBuffer.class), publisher);
 
         manager.subscribe(ROOM_ID, null);
 
@@ -209,24 +208,19 @@ class RoomSseManagerTest {
     }
 
     @Test
-    @DisplayName("방을 닫으면 이벤트 버퍼와 Redis 순차 ID 카운터가 모두 정리된다")
+    @DisplayName("방을 닫으면 이벤트 버퍼와 순차 ID 카운터가 모두 정리된다")
     void clearsBufferAndSequenceOnRoomClose() {
 
-        SseEventBuffer buffer = new SseEventBuffer(PROPS);
-        SseEventPublisher publisher = mock(SseEventPublisher.class);
-        RoomSseManager manager = newRoomSseManager(buffer, publisher);
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        RoomSseManager manager = newRoomSseManager(buffer, mock(SseEventPublisher.class));
 
         manager.subscribe(ROOM_ID, null);
-        buffer.add(ROOM_ID, 1L, EVENT_NAME, "payload", Instant.now());
-        assertThat(buffer.getEventsAfter(ROOM_ID, 0L)).isNotEmpty();
 
         manager.closeRoom(ROOM_ID);
 
-        assertThat(buffer.getEventsAfter(ROOM_ID, 0L))
-                .as("끝난 방은 재연결 replay 대상이 아니므로 메모리를 붙잡고 있을 이유가 없다")
-                .isEmpty();
-        // 카운터는 Redis 에 있어 인스턴스 메모리를 지우는 것만으로는 안 사라진다.
-        verify(publisher).clearSequence(ROOM_ID);
+        // 끝난 방은 재연결 replay 대상이 아니다. 버퍼와 카운터가 둘 다 Redis 에 있어
+        // 이 호출 하나로 함께 지워진다(SseEventBufferTest 에서 확인).
+        verify(buffer).clear(ROOM_ID);
     }
 
     @Test
@@ -263,7 +257,7 @@ class RoomSseManagerTest {
 
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         RoomSseManager manager = newRoomSseManager(
-                new SseEventBuffer(PROPS), mock(SseEventPublisher.class), registry);
+                mock(SseEventBuffer.class), mock(SseEventPublisher.class), registry);
 
         // 게이지는 @PostConstruct 에서 붙는다. 직접 생성한 객체에서는 안 불리므로 여기서 부른다.
         manager.bindMetrics();
