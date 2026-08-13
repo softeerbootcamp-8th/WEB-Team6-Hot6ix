@@ -43,8 +43,8 @@ class AuctionRecoveryRunnerTest {
 
         auctionRecoveryRunner.restoreCloseSchedules();
 
-        verify(auctionCloseScheduler).schedule(30L, PAST_END_AT);
-        verify(auctionCloseScheduler).schedule(31L, FUTURE_END_AT);
+        verify(auctionCloseScheduler).scheduleIfAbsent(30L, PAST_END_AT);
+        verify(auctionCloseScheduler).scheduleIfAbsent(31L, FUTURE_END_AT);
     }
 
     @Test
@@ -56,7 +56,7 @@ class AuctionRecoveryRunnerTest {
         auctionRecoveryRunner.restoreCloseSchedules();
 
         // 여기서 유예를 두면 서버가 꺼져 있던 동안의 입찰이라는 있을 수 없는 상태를 다뤄야 한다.
-        verify(auctionCloseScheduler).schedule(30L, PAST_END_AT);
+        verify(auctionCloseScheduler).scheduleIfAbsent(30L, PAST_END_AT);
     }
 
     @Test
@@ -69,7 +69,7 @@ class AuctionRecoveryRunnerTest {
 
         // 대기 중인 물품에 예약을 걸면 시작하지도 않은 경매가 유찰로 닫힌다.
         verify(auctionItemRepository).findScheduleTargets(AuctionItemStatus.IN_PROGRESS);
-        verify(auctionCloseScheduler, never()).schedule(any(), any());
+        verify(auctionCloseScheduler, never()).scheduleIfAbsent(any(), any());
     }
 
     @Test
