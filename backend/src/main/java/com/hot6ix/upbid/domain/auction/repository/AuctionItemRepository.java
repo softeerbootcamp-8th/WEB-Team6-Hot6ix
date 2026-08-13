@@ -5,12 +5,14 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDt
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -171,7 +173,8 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
      * 마감({@code findByIdForUpdate})이 락을 잡는 것은 그쪽이 쓰기를 하기 때문이다.
      */
     @Query("select new com.hot6ix.upbid.domain.auction.repository.ClosingSoonItemProjection("
-            + "  ar.auctionRoomId, p.name, ai.status, ai.endAt, ar.softCloseTriggerSeconds) "
+            + "  ar.auctionRoomId, p.name, ai.status, ai.endAt, ar.softCloseTriggerSeconds, "
+            + "  ai.notifiedAt) "
             + "from AuctionItem ai "
             + "join ai.product p "
             + "join ai.auctionRoom ar "
@@ -179,18 +182,62 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
     Optional<ClosingSoonItemProjection> findClosingSoonView(@Param("auctionItemId") Long auctionItemId);
 
     /**
-     * 진행 중이면서 마감 시각이 정해진 물품을 전부 조회한다. 서버 기동 시 마감 예약을 다시
-     * 거는 {@code AuctionRecoveryRunner}가 쓴다.
+     * 마감 임박 알림이 나갈 자리를 선점한다. <b>이 한 문장이 중복 발송과 낡은 판단을 함께
+     * 막는다.</b> 조건에 걸리는 것은 하나뿐이라, 1을 돌려받은 쪽만 알림을 발행한다.
+     *
+     * <p>읽고 나서 판단해 쓰면 두 서버가 같은 값을 읽고 둘 다 통과한다. 조건을 UPDATE 안에
+     * 넣어야 판단과 기록이 갈라지지 않는다. 그래서 마감처럼 행 락을 잡지 않는다 — 알림은
+     * 입찰이 가장 몰리는 구간에서 도는데, 여기서 락을 잡으면 그 물품 입찰이 뒤에 밀린다.
+     *
+     * <p><b>읽었던 {@code status}와 {@code endAt}까지 조건으로 되돌려 보낸다.</b> 알림을 낼지는
+     * 부르는 쪽이 먼저 읽어서 판단하는데, 그 판단과 이 UPDATE 사이에 연장이나 마감이 커밋될 수
+     * 있다. <b>이 UPDATE 는 행 락을 기다리므로 그 사이가 짧지 않다</b> — 입찰이 같은 행을 잡고
+     * 있으면 여기서 대기하고, 하필 알림 시각이 입찰이 가장 몰리는 순간이다. 두 값을 안 걸면
+     * 대기 중에 연장이 커밋돼도 낡은 시각 기준으로 알림이 나가고, 마감과 겹치면 이미 닫힌
+     * 물품에도 나간다.
+     *
+     * <p>{@code notifiedAt < notifyAt}까지 허용하는 것이 Soft Close 연장을 받아낸다. 연장되면
+     * 알림 시각도 함께 밀리므로, 지난번에 알린 시각이 새 알림 시각보다 앞이면 연장 구간을
+     * 벗어났다 다시 들어온 것이라 한 번 더 알려야 한다.
+     *
+     * @param status   읽었을 때의 상태. 진행중이 아니게 됐으면 선점에 실패한다
+     * @param endAt    읽었을 때의 마감 시각. 연장이나 앞당김이 커밋됐으면 선점에 실패한다
+     * @param notifyAt 이번에 알리려는 시각({@code endAt - softCloseTriggerSeconds}). 판정 기준
+     * @param now      실제로 알리는 시각. 기록으로 남는 값
+     * @return 선점했으면 1. <b>0이면 셋 중 하나가 어긋난 것이라 최신 상태를 다시 읽어 갈라야
+     *         한다</b>
+     */
+    @Modifying
+    @Query("update AuctionItem ai set ai.notifiedAt = :now "
+            + "where ai.auctionItemId = :auctionItemId "
+            + "  and ai.status = :status "
+            + "  and ai.endAt = :endAt "
+            + "  and (ai.notifiedAt is null or ai.notifiedAt < :notifyAt)")
+    int markNotified(@Param("auctionItemId") Long auctionItemId,
+                     @Param("status") AuctionItemStatus status,
+                     @Param("endAt") LocalDateTime endAt,
+                     @Param("notifyAt") LocalDateTime notifyAt,
+                     @Param("now") LocalDateTime now);
+
+    /**
+     * 진행 중이면서 마감 시각이 정해진 물품을 전부 조회한다. {@code AuctionRecoveryRunner}가
+     * <b>이 한 번의 조회로 마감 예약과 마감 임박 알림 예약을 함께 채운다.</b>
      *
      * <p>경매방으로 좁히지 않는 것이 이 쿼리의 요점이다. 프로세스가 죽으면 예약이 방을
      * 가리지 않고 전부 사라지므로 복구도 전부를 대상으로 해야 한다.
      *
      * <p>{@code endAt}이 null인 물품은 뺀다. 시작하면 반드시 채워지는 값이라 정상 경로에는
      * 없지만, 있더라도 예약을 걸 시각이 없어 어차피 아무것도 할 수 없다.
+     *
+     * <p>경매방을 조인하는 것은 <b>알림 시각이 {@code endAt - softCloseTriggerSeconds}</b>인데
+     * 트리거가 방에 있는 값이기 때문이다. {@code startedAt}과 {@code notifiedAt}까지 함께 읽어야
+     * <b>일부러 예약을 안 걸어둔 물품</b>을 걸러낼 수 있다 — 안 읽으면 재동기화가 주기마다 끝난
+     * 알림을 다시 큐에 넣거나, 취소해 둔 예약을 되살린다.
      */
     @Query("select new com.hot6ix.upbid.domain.auction.repository.InProgressAuctionItemProjection("
-            + "  ai.auctionItemId, ai.endAt) "
+            + "  ai.auctionItemId, ai.endAt, ai.startedAt, ar.softCloseTriggerSeconds, ai.notifiedAt) "
             + "from AuctionItem ai "
+            + "join ai.auctionRoom ar "
             + "where ai.status = :status and ai.endAt is not null "
             + "order by ai.endAt asc")
     List<InProgressAuctionItemProjection> findScheduleTargets(@Param("status") AuctionItemStatus status);

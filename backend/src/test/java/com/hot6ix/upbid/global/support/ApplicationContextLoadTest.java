@@ -3,6 +3,7 @@ package com.hot6ix.upbid.global.support;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.hot6ix.upbid.domain.auction.scheduler.AuctionClosePoller;
+import com.hot6ix.upbid.domain.auction.scheduler.ItemClosingSoonPoller;
 import com.hot6ix.upbid.global.redis.RedisDelayQueue;
 import java.util.concurrent.Executor;
 import org.junit.jupiter.api.DisplayName;
@@ -51,11 +52,19 @@ class ApplicationContextLoadTest extends AbstractMySqlContainerTest {
     @Autowired
     private ApplicationContext applicationContext;
 
+    /**
+     * <b>컨텍스트가 떴다는 것 자체가 큐 배선 검증이다.</b> {@code RedisDelayQueue} 는 마감용과
+     * 알림용으로 빈이 둘이라 타입만으로는 안 갈리고 <b>필드 이름</b>으로 갈리는데, 이름이
+     * 어긋나면 주입 단계에서 컨텍스트가 아예 안 뜬다.
+     */
     @Test
-    @DisplayName("컨텍스트가 뜨고 마감 예약에 필요한 빈이 다 붙는다")
-    void contextLoadsWithCloseSchedulingBeans() {
-        assertThat(applicationContext.getBean(RedisDelayQueue.class)).isNotNull();
+    @DisplayName("컨텍스트가 뜨고 마감·알림 예약에 필요한 빈이 다 붙는다")
+    void contextLoadsWithSchedulingBeans() {
+        assertThat(applicationContext.getBean("closeDelayQueue", RedisDelayQueue.class)).isNotNull();
+        assertThat(applicationContext.getBean("closingSoonDelayQueue", RedisDelayQueue.class))
+                .isNotNull();
         assertThat(applicationContext.getBean(AuctionClosePoller.class)).isNotNull();
+        assertThat(applicationContext.getBean(ItemClosingSoonPoller.class)).isNotNull();
         assertThat(applicationContext.getBean("auctionCloseExecutor", Executor.class)).isNotNull();
     }
 

@@ -109,6 +109,41 @@ class RedisDelayQueueTest extends AbstractRedisContainerTest {
     }
 
     @Test
+    @DisplayName("미뤄둔 시각 그대로면 지운다")
+    void cancelIfDeferredRemovesUntouchedEntry() {
+        delayQueue.schedule(1L, NOW.minusSeconds(1));
+        delayQueue.claimDue(NOW, LIMIT, VISIBILITY);
+
+        assertThat(delayQueue.cancelIfDeferred(1L, NOW, VISIBILITY)).isTrue();
+
+        assertThat(delayQueue.claimDue(NOW.plus(VISIBILITY).plusSeconds(1), LIMIT, VISIBILITY))
+                .isEmpty();
+    }
+
+    @Test
+    @DisplayName("처리하는 사이에 다시 예약됐으면 지우지 않는다")
+    void cancelIfDeferredKeepsRescheduledEntry() {
+        delayQueue.schedule(1L, NOW.minusSeconds(1));
+        delayQueue.claimDue(NOW, LIMIT, VISIBILITY);
+
+        // 알림을 발행하는 사이에 연장이 커밋돼 리스너가 새 알림 시각으로 걸어둔 상황이다.
+        delayQueue.schedule(1L, NOW.plusSeconds(5));
+
+        assertThat(delayQueue.cancelIfDeferred(1L, NOW, VISIBILITY)).isFalse();
+
+        // 무조건 지웠으면 다음 재동기화까지 이 알림이 통째로 사라진다.
+        assertThat(delayQueue.claimDue(NOW.plusSeconds(6), LIMIT, VISIBILITY))
+                .extracting(DueEntry::id)
+                .containsExactly(1L);
+    }
+
+    @Test
+    @DisplayName("이미 지워진 예약에는 아무 일도 하지 않는다")
+    void cancelIfDeferredIgnoresMissingEntry() {
+        assertThat(delayQueue.cancelIfDeferred(1L, NOW, VISIBILITY)).isFalse();
+    }
+
+    @Test
     @DisplayName("같은 ID로 다시 예약하면 줄이 늘지 않고 시각만 바뀐다")
     void schedulingSameIdMovesTheEntryInstead()  {
         delayQueue.schedule(1L, NOW.minusSeconds(1));
