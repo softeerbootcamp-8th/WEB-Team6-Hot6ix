@@ -97,7 +97,8 @@ redis.call('XADD', KEYS[3], '*',
         'amount', amountString,
         'acceptedAt', acceptedAtString,
         'endAt', endAtString,
-        'extendedSeconds', extendedString)
+        'extendedSeconds', extendedString,
+        'totalExtensionSeconds', totalString)
 
 redis.call('HSET', KEYS[2], requestId,
         cjson.encode({acceptedAtString, endAtString, extendedString}))

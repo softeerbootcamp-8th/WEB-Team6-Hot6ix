@@ -88,7 +88,8 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                         "amount", "10000",
                         "acceptedAt", String.valueOf(((RedisBidDecision.Accepted) decision).acceptedAtMillis()),
                         "endAt", String.valueOf(endAt),
-                        "extendedSeconds", "0")));
+                        "extendedSeconds", "0",
+                        "totalExtensionSeconds", "0")));
     }
 
     @Test

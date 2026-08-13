@@ -4,7 +4,6 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.user.entity.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EntityListeners;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -12,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
@@ -19,8 +19,6 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
-import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 /**
  * 한 물품에서 같은 금액은 한 번만 입찰될 수 있다. 현재가 이하를 거절하는 규칙에서는 같은
@@ -51,7 +49,6 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
                 name = "idx_bids_item_bidder_amount",
                 columnList = "auction_item_id, bidder_user_id, amount")
 )
-@EntityListeners(AuditingEntityListener.class)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Bid {
 
@@ -80,15 +77,23 @@ public class Bid {
     @Column(name = "amount", nullable = false)
     private Long amount;
 
-    @CreatedDate
     @Column(name = "accepted_at", updatable = false, nullable = false)
     private LocalDateTime acceptedAt;
 
     @Builder
-    private Bid(String requestId, AuctionItem auctionItem, User bidder, Long amount) {
+    private Bid(String requestId, AuctionItem auctionItem, User bidder, Long amount,
+                LocalDateTime acceptedAt) {
         this.requestId = requestId;
         this.auctionItem = auctionItem;
         this.bidder = bidder;
         this.amount = amount;
+        this.acceptedAt = acceptedAt;
+    }
+
+    @PrePersist
+    private void assignAcceptedAt() {
+        if (acceptedAt == null) {
+            acceptedAt = LocalDateTime.now();
+        }
     }
 }

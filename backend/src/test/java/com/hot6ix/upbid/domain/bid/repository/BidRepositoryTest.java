@@ -147,6 +147,29 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
+    @DisplayName("Redis에서 확정한 승인 시각을 MySQL에 그대로 저장한다")
+    void preservesAcceptedAtFromRedis() {
+
+        LocalDateTime acceptedAt = LocalDateTime.of(2026, 8, 13, 22, 0, 0, 123_000_000);
+        User bidder = newUser("accepted-at@hot6ix.com", "승인시각입찰자");
+
+        Bid saved = bidRepository.saveAndFlush(Bid.builder()
+                .requestId("request-accepted-at")
+                .auctionItem(auctionItem)
+                .bidder(bidder)
+                .amount(12_000L)
+                .acceptedAt(acceptedAt)
+                .build());
+
+        entityManager.clear();
+
+        assertThat(bidRepository.findById(saved.getBidId()))
+                .get()
+                .extracting(Bid::getAcceptedAt)
+                .isEqualTo(acceptedAt);
+    }
+
+    @Test
     @DisplayName("물품이 다르면 같은 금액이어도 저장된다")
     void allowsSameAmountOnDifferentItems() {
 

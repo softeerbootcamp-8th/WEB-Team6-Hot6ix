@@ -238,6 +238,40 @@ public class AuctionItem extends BaseTimeEntity {
     }
 
     /**
+     * Redis에서 이미 승인된 입찰을 MySQL의 조회용 상태에 반영한다.
+     *
+     * <p>Stream의 순서와 MySQL 트랜잭션 커밋 순서는 같다는 보장이 없다. 따라서 더 낮은
+     * 금액, 더 이른 마감 시각, 더 작은 누적 연장값은 기존 상태를 덮지 않는다. 판매자가
+     * 마감을 앞당긴 뒤 그보다 전에 승인된 입찰 이벤트가 늦게 도착한 경우에는 과거
+     * {@code endAt}으로 앞당김을 취소하지 않는다. 누적 연장값은 과거에 실제로 일어난
+     * 연장 횟수이므로 이 경우에도 큰 값이면 보존한다.
+     *
+     * @return 이 이벤트로 {@code endAt}이 실제로 뒤로 이동했으면 {@code true}
+     */
+    public boolean applyPersistedBid(User bidder, Long amount, LocalDateTime acceptedAt,
+                                     LocalDateTime persistedEndAt,
+                                     int persistedTotalExtensionSeconds) {
+
+        if (leaderUser == null || amount > currentPrice) {
+            applyBid(bidder, amount);
+        }
+
+        boolean acceptedAfterCloseAdvanced =
+                notifiedAt == null || acceptedAt.isAfter(notifiedAt);
+        boolean endAtAdvanced = acceptedAfterCloseAdvanced
+                && (endAt == null || persistedEndAt.isAfter(endAt));
+        if (endAtAdvanced) {
+            endAt = persistedEndAt;
+        }
+
+        if (persistedTotalExtensionSeconds > totalExtensionSeconds) {
+            totalExtensionSeconds = persistedTotalExtensionSeconds;
+        }
+
+        return endAtAdvanced;
+    }
+
+    /**
      * 마감이 임박한 상태였으면 Soft Close로 마감을 뒤로 밀고 누적 연장에 더한다. 연장 폭과
      * 임박 판정 기준은 이 물품이 속한 <b>경매방의 설정</b>이다.
      *
