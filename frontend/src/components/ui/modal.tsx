@@ -91,8 +91,19 @@ export function Modal({
          * **닫힌 모달이 화면 밖에 그대로 남고 페이지가 그만큼 길어진다.**
          */
         '[&:not([open])]:hidden',
-        // 닫기 버튼을 dialog 기준으로 앉히려면 위치 기준점이 필요하다.
-        'relative',
+        /*
+         * **`relative` 를 얹지 않는다.**
+         *
+         * `showModal()` 로 연 dialog 는 top layer 로 올라가고, 브라우저가
+         * `position: fixed` 를 준다 — 스크롤을 얼마나 내렸든 지금 보는 화면
+         * 정가운데에 뜬다는 뜻이다. 그런데 top layer 요소에 `static`/`relative`
+         * 를 지정하면 명세상 `absolute` 로 바뀌면서 그 `fixed` 가 사라지고,
+         * 모달이 문서 위쪽에 남는다. 긴 화면(모바일 경매방 생성)에서 물품 추가를
+         * 열면 한참 위로 스크롤해야 보였던 게 이것 때문이다.
+         *
+         * 닫기 버튼의 기준점도 따로 만들 필요가 없다. `fixed` 자체가 positioned
+         * 라서 아래 `absolute` 버튼이 dialog 를 기준으로 앉는다.
+         */
         // 높이를 제한하지 않으면 내용이 긴 모달(물품 추가 등)이 좁은 화면에서
         // 화면 밖으로 넘쳐 스크롤도 안 된다.
         'm-auto max-h-[calc(100svh-2rem)] w-[calc(100%-2rem)] max-w-[420px] overflow-y-auto rounded-4xl border bg-card p-6 text-foreground',

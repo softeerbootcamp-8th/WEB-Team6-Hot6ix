@@ -159,9 +159,14 @@ export function ClosedRoomView({
                 accent: 'text-result-failed',
                 bg: 'bg-result-failed-surface',
               },
+              /*
+               * 데스크톱 요약과 같은 칸을 쓴다. 여기만 `내 낙찰` 이었던 탓에,
+               * 판매자가 자기 방 결과를 폰으로 열면 총 낙찰액 자리에 늘 `0개` 가
+               * 떠서 집계가 안 잡히는 것처럼 보였다.
+               */
               {
-                label: '내 낙찰',
-                value: `${result.myWinCount}개`,
+                label: '총 낙찰액',
+                value: formatWon(result.totalAmount),
                 accent: 'text-brand-500',
                 bg: 'bg-brand-50',
               },
@@ -194,8 +199,7 @@ export function ClosedRoomView({
               전체 낙찰 결과
             </h3>
             <p className="mt-2 text-[12px] font-medium text-neutral-tertiary">
-              낙찰 {result.soldCount}건 · 유찰 {unsoldCount}건 · 총 낙찰액{' '}
-              {formatWon(result.totalAmount)}
+              낙찰 {result.soldCount}건 · 유찰 {unsoldCount}건
             </p>
 
             <ul className="mt-3 space-y-2">
