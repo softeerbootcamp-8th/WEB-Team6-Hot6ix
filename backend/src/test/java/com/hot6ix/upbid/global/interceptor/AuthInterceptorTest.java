@@ -3,6 +3,7 @@ package com.hot6ix.upbid.global.interceptor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -75,27 +76,39 @@ class AuthInterceptorTest {
     }
 
     @Test
-    @DisplayName("비로그인 상태여도 @GuestAllowed가 붙은 API는 통과시킨다")
-    void allowsGuestOnGuestAllowedEndpoint() throws NoSuchMethodException {
-
-        비로그인_상태();
+    @DisplayName("@GuestAllowed이면서 @LoginUserId 파라미터가 없으면 세션 조회 자체를 하지 않고 통과시킨다")
+    void skipsSessionLookupWhenGuestAllowedWithoutLoginUserIdParam() throws NoSuchMethodException {
 
         boolean result = authInterceptor.preHandle(request, response, handlerMethod("guestAllowed"));
 
         assertThat(result).isTrue();
         assertThat(request.getAttribute(SessionKeys.USER_ID)).isNull();
+        verifyNoInteractions(sessionManager);
     }
 
     @Test
-    @DisplayName("@GuestAllowed API라도 로그인 상태면 userId를 요청 속성에 담는다")
-    void injectsUserIdOnGuestAllowedEndpointWhenAuthenticated() throws NoSuchMethodException {
+    @DisplayName("@GuestAllowed이면서 @LoginUserId 파라미터가 있으면 세션을 조회해서 로그인 상태면 userId를 담는다")
+    void injectsUserIdOnGuestAllowedEndpointWithLoginUserIdParamWhenAuthenticated() throws NoSuchMethodException {
 
         로그인_상태();
 
-        boolean result = authInterceptor.preHandle(request, response, handlerMethod("guestAllowed"));
+        boolean result = authInterceptor.preHandle(request, response, handlerMethod("guestAllowedWithLoginUserId", Long.class));
 
         assertThat(result).isTrue();
         assertThat(request.getAttribute(SessionKeys.USER_ID)).isEqualTo(USER_ID);
+    }
+
+    @Test
+    @DisplayName("@GuestAllowed이면서 @LoginUserId 파라미터가 있으면 비로그인 상태여도 세션을 조회한 뒤 통과시킨다")
+    void looksUpSessionOnGuestAllowedEndpointWithLoginUserIdParamWhenNotAuthenticated() throws NoSuchMethodException {
+
+        비로그인_상태();
+
+        boolean result = authInterceptor.preHandle(request, response, handlerMethod("guestAllowedWithLoginUserId", Long.class));
+
+        assertThat(result).isTrue();
+        assertThat(request.getAttribute(SessionKeys.USER_ID)).isNull();
+        verify(sessionManager).findUserId(request);
     }
 
     private void 로그인_상태() {
@@ -106,13 +119,14 @@ class AuthInterceptorTest {
         when(sessionManager.findUserId(any(HttpServletRequest.class))).thenReturn(Optional.empty());
     }
 
-    private HandlerMethod handlerMethod(String methodName) throws NoSuchMethodException {
+    private HandlerMethod handlerMethod(String methodName, Class<?>... parameterTypes) throws NoSuchMethodException {
         TestController controller = new TestController();
-        return new HandlerMethod(controller, TestController.class.getMethod(methodName));
+        return new HandlerMethod(controller, TestController.class.getMethod(methodName, parameterTypes));
     }
 
     /**
-     * {@code @GuestAllowed} 유무만 다른 핸들러 두 개를 만들기 위한 더미 컨트롤러다.
+     * {@code @GuestAllowed}·{@code @LoginUserId} 유무가 다른 핸들러들을 만들기 위한 더미
+     * 컨트롤러다.
      */
     static class TestController {
 
@@ -121,6 +135,10 @@ class AuthInterceptorTest {
 
         @GuestAllowed
         public void guestAllowed() {
+        }
+
+        @GuestAllowed
+        public void guestAllowedWithLoginUserId(@LoginUserId Long userId) {
         }
     }
 }
