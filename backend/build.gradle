@@ -47,6 +47,8 @@ dependencies {
 
 	// Redis — Lettuce 클라이언트가 기본 포함된다 (Boot BOM이 버전 관리).
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+	// 로그인 세션 저장소. 기존 RedisConnectionFactory를 그대로 재사용한다.
+	implementation 'org.springframework.boot:spring-boot-starter-session-data-redis'
 
 	// ShedLock
 	implementation "net.javacrumbs.shedlock:shedlock-spring:${shedLockVersion}"
