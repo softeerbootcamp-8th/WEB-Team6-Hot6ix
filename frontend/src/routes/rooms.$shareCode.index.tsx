@@ -732,16 +732,26 @@ function LiveRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailItemId])
 
+  /**
+   * 상세가 입찰 확인 화면에 들어가 있는지. 그동안 자동 상향을 멈춘다.
+   */
+  const [detailConfirming, setDetailConfirming] = useState(false)
+
   /*
    * 남이 입찰해서 최소가가 올라가면 입력 금액도 끌어올린다.
    *
    * 이게 없으면 버튼에 낡은 금액이 남고 `amount < minimum` 이라 입찰이 잠긴다.
    * 최소가 이상을 직접 적어둔 경우는 건드리지 않는다 — 올려 적은 금액을
    * 남의 입찰 때문에 되돌리면 안 된다.
+   *
+   * **확인 화면이 떠 있는 동안에는 건드리지 않는다.** 확정하려는 금액이 눈앞에서
+   * 바뀌면 무엇을 확정하는 건지 알 수 없다. 대신 상세가 현재가가 올랐다고 알린다
+   * (`QuickBidOverlay` 와 같은 규칙).
    */
   useEffect(() => {
+    if (detailConfirming) return
     setDetailAmount((prev) => (prev < detailMinimum ? detailMinimum : prev))
-  }, [detailMinimum])
+  }, [detailMinimum, detailConfirming])
 
   const placeBid = usePlace()
   const startItem = useStart()
@@ -1386,6 +1396,7 @@ function LiveRoomPage() {
               feedback={detailFeedback}
               onBack={() => setDetailItemId(null)}
               onBid={submitDetailBid}
+              onConfirmingChange={setDetailConfirming}
             />
           </div>
         )}
@@ -1500,6 +1511,7 @@ function LiveRoomPage() {
                   pending={detailPending}
                   onAmountChange={setDetailAmount}
                   onBid={submitDetailBid}
+                  onConfirmingChange={setDetailConfirming}
                 />
               </div>
             </div>

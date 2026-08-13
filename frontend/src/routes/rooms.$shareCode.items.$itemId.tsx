@@ -280,15 +280,22 @@ function AuctionItemPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id, item.bidUnit])
 
+  /** 입찰 확인 화면에 들어가 있는지. 그동안 자동 상향을 멈춘다. */
+  const [confirming, setConfirming] = useState(false)
+
   /*
    * 남이 입찰해서 최소가가 올라가면 입력 금액도 끌어올린다. 최소가 이상을 직접
    * 적어둔 경우는 건드리지 않는다 — 올려 적은 금액을 남의 입찰 때문에 되돌리면
    * 안 된다. 예전에는 현재가가 바뀔 때마다 최소가로 덮어써서, 5만 원을 적어둔
    * 사이에 남이 입찰하면 입력값이 지워졌다.
+   *
+   * **확인 화면이 떠 있는 동안에는 건드리지 않는다.** 확정하려는 금액이 눈앞에서
+   * 바뀌면 무엇을 확정하는 건지 알 수 없다 (`QuickBidOverlay` 와 같은 규칙).
    */
   useEffect(() => {
+    if (confirming) return
     setAmount((prev) => (prev < minimum ? minimum : prev))
-  }, [minimum])
+  }, [minimum, confirming])
 
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
@@ -414,6 +421,7 @@ function AuctionItemPage() {
           void navigate({ to: '/rooms/$shareCode', params: { shareCode } })
         }
         onBid={submitBid}
+        onConfirmingChange={setConfirming}
       />
     )
   }
@@ -509,6 +517,7 @@ function AuctionItemPage() {
             pending={pending}
             onAmountChange={setAmount}
             onBid={submitBid}
+            onConfirmingChange={setConfirming}
           />
         </>
       }

@@ -1,4 +1,4 @@
-import { Clock, Loader2, Pencil, Share2 } from 'lucide-react'
+import { AlertTriangle, Clock, Loader2, Pencil, Share2 } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
@@ -43,6 +43,7 @@ export function ItemDetailPanel({
   pending,
   onAmountChange,
   onBid,
+  onConfirmingChange,
   action,
 }: {
   item: AuctionItemDetail
@@ -60,6 +61,11 @@ export function ItemDetailPanel({
   onAmountChange: (next: number) => void
   onBid: () => void
   /**
+   * 확인 화면에 들어갔는지 알린다. 금액을 들고 있는 쪽이 그동안 자동 상향을
+   * 멈춰야 해서 위로 올려 보낸다 (`confirming` 참고).
+   */
+  onConfirmingChange?: (confirming: boolean) => void
+  /**
    * 입찰 자리에 대신 넣을 것. 종료된 물품처럼 더 입찰할 수 없는 경우
    * "거래 상세 보기" 같은 다음 행동을 여기에 넣는다.
    */
@@ -70,11 +76,31 @@ export function ItemDetailPanel({
   const bidBlocked = closed || ready || amount < minimum
 
   const [confirming, setConfirming] = useState(false)
+  /** 확인 화면을 열 때의 현재가. 그 뒤로 올랐으면 알린다. */
+  const [priceAtConfirm, setPriceAtConfirm] = useState<number | null>(null)
 
   // 입찰 요청이 끝나면(성공·실패 모두) 확인 화면을 닫는다.
   useEffect(() => {
-    if (!pending) setConfirming(false)
+    if (pending) return
+    setConfirming(false)
+    setPriceAtConfirm(null)
   }, [pending])
+
+  /*
+   * 확인 중인지 위로 알린다. 화면을 떠날 때도 꺼진 것으로 알려야 자동 상향이
+   * 멈춘 채로 남지 않는다.
+   */
+  useEffect(() => {
+    onConfirmingChange?.(confirming)
+    return () => onConfirmingChange?.(false)
+  }, [confirming, onConfirmingChange])
+
+  /*
+   * 확인하는 사이에 남이 더 올렸다. 확정 버튼은 잠그지 않는다 — 서버가
+   * 거절하겠지만, 무엇을 누르는지 알려준 뒤 고르게 하는 쪽이 낫다
+   * (`QuickBidOverlay` 와 같은 규칙).
+   */
+  const outbid = priceAtConfirm !== null && item.currentPrice > priceAtConfirm
 
   return (
     <div className="animate-rise rounded-[20px] border bg-card p-5 lg:min-h-0 lg:flex-1 lg:overflow-hidden">
@@ -220,36 +246,61 @@ export function ItemDetailPanel({
               </p>
             ) : confirming ? (
               /* 입찰 확인 행 — 금액을 한 번 더 보여주고 확정/취소를 고른다 */
-              <div className="flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-bold tabular-nums text-brand-600">
-                    {formatWon(amount)}
+              <>
+                {outbid && (
+                  <p
+                    role="alert"
+                    className="mb-2 flex items-start gap-1.5 text-[11px] font-bold text-live"
+                  >
+                    <AlertTriangle
+                      aria-hidden
+                      className="mt-px size-3.5 shrink-0"
+                    />
+                    현재가가 {formatWon(item.currentPrice)}으로 올랐어요
                   </p>
-                  <p className="text-[11px] font-medium tabular-nums text-brand-400">
-                    현재가보다 +
-                    {(amount - item.currentPrice).toLocaleString('ko-KR')}원
-                  </p>
+                )}
+
+                <div className="flex items-center gap-2 rounded-2xl border border-brand-200 bg-brand-50 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-bold tabular-nums text-brand-600">
+                      {formatWon(amount)}
+                    </p>
+                    {/* 현재가보다 낮아진 금액에 `+` 를 붙이면 더 쓴 것처럼 읽힌다. */}
+                    {amount > item.currentPrice ? (
+                      <p className="text-[11px] font-medium tabular-nums text-brand-400">
+                        현재가보다 +
+                        {(amount - item.currentPrice).toLocaleString('ko-KR')}원
+                      </p>
+                    ) : (
+                      <p className="text-[11px] font-medium text-live">
+                        현재가보다 낮아요
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      setConfirming(false)
+                      setPriceAtConfirm(null)
+                    }}
+                    className="ease-soft flex h-9 shrink-0 items-center justify-center rounded-xl border bg-card px-3 text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95 disabled:opacity-50"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={onBid}
+                    className="ease-soft flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100"
+                  >
+                    {pending && (
+                      <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                    )}
+                    {pending ? '처리 중…' : '입찰 확정'}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => setConfirming(false)}
-                  className="ease-soft flex h-9 shrink-0 items-center justify-center rounded-xl border bg-card px-3 text-[13px] font-bold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95 disabled:opacity-50"
-                >
-                  취소
-                </button>
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={onBid}
-                  className="ease-soft flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:opacity-50 disabled:active:scale-100"
-                >
-                  {pending && (
-                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
-                  )}
-                  {pending ? '처리 중…' : '입찰 확정'}
-                </button>
-              </div>
+              </>
             ) : (
               <div className="flex items-center gap-2 rounded-2xl border bg-surface-subtle px-3 py-2.5">
                 {/* 칩 버튼 */}
@@ -313,7 +364,10 @@ export function ItemDetailPanel({
                 <button
                   type="button"
                   disabled={bidBlocked}
-                  onClick={() => setConfirming(true)}
+                  onClick={() => {
+                    setPriceAtConfirm(item.currentPrice)
+                    setConfirming(true)
+                  }}
                   className="ease-soft flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
                 >
                   입찰
