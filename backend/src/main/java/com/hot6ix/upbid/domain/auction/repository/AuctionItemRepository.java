@@ -173,7 +173,8 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
      * 마감({@code findByIdForUpdate})이 락을 잡는 것은 그쪽이 쓰기를 하기 때문이다.
      */
     @Query("select new com.hot6ix.upbid.domain.auction.repository.ClosingSoonItemProjection("
-            + "  ar.auctionRoomId, p.name, ai.status, ai.endAt, ar.softCloseTriggerSeconds) "
+            + "  ar.auctionRoomId, p.name, ai.status, ai.endAt, ar.softCloseTriggerSeconds, "
+            + "  ai.notifiedAt) "
             + "from AuctionItem ai "
             + "join ai.product p "
             + "join ai.auctionRoom ar "
@@ -181,26 +182,40 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
     Optional<ClosingSoonItemProjection> findClosingSoonView(@Param("auctionItemId") Long auctionItemId);
 
     /**
-     * 마감 임박 알림이 나갈 자리를 선점한다. <b>이 한 문장이 중복 발송을 막는다.</b> 서버가
-     * 여럿이어도 조건에 걸리는 것은 하나뿐이라, 1을 돌려받은 쪽만 알림을 발행한다.
+     * 마감 임박 알림이 나갈 자리를 선점한다. <b>이 한 문장이 중복 발송과 낡은 판단을 함께
+     * 막는다.</b> 조건에 걸리는 것은 하나뿐이라, 1을 돌려받은 쪽만 알림을 발행한다.
      *
      * <p>읽고 나서 판단해 쓰면 두 서버가 같은 값을 읽고 둘 다 통과한다. 조건을 UPDATE 안에
      * 넣어야 판단과 기록이 갈라지지 않는다. 그래서 마감처럼 행 락을 잡지 않는다 — 알림은
      * 입찰이 가장 몰리는 구간에서 도는데, 여기서 락을 잡으면 그 물품 입찰이 뒤에 밀린다.
      *
+     * <p><b>읽었던 {@code status}와 {@code endAt}까지 조건으로 되돌려 보낸다.</b> 알림을 낼지는
+     * 부르는 쪽이 먼저 읽어서 판단하는데, 그 판단과 이 UPDATE 사이에 연장이나 마감이 커밋될 수
+     * 있다. <b>이 UPDATE 는 행 락을 기다리므로 그 사이가 짧지 않다</b> — 입찰이 같은 행을 잡고
+     * 있으면 여기서 대기하고, 하필 알림 시각이 입찰이 가장 몰리는 순간이다. 두 값을 안 걸면
+     * 대기 중에 연장이 커밋돼도 낡은 시각 기준으로 알림이 나가고, 마감과 겹치면 이미 닫힌
+     * 물품에도 나간다.
+     *
      * <p>{@code notifiedAt < notifyAt}까지 허용하는 것이 Soft Close 연장을 받아낸다. 연장되면
      * 알림 시각도 함께 밀리므로, 지난번에 알린 시각이 새 알림 시각보다 앞이면 연장 구간을
      * 벗어났다 다시 들어온 것이라 한 번 더 알려야 한다.
      *
+     * @param status   읽었을 때의 상태. 진행중이 아니게 됐으면 선점에 실패한다
+     * @param endAt    읽었을 때의 마감 시각. 연장이나 앞당김이 커밋됐으면 선점에 실패한다
      * @param notifyAt 이번에 알리려는 시각({@code endAt - softCloseTriggerSeconds}). 판정 기준
      * @param now      실제로 알리는 시각. 기록으로 남는 값
-     * @return 선점했으면 1, 남이 이미 알렸으면 0
+     * @return 선점했으면 1. <b>0이면 셋 중 하나가 어긋난 것이라 최신 상태를 다시 읽어 갈라야
+     *         한다</b>
      */
     @Modifying
     @Query("update AuctionItem ai set ai.notifiedAt = :now "
             + "where ai.auctionItemId = :auctionItemId "
+            + "  and ai.status = :status "
+            + "  and ai.endAt = :endAt "
             + "  and (ai.notifiedAt is null or ai.notifiedAt < :notifyAt)")
     int markNotified(@Param("auctionItemId") Long auctionItemId,
+                     @Param("status") AuctionItemStatus status,
+                     @Param("endAt") LocalDateTime endAt,
                      @Param("notifyAt") LocalDateTime notifyAt,
                      @Param("now") LocalDateTime now);
 

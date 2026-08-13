@@ -66,7 +66,12 @@ public class ItemClosingSoonService {
      *
      * <p><b>발행하기 전에 {@code notified_at}으로 자리를 선점한다.</b> 서버가 여럿이라 같은
      * 예약을 둘이 집을 수 있고, 그렇지 않더라도 가시성 타임아웃이 지나면 같은 예약이 다시
-     * 떠오른다. 선점에 실패하면 남이 이미 알렸다는 뜻이라 발행하지 않는다.
+     * 떠오른다.
+     *
+     * <p>선점 UPDATE 에는 <b>여기서 읽은 상태와 마감 시각도 함께 조건으로 건다.</b> 읽고 나서
+     * UPDATE 가 행 락을 기다리는 사이에 연장이나 마감이 커밋될 수 있는데, 그것을 안 걸면 낡은
+     * 판단으로 알림이 나간다. 실패하면 {@link #resolveAfterFailedClaim}이 무엇이 어긋났는지
+     * 다시 읽어 가른다.
      *
      * <p>선점과 발행이 <b>한 트랜잭션</b>인 것이 중요하다. SSE 리스너가 커밋 후에 돌기 때문에,
      * 롤백되면 기록도 알림도 없던 일이 되어 둘이 어긋나지 않는다.
@@ -91,15 +96,54 @@ public class ItemClosingSoonService {
             return Optional.of(notifyAt);
         }
 
-        if (auctionItemRepository.markNotified(auctionItemId, notifyAt, now) == 0) {
-            log.info("이미 알린 물품이라 건너뛴다: itemId={}, notifyAt={}", auctionItemId, notifyAt);
-            return Optional.empty();
+        int claimed = auctionItemRepository.markNotified(
+                auctionItemId, AuctionItemStatus.IN_PROGRESS, item.endAt(), notifyAt, now);
+
+        if (claimed == 0) {
+            return resolveAfterFailedClaim(auctionItemId, notifyAt);
         }
 
         domainEventPublisher.publish(ItemClosingSoon.of(item.auctionRoomId(), auctionItemId,
                 item.productName(), item.softCloseTriggerSeconds(), now));
 
         return Optional.empty();
+    }
+
+    /**
+     * 자리를 못 잡았을 때 무엇이 어긋났는지 다시 읽어 가른다. <b>이유가 셋이고 할 일이 다르다.</b>
+     *
+     * <ul>
+     *   <li>마감됐다 → 알릴 물품이 아니다. 예약을 지운다
+     *   <li>이미 알렸다 → 남이 먼저 냈다. 예약을 지운다
+     *   <li><b>연장이나 앞당김으로 마감 시각이 바뀌었다</b> → 새 알림 시각으로 다시 예약한다
+     * </ul>
+     *
+     * <p>셋을 안 가르고 모두 지우면, 마지막 경우에 그 물품의 알림이 다음 재동기화까지 사라진다.
+     *
+     * <p><b>다시 읽은 값이 최신이 아닐 수 있다.</b> 같은 트랜잭션이라 MySQL 의 기본 격리
+     * 수준에서는 이 트랜잭션이 처음 읽은 스냅샷을 그대로 본다. 그래도 되는 것은 어느 쪽으로
+     * 판단하든 <b>다음 라운드에 수렴하기</b> 때문이다 — 다시 예약하면 새 트랜잭션이 최신 값을
+     * 읽어 판단하고, 지우면 재동기화가 필요할 때 다시 넣는다.
+     */
+    private Optional<LocalDateTime> resolveAfterFailedClaim(Long auctionItemId, LocalDateTime notifyAt) {
+
+        ClosingSoonItemProjection latest = findNotifiable(auctionItemId);
+
+        if (latest == null) {
+            return Optional.empty();
+        }
+
+        LocalDateTime latestNotifyAt = notifyAtOf(latest);
+
+        if (latest.notifiedAt() != null && !latest.notifiedAt().isBefore(latestNotifyAt)) {
+            log.info("이미 알린 물품이라 건너뛴다: itemId={}, notifyAt={}", auctionItemId, latestNotifyAt);
+            return Optional.empty();
+        }
+
+        log.info("알리려는 사이에 마감 시각이 바뀌어 다시 예약한다: itemId={}, {} -> {}",
+                auctionItemId, notifyAt, latestNotifyAt);
+
+        return Optional.of(latestNotifyAt);
     }
 
     /**

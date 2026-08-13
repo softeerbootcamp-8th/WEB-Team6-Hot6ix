@@ -86,10 +86,8 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
 
             AuctionItem item = newInProgressItem();
 
-            int first = auctionItemRepository.markNotified(
-                    item.getAuctionItemId(), NOTIFY_AT, NOTIFY_AT);
-            int second = auctionItemRepository.markNotified(
-                    item.getAuctionItemId(), NOTIFY_AT, NOTIFY_AT.plusSeconds(1));
+            int first = markNotified(item, NOTIFY_AT, NOTIFY_AT);
+            int second = markNotified(item, NOTIFY_AT, NOTIFY_AT.plusSeconds(1));
 
             // 늦게 온 쪽이 0 을 받아야 알림이 한 번만 나간다.
             assertThat(first).isEqualTo(1);
@@ -101,10 +99,9 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         void claimsAgainAfterSoftCloseExtension() {
 
             AuctionItem item = newInProgressItem();
-            auctionItemRepository.markNotified(item.getAuctionItemId(), NOTIFY_AT, NOTIFY_AT);
+            markNotified(item, NOTIFY_AT, NOTIFY_AT);
 
-            int again = auctionItemRepository.markNotified(
-                    item.getAuctionItemId(), NOTIFY_AT.plusSeconds(30), NOTIFY_AT.plusSeconds(30));
+            int again = markNotified(item, NOTIFY_AT.plusSeconds(30), NOTIFY_AT.plusSeconds(30));
 
             // 연장 구간을 벗어났다 다시 들어온 경우다. 여기서 막으면 재발송이 죽는다.
             assertThat(again).isEqualTo(1);
@@ -116,7 +113,7 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
 
             AuctionItem item = newInProgressItem();
 
-            auctionItemRepository.markNotified(item.getAuctionItemId(), NOTIFY_AT, NOTIFY_AT);
+            markNotified(item, NOTIFY_AT, NOTIFY_AT);
             entityManager.clear();
 
             assertThat(entityManager.find(AuctionItem.class, item.getAuctionItemId()).getNotifiedAt())
@@ -128,7 +125,7 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
         void mapsEachTimestampToItsOwnField() {
 
             AuctionItem item = newInProgressItem();
-            auctionItemRepository.markNotified(item.getAuctionItemId(), NOTIFY_AT, NOTIFY_AT);
+            markNotified(item, NOTIFY_AT, NOTIFY_AT);
             entityManager.flush();
             entityManager.clear();
 
@@ -161,6 +158,47 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
             assertThat(auctionItemRepository.findScheduleTargets(AuctionItemStatus.IN_PROGRESS))
                     .singleElement()
                     .satisfies(target -> assertThat(target.softCloseTriggerSeconds()).isNull());
+        }
+
+        @Test
+        @DisplayName("마감 시각이 바뀌었으면 자리를 못 잡는다")
+        void failsWhenEndAtChanged() {
+
+            AuctionItem item = newInProgressItem();
+
+            // 읽은 뒤 UPDATE 가 락을 기다리는 사이에 연장이 커밋된 상황이다. 낡은 end_at 을
+            // 조건으로 걸어야 여기서 걸린다.
+            int claimed = auctionItemRepository.markNotified(item.getAuctionItemId(),
+                    AuctionItemStatus.IN_PROGRESS, END_AT.plusSeconds(30), NOTIFY_AT, NOTIFY_AT);
+
+            assertThat(claimed).isZero();
+            entityManager.clear();
+            assertThat(entityManager.find(AuctionItem.class, item.getAuctionItemId()).getNotifiedAt())
+                    .as("실패한 선점이 값을 남기면 정작 알려야 할 때 자기 표시에 막힌다")
+                    .isNull();
+        }
+
+        @Test
+        @DisplayName("마감된 물품에는 자리를 못 잡는다")
+        void failsWhenClosed() {
+
+            AuctionItem item = newInProgressItem();
+            entityManager.getEntityManager()
+                    .createQuery("update AuctionItem ai set ai.status = :status "
+                            + "where ai.auctionItemId = :id")
+                    .setParameter("status", AuctionItemStatus.SOLD)
+                    .setParameter("id", item.getAuctionItemId())
+                    .executeUpdate();
+
+            int claimed = markNotified(item, NOTIFY_AT, NOTIFY_AT);
+
+            // 상태를 안 걸면 이미 닫힌 물품에 "곧 마감"이 나간다.
+            assertThat(claimed).isZero();
+        }
+
+        private int markNotified(AuctionItem item, LocalDateTime notifyAt, LocalDateTime now) {
+            return auctionItemRepository.markNotified(item.getAuctionItemId(),
+                    AuctionItemStatus.IN_PROGRESS, END_AT, notifyAt, now);
         }
 
         private AuctionItem newInProgressItem() {
