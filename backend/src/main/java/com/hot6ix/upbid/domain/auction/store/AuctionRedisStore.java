@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.store;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
+import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
 import com.hot6ix.upbid.domain.user.entity.User;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -16,15 +17,16 @@ import org.springframework.stereotype.Component;
 /**
  * 입찰 판정에 쓰는 Redis 값을 읽고 쓴다 (이슈 #246 의 비교군 C).
  *
- * <p>물품 HASH 하나와 방 참여자 SET 하나를 둔다. 판정은 {@code lua/bid.lua} 가 하고 이
- * 클래스는 그 스크립트를 부르는 일과 값을 채우는 일만 한다. 필드 이름과 반환값의 뜻은
- * 스크립트 주석에 있다.
+ * <p>물품 Hash와 참여자 Set으로 판정하고, 승인 결과 Hash와 Stream을 함께 남긴다. 판정은
+ * {@code lua/bid.lua}가 하고 이 클래스는 스크립트 호출과 반환 타입 변환만 담당한다.
  *
  * <pre>
  *   auction:item:{id}               HASH  status endAt currentPrice leaderUserId
  *                                         startingPrice bidIncrement sellerUserId
  *                                         Soft Close 설정과 누적 연장 시간
  *   auction:room:{id}:participants  SET   약관 동의를 마친 userId
+ *   auction:item:{id}:accepted      HASH  requestId별 첫 승인 결과
+ *   auction:bid:stream              STREAM MySQL에 반영할 승인 이벤트
  * </pre>
  *
  * <p><b>{@code endAt} 은 epoch millis 로 넣는다.</b> Lua 에서 문자열 시각을 비교할 수 없고,
@@ -35,10 +37,10 @@ import org.springframework.stereotype.Component;
 @Component
 public class AuctionRedisStore {
 
-    /** {@code lua/bid.lua} 가 접수했다는 뜻. 나머지 반환값은 스크립트 주석 참고. */
+    /** 임시 비교군 C 스크립트가 접수했다는 뜻. Task 8의 API 전환 때 제거한다. */
     public static final long ACCEPTED = 0L;
 
-    /** 물품 HASH 가 없다는 뜻. 부르는 쪽이 DB 에서 읽어 채우고 다시 부른다. */
+    /** 임시 비교군 C 스크립트에서 물품 Hash가 없다는 뜻. */
     public static final long KEY_MISSING = -1L;
 
     /**
@@ -56,7 +58,9 @@ public class AuctionRedisStore {
             """;
 
     private final StringRedisTemplate redis;
-    private final RedisScript<Long> bidScript;
+    private final RedisScript<Long> legacyBidScript;
+    @SuppressWarnings("rawtypes")
+    private final RedisScript<List> bidScript;
     private final RedisScript<Void> updateEndAtScript;
     private final RedisScript<Long> seedScript;
 
@@ -64,23 +68,23 @@ public class AuctionRedisStore {
         this.redis = redis;
         // 스크립트는 한 번 읽어 들고 있는다. Spring Data Redis 가 EVALSHA 로 부르고
         // NOSCRIPT 가 오면 알아서 EVAL 로 한 번 더 보낸다.
-        this.bidScript = new DefaultRedisScript<>(readScript("lua/bid.lua"), Long.class);
+        this.legacyBidScript = new DefaultRedisScript<>(readScript("lua/bid-legacy.lua"), Long.class);
+        this.bidScript = new DefaultRedisScript<>(readScript("lua/bid.lua"), List.class);
         this.updateEndAtScript = new DefaultRedisScript<>(UPDATE_END_AT, Void.class);
         this.seedScript = new DefaultRedisScript<>(readScript("lua/seed-auction.lua"), Long.class);
     }
 
     /**
-     * 입찰을 판정하고, 접수면 {@code currentPrice} 와 {@code leaderUserId} 를 갱신한다.
+     * 현재 동기 API를 위한 임시 비교군 C 판정 경로. 접수면 현재가와 최고 입찰자를 갱신한다.
      *
-     * @param nowMillis 판정 기준 시각. 앱의 {@code Clock} 으로 만든 값을 넘긴다 —
-     *                  스크립트 안에서 {@code TIME} 을 부르면 앱 시계와 갈린다
+     * @param nowMillis 비교군의 판정 기준 시각
      * @return {@link #ACCEPTED}, {@link #KEY_MISSING}, 또는 거절 사유 코드
      */
     public long evaluateBid(long itemId, long bidderUserId, long amount, long nowMillis) {
 
         // 키를 하나만 넘긴다. 방 참여자 SET 은 스크립트가 HASH 의 roomId 로 만든다 —
         // 여기서 만들려면 roomId 를 알아야 하고, 그걸 알려면 DB 를 읽어야 한다.
-        Long result = redis.execute(bidScript,
+        Long result = redis.execute(legacyBidScript,
                 List.of(AuctionRedisKeys.item(itemId)),
                 String.valueOf(bidderUserId), String.valueOf(amount), String.valueOf(nowMillis));
 
@@ -88,6 +92,43 @@ public class AuctionRedisStore {
         // 경로에서 return 하므로 정상 경로에는 없다. 키 없음으로 취급하면 DB 에서 읽어 채우고
         // 다시 부르게 되어, 조용히 접수로 넘어가지 않는다.
         return result == null ? KEY_MISSING : result;
+    }
+
+    /** 입찰 판정부터 승인 이벤트 기록까지 새 Lua 계약으로 수행한다. */
+    public RedisBidDecision evaluateBid(long itemId, String requestId, long bidderUserId,
+                                        long amount, long arrivedAtMillis) {
+
+        @SuppressWarnings("unchecked")
+        List<String> result = redis.execute(
+                bidScript,
+                List.of(
+                        AuctionRedisKeys.item(itemId),
+                        AuctionRedisKeys.accepted(itemId),
+                        AuctionRedisKeys.stream()),
+                requestId,
+                String.valueOf(bidderUserId),
+                String.valueOf(amount),
+                String.valueOf(arrivedAtMillis));
+
+        return toDecision(result);
+    }
+
+    private static RedisBidDecision toDecision(List<String> result) {
+        if (result == null || result.size() < 2) {
+            throw new IllegalStateException("bid.lua가 결과를 반환하지 않았다");
+        }
+        if ("REJECTED".equals(result.get(0))) {
+            return new RedisBidDecision.Rejected(RedisBidDecision.Reason.valueOf(result.get(1)));
+        }
+        if (!"ACCEPTED".equals(result.get(0)) || result.size() != 6) {
+            throw new IllegalStateException("bid.lua가 모르는 결과를 반환했다: " + result);
+        }
+        return new RedisBidDecision.Accepted(
+                result.get(1),
+                Long.parseLong(result.get(2)),
+                Long.parseLong(result.get(3)),
+                Integer.parseInt(result.get(4)),
+                "1".equals(result.get(5)));
     }
 
     /**
