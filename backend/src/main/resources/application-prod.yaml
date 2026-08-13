@@ -49,6 +49,10 @@ management:
       percentiles:
         http.server.requests: 0.5, 0.95, 0.99
 
+# 입찰 Stream Consumer 값은 application.yaml의 환경변수 기본값을 사용한다. 운영에서는 아래
+# 변수만 바꿔 재빌드 없이 poll 주기와 단건 처리 락 상한을 조정한다.
+# BID_STREAM_POLL_DELAY, BID_STREAM_BLOCK_TIMEOUT, BID_STREAM_LOCK_AT_MOST_FOR
+
 server:
   tomcat:
     mbeanregistry:
