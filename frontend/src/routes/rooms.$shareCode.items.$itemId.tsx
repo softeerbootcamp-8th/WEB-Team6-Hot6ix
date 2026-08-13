@@ -263,7 +263,8 @@ function AuctionItemPage() {
   const remaining = useCountdown(item.endsAt)
   const closed = item.status === 'CLOSED'
   const ready = item.status === 'READY'
-  const urgent = !closed && isClosingSoon(remaining)
+  // 시작 전 물품은 마감 시각이 없어 남은 시간이 늘 0 이다. 임박에서 걸러낸다.
+  const urgent = !closed && !ready && isClosingSoon(remaining)
 
   const minimum = item.currentPrice + item.bidUnit
   const [amount, setAmount] = useState(minimum)

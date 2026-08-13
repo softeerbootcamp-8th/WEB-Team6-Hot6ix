@@ -163,7 +163,13 @@ export function ItemDetailPanel({
                   ? '마감됨'
                   : ready
                     ? '시작 전'
-                    : `남은 시간 ${formatRemaining(remaining)}`}
+                    : /*
+                       * 0 초에서는 "남은 시간" 을 떼고 상태만 적는다.
+                       * "남은 시간 마감 처리 중" 은 읽히지 않는다.
+                       */
+                      remaining <= 0
+                      ? '마감 처리 중'
+                      : `남은 시간 ${formatRemaining(remaining)}`}
               </span>
             </div>
 
