@@ -6,9 +6,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -23,8 +21,9 @@ import org.springframework.stereotype.Component;
  * 스크립트 주석에 있다.
  *
  * <pre>
- *   auction:item:{id}               HASH  endAt currentPrice leaderUserId
+ *   auction:item:{id}               HASH  status endAt currentPrice leaderUserId
  *                                         startingPrice bidIncrement sellerUserId
+ *                                         Soft Close 설정과 누적 연장 시간
  *   auction:room:{id}:participants  SET   약관 동의를 마친 userId
  * </pre>
  *
@@ -56,33 +55,18 @@ public class AuctionRedisStore {
             end
             """;
 
-    /**
-     * 물품 HASH 가 <b>없을 때만</b> 채운다.
-     *
-     * <p>그냥 {@code HSET} 으로 덮으면 측정 시작 순간처럼 여러 요청이 한꺼번에 키 없음을
-     * 받았을 때 값이 되돌아간다. 한 요청이 DB 를 읽는 사이 다른 요청이 채우고 입찰까지
-     * 접수하면, 늦게 끝난 쪽이 그 위에 옛 {@code currentPrice} 를 덮어쓴다. 그러면 이미
-     * 접수된 금액이 다시 최소 금액이 되어 같은 금액이 두 번 접수되고,
-     * {@code (auction_item_id, amount)} unique 위반이 난다.
-     */
-    private static final String SEED_IF_ABSENT = """
-            if redis.call('EXISTS', KEYS[1]) == 0 then
-                redis.call('HSET', KEYS[1], unpack(ARGV))
-            end
-            """;
-
     private final StringRedisTemplate redis;
     private final RedisScript<Long> bidScript;
     private final RedisScript<Void> updateEndAtScript;
-    private final RedisScript<Void> seedScript;
+    private final RedisScript<Long> seedScript;
 
     public AuctionRedisStore(StringRedisTemplate redis) {
         this.redis = redis;
         // 스크립트는 한 번 읽어 들고 있는다. Spring Data Redis 가 EVALSHA 로 부르고
         // NOSCRIPT 가 오면 알아서 EVAL 로 한 번 더 보낸다.
-        this.bidScript = new DefaultRedisScript<>(readScript(), Long.class);
+        this.bidScript = new DefaultRedisScript<>(readScript("lua/bid.lua"), Long.class);
         this.updateEndAtScript = new DefaultRedisScript<>(UPDATE_END_AT, Void.class);
-        this.seedScript = new DefaultRedisScript<>(SEED_IF_ABSENT, Void.class);
+        this.seedScript = new DefaultRedisScript<>(readScript("lua/seed-auction.lua"), Long.class);
     }
 
     /**
@@ -97,7 +81,7 @@ public class AuctionRedisStore {
         // 키를 하나만 넘긴다. 방 참여자 SET 은 스크립트가 HASH 의 roomId 로 만든다 —
         // 여기서 만들려면 roomId 를 알아야 하고, 그걸 알려면 DB 를 읽어야 한다.
         Long result = redis.execute(bidScript,
-                List.of(itemKey(itemId)),
+                List.of(AuctionRedisKeys.item(itemId)),
                 String.valueOf(bidderUserId), String.valueOf(amount), String.valueOf(nowMillis));
 
         // execute 가 null 을 주는 것은 스크립트가 값을 안 돌려줬다는 뜻이다. 스크립트는 모든
@@ -107,47 +91,64 @@ public class AuctionRedisStore {
     }
 
     /**
-     * DB 에서 읽은 물품과 참여자로 두 키를 채운다. 물품이 시작될 때가 아니라 <b>첫 입찰이
-     * 왔을 때</b> 불린다. 시작 시점에 채우면 채우는 자리가 하나 늘고, 그 자리가 실패했을 때
-     * 어차피 이 복구가 필요하다.
-     *
-     * <p>참여자는 {@code SADD} 로 더한다. 지우고 다시 넣으면, 이 메서드가 DB 를 읽은 뒤
-     * 커밋된 동의가 사라진다.
+     * 기존 비교군 C의 호출 계약을 유지하는 어댑터. 엔티티를 불변 seed 스냅샷으로 바꾼 뒤
+     * {@link #seed(AuctionRedisSeed)}에 위임한다. 시작 후 initializer와 아직 남아 있는 첫 입찰
+     * 복구 경로가 함께 사용하며, 어느 쪽이 먼저 와도 이미 공개된 Hash는 덮어쓰지 않는다.
      */
     public void seed(AuctionItem item, long roomId, long sellerUserId, Collection<Long> participantUserIds) {
-
-        Map<String, String> fields = new HashMap<>();
-        fields.put("endAt", String.valueOf(toMillis(item.getEndAt())));
-        fields.put("currentPrice", String.valueOf(item.getCurrentPrice()));
-        fields.put("startingPrice", String.valueOf(item.getStartingPrice()));
-        fields.put("bidIncrement", String.valueOf(item.getBidIncrement()));
-        fields.put("sellerUserId", String.valueOf(sellerUserId));
-        fields.put("roomId", String.valueOf(roomId));
-
-        // 입찰이 아직 없으면 필드를 안 넣는다. 스크립트가 HGET 의 false 로 "첫 입찰" 을
-        // 판정해서 최소 금액을 시작가로 잡는다.
         User leader = item.getLeaderUser();
-        if (leader != null) {
-            fields.put("leaderUserId", String.valueOf(leader.getUserId()));
-        }
+        seed(new AuctionRedisSeed(
+                item.getAuctionItemId(),
+                roomId,
+                sellerUserId,
+                item.getStatus(),
+                item.getStartingPrice(),
+                item.getCurrentPrice(),
+                leader == null ? null : leader.getUserId(),
+                item.getBidIncrement(),
+                toMillis(item.getEndAt()),
+                item.getAuctionRoom().getSoftCloseTriggerSeconds(),
+                item.getAuctionRoom().getSoftCloseExtendSeconds(),
+                item.getTotalExtensionSeconds(),
+                AuctionItem.MAX_TOTAL_EXTENSION_SECONDS,
+                List.copyOf(participantUserIds)));
+    }
+
+    /**
+     * 참여자 Set과 물품 Hash를 한 Lua 실행으로 준비한다.
+     *
+     * <p>Lua는 참여자 Set을 먼저 쓰고 물품 Hash를 마지막에 공개한다. 실행 전체가 원자적이므로
+     * 다른 입찰 Lua는 Hash가 없거나, Set까지 완성된 Hash만 볼 수 있다. Hash가 이미 존재하면
+     * Redis의 최신 입찰 상태를 과거 DB 스냅샷으로 되돌리지 않고 {@code false}를 반환한다.
+     */
+    public boolean seed(AuctionRedisSeed seed) {
 
         List<String> args = new ArrayList<>();
-        fields.forEach((field, value) -> {
-            args.add(field);
-            args.add(value);
-        });
-        redis.execute(seedScript, List.of(itemKey(item.getAuctionItemId())), args.toArray());
+        args.add(String.valueOf(seed.roomId()));
+        args.add(String.valueOf(seed.sellerUserId()));
+        args.add(seed.status().name());
+        args.add(String.valueOf(seed.startingPrice()));
+        args.add(String.valueOf(seed.currentPrice()));
+        args.add(String.valueOf(seed.bidIncrement()));
+        args.add(String.valueOf(seed.endAtMillis()));
+        args.add(nullableNumber(seed.softCloseTriggerSeconds()));
+        args.add(nullableNumber(seed.softCloseExtendSeconds()));
+        args.add(String.valueOf(seed.totalExtensionSeconds()));
+        args.add(String.valueOf(seed.maxTotalExtensionSeconds()));
+        args.add(nullableNumber(seed.leaderUserId()));
+        seed.participantUserIds().stream().map(String::valueOf).forEach(args::add);
 
-        // 참여자는 SADD 라 늦게 끝나도 덮어쓰지 않는다. HASH 와 달리 되돌아갈 값이 없다.
-        if (!participantUserIds.isEmpty()) {
-            redis.opsForSet().add(participantsKey(roomId),
-                    participantUserIds.stream().map(String::valueOf).toArray(String[]::new));
-        }
+        Long result = redis.execute(
+                seedScript,
+                List.of(AuctionRedisKeys.item(seed.itemId()), AuctionRedisKeys.participants(seed.roomId())),
+                args.toArray());
+
+        return Long.valueOf(1L).equals(result);
     }
 
     /** 약관 동의를 마친 회원을 방 참여자 SET 에 더한다. */
     public void addParticipant(long roomId, long userId) {
-        redis.opsForSet().add(participantsKey(roomId), String.valueOf(userId));
+        redis.opsForSet().add(AuctionRedisKeys.participants(roomId), String.valueOf(userId));
     }
 
     /**
@@ -158,26 +159,22 @@ public class AuctionRedisStore {
      * 그걸 "채워진 물품" 으로 읽어 나머지 필드를 못 찾는다.
      */
     public void updateEndAt(long itemId, LocalDateTime endAt) {
-        redis.execute(updateEndAtScript, List.of(itemKey(itemId)), String.valueOf(toMillis(endAt)));
-    }
-
-    private static String itemKey(long itemId) {
-        return "auction:item:" + itemId;
-    }
-
-    private static String participantsKey(long roomId) {
-        return "auction:room:" + roomId + ":participants";
+        redis.execute(updateEndAtScript, List.of(AuctionRedisKeys.item(itemId)), String.valueOf(toMillis(endAt)));
     }
 
     private static long toMillis(LocalDateTime value) {
         return value.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
-    private static String readScript() {
-        try (var in = new ClassPathResource("lua/bid.lua").getInputStream()) {
+    private static String nullableNumber(Number value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private static String readScript(String path) {
+        try (var in = new ClassPathResource(path).getInputStream()) {
             return new String(in.readAllBytes());
         } catch (Exception e) {
-            throw new IllegalStateException("lua/bid.lua 를 읽지 못했다", e);
+            throw new IllegalStateException(path + "를 읽지 못했다", e);
         }
     }
 }
