@@ -39,9 +39,14 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 @Entity
 @Table(
         name = "bids",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_bids_item_amount",
-                columnNames = {"auction_item_id", "amount"}),
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_bids_item_amount",
+                        columnNames = {"auction_item_id", "amount"}),
+                @UniqueConstraint(
+                        name = "uk_bids_request_id",
+                        columnNames = "request_id")
+        },
         indexes = @Index(
                 name = "idx_bids_item_bidder_amount",
                 columnList = "auction_item_id, bidder_user_id, amount")
@@ -54,6 +59,15 @@ public class Bid {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "bid_id")
     private Long bidId;
+
+    /**
+     * Redis가 승인한 요청을 MySQL에 한 번만 반영하기 위한 멱등 키.
+     *
+     * <p>기존 동기 입찰 행과 롤링 배포를 허용하기 위해 이번 migration에서는 nullable이다.
+     * Redis Stream 경로로 생성하는 입찰은 반드시 값을 채운다.
+     */
+    @Column(name = "request_id", length = 64)
+    private String requestId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "auction_item_id", nullable = false)
@@ -71,7 +85,8 @@ public class Bid {
     private LocalDateTime acceptedAt;
 
     @Builder
-    private Bid(AuctionItem auctionItem, User bidder, Long amount) {
+    private Bid(String requestId, AuctionItem auctionItem, User bidder, Long amount) {
+        this.requestId = requestId;
         this.auctionItem = auctionItem;
         this.bidder = bidder;
         this.amount = amount;

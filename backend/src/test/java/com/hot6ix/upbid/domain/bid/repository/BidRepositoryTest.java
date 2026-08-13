@@ -109,6 +109,44 @@ class BidRepositoryTest extends AbstractMySqlContainerTest {
     }
 
     @Test
+    @DisplayName("같은 requestId로 두 번 저장하면 물품과 금액이 달라도 unique 제약에 걸린다")
+    void rejectsSameRequestId() {
+
+        User bidder = newUser("request-id@hot6ix.com", "재시도입찰자");
+
+        bidRepository.saveAndFlush(Bid.builder()
+                .requestId("request-1")
+                .auctionItem(auctionItem)
+                .bidder(bidder)
+                .amount(12_000L)
+                .build());
+
+        assertThatThrownBy(() -> bidRepository.saveAndFlush(Bid.builder()
+                .requestId("request-1")
+                .auctionItem(newAuctionItem("다른물품"))
+                .bidder(bidder)
+                .amount(20_000L)
+                .build()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    @DisplayName("requestId로 이미 저장된 입찰을 조회한다")
+    void findsByRequestId() {
+
+        User bidder = newUser("request-find@hot6ix.com", "조회입찰자");
+        Bid saved = bidRepository.saveAndFlush(Bid.builder()
+                .requestId("request-find-1")
+                .auctionItem(auctionItem)
+                .bidder(bidder)
+                .amount(12_000L)
+                .build());
+
+        assertThat(bidRepository.findByRequestId("request-find-1"))
+                .contains(saved);
+    }
+
+    @Test
     @DisplayName("물품이 다르면 같은 금액이어도 저장된다")
     void allowsSameAmountOnDifferentItems() {
 
