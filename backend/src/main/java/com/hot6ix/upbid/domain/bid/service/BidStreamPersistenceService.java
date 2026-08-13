@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.bid.service;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.bid.entity.Bid;
@@ -9,6 +10,9 @@ import com.hot6ix.upbid.domain.bid.stream.BidStreamEvent;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
+import com.hot6ix.upbid.global.event.payload.ItemEnded;
+import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
@@ -43,7 +47,16 @@ public class BidStreamPersistenceService {
      * 직렬화한다. API 응답은 Lua 완료 직후 반환되므로 이 잠금을 기다리지 않는다.
      */
     @Transactional
-    public void persist(BidStreamEvent.BidAccepted event) {
+    public void persist(BidStreamEvent event) {
+
+        switch (event) {
+            case BidStreamEvent.BidAccepted accepted -> persistAccepted(accepted);
+            case BidStreamEvent.ItemClosing closing -> persistClosing(closing);
+            case BidStreamEvent.ItemCloseAdvanced advanced -> persistAdvanced(advanced);
+        }
+    }
+
+    private void persistAccepted(BidStreamEvent.BidAccepted event) {
 
         if (bidRepository.findByRequestId(event.requestId()).isPresent()) {
             return;
@@ -81,6 +94,57 @@ public class BidStreamPersistenceService {
                     event.roomId(), event.itemId(), item.getProduct().getName(),
                     event.extendedSeconds(), endAt, acceptedAt));
         }
+    }
+
+    private void persistClosing(BidStreamEvent.ItemClosing event) {
+        AuctionItem item = lockedItem(event.itemId(), event.roomId());
+
+        if (item.getStatus() != AuctionItemStatus.IN_PROGRESS) {
+            return;
+        }
+
+        User leader = event.leaderUserId() == null ? null : userRepository.findById(event.leaderUserId())
+                .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
+        LocalDateTime endAt = toLocalDateTime(event.endAtMillis());
+        LocalDateTime closedAt = toLocalDateTime(event.closedAtMillis());
+
+        item.closeFromRedis(
+                leader, event.currentPrice(), endAt, event.totalExtensionSeconds());
+
+        if (leader == null) {
+            domainEventPublisher.publish(ItemPassed.of(
+                    event.roomId(), event.itemId(), item.getProduct().getName(), closedAt));
+            return;
+        }
+        domainEventPublisher.publish(ItemEnded.of(
+                event.roomId(), event.itemId(), item.getProduct().getName(),
+                event.currentPrice(), leader.getNickname(), closedAt));
+    }
+
+    private void persistAdvanced(BidStreamEvent.ItemCloseAdvanced event) {
+        AuctionItem item = lockedItem(event.itemId(), event.roomId());
+        if (item.getStatus() != AuctionItemStatus.IN_PROGRESS) {
+            return;
+        }
+        LocalDateTime endAt = toLocalDateTime(event.endAtMillis());
+        LocalDateTime advancedAt = toLocalDateTime(event.advancedAtMillis());
+
+        if (!item.applyCloseAdvanced(endAt, advancedAt)) {
+            return;
+        }
+
+        domainEventPublisher.publish(ItemCloseAdvanced.of(
+                event.roomId(), event.itemId(), item.getProduct().getName(),
+                event.remainingSeconds(), endAt, advancedAt));
+    }
+
+    private AuctionItem lockedItem(long itemId, long roomId) {
+        AuctionItem item = auctionItemRepository.findByIdForUpdate(itemId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+        if (!item.getAuctionRoom().getAuctionRoomId().equals(roomId)) {
+            throw new IllegalArgumentException("Stream의 roomId가 물품의 경매방과 다르다");
+        }
+        return item;
     }
 
     private LocalDateTime toLocalDateTime(long epochMillis) {

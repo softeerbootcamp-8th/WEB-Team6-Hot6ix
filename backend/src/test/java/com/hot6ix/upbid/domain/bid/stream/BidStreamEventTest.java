@@ -57,6 +57,32 @@ class BidStreamEventTest {
                 .hasMessageContaining("UNKNOWN");
     }
 
+    @Test
+    @DisplayName("ITEM_CLOSING 스냅샷은 최고 입찰자가 없는 유찰도 파싱한다")
+    void parsesItemClosingWithoutLeader() {
+        BidStreamEvent event = BidStreamEvent.from(Map.of(
+                "type", "ITEM_CLOSING", "itemId", "101", "roomId", "202",
+                "currentPrice", "10000", "leaderUserId", "",
+                "endAt", "1786637100000", "totalExtensionSeconds", "60",
+                "closeReason", "NATURAL", "closedAt", "1786637100100"));
+
+        assertThat(event).isEqualTo(new BidStreamEvent.ItemClosing(
+                101L, 202L, 10_000L, null, 1_786_637_100_000L,
+                60, "NATURAL", 1_786_637_100_100L));
+    }
+
+    @Test
+    @DisplayName("ITEM_CLOSE_ADVANCED의 절대 마감 시각을 파싱한다")
+    void parsesItemCloseAdvanced() {
+        BidStreamEvent event = BidStreamEvent.from(Map.of(
+                "type", "ITEM_CLOSE_ADVANCED", "itemId", "101", "roomId", "202",
+                "endAt", "1786637100000", "remainingSeconds", "60",
+                "advancedAt", "1786637040000"));
+
+        assertThat(event).isEqualTo(new BidStreamEvent.ItemCloseAdvanced(
+                101L, 202L, 1_786_637_100_000L, 60, 1_786_637_040_000L));
+    }
+
     private static Map<String, String> validFields() {
         return new HashMap<>(Map.of(
                 "type", "BID_ACCEPTED",

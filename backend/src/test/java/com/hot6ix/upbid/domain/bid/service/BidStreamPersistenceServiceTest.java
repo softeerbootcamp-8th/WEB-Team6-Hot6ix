@@ -19,6 +19,9 @@ import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
+import com.hot6ix.upbid.global.event.payload.ItemEnded;
+import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import java.time.Clock;
@@ -139,6 +142,56 @@ class BidStreamPersistenceServiceTest {
         assertThat(auctionItem.getEndAt()).isEqualTo(LocalDateTime.ofInstant(
                 Instant.parse("2026-08-13T13:06:00Z"), ZONE));
         assertThat(auctionItem.getTotalExtensionSeconds()).isEqualTo(60);
+    }
+
+    @Test
+    @DisplayName("ITEM_CLOSING 스냅샷의 최고 입찰자를 반영하고 낙찰로 최종화한다")
+    void finalizesSoldItemFromClosingSnapshot() {
+        User leader = user(11L, "낙찰자");
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+        when(userRepository.findById(11L)).thenReturn(Optional.of(leader));
+
+        persistenceService.persist(new BidStreamEvent.ItemClosing(
+                ITEM_ID, ROOM_ID, 20_000L, 11L,
+                Instant.parse("2026-08-13T13:06:00Z").toEpochMilli(), 60,
+                "NATURAL", Instant.parse("2026-08-13T13:06:01Z").toEpochMilli()));
+
+        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.SOLD);
+        assertThat(auctionItem.getCurrentPrice()).isEqualTo(20_000L);
+        assertThat(auctionItem.getLeaderUser()).isSameAs(leader);
+        verify(domainEventPublisher).publish(any(ItemEnded.class));
+    }
+
+    @Test
+    @DisplayName("최고 입찰자가 없는 ITEM_CLOSING은 유찰로 최종화한다")
+    void finalizesFailedItemWithoutLeader() {
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+
+        persistenceService.persist(new BidStreamEvent.ItemClosing(
+                ITEM_ID, ROOM_ID, 10_000L, null,
+                Instant.parse("2026-08-13T13:06:00Z").toEpochMilli(), 0,
+                "NATURAL", Instant.parse("2026-08-13T13:06:01Z").toEpochMilli()));
+
+        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.FAILED);
+        verify(domainEventPublisher).publish(any(ItemPassed.class));
+        verify(userRepository, never()).findById(any(Long.class));
+    }
+
+    @Test
+    @DisplayName("ITEM_CLOSE_ADVANCED를 DB에 반영한 뒤 기존 앞당김 이벤트를 발행한다")
+    void persistsCloseAdvanced() {
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+
+        persistenceService.persist(new BidStreamEvent.ItemCloseAdvanced(
+                ITEM_ID, ROOM_ID,
+                Instant.parse("2026-08-13T13:01:00Z").toEpochMilli(), 60,
+                Instant.parse("2026-08-13T13:00:00Z").toEpochMilli()));
+
+        assertThat(auctionItem.getEndAt()).isEqualTo(LocalDateTime.ofInstant(
+                Instant.parse("2026-08-13T13:01:00Z"), ZONE));
+        assertThat(auctionItem.getNotifiedAt()).isEqualTo(LocalDateTime.ofInstant(
+                Instant.parse("2026-08-13T13:00:00Z"), ZONE));
+        verify(domainEventPublisher).publish(any(ItemCloseAdvanced.class));
     }
 
     private void givenNewEvent(BidStreamEvent.BidAccepted event, User bidder) {

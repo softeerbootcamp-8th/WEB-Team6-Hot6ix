@@ -51,11 +51,7 @@ public class BidStreamConsumer {
 
         try {
             BidStreamEvent event = BidStreamEvent.from(stringFields(record));
-            if (!(event instanceof BidStreamEvent.BidAccepted accepted)) {
-                throw new IllegalArgumentException("처리할 수 없는 입찰 Stream 이벤트다");
-            }
-
-            metrics.recordPersistence(() -> persistenceService.persist(accepted));
+            metrics.recordPersistence(() -> persistenceService.persist(event));
 
             try {
                 Long acknowledged =

@@ -272,6 +272,33 @@ public class AuctionItem extends BaseTimeEntity {
     }
 
     /**
+     * 같은 Stream에서 앞선 입찰을 모두 반영한 뒤 도착한 마감 스냅샷으로 최종 상태를 맞춘다.
+     * Redis가 경매 중 판정 원본이므로 마감 순간의 최고가·최고 입찰자를 그대로 사용한다.
+     */
+    public void closeFromRedis(User leader, Long finalPrice, LocalDateTime finalEndAt,
+                               int finalTotalExtensionSeconds) {
+        this.leaderUser = leader;
+        this.currentPrice = finalPrice;
+        this.endAt = finalEndAt;
+        this.totalExtensionSeconds = finalTotalExtensionSeconds;
+        close();
+    }
+
+    /**
+     * Redis에서 원자적으로 확정한 판매자 마감 앞당기기를 DB에 한 번만 반영한다.
+     *
+     * @return 처음 반영했으면 {@code true}, 같은 이벤트 재전달이면 {@code false}
+     */
+    public boolean applyCloseAdvanced(LocalDateTime advancedEndAt, LocalDateTime advancedAt) {
+        if (notifiedAt != null && !advancedAt.isAfter(notifiedAt)) {
+            return false;
+        }
+        this.endAt = advancedEndAt;
+        this.notifiedAt = advancedAt;
+        return true;
+    }
+
+    /**
      * 마감이 임박한 상태였으면 Soft Close로 마감을 뒤로 밀고 누적 연장에 더한다. 연장 폭과
      * 임박 판정 기준은 이 물품이 속한 <b>경매방의 설정</b>이다.
      *

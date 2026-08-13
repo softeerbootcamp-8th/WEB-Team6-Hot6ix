@@ -63,6 +63,8 @@ public class AuctionRedisStore {
     private final RedisScript<List> bidScript;
     private final RedisScript<Void> updateEndAtScript;
     private final RedisScript<Long> seedScript;
+    @SuppressWarnings("rawtypes")
+    private final RedisScript<List> closeScript;
 
     public AuctionRedisStore(StringRedisTemplate redis) {
         this.redis = redis;
@@ -72,6 +74,7 @@ public class AuctionRedisStore {
         this.bidScript = new DefaultRedisScript<>(readScript("lua/bid.lua"), List.class);
         this.updateEndAtScript = new DefaultRedisScript<>(UPDATE_END_AT, Void.class);
         this.seedScript = new DefaultRedisScript<>(readScript("lua/seed-auction.lua"), Long.class);
+        this.closeScript = new DefaultRedisScript<>(readScript("lua/close-auction.lua"), List.class);
     }
 
     /**
@@ -201,6 +204,34 @@ public class AuctionRedisStore {
      */
     public void updateEndAt(long itemId, LocalDateTime endAt) {
         redis.execute(updateEndAtScript, List.of(AuctionRedisKeys.item(itemId)), String.valueOf(toMillis(endAt)));
+    }
+
+    public RedisCloseDecision requestNaturalClose(long itemId, long nowMillis) {
+        return executeClose(itemId, "NATURAL", String.valueOf(nowMillis));
+    }
+
+    public RedisCloseDecision requestSellerAdvance(long itemId, long sellerUserId) {
+        return executeClose(itemId, "SELLER_ADVANCE", String.valueOf(sellerUserId));
+    }
+
+    private RedisCloseDecision executeClose(long itemId, String mode, String argument) {
+        @SuppressWarnings("unchecked")
+        List<String> result = redis.execute(closeScript,
+                List.of(AuctionRedisKeys.item(itemId), AuctionRedisKeys.stream()), mode, argument);
+
+        if (result == null || result.isEmpty()) {
+            throw new IllegalStateException("close-auction.lua가 결과를 반환하지 않았다");
+        }
+        return switch (result.getFirst()) {
+            case "CLOSING" -> new RedisCloseDecision.Closing(Long.parseLong(result.get(1)));
+            case "ADVANCED" -> new RedisCloseDecision.Advanced(
+                    Long.parseLong(result.get(1)), Integer.parseInt(result.get(2)),
+                    Long.parseLong(result.get(3)));
+            case "REJECTED" -> new RedisCloseDecision.Rejected(
+                    RedisCloseDecision.Reason.valueOf(result.get(1)),
+                    result.size() < 3 || result.get(2).isBlank() ? null : Long.parseLong(result.get(2)));
+            default -> throw new IllegalStateException("close-auction.lua가 모르는 결과를 반환했다: " + result);
+        };
     }
 
     private static long toMillis(LocalDateTime value) {
