@@ -15,6 +15,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -310,6 +311,43 @@ class RoomSseManagerTest {
 
         // sseExecutor가 거부해서 ROOM_CLOSED 전송 자체는 못 나갔어도, emitter는 열어둔 채로
         // 두지 않고 끊는다 — 안 그러면 앱이 셧다운되는 중에도 연결이 계속 남아 있게 된다.
+        assertThatThrownBy(() -> emitter.send("payload")).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("방을 닫을 때 ROOM_CLOSED 전송이 끝나기 전에는 emitter를 완료하지 않는다")
+    void closeRoomCompletesEmitterOnlyAfterSendFinishes() throws InterruptedException {
+
+        // sendAsync가 실제로 비동기로(별도 스레드에서, 시점을 테스트가 통제한 채로) 실행되게
+        // 만드는 실행기. #307 이전에는 closeRoom이 전송 완료를 기다리지 않고 emitter를 바로
+        // 끊었는데, 그 버그를 재현하려면 전송이 "아직 끝나지 않은" 순간이 실제로 존재해야 한다.
+        CountDownLatch release = new CountDownLatch(1);
+        CountDownLatch taskDone = new CountDownLatch(1);
+        Executor delayedExecutor = command -> new Thread(() -> {
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            command.run();
+            taskDone.countDown();
+        }).start();
+
+        SseProperties props = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
+        RoomSseManager manager = new RoomSseManager(props, new SseMetrics(new SimpleMeterRegistry()),
+                new SseEventBuffer(props), delayedExecutor);
+
+        SseEmitter emitter = manager.subscribe(ROOM_ID, null);
+
+        manager.closeRoom(ROOM_CLOSED_EVENT, ROOM_ID, "payload");
+
+        // 전송 스레드를 release로 붙잡아 둔 상태라, 전송이 끝나지 않았다 — emitter는 아직 열려 있어야 한다.
+        assertThatCode(() -> emitter.send("still open")).doesNotThrowAnyException();
+
+        release.countDown();
+        assertThat(taskDone.await(5, TimeUnit.SECONDS)).isTrue();
+
+        // 전송이 끝난 뒤에야 emitter가 완료된다.
         assertThatThrownBy(() -> emitter.send("payload")).isInstanceOf(IllegalStateException.class);
     }
 }
