@@ -50,7 +50,6 @@ import {
 } from '@/features/live/seller-action-error'
 import type { PickedItem } from '@/features/seller/components/item-picker-modal'
 
-import { BidConfirmPanel } from '@/features/live/components/bid-confirm-panel'
 import { EventFeed } from '@/features/live/components/event-feed'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
@@ -68,7 +67,7 @@ import { QuickBidOverlay } from '@/features/live/components/quick-bid-overlay'
 import { RouteError, RoutePending } from '@/components/route-states'
 import { SharePanel } from '@/features/live/components/share-panel'
 import { cn } from '@/lib/utils'
-import { useCountdown } from '@/hooks/use-countdown'
+import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { formatClosingLead, formatRemaining, formatWon } from '@/lib/format'
 import { toast } from '@/lib/toast'
 import { useDevTools } from '@/lib/dev-tools'
@@ -119,8 +118,13 @@ export const Route = createFileRoute('/rooms/$shareCode/')({
   component: LiveRoomPage,
 })
 
-/** 오른쪽 열에 무엇을 띄울지 */
-type RightPanel = 'leaderboard' | 'quickBid' | 'confirm' | 'share'
+/**
+ * 오른쪽 열에 무엇을 띄울지.
+ *
+ * 입찰 확인은 여기 없다. 빠른 입찰 카드 안에서 끝나므로 패널을 옮기지 않는다
+ * (`QuickBidOverlay` 주석 참고).
+ */
+type RightPanel = 'leaderboard' | 'quickBid' | 'share'
 
 /**
  * 이벤트 피드 항목의 id 를 만든다. `Date.now()` 만 쓰면 같은 밀리초에 도착한 이벤트끼리
@@ -135,7 +139,6 @@ function nextEventId(): number {
 const PANEL_LABEL: Record<RightPanel, string> = {
   leaderboard: '리더보드 · 물품별',
   quickBid: '빠른 입찰',
-  confirm: '입찰 확인',
   share: '경매방 공유',
 }
 
@@ -151,11 +154,8 @@ function LiveRoomPage() {
 
   const [keyword, setKeyword] = useState('')
   const [panel, setPanel] = useState<RightPanel>('leaderboard')
-  const [pendingBid, setPendingBid] = useState<{
-    item: AuctionItemDetail
-    amount: number
-  } | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  /** 빠른 입찰에서 서버 응답을 기다리는 물품. 그 카드의 확인 줄만 잠근다. */
+  const [biddingItemId, setBiddingItemId] = useState<number | null>(null)
   const [picking, setPicking] = useState(false)
   /*
    * 빼기는 "빼기 → 고르기 → 확인" 3단계다.
@@ -708,6 +708,12 @@ function LiveRoomPage() {
     : 0
   // 상세가 닫혀 있거나 시작 전 물품이면 null 이라 0 초다(훅은 늘 같은 순서로).
   const detailRemaining = useCountdown(detailItem?.endsAt ?? null)
+  /*
+   * 층으로 띄운 상세도 마감 임박이면 빨갛게 물든다. 예전에는 `false` 로 박혀
+   * 있어서, 목록 카드는 빨간데 그 물품을 열면 회색으로 돌아갔다.
+   */
+  const detailUrgent =
+    detailItem?.status === 'ACTIVE' && isClosingSoon(detailRemaining)
 
   /*
    * 앞당기기 확인 다이얼로그가 "지금 남은 시간 → 앞당긴 뒤 남은 시간"을 보여준다.
@@ -726,16 +732,26 @@ function LiveRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailItemId])
 
+  /**
+   * 상세가 입찰 확인 화면에 들어가 있는지. 그동안 자동 상향을 멈춘다.
+   */
+  const [detailConfirming, setDetailConfirming] = useState(false)
+
   /*
    * 남이 입찰해서 최소가가 올라가면 입력 금액도 끌어올린다.
    *
    * 이게 없으면 버튼에 낡은 금액이 남고 `amount < minimum` 이라 입찰이 잠긴다.
    * 최소가 이상을 직접 적어둔 경우는 건드리지 않는다 — 올려 적은 금액을
    * 남의 입찰 때문에 되돌리면 안 된다.
+   *
+   * **확인 화면이 떠 있는 동안에는 건드리지 않는다.** 확정하려는 금액이 눈앞에서
+   * 바뀌면 무엇을 확정하는 건지 알 수 없다. 대신 상세가 현재가가 올랐다고 알린다
+   * (`QuickBidOverlay` 와 같은 규칙).
    */
   useEffect(() => {
+    if (detailConfirming) return
     setDetailAmount((prev) => (prev < detailMinimum ? detailMinimum : prev))
-  }, [detailMinimum])
+  }, [detailMinimum, detailConfirming])
 
   const placeBid = usePlace()
   const startItem = useStart()
@@ -1155,42 +1171,37 @@ function LiveRoomPage() {
       }
     : undefined
 
-  const confirmBid = async () => {
-    if (!pendingBid) return
+  /**
+   * 빠른 입찰 카드에서 확정한 입찰을 보낸다.
+   *
+   * 확인은 카드 안에서 이미 받았으므로 패널을 옮기지 않는다. **성공해도 빠른
+   * 입찰에 그대로 머무른다** — 역전당해서 다시 입찰하는 게 가장 흔한 다음
+   * 행동인데, 예전에는 리더보드로 돌려보내서 매번 처음부터 다시 열어야 했다.
+   *
+   * 확인하는 사이에 남이 먼저 올렸을 수 있다. 그 판정은 전부 서버가 하고,
+   * 화면은 응답만 보고 나눈다. 카드는 실패하면 확인 줄을 닫아 금액을 고칠 수
+   * 있게 돌아간다.
+   */
+  const submitQuickBid = async (item: AuctionItemDetail, amount: number) => {
+    setBiddingItemId(item.id)
 
-    setSubmitting(true)
-
-    /*
-     * 확인을 누르는 사이에 남이 먼저 올렸을 수 있다. 그 판정은 전부 서버가 한다.
-     * 예전에는 여기서 현재가와 비교해 흉내를 냈지만, 이제는 응답만 보고 나눈다.
-     */
     try {
       await placeBid.mutateAsync({
-        auctionItemId: pendingBid.item.id,
-        data: { amount: pendingBid.amount },
+        auctionItemId: item.id,
+        data: { amount },
       })
 
       // 서버가 확정해 준 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       toast.success('입찰이 등록됐어요', {
-        description: `${pendingBid.item.name} · ${formatWon(pendingBid.amount)}`,
+        description: `${item.name} · ${formatWon(amount)}`,
         motion: 'bidAccepted',
       })
-      refreshItems(pendingBid.item.id)
-      setPendingBid(null)
-      setPanel('leaderboard')
+      refreshItems(item.id)
     } catch (error) {
-      const { title, description, retryable } = toBidErrorMessage(error)
+      const { title, description } = toBidErrorMessage(error)
       toast.error(title, { description })
-
-      // 금액을 고쳐 다시 해볼 만한 실패면 빠른 입찰로 되돌린다.
-      if (retryable) {
-        setPanel('quickBid')
-      } else {
-        setPendingBid(null)
-        setPanel('leaderboard')
-      }
     } finally {
-      setSubmitting(false)
+      setBiddingItemId(null)
     }
   }
 
@@ -1371,7 +1382,7 @@ function LiveRoomPage() {
               remaining={detailRemaining}
               closed={detailItem.status === 'CLOSED'}
               ready={detailItem.status === 'READY'}
-              urgent={false}
+              urgent={detailUrgent}
               amount={detailAmount}
               minimum={detailMinimum}
               onAmountChange={setDetailAmount}
@@ -1385,6 +1396,7 @@ function LiveRoomPage() {
               feedback={detailFeedback}
               onBack={() => setDetailItemId(null)}
               onBid={submitDetailBid}
+              onConfirmingChange={setDetailConfirming}
             />
           </div>
         )}
@@ -1395,12 +1407,9 @@ function LiveRoomPage() {
          */}
         <Modal
           open={panel !== 'leaderboard'}
-          onClose={() => {
-            setPendingBid(null)
-            setPanel('leaderboard')
-          }}
+          onClose={() => setPanel('leaderboard')}
           labelledBy="mobile-panel-title"
-          dismissible={!submitting}
+          dismissible={biddingItemId === null}
           // 안쪽 패널이 `h-full` 을 쓰므로 다이얼로그 높이를 확정해야 한다.
           // auto 로 두면 목록이 0 높이로 접혀 화면이 깨진다.
           // 안쪽 패널이 다이얼로그 테두리에 딱 붙지 않도록 여백을 조금 준다.
@@ -1413,24 +1422,9 @@ function LiveRoomPage() {
           {panel === 'quickBid' && (
             <QuickBidOverlay
               items={liveItems}
-              onSubmit={(item, amount) => {
-                setPendingBid({ item, amount })
-                setPanel('confirm')
-              }}
+              pendingItemId={biddingItemId}
+              onSubmit={submitQuickBid}
               onClose={() => setPanel('leaderboard')}
-            />
-          )}
-
-          {panel === 'confirm' && pendingBid && (
-            <BidConfirmPanel
-              item={pendingBid.item}
-              amount={pendingBid.amount}
-              pending={submitting}
-              onConfirm={confirmBid}
-              onCancel={() => {
-                setPendingBid(null)
-                setPanel('quickBid')
-              }}
             />
           )}
 
@@ -1510,13 +1504,14 @@ function LiveRoomPage() {
                   isGuest={isGuest}
                   closed={detailItem.status === 'CLOSED'}
                   ready={detailItem.status === 'READY'}
-                  urgent={false}
+                  urgent={detailUrgent}
                   remaining={detailRemaining}
                   amount={detailAmount}
                   minimum={detailMinimum}
                   pending={detailPending}
                   onAmountChange={setDetailAmount}
                   onBid={submitDetailBid}
+                  onConfirmingChange={setDetailConfirming}
                 />
               </div>
             </div>
@@ -1774,27 +1769,10 @@ function LiveRoomPage() {
             <RightSlot active={panel === 'quickBid'}>
               <QuickBidOverlay
                 items={liveItems}
-                onSubmit={(item, amount) => {
-                  setPendingBid({ item, amount })
-                  setPanel('confirm')
-                }}
+                pendingItemId={biddingItemId}
+                onSubmit={submitQuickBid}
                 onClose={() => setPanel('leaderboard')}
               />
-            </RightSlot>
-
-            <RightSlot active={panel === 'confirm'}>
-              {pendingBid && (
-                <BidConfirmPanel
-                  item={pendingBid.item}
-                  amount={pendingBid.amount}
-                  pending={submitting}
-                  onConfirm={confirmBid}
-                  onCancel={() => {
-                    setPendingBid(null)
-                    setPanel('quickBid')
-                  }}
-                />
-              )}
             </RightSlot>
 
             <RightSlot active={panel === 'share'}>
