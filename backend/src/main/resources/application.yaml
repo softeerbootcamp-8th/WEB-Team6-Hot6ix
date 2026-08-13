@@ -131,7 +131,19 @@ upbid:
       worker-pool-size: ${CLOSE_WORKER_POOL_SIZE:4}
       # 예약이 Redis 에만 있어서, Redis 가 비면 진행중 물품이 영영 안 닫힌다. 그때 DB 를 보고
       # 다시 채우는 안전망이다. 이 주기마다 진행중 물품을 전부 읽으므로 짧게 잡지 않는다.
+      # 이 한 번의 조회로 마감 예약과 알림 예약을 함께 채운다 (#290).
       resync-interval-ms: ${CLOSE_RESYNC_INTERVAL_MS:60000}
+    closing-soon:
+      # 마감 임박 알림 예약을 Redis 에서 꺼내 실행하는 값들. 마감과 따로 두는 것은 알림 한
+      # 건이 훨씬 가볍기 때문이고, 한쪽만 조여 볼 수 있게 하려는 것이다 (#290).
+      #
+      # 알림은 마감처럼 초 단위로 맞아야 하는 일이 아니다. 몇백 ms 늦게 나가도 사용자가
+      # 알아채지 못하므로, 마감보다 느슨하게 잡아 Redis 를 훑는 횟수를 줄인다.
+      poll-interval-ms: ${CLOSING_SOON_POLL_INTERVAL_MS:500}
+      claim-batch-size: ${CLOSING_SOON_CLAIM_BATCH_SIZE:50}
+      # 마감(30s)보다 짧다. 알림은 미뤄 둔 시각에 다시 떠올라도 notified_at 이 중복을 막아
+      # 주므로, 길게 잡아 얻는 것이 없고 죽은 서버가 쥔 알림만 늦어진다.
+      visibility-timeout: ${CLOSING_SOON_VISIBILITY_TIMEOUT:10s}
   deal:
     award-recovery:
       enabled: ${AWARD_RECOVERY_ENABLED:true}
