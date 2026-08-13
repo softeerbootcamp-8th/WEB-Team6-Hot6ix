@@ -163,6 +163,35 @@ class AuctionItemTest {
         }
 
         @Test
+        @DisplayName("앞당기면 마감 임박 알림을 이미 알린 것으로 찍는다")
+        void marksNotifiedSoThatRecoveryDoesNotRevive() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+
+            auctionItem.closeEarly(NOW);
+
+            // 앞당긴 뒤 알림 시각(end_at - 트리거)이 정확히 이 시각이라, 안 찍으면
+            // AuctionRecoveryRunner 가 "예약이 빠졌다"고 보고 되살려 알림이 뒤늦게 나간다.
+            assertThat(auctionItem.getNotifiedAt())
+                    .isEqualTo(NOW)
+                    .isEqualTo(auctionItem.getEndAt().minusSeconds(TRIGGER_SECONDS));
+        }
+
+        @Test
+        @DisplayName("앞당기지 못했으면 알림 시각도 건드리지 않는다")
+        void doesNotMarkNotifiedWhenRejected() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+
+            boolean advanced = auctionItem.closeEarly(END_AT.minusSeconds(15));
+
+            assertThat(advanced).isFalse();
+            assertThat(auctionItem.getNotifiedAt())
+                    .as("거절된 요청이 알림을 막아버리면 정상 알림이 사라진다")
+                    .isNull();
+        }
+
+        @Test
         @DisplayName("앞당겨도 원래 마감 시각과 누적 연장은 그대로 남는다")
         void keepsOriginalEndAtAndExtensions() {
 

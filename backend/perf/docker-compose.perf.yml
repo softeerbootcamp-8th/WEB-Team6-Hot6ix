@@ -71,11 +71,21 @@ services:
       - FRONTEND_URL=http://localhost:5173
       - SPRING_DATA_REDIS_HOST=redis
       - JAVA_TOOL_OPTIONS=${APP_JAVA_OPTS:-}
+      # 마감 예약이 여기 있다 (#289). 앱을 2대로 늘렸을 때 둘이 같은 목록을 보는 것이
+      # 이 측정의 전제라, 인스턴스마다 따로 두면 안 된다.
+      - REDIS_HOST=redis
+      - CLOSE_POLL_INTERVAL_MS=${CLOSE_POLL_INTERVAL_MS:-100}
+      - CLOSE_VISIBILITY_TIMEOUT=${CLOSE_VISIBILITY_TIMEOUT:-30s}
+      - CLOSE_WORKER_POOL_SIZE=${CLOSE_WORKER_POOL_SIZE:-4}
+      # perf 프로파일은 로그를 warn 으로 눌러 둔다. 재는 대상에 로그 출력이 섞이면 안 되기
+      # 때문인데, 2대로 늘렸을 때 어느 인스턴스가 무엇을 처리했는지 보려면 열어야 한다.
+      # 측정할 때는 기본값(warn) 그대로 둔다.
+      - LOGGING_LEVEL_COM_HOT6IX_UPBID=${APP_LOG_LEVEL:-warn}
     depends_on:
       mysql:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
 
   mysql:
     image: mysql:8.4.9
@@ -108,14 +118,15 @@ services:
       timeout: 5s
       retries: 20
 
-  # 입찰 동시성 제어를 Redis 로 옮긴 비교군(이슈 #246 의 C·D)용이다.
-  # 태그는 실 배포에 올릴 버전과 같은 8.10.0 으로 못 박는다.
   redis:
+    # 입찰 동시성 제어와 마감 예약, ShedLock 이 함께 쓴다. 앱을 2대로 늘려도
+    # 둘이 이 하나를 봐야 Redis 안의 판정과 예약이 같은 상태를 공유한다.
+    # 태그는 실 배포에 올릴 버전과 같은 8.10.0 으로 못 박는다.
+    image: redis:8.10.0
     # 호스트 포트를 안 연다. 로컬 개발용 6379(backend/docker-compose.yml)와 부딪히지
     # 않고, 프로젝트 이름이 upbid-perf 라 컨테이너도 네트워크도 따로 논다.
     expose:
       - "6379"
-    image: redis:8.10.0-alpine
     # 앱·MySQL 과 같은 값으로 함께 움직인다 (run.sh --cpus). Redis 만 제한 없이 두면
     # 어느 쪽이 CPU 에 묶여 있었는지 못 가른다. MySQL CPU 를 안 재서 곡선을 한 번
     # 잘못 읽은 적이 있다.
@@ -129,6 +140,11 @@ services:
       - ""
       - --appendonly
       - "no"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   prometheus:
     image: prom/prometheus:v3.6.0

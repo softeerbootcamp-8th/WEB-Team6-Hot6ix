@@ -8,7 +8,7 @@ import {
 import { LeaderboardRows } from '@/features/live/components/leaderboard-rows'
 import { SoftCloseFlashOverlay } from '@/features/live/components/soft-close-flash-overlay'
 import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
-import { formatRemaining, formatWon } from '@/lib/format'
+import { formatCountdown, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { cn } from '@/lib/utils'
 import type { AuctionItemDetail } from '@/mocks/types'
@@ -78,7 +78,7 @@ export function ItemLeaderboard({
           )}
         >
           <Clock aria-hidden className="size-[13px]" />
-          {closed ? '마감됨' : formatRemaining(remaining)}
+          {closed ? '마감됨' : formatCountdown(remaining)}
         </span>
       </div>
 

@@ -52,9 +52,15 @@ function AuctionRoomCreatedPage() {
           참여 링크를 공유하거나 경매방으로 바로 이동하세요.
         </p>
 
-        {/* 참여 링크 — 440 + 16 + 120 */}
-        <div className="mt-8 flex gap-4">
-          <p className="flex h-[60px] min-w-0 flex-1 items-center truncate rounded-[20px] border bg-surface-subtle px-5 text-[14px] font-semibold text-foreground">
+        {/*
+          참여 링크 — 데스크톱은 Figma 그대로 440 + 16 + 120 한 줄이다.
+
+          모바일에서는 줄을 나눈다. 한 줄에 복사 버튼(120)까지 넣으면 주소에
+          150px 남짓만 남아 공유 코드가 통째로 잘려서, 눈으로는 어느 방 링크인지
+          확인할 수 없었다. 좁은 화면에서는 주소를 접어서 전부 보여준다.
+        */}
+        <div className="mt-8 flex flex-col gap-3 md:flex-row md:gap-4">
+          <p className="flex min-h-[60px] min-w-0 flex-1 items-center rounded-[20px] border bg-surface-subtle px-5 py-3 text-[14px] font-semibold break-all text-foreground md:h-[60px] md:truncate md:py-0">
             {shareUrl ??
               (isError ? '링크를 불러오지 못했어요' : '불러오는 중…')}
           </p>
@@ -62,7 +68,7 @@ function AuctionRoomCreatedPage() {
             type="button"
             onClick={copy}
             disabled={!shareUrl}
-            className="ease-soft h-[60px] w-[120px] shrink-0 rounded-[14px] bg-brand-50 text-[13px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-200 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+            className="ease-soft h-[60px] w-full shrink-0 rounded-[14px] bg-brand-50 text-[13px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-200 active:scale-95 disabled:pointer-events-none disabled:opacity-40 md:w-[120px]"
           >
             링크 복사
           </button>

@@ -94,7 +94,8 @@ class AuctionItemServiceTest {
      * perf 프로파일만 이 값을 올리므로, 기본 동작을 보는 이 테스트는 3으로 고정한다.
      */
     @Spy
-    private AuctionProperties auctionProperties = new AuctionProperties(3);
+    // 마감 실행 설정(close)은 이 서비스가 안 읽으므로 채우지 않는다.
+    private AuctionProperties auctionProperties = new AuctionProperties(3, null, null);
 
     @InjectMocks
     private AuctionItemService auctionItemService;

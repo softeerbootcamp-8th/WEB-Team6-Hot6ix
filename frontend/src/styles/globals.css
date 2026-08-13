@@ -541,6 +541,32 @@
 }
 
 /*
+ * 뒤로 갈 때는 짧게 끊는다 (`lib/nav-direction.ts` 가 `data-nav` 를 붙인다).
+ *
+ * 새 화면은 옛 화면 **위에** 겹쳐서 흐리게 들어온다. 그래서 앞의 182ms 동안
+ * 화면에 주로 보이는 건 새 화면이 아니라 방금 떠난 화면이고, 돌아가는 길에는
+ * 그게 "이전 화면이 떴다가 툭 바뀌는" 깜빡임으로 읽힌다. 앞으로 갈 때는 새
+ * 내용이 도착하는 중이라 같은 겹침이 자연스럽다.
+ *
+ * 그래서 시간을 눈에 안 걸릴 만큼 줄이고, 새 화면이 아래에서 올라오는 동작도
+ * 뺀다. 뒤로 가기는 새로 오는 게 아니라 이미 봤던 자리로 돌아가는 것이다.
+ * 옛 화면은 그대로 불투명하게 버틴다 (둘 다 흐려지면 배경이 비친다).
+ */
+@keyframes view-enter-back {
+  from {
+    opacity: 0;
+  }
+}
+
+:root[data-nav='back']::view-transition-old(root) {
+  animation-duration: 130ms;
+}
+
+:root[data-nav='back']::view-transition-new(root) {
+  animation: view-enter-back 130ms var(--ease-out-soft) both;
+}
+
+/*
  * 모달 등장·퇴장.
  *
  * `display` 와 `overlay` 를 allow-discrete 로 전환하면 `dialog.close()` 만으로도

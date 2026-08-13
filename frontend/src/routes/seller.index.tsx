@@ -235,6 +235,10 @@ function SellerHomePage() {
           {/*
             검색·정렬·상태 필터. 상품이 아예 없으면 걸 조건도 없어서 숨긴다.
             규격은 상품 관리 화면에서 쓰던 툴바와 같다.
+
+            모바일은 검색이 한 줄을 다 쓰고 드롭다운 둘이 아랫줄을 나눠 갖는다.
+            셋을 한 줄에 두면 드롭다운이 고정 폭으로 자리를 먼저 가져가고 검색만
+            줄어들어, 폰 폭에서는 입력칸이 돋보기 아이콘만큼도 안 남는다.
           */}
           {!(
             !products.isPending &&
@@ -243,7 +247,7 @@ function SellerHomePage() {
             !filtered
           ) && (
             <div className="mt-4 flex shrink-0 flex-wrap items-center gap-3">
-              <div className="relative min-w-0 flex-1">
+              <div className="relative w-full min-w-0 md:w-auto md:flex-1">
                 <Search
                   aria-hidden
                   className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-neutral-muted"
@@ -266,7 +270,7 @@ function SellerHomePage() {
                   label: item.label,
                 }))}
                 onChange={changeFilter}
-                className="w-32 shrink-0 md:w-40"
+                className="min-w-0 flex-1 md:w-40 md:flex-none"
               />
 
               {/* 상태 필터와 같은 부품·같은 규격이다. 눌러서 목록에서 고른다. */}
@@ -278,7 +282,7 @@ function SellerHomePage() {
                   label: item.label,
                 }))}
                 onChange={changeSort}
-                className="w-32 shrink-0 md:w-40"
+                className="min-w-0 flex-1 md:w-40 md:flex-none"
               />
             </div>
           )}
@@ -347,12 +351,12 @@ function SellerHomePage() {
                         <Link
                           to="/seller/products/$productId"
                           params={{ productId: String(product.productId) }}
-                          className="ease-soft flex items-center gap-4 rounded-2xl border bg-card p-3.5 transition-all duration-150 active:scale-[0.99]"
+                          className="ease-soft flex items-center gap-3 rounded-2xl border bg-card p-3 transition-all duration-150 active:scale-[0.99]"
                         >
                           <ProductThumbnail
                             src={product.imageUrl}
-                            iconClassName="size-6"
-                            className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
+                            iconClassName="size-5"
+                            className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-500"
                           />
 
                           <span className="min-w-0 flex-1">

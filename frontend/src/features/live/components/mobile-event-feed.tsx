@@ -71,7 +71,13 @@ export function MobileEventFeed({
             className="h-full overflow-y-auto overscroll-contain pr-1"
           >
             {/* 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다 */}
-            <ul className="flex min-h-full flex-col justify-end gap-2">
+            {/* 새로 들어온 줄만 읽어준다 (`EventFeed` 와 같은 규칙) */}
+            <ul
+              aria-live="polite"
+              aria-relevant="additions"
+              aria-label="경매방 실시간 이벤트"
+              className="flex min-h-full flex-col justify-end gap-2"
+            >
               {ordered.map((event, index) => {
                 const tone = resolveEventTone(event)
 
