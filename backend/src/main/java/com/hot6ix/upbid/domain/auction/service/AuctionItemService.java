@@ -55,6 +55,8 @@ public class AuctionItemService {
     private final AuctionRoomRepository auctionRoomRepository;
     /** 공개 조회는 숫자 PK를 받지 않는다. 공유 코드를 방 ID로 바꾸는 통로가 이것 하나다. */
     private final AuctionRoomShareService auctionRoomShareService;
+    /** 물품 수와 방 상태가 공개 조회 응답에 들어 있어, 물품을 넣고 빼고 시작할 때 캐시를 버린다. */
+    private final AuctionRoomPublicCacheService auctionRoomPublicCacheService;
     private final ProductRepository productRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final DomainEventPublisher domainEventPublisher;
@@ -182,6 +184,8 @@ public class AuctionItemService {
         AuctionItem auctionItem = AuctionItem.from(auctionRoom, product, request);
         AuctionItem saved = auctionItemRepository.save(auctionItem);
 
+        auctionRoomPublicCacheService.evict(auctionRoom.getShareCode());
+
         domainEventPublisher.publish(ItemAdded.of(auctionRoomId, LocalDateTime.now(), 1));
 
         return AuctionItemDetailResponseDto.from(saved);
@@ -268,6 +272,8 @@ public class AuctionItemService {
                 .map(AuctionItemDetailResponseDto::from)
                 .toList();
 
+        auctionRoomPublicCacheService.evict(auctionRoom.getShareCode());
+
         // 물품마다 보내지 않는다. 구독자가 추가한 수만큼 목록을 다시 읽게 된다.
         domainEventPublisher.publish(ItemAdded.of(auctionRoomId, LocalDateTime.now(), added.size()));
 
@@ -314,6 +320,9 @@ public class AuctionItemService {
         }
 
         auctionItemRepository.delete(auctionItem);
+
+        // 물품 수가 줄어든다. 공유 코드는 물품에 매달린 방에서 꺼낸다 — 이 경로에는 방 엔티티가 없다.
+        auctionRoomPublicCacheService.evict(auctionItem.getAuctionRoom().getShareCode());
 
         domainEventPublisher.publish(ItemRemoved.of(auctionRoomId, auctionItemId, LocalDateTime.now()));
     }
@@ -370,8 +379,10 @@ public class AuctionItemService {
 
         auctionItem.start(request, LocalDateTime.now());
 
+        // 첫 물품이 시작되면 방이 BEFORE 에서 OPEN 으로 바뀐다. 공개 조회에 담긴 상태라 캐시를 버린다.
         if (auctionRoom.getStatus() == AuctionRoomStatus.BEFORE) {
             auctionRoom.open();
+            auctionRoomPublicCacheService.evict(auctionRoom.getShareCode());
         }
 
         // 리스너가 커밋 후에만 받으므로(DomainEventSseListener) 여기서 발행해도 롤백되면 나가지 않는다.

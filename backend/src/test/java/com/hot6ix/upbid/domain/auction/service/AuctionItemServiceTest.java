@@ -77,6 +77,10 @@ class AuctionItemServiceTest {
     @Mock
     private AuctionRoomShareService auctionRoomShareService;
 
+    /** 물품이 늘고 줄고 시작될 때 방 조회 캐시를 지운다. 여기서는 부르는지만 본다. */
+    @Mock
+    private AuctionRoomPublicCacheService auctionRoomPublicCacheService;
+
     @Mock
     private BidRepository bidRepository;
 

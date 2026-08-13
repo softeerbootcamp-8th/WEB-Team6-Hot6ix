@@ -55,6 +55,10 @@ class AuctionRoomCloseServiceTest {
     @Mock
     private AuctionItemCloseService auctionItemCloseService;
 
+    /** 종료로 방 상태가 바뀌므로 캐시를 지운다. */
+    @Mock
+    private AuctionRoomPublicCacheService auctionRoomPublicCacheService;
+
     @Mock
     private DomainEventPublisher domainEventPublisher;
 
