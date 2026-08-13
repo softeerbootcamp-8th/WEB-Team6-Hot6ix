@@ -79,7 +79,17 @@ export function EventFeed({ events }: { events: RoomEvent[] }) {
           </div>
         ) : (
           // 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다.
-          <ul className="flex min-h-full flex-col justify-end gap-2 p-2">
+          /*
+           * 새로 들어온 줄만 읽어준다. 스크린리더로는 입찰이 들어오는 걸 알
+           * 방법이 아예 없었다. `additions` 로 좁히지 않으면 줄 하나가 들어올
+           * 때마다 목록 전체를 다시 읽는다.
+           */
+          <ul
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-label="경매방 실시간 이벤트"
+            className="flex min-h-full flex-col justify-end gap-2 p-2"
+          >
             {ordered.map((event, index) => {
               const tone = resolveEventTone(event)
 
