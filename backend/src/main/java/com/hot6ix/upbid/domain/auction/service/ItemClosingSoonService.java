@@ -55,7 +55,7 @@ public class ItemClosingSoonService {
 
     /**
      * 알림 시각이 됐으면 {@code ItemClosingSoon}을 발행하고, <b>아직 안 됐으면 발행하지 않고 그
-     * 시각을 돌려준다.</b> {@code ItemClosingSoonScheduler}의 예약이 부른다.
+     * 시각을 돌려준다.</b> {@code ClosingSoonPoller}가 집어온 예약이 부른다.
      *
      * <p>예약은 제 시각에 깨지만 그 사이에 <b>Soft Close 연장이 커밋될 수 있다.</b> 그러면 알림
      * 시각도 함께 밀렸으므로 그대로 발행하면 "곧 마감"이라고 해놓고 실제로는 더 남은 상황이 된다.
@@ -64,9 +64,17 @@ public class ItemClosingSoonService {
      * <p>마감됐거나 제외된 물품은 여기서 걸러진다. 예약 취소가 커밋 뒤에 도는 탓에 이미 닫힌
      * 물품의 예약이 살아 있는 순간이 있는데, 그때도 알림이 나가지 않는다.
      *
+     * <p><b>발행하기 전에 {@code notified_at}으로 자리를 선점한다.</b> 서버가 여럿이라 같은
+     * 예약을 둘이 집을 수 있고, 그렇지 않더라도 가시성 타임아웃이 지나면 같은 예약이 다시
+     * 떠오른다. 선점에 실패하면 남이 이미 알렸다는 뜻이라 발행하지 않는다.
+     *
+     * <p>선점과 발행이 <b>한 트랜잭션</b>인 것이 중요하다. SSE 리스너가 커밋 후에 돌기 때문에,
+     * 롤백되면 기록도 알림도 없던 일이 되어 둘이 어긋나지 않는다.
+     *
      * @param auctionItemId 물품의 ID
      * @return 발행했거나 알릴 물품이 아니면 빈 값. <b>아직 알림 시각이 아니면 다시 예약할 시각</b>
      */
+    @Transactional
     public Optional<LocalDateTime> notifyIfDue(Long auctionItemId) {
 
         ClosingSoonItemProjection item = findNotifiable(auctionItemId);
@@ -81,6 +89,11 @@ public class ItemClosingSoonService {
         if (now.isBefore(notifyAt)) {
             log.info("마감이 연장돼 아직 알릴 때가 아니다: itemId={}, notifyAt={}", auctionItemId, notifyAt);
             return Optional.of(notifyAt);
+        }
+
+        if (auctionItemRepository.markNotified(auctionItemId, notifyAt, now) == 0) {
+            log.info("이미 알린 물품이라 건너뛴다: itemId={}, notifyAt={}", auctionItemId, notifyAt);
+            return Optional.empty();
         }
 
         domainEventPublisher.publish(ItemClosingSoon.of(item.auctionRoomId(), auctionItemId,

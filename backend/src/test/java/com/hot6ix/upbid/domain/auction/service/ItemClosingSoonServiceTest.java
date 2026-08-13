@@ -2,6 +2,8 @@ package com.hot6ix.upbid.domain.auction.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -101,6 +103,7 @@ class ItemClosingSoonServiceTest {
 
         LocalDateTime endAt = LocalDateTime.now().plusSeconds(30);
         givenItem(AuctionItemStatus.IN_PROGRESS, endAt, TRIGGER_SECONDS);
+        givenClaimSucceeds();
 
         Optional<LocalDateTime> rescheduleAt = itemClosingSoonService.notifyIfDue(ITEM_ID);
 
@@ -136,8 +139,67 @@ class ItemClosingSoonServiceTest {
         verify(domainEventPublisher, never()).publish(any(DomainEvent.class));
     }
 
+    @Test
+    @DisplayName("남이 먼저 알렸으면 발행하지 않는다")
+    void doesNotPublishWhenAlreadyNotified() {
+
+        LocalDateTime endAt = LocalDateTime.now().plusSeconds(30);
+        givenItem(AuctionItemStatus.IN_PROGRESS, endAt, TRIGGER_SECONDS);
+        when(auctionItemRepository.markNotified(anyLong(), any(), any())).thenReturn(0);
+
+        Optional<LocalDateTime> rescheduleAt = itemClosingSoonService.notifyIfDue(ITEM_ID);
+
+        // 두 서버가 같은 예약을 집었거나 미뤄 둔 예약이 다시 떠오른 경우다. 조건에 걸리는 것이
+        // 하나뿐이라 진 쪽은 0 을 받고 돌아간다.
+        verify(domainEventPublisher, never()).publish(any(DomainEvent.class));
+        assertThat(rescheduleAt).as("다시 걸 일도 아니다. 이미 나간 알림이다").isEmpty();
+    }
+
+    @Test
+    @DisplayName("이번에 알리려는 시각을 기준으로 자리를 잡는다")
+    void claimsWithCurrentNotifyAt() {
+
+        LocalDateTime endAt = LocalDateTime.now().plusSeconds(30);
+        givenItem(AuctionItemStatus.IN_PROGRESS, endAt, TRIGGER_SECONDS);
+        givenClaimSucceeds();
+
+        itemClosingSoonService.notifyIfDue(ITEM_ID);
+
+        // 연장으로 알림 시각이 밀리면 이 값도 같이 밀려야 지난번에 알린 시각과 비교가 된다.
+        verify(auctionItemRepository)
+                .markNotified(eq(ITEM_ID), eq(endAt.minusSeconds(TRIGGER_SECONDS)), any());
+    }
+
+    @Test
+    @DisplayName("아직 알릴 때가 아니면 자리를 잡지 않는다")
+    void doesNotClaimWhenNotDueYet() {
+
+        givenItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().plusMinutes(10), TRIGGER_SECONDS);
+
+        itemClosingSoonService.notifyIfDue(ITEM_ID);
+
+        // 여기서 잡아버리면 정작 알릴 때가 됐을 때 자기가 남긴 표시에 막힌다.
+        verify(auctionItemRepository, never()).markNotified(anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("알릴 물품이 아니면 자리를 잡지 않는다")
+    void doesNotClaimWhenNotNotifiable() {
+
+        givenItem(AuctionItemStatus.SOLD, LocalDateTime.now().plusSeconds(30), TRIGGER_SECONDS);
+
+        itemClosingSoonService.notifyIfDue(ITEM_ID);
+
+        verify(auctionItemRepository, never()).markNotified(anyLong(), any(), any());
+    }
+
     private void givenItem(AuctionItemStatus status, LocalDateTime endAt, Integer triggerSeconds) {
         when(auctionItemRepository.findClosingSoonView(ITEM_ID)).thenReturn(Optional.of(
                 new ClosingSoonItemProjection(ROOM_ID, ITEM_NAME, status, endAt, triggerSeconds)));
+    }
+
+    /** 자리를 잡는 데 성공한 쪽. 1 행이 바뀌었다는 뜻이다. */
+    private void givenClaimSucceeds() {
+        when(auctionItemRepository.markNotified(anyLong(), any(), any())).thenReturn(1);
     }
 }

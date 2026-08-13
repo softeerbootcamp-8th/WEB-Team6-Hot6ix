@@ -5,12 +5,14 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDt
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -177,6 +179,30 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
             + "join ai.auctionRoom ar "
             + "where ai.auctionItemId = :auctionItemId")
     Optional<ClosingSoonItemProjection> findClosingSoonView(@Param("auctionItemId") Long auctionItemId);
+
+    /**
+     * 마감 임박 알림이 나갈 자리를 선점한다. <b>이 한 문장이 중복 발송을 막는다.</b> 서버가
+     * 여럿이어도 조건에 걸리는 것은 하나뿐이라, 1을 돌려받은 쪽만 알림을 발행한다.
+     *
+     * <p>읽고 나서 판단해 쓰면 두 서버가 같은 값을 읽고 둘 다 통과한다. 조건을 UPDATE 안에
+     * 넣어야 판단과 기록이 갈라지지 않는다. 그래서 마감처럼 행 락을 잡지 않는다 — 알림은
+     * 입찰이 가장 몰리는 구간에서 도는데, 여기서 락을 잡으면 그 물품 입찰이 뒤에 밀린다.
+     *
+     * <p>{@code notifiedAt < notifyAt}까지 허용하는 것이 Soft Close 연장을 받아낸다. 연장되면
+     * 알림 시각도 함께 밀리므로, 지난번에 알린 시각이 새 알림 시각보다 앞이면 연장 구간을
+     * 벗어났다 다시 들어온 것이라 한 번 더 알려야 한다.
+     *
+     * @param notifyAt 이번에 알리려는 시각({@code endAt - softCloseTriggerSeconds}). 판정 기준
+     * @param now      실제로 알리는 시각. 기록으로 남는 값
+     * @return 선점했으면 1, 남이 이미 알렸으면 0
+     */
+    @Modifying
+    @Query("update AuctionItem ai set ai.notifiedAt = :now "
+            + "where ai.auctionItemId = :auctionItemId "
+            + "  and (ai.notifiedAt is null or ai.notifiedAt < :notifyAt)")
+    int markNotified(@Param("auctionItemId") Long auctionItemId,
+                     @Param("notifyAt") LocalDateTime notifyAt,
+                     @Param("now") LocalDateTime now);
 
     /**
      * 진행 중이면서 마감 시각이 정해진 물품을 전부 조회한다. 서버 기동 시 마감 예약을 다시

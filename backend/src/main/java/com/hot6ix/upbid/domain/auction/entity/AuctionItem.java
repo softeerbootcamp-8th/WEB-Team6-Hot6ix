@@ -88,6 +88,16 @@ public class AuctionItem extends BaseTimeEntity {
     @Column(name = "total_extension_seconds", nullable = false)
     private Integer totalExtensionSeconds;
 
+    /**
+     * 마감 임박 알림이 마지막으로 나간 시각. 아직 안 나갔으면 {@code null}이다.
+     *
+     * <p><b>여기서 값을 바꾸지 않는다.</b> 이 컬럼은 알림이 나갈 자리를 선점하는 데 쓰여서,
+     * {@code AuctionItemRepository.markNotified}가 조건부 UPDATE 한 문장으로 직접 고친다.
+     * 엔티티를 읽어 고치면 읽기와 쓰기 사이가 벌어져 두 서버가 같이 통과한다.
+     */
+    @Column(name = "notified_at")
+    private LocalDateTime notifiedAt;
+
     @Builder
     private AuctionItem(AuctionRoom auctionRoom, User leaderUser, Product product, Long startingPrice,
                         Long bidIncrement, AuctionItemStatus status, LocalDateTime startedAt,
