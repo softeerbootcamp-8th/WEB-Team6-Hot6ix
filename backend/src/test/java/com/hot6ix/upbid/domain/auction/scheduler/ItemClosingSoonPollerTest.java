@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.QueryTimeoutException;
@@ -71,7 +72,7 @@ class ItemClosingSoonPollerTest {
         itemClosingSoonPoller.pollAndNotify();
 
         // 안 지우면 미뤄 둔 시각에 다시 떠올라 한 번 더 집힌다.
-        verify(closingSoonDelayQueue).cancel(ITEM_ID);
+        verify(closingSoonDelayQueue).cancelIfDeferred(eq(ITEM_ID), any(), eq(VISIBILITY));
         verify(closingSoonDelayQueue, never()).schedule(anyLong(), any());
     }
 
@@ -88,7 +89,7 @@ class ItemClosingSoonPollerTest {
 
         // 집는 것과 거의 동시에 연장이 커밋된 경우다. 알리지 말고 새 시각에 다시 걸어야 한다.
         verify(closingSoonDelayQueue).schedule(ITEM_ID, extendedNotifyAt);
-        verify(closingSoonDelayQueue, never()).cancel(anyLong());
+        verify(closingSoonDelayQueue, never()).cancelIfDeferred(anyLong(), any(), any());
     }
 
     @Test
@@ -102,7 +103,7 @@ class ItemClosingSoonPollerTest {
         itemClosingSoonPoller.pollAndNotify();
 
         // 그대로 두면 미뤄 둔 시각에 다시 집혀 재시도된다.
-        verify(closingSoonDelayQueue, never()).cancel(anyLong());
+        verify(closingSoonDelayQueue, never()).cancelIfDeferred(anyLong(), any(), any());
         verify(closingSoonDelayQueue, never()).schedule(anyLong(), any());
     }
 
@@ -117,7 +118,24 @@ class ItemClosingSoonPollerTest {
 
         itemClosingSoonPoller.pollAndNotify();
 
-        verify(closingSoonDelayQueue).cancel(43L);
+        verify(closingSoonDelayQueue).cancelIfDeferred(eq(43L), any(), eq(VISIBILITY));
+    }
+
+    @Test
+    @DisplayName("지울 때 집을 때 넘긴 시각을 그대로 준다")
+    void cancelsWithTheSameInstantItClaimedWith() {
+
+        givenClaimed(ITEM_ID);
+        when(itemClosingSoonService.notifyIfDue(ITEM_ID)).thenReturn(Optional.empty());
+
+        itemClosingSoonPoller.pollAndNotify();
+
+        // 미뤄 둔 시각을 되짚어야 "그사이 아무도 안 건드렸다"를 판정할 수 있다. 다른 값을
+        // 주면 판정이 언제나 어긋나 예약이 안 지워지고 같은 알림이 계속 다시 집힌다.
+        ArgumentCaptor<LocalDateTime> claimedAt = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(closingSoonDelayQueue).claimDue(claimedAt.capture(), anyInt(), any());
+        verify(closingSoonDelayQueue)
+                .cancelIfDeferred(ITEM_ID, claimedAt.getValue(), VISIBILITY);
     }
 
     @Test

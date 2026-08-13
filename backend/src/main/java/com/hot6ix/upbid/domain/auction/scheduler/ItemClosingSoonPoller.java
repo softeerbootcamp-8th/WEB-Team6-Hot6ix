@@ -83,16 +83,18 @@ public class ItemClosingSoonPoller {
     public void pollAndNotify() {
 
         AuctionProperties.ClosingSoon closingSoon = auctionProperties.closingSoon();
+        LocalDateTime claimedAt = LocalDateTime.now();
 
         try {
             List<DueEntry> due = closingSoonDelayQueue.claimDue(
-                    LocalDateTime.now(), closingSoon.claimBatchSize(), closingSoon.visibilityTimeout());
+                    claimedAt, closingSoon.claimBatchSize(), closingSoon.visibilityTimeout());
 
             if (claimFailing.compareAndSet(true, false)) {
                 log.info("마감 임박 알림 예약 조회가 복구됐다");
             }
 
-            due.forEach(this::notifyClosingSoon);
+            due.forEach(entry ->
+                    notifyClosingSoon(entry, claimedAt, closingSoon.visibilityTimeout()));
         } catch (Exception e) {
             if (claimFailing.compareAndSet(false, true)) {
                 log.error("마감 임박 알림 예약을 못 읽는다. 복구될 때까지 알림이 나가지 않는다", e);
@@ -107,10 +109,15 @@ public class ItemClosingSoonPoller {
      * <p>그대로 두면 미뤄 둔 시각에 다시 집혀 재시도된다. 예약을 프로세스 메모리에 두던 때는
      * 실패한 알림이 그냥 사라졌는데, 그게 이번에 없어졌다.
      *
+     * <p><b>지울 때 무조건 지우지 않는다.</b> 발행하고 나서도 물품은 그대로 살아 있어서, 지우기
+     * 전까지 사이에 연장이 커밋되면 리스너가 새 알림 시각으로 예약을 걸어 둔다. 그것까지 지우면
+     * 다음 재동기화까지 그 알림이 안 나간다. 커밋 뒤 SSE 브로드캐스트가 이 스레드에서 그대로
+     * 도는 데다 알림 직후가 입찰이 가장 몰리는 구간이라, 그 사이가 좁지 않다.
+     *
      * <p>예외를 잡아 두는 것은 여기서 올라가면 <b>같은 배치의 나머지 물품이 통째로 안 나가기</b>
      * 때문이다.
      */
-    private void notifyClosingSoon(DueEntry entry) {
+    private void notifyClosingSoon(DueEntry entry, LocalDateTime claimedAt, Duration visibility) {
 
         Long auctionItemId = entry.id();
 
@@ -120,7 +127,8 @@ public class ItemClosingSoonPoller {
             itemClosingSoonService.notifyIfDue(auctionItemId)
                     .ifPresentOrElse(
                             rescheduleAt -> closingSoonDelayQueue.schedule(auctionItemId, rescheduleAt),
-                            () -> closingSoonDelayQueue.cancel(auctionItemId));
+                            () -> closingSoonDelayQueue
+                                    .cancelIfDeferred(auctionItemId, claimedAt, visibility));
         } catch (Exception e) {
             log.error("마감 임박 알림 실패. 미뤄 둔 시각에 다시 집힌다: itemId={}", auctionItemId, e);
         }
