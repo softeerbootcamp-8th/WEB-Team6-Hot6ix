@@ -205,18 +205,23 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
                      @Param("now") LocalDateTime now);
 
     /**
-     * 진행 중이면서 마감 시각이 정해진 물품을 전부 조회한다. 서버 기동 시 마감 예약을 다시
-     * 거는 {@code AuctionRecoveryRunner}가 쓴다.
+     * 진행 중이면서 마감 시각이 정해진 물품을 전부 조회한다. {@code AuctionRecoveryRunner}가
+     * <b>이 한 번의 조회로 마감 예약과 마감 임박 알림 예약을 함께 채운다.</b>
      *
      * <p>경매방으로 좁히지 않는 것이 이 쿼리의 요점이다. 프로세스가 죽으면 예약이 방을
      * 가리지 않고 전부 사라지므로 복구도 전부를 대상으로 해야 한다.
      *
      * <p>{@code endAt}이 null인 물품은 뺀다. 시작하면 반드시 채워지는 값이라 정상 경로에는
      * 없지만, 있더라도 예약을 걸 시각이 없어 어차피 아무것도 할 수 없다.
+     *
+     * <p>경매방을 조인하는 것은 <b>알림 시각이 {@code endAt - softCloseTriggerSeconds}</b>인데
+     * 트리거가 방에 있는 값이기 때문이다. {@code notifiedAt}까지 함께 읽어야 이미 알린 물품을
+     * 걸러낼 수 있다 — 안 읽으면 재동기화가 주기마다 끝난 알림을 다시 큐에 넣는다.
      */
     @Query("select new com.hot6ix.upbid.domain.auction.repository.InProgressAuctionItemProjection("
-            + "  ai.auctionItemId, ai.endAt) "
+            + "  ai.auctionItemId, ai.endAt, ar.softCloseTriggerSeconds, ai.notifiedAt) "
             + "from AuctionItem ai "
+            + "join ai.auctionRoom ar "
             + "where ai.status = :status and ai.endAt is not null "
             + "order by ai.endAt asc")
     List<InProgressAuctionItemProjection> findScheduleTargets(@Param("status") AuctionItemStatus status);
