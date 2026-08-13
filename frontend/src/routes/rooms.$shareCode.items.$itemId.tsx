@@ -268,10 +268,26 @@ function AuctionItemPage() {
   const minimum = item.currentPrice + item.bidUnit
   const [amount, setAmount] = useState(minimum)
 
-  // 상세가 도착하면 최소 입찰가로 다시 맞춘다. 자리값이 남아 있으면 안 된다.
+  /*
+   * 물품이 정해지거나 상세가 도착하면 최소 입찰가로 맞춘다. 자리값이 남아
+   * 있으면 안 된다. 입찰 단위는 상세 응답에만 있고 남의 입찰로는 바뀌지 않아서,
+   * 이 값이 바뀌었다는 건 상세가 방금 도착했다는 뜻이다.
+   */
   useEffect(() => {
     setAmount(item.currentPrice + item.bidUnit)
-  }, [item.currentPrice, item.bidUnit])
+    // 물품이 바뀌거나 입찰 단위가 확정될 때만 초기화한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, item.bidUnit])
+
+  /*
+   * 남이 입찰해서 최소가가 올라가면 입력 금액도 끌어올린다. 최소가 이상을 직접
+   * 적어둔 경우는 건드리지 않는다 — 올려 적은 금액을 남의 입찰 때문에 되돌리면
+   * 안 된다. 예전에는 현재가가 바뀔 때마다 최소가로 덮어써서, 5만 원을 적어둔
+   * 사이에 남이 입찰하면 입력값이 지워졌다.
+   */
+  useEffect(() => {
+    setAmount((prev) => (prev < minimum ? minimum : prev))
+  }, [minimum])
 
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
