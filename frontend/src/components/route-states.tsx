@@ -149,6 +149,8 @@ export function RouteError({
   error: Error
   reset: () => void
 }) {
+  const home = useHome()
+
   if (import.meta.env.DEV) console.error(error)
 
   return (
@@ -182,7 +184,7 @@ export function RouteError({
               size="field"
               className="text-neutral-tertiary"
             >
-              <Link to="/">처음으로</Link>
+              <Link to={home.to}>{home.label}</Link>
             </Button>
           </>
         }

@@ -13,10 +13,14 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -34,16 +38,30 @@ class SseEventBufferTest extends AbstractRedisContainerTest {
     private static final int BUFFER_SIZE = 3;
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-08-12T03:04:05Z"), ZoneOffset.UTC);
 
+    private static LettuceConnectionFactory connectionFactory;
+    private static StringRedisTemplate redisTemplate;
+
     private final JsonMapper objectMapper = JsonMapper.builder().build();
-    private final SseEventBuffer buffer = new SseEventBuffer(STRING_REDIS_TEMPLATE, objectMapper);
+    private final SseEventBuffer buffer = new SseEventBuffer(redisTemplate, objectMapper);
 
     private final SseEventPublisher publisher = new SseEventPublisher(
-            STRING_REDIS_TEMPLATE,
+            redisTemplate,
             RedisScript.of(new ClassPathResource("redis/sse-publish.lua"), Long.class),
             objectMapper,
             new SseProperties(0L, 0L, BUFFER_SIZE),
             new SseMetrics(new SimpleMeterRegistry()),
             CLOCK);
+
+    @BeforeAll
+    static void setUpRedis() {
+        connectionFactory = redisConnectionFactory();
+        redisTemplate = new StringRedisTemplate(connectionFactory);
+    }
+
+    @AfterAll
+    static void tearDownRedis() {
+        connectionFactory.destroy();
+    }
 
     @BeforeEach
     void clearRooms() {
@@ -190,7 +208,7 @@ class SseEventBufferTest extends AbstractRedisContainerTest {
         String body = objectMapper.writeValueAsString(
                 new SseEventMessage(roomId, "EVENT", "data", CLOCK.instant()));
 
-        STRING_REDIS_TEMPLATE.opsForZSet()
+        redisTemplate.opsForZSet()
                 .add(SseRedisKeys.events(roomId), SseEventEnvelope.encode(id, body), id);
     }
 }

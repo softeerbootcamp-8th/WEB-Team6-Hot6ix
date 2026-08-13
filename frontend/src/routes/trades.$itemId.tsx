@@ -813,7 +813,6 @@ function TradeDetailPage() {
                 page={page}
                 pageCount={Math.max(1, list.totalPages)}
                 onChange={setPage}
-                meta={`총 ${list.totalElements}명 · ${CANDIDATE_PAGE_SIZE}명씩`}
                 className="mt-auto pt-6"
               />
             </>

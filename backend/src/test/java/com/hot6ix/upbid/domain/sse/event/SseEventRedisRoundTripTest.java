@@ -28,6 +28,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
@@ -45,11 +47,13 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
     private static final int BUFFER_SIZE = 50;
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-08-12T03:04:05Z"), ZoneOffset.UTC);
 
+    private static LettuceConnectionFactory connectionFactory;
+    private static StringRedisTemplate redisTemplate;
     private static RedisMessageListenerContainer listenerContainer;
     private static ThreadPoolTaskExecutor dispatchExecutor;
 
     private final JsonMapper objectMapper = JsonMapper.builder().build();
-    private final SseEventBuffer sseEventBuffer = new SseEventBuffer(STRING_REDIS_TEMPLATE, objectMapper);
+    private final SseEventBuffer sseEventBuffer = new SseEventBuffer(redisTemplate, objectMapper);
 
     /** 인스턴스 두 대가 같은 채널을 구독한 상황을 흉내 낸다. */
     private final List<SseEventEnvelope> instanceA = new CopyOnWriteArrayList<>();
@@ -59,7 +63,10 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
     private MessageListener listenerB;
 
     @BeforeAll
-    static void startListenerContainer() {
+    static void setUpRedis() {
+        connectionFactory = redisConnectionFactory();
+        redisTemplate = new StringRedisTemplate(connectionFactory);
+
         // 운영 설정(SseRedisConfig)과 같은 단일 스레드 디스패치를 쓴다. 이걸 안 맞추면
         // 컨테이너가 메시지마다 새 스레드를 띄워서 순서 검증이 통과했다 말았다 한다.
         dispatchExecutor = new ThreadPoolTaskExecutor();
@@ -68,16 +75,17 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
         dispatchExecutor.afterPropertiesSet();
 
         listenerContainer = new RedisMessageListenerContainer();
-        listenerContainer.setConnectionFactory(CONNECTION_FACTORY);
+        listenerContainer.setConnectionFactory(connectionFactory);
         listenerContainer.setTaskExecutor(dispatchExecutor);
         listenerContainer.afterPropertiesSet();
         listenerContainer.start();
     }
 
     @AfterAll
-    static void stopListenerContainer() {
+    static void tearDownRedis() {
         listenerContainer.stop();
         dispatchExecutor.shutdown();
+        connectionFactory.destroy();
     }
 
     @BeforeEach
@@ -189,7 +197,7 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
         publisher.publish("ITEM_ENDED", ROOM_ID, new TestPayload(2_000L));
 
         // 이 버퍼는 발행자와 아무 상태도 공유하지 않는다. 방금 뜬 인스턴스와 같은 조건이다.
-        SseEventBuffer otherInstance = new SseEventBuffer(STRING_REDIS_TEMPLATE, objectMapper);
+        SseEventBuffer otherInstance = new SseEventBuffer(redisTemplate, objectMapper);
 
         List<BufferedEvent> missed = otherInstance.getEventsAfter(ROOM_ID, 1L);
 
@@ -218,7 +226,7 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
 
     private SseEventPublisher newPublisher() {
         return new SseEventPublisher(
-                STRING_REDIS_TEMPLATE,
+                redisTemplate,
                 RedisScript.of(new ClassPathResource("redis/sse-publish.lua"), Long.class),
                 objectMapper,
                 new SseProperties(0L, 0L, BUFFER_SIZE),
