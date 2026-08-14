@@ -10,7 +10,7 @@ import {
 import { SoftCloseFlashOverlay } from '@/features/live/components/soft-close-flash-overlay'
 import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
 
-import { formatRemaining, formatWon } from '@/lib/format'
+import { formatCountdown, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { cn } from '@/lib/utils'
 import type { AuctionItemDetail } from '@/mocks/types'
@@ -139,7 +139,7 @@ export function LiveItemCard({
                 )}
               >
                 <Clock aria-hidden className="size-[13px]" />
-                {formatRemaining(remaining)}
+                {formatCountdown(remaining)}
               </span>
             )}
           </span>

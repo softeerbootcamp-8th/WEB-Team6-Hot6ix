@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.scheduler;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.util.concurrent.TimeUnit;
@@ -62,6 +63,21 @@ public class AuctionCloseMetrics {
         this.closeDurationRescheduled = registry.timer(DURATION, "result", "rescheduled");
         this.lockWait = registry.timer("upbid.auction.close.lock.wait");
         this.lockHold = registry.timer("upbid.auction.close.lock.hold");
+    }
+
+    /**
+     * 실행 시각이 지났는데 아직 처리되지 않은 예약 수를 게이지로 내보낸다.
+     *
+     * <p><b>{@link #recordCloseDelay}만으로는 마감이 밀리는 것을 못 본다.</b> 예약을 주기적으로
+     * 훑어 집는 방식이라 그 주기가 지연의 바닥으로 깔려서, 밀려도 값이 크게 안 움직인다.
+     * 이 값이 0에서 안 내려오면 처리가 못 따라간다는 뜻이다.
+     *
+     * @param backlogSize 스크랩할 때마다 불린다. Redis를 못 읽으면 {@code -1}을 준다
+     */
+    public void bindBacklog(Supplier<Number> backlogSize) {
+        Gauge.builder("upbid.auction.close.backlog", backlogSize)
+                .description("실행 시각이 지났는데 아직 처리되지 않은 마감 예약 수")
+                .register(registry);
     }
 
     /**

@@ -125,7 +125,13 @@ export function ItemEventList({ events }: { events: RoomEvent[] }) {
             className="h-full overflow-y-auto border-t pt-2"
           >
             {/* 아래에서부터 쌓이도록 위쪽 여백을 자동으로 밀어낸다 */}
-            <ul className="flex min-h-full flex-col justify-end gap-4">
+            {/* 새로 들어온 줄만 읽어준다 (`EventFeed` 와 같은 규칙) */}
+            <ul
+              aria-live="polite"
+              aria-relevant="additions"
+              aria-label="이 물품의 경매방 이벤트"
+              className="flex min-h-full flex-col justify-end gap-4"
+            >
               {byTimeAsc(events).map((event, index) => {
                 const style = resolveStyle(event)
                 return (

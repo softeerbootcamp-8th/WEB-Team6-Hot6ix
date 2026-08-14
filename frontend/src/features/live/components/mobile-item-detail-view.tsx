@@ -1,4 +1,4 @@
-import { ChevronLeft, Loader2, Pencil } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, Loader2, Pencil } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
@@ -38,6 +38,7 @@ export function MobileItemDetailView({
   feedback,
   onBack,
   onBid,
+  onConfirmingChange,
 }: {
   item: AuctionItemDetail
   sellerName: string
@@ -60,14 +61,38 @@ export function MobileItemDetailView({
   feedback: { tone: 'success' | 'error'; message: string } | null
   onBack: () => void
   onBid: () => void
+  /**
+   * 확인 화면에 들어갔는지 알린다. 금액을 들고 있는 쪽이 그동안 자동 상향을
+   * 멈춰야 해서 위로 올려 보낸다.
+   */
+  onConfirmingChange?: (confirming: boolean) => void
 }) {
   const [tab, setTab] = useState<'events' | 'leaderboard'>('events')
   const [confirming, setConfirming] = useState(false)
+  /** 확인 화면을 열 때의 현재가. 그 뒤로 올랐으면 알린다. */
+  const [priceAtConfirm, setPriceAtConfirm] = useState<number | null>(null)
 
   // 입찰 요청이 끝나면(성공·실패 모두) 확인 화면을 닫는다.
   useEffect(() => {
-    if (!pending) setConfirming(false)
+    if (pending) return
+    setConfirming(false)
+    setPriceAtConfirm(null)
   }, [pending])
+
+  /*
+   * 확인 중인지 위로 알린다. 화면을 떠날 때도 꺼진 것으로 알려야 자동 상향이
+   * 멈춘 채로 남지 않는다.
+   */
+  useEffect(() => {
+    onConfirmingChange?.(confirming)
+    return () => onConfirmingChange?.(false)
+  }, [confirming, onConfirmingChange])
+
+  /*
+   * 확인하는 사이에 남이 더 올렸다. 확정 버튼은 잠그지 않는다
+   * (`QuickBidOverlay`·`ItemDetailPanel` 과 같은 규칙).
+   */
+  const outbid = priceAtConfirm !== null && item.currentPrice > priceAtConfirm
 
   /** 지금 금액을 조절할 수 있는 상태인지 */
   const biddable = !closed && !ready && onAmountChange !== undefined
@@ -154,7 +179,13 @@ export function MobileItemDetailView({
                   ? '마감됨'
                   : ready
                     ? '시작 전'
-                    : `남은 시간 ${formatRemaining(remaining)}`}
+                    : /*
+                       * 0 초에서는 "남은 시간" 을 떼고 상태만 적는다.
+                       * "남은 시간 마감 처리 중" 은 읽히지 않는다.
+                       */
+                      remaining <= 0
+                      ? '마감 처리 중'
+                      : `남은 시간 ${formatRemaining(remaining)}`}
               </span>
               <span className="text-[10px] font-semibold tabular-nums text-neutral-tertiary">
                 입찰 단위 +{item.bidUnit.toLocaleString('ko-KR')}원
@@ -372,16 +403,36 @@ export function MobileItemDetailView({
           {confirming && (
             /* 확인 화면 — 금액을 보여주고 확정/취소를 고른다 */
             <div className="mb-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3.5">
+              {outbid && (
+                <p
+                  role="alert"
+                  className="mb-2.5 flex items-start justify-center gap-1.5 text-[12px] font-bold text-live"
+                >
+                  <AlertTriangle
+                    aria-hidden
+                    className="mt-px size-3.5 shrink-0"
+                  />
+                  현재가가 {formatWon(item.currentPrice)}으로 올랐어요
+                </p>
+              )}
+
               <p className="text-center text-[12px] font-semibold text-brand-600">
                 입찰 금액
               </p>
               <p className="mt-1 text-center text-[26px] font-extrabold tabular-nums text-brand-600">
                 {formatWon(amount)}
               </p>
-              <p className="mt-1 text-center text-[12px] font-semibold tabular-nums text-brand-500">
-                현재가보다 +
-                {(amount - item.currentPrice).toLocaleString('ko-KR')}원
-              </p>
+              {/* 현재가보다 낮아진 금액에 `+` 를 붙이면 더 쓴 것처럼 읽힌다. */}
+              {amount > item.currentPrice ? (
+                <p className="mt-1 text-center text-[12px] font-semibold tabular-nums text-brand-500">
+                  현재가보다 +
+                  {(amount - item.currentPrice).toLocaleString('ko-KR')}원
+                </p>
+              ) : (
+                <p className="mt-1 text-center text-[12px] font-semibold text-live">
+                  현재가보다 낮아요
+                </p>
+              )}
               <p className="mt-1 text-center text-[11px] font-medium text-neutral-muted">
                 확인하면 즉시 입찰에 반영됩니다.
               </p>
@@ -393,7 +444,10 @@ export function MobileItemDetailView({
               <button
                 type="button"
                 disabled={pending}
-                onClick={() => setConfirming(false)}
+                onClick={() => {
+                  setConfirming(false)
+                  setPriceAtConfirm(null)
+                }}
                 className="ease-soft flex h-13 flex-1 items-center justify-center rounded-[14px] border bg-card text-[15px] font-bold text-neutral-secondary transition-all duration-150 active:scale-[0.99] disabled:opacity-50"
               >
                 취소
@@ -413,7 +467,14 @@ export function MobileItemDetailView({
           ) : (
             <button
               type="button"
-              onClick={biddable ? () => setConfirming(true) : undefined}
+              onClick={
+                biddable
+                  ? () => {
+                      setPriceAtConfirm(item.currentPrice)
+                      setConfirming(true)
+                    }
+                  : undefined
+              }
               disabled={bidBlocked || pending}
               className="ease-soft mt-3 flex h-13 w-full items-center justify-center gap-2 rounded-[14px] bg-brand-500 text-[16px] font-bold text-white transition-all duration-150 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-border-strong disabled:opacity-100 disabled:active:scale-100"
             >

@@ -9,6 +9,7 @@ import {
   RoutePending,
 } from '@/components/route-states'
 import { queryClient } from '@/lib/query-client'
+import { trackNavDirection } from '@/lib/nav-direction'
 import { useDevTools } from '@/lib/dev-tools'
 import { routeTree } from './routeTree.gen'
 import './styles/globals.css'
@@ -29,6 +30,9 @@ const router = createRouter({
   /*
    * 화면 전환에 View Transitions API 를 쓴다. 곡선·시간은 globals.css 의
    * `::view-transition-*` 규칙에 있다. 미지원 브라우저는 그냥 즉시 전환된다.
+   *
+   * 앞으로 갈 때와 뒤로 갈 때는 연출이 다르다. 방향 표시는 아래
+   * `trackNavDirection` 이 붙인다.
    */
   defaultViewTransition: true,
 
@@ -43,6 +47,9 @@ const router = createRouter({
   defaultPendingMs: 300,
   defaultPendingMinMs: 400,
 })
+
+// 뒤로 가는 중이면 `<html data-nav="back">` 이 붙는다. 앱이 사는 동안 계속 듣는다.
+trackNavDirection(router)
 
 // 타입 안전성을 위한 라우터 등록
 declare module '@tanstack/react-router' {

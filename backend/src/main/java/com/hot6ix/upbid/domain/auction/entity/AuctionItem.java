@@ -88,6 +88,19 @@ public class AuctionItem extends BaseTimeEntity {
     @Column(name = "total_extension_seconds", nullable = false)
     private Integer totalExtensionSeconds;
 
+    /**
+     * 마감 임박 알림이 마지막으로 나간 시각. 아직 안 나갔으면 {@code null}이다.
+     *
+     * <p><b>알림을 실제로 발행하는 경로에서는 여기서 값을 바꾸지 않는다.</b>
+     * {@code AuctionItemRepository.markNotified}가 조건부 UPDATE 한 문장으로 고친다. 엔티티를
+     * 읽어 고치면 읽기와 쓰기 사이가 벌어져 두 서버가 같이 통과하기 때문이다.
+     *
+     * <p>{@link #closeEarly}만 예외다. 그쪽은 <b>물품 행 락을 잡은 채</b> 불리므로 그 틈이
+     * 없다.
+     */
+    @Column(name = "notified_at")
+    private LocalDateTime notifiedAt;
+
     @Builder
     private AuctionItem(AuctionRoom auctionRoom, User leaderUser, Product product, Long startingPrice,
                         Long bidIncrement, AuctionItemStatus status, LocalDateTime startedAt,
@@ -167,6 +180,15 @@ public class AuctionItem extends BaseTimeEntity {
      * 마감이 언제였는지를 남기는 값이라 앞당겼다고 달라지지 않고, 뒤는 연장 누적이라 앞당기기가
      * 더할 것이 없다.
      *
+     * <p><b>{@code notifiedAt}에 지금을 찍는다. 앞당기기를 "이미 알린 것"으로 치는 것이다.</b>
+     * 앞당긴 뒤의 알림 시각({@code endAt - 트리거})은 정확히 지금이라 이미 지난 시각이고, 남은
+     * 초는 앞당김 이벤트가 화면에 직접 알리므로 알림이 따로 나갈 이유가 없다. 찍지 않으면
+     * {@code AuctionRecoveryRunner}가 "알림 예약이 빠졌다"고 보고 되살려서, <b>트리거만큼 남은
+     * 물품에 "마감 N초 전"이 뒤늦게 나간다</b>(#290).
+     *
+     * <p>그러고도 <b>연장 재발송은 그대로 산다.</b> 앞당긴 뒤 입찰이 들어와 마감이 밀리면 알림
+     * 시각도 함께 밀려서 여기 찍은 값보다 뒤가 되고, 그러면 다시 알린다.
+     *
      * <p>연장이 {@code endAt}을 바꾸는 다른 경로와 마찬가지로 <b>물품 행 락을 잡은 채</b>
      * 불러야 하고, 호출한 쪽은 걸어둔 마감 예약을 새 시각으로 갈아 끼워야 한다.
      *
@@ -186,6 +208,7 @@ public class AuctionItem extends BaseTimeEntity {
         }
 
         this.endAt = advancedEndAt;
+        this.notifiedAt = now;
 
         return true;
     }

@@ -33,10 +33,17 @@ services:
       - SPRING_DATASOURCE_USERNAME=${RDS_USERNAME}
       - SPRING_DATASOURCE_PASSWORD=${RDS_PASSWORD}
       - SPRING_PROFILES_ACTIVE=prod
-      # Redis (ElastiCache 등 외부 관리형) — 연결 환경만 구축한 상태다 (#277).
-      # 프로비저닝과 REDIS_ENDPOINT/REDIS_PASSWORD 시크릿 생성은 인프라 담당자 몫이다.
-      # 값이 없으면 REDIS_HOST가 빈 문자열이 되는데, 아직 Redis를 쓰는 코드가 없어
-      # 연결 시도 자체가 없으므로 배포는 그대로 동작한다.
+      # Redis (ElastiCache 등 외부 관리형). 연결만 깔아둔 상태였다가(#277) 지금은 실제로 쓴다.
+      #
+      #   - 분산 락 (ShedLock, #286)
+      #   - 물품 마감 예약 (#289)
+      #
+      # **REDIS_ENDPOINT 가 비면 마감이 멈춘다.** 예약이 Redis 에만 있어서, 빈 호스트로는
+      # 붙지 못해 마감 시각이 지난 물품이 계속 진행중으로 남는다. 앱은 그래도 뜨고 다른 API 는
+      # 멀쩡해서 조용히 그렇게 된다. DB 가 원본이라 데이터가 깨지지는 않고, Redis 가 돌아오면
+      # 재동기화가 예약을 다시 채운다.
+      #
+      # 배포 전에 값이 들어갔는지 확인한다: gh secret list | grep REDIS
       - REDIS_HOST=${REDIS_ENDPOINT:-}
       - REDIS_PORT=${REDIS_PORT:-6379}
       - REDIS_PASSWORD=${REDIS_PASSWORD:-}
@@ -51,6 +58,21 @@ services:
       - PERF_RUN_ID=${PERF_RUN_ID:-unknown}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - SCHEDULER_POOL_SIZE=${SCHEDULER_POOL_SIZE:-4}
+      # 마감 예약을 Redis 에서 꺼내 실행하는 값들 (#289). 기본값은 application.yaml 과 같다.
+      #
+      # 여기와 CICD-BE.yml 의 .env 생성 블록 양쪽에 다 있어야 실제로 먹는다. compose 에만
+      # 넣으면 .env 에 키가 없어 언제나 기본값이고, .env 에만 넣으면 컨테이너로 전달이 안 된다.
+      - CLOSE_POLL_INTERVAL_MS=${CLOSE_POLL_INTERVAL_MS:-100}
+      - CLOSE_CLAIM_BATCH_SIZE=${CLOSE_CLAIM_BATCH_SIZE:-50}
+      - CLOSE_VISIBILITY_TIMEOUT=${CLOSE_VISIBILITY_TIMEOUT:-30s}
+      - CLOSE_WORKER_POOL_SIZE=${CLOSE_WORKER_POOL_SIZE:-4}
+      - CLOSE_QUEUE_CAPACITY=${CLOSE_QUEUE_CAPACITY:-50}
+      - CLOSE_RESYNC_INTERVAL_MS=${CLOSE_RESYNC_INTERVAL_MS:-60000}
+      # 마감 임박 알림 예약을 꺼내 실행하는 값들 (#290). 마감과 따로 두는 것은 알림 한 건이
+      # 훨씬 가벼워서 같은 값으로 맞출 이유가 없고, 한쪽만 조여 볼 수 있게 하려는 것이다.
+      - CLOSING_SOON_POLL_INTERVAL_MS=${CLOSING_SOON_POLL_INTERVAL_MS:-500}
+      - CLOSING_SOON_CLAIM_BATCH_SIZE=${CLOSING_SOON_CLAIM_BATCH_SIZE:-50}
+      - CLOSING_SOON_VISIBILITY_TIMEOUT=${CLOSING_SOON_VISIBILITY_TIMEOUT:-10s}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - APP_LOG_LEVEL=${APP_LOG_LEVEL:-info}
       - SSE_HEARTBEAT_MS=${SSE_HEARTBEAT_MS:-30000}

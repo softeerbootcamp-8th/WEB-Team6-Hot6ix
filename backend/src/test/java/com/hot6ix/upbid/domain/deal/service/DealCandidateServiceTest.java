@@ -33,6 +33,7 @@ import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.WinnerDecided;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -44,6 +45,7 @@ import org.mockito.Captor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -67,6 +69,15 @@ class DealCandidateServiceTest {
 
     @Mock
     private DomainEventPublisher domainEventPublisher;
+
+    /**
+     * mock 이 아니라 진짜를 쓴다. mock 이면 {@code recordCandidateInsert} 가 supplier 를 안
+     * 부르고 null 을 돌려줘서, 계측을 붙였다는 이유만으로 낙찰 로직이 통째로 안 돈다.
+     */
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
+    @Spy
+    private DealMetrics dealMetrics = new DealMetrics(meterRegistry);
 
     @InjectMocks
     private DealCandidateService dealCandidateService;
@@ -164,6 +175,32 @@ class DealCandidateServiceTest {
         assertThat(published.dealCandidateId()).isEqualTo(101L);
         assertThat(published.candidateRank()).isEqualTo(1);
         assertThat(published.bidAmount()).isEqualTo(15_000L);
+    }
+
+    @Test
+    @DisplayName("후보 삽입 쿼리만 따로 재는 타이머에 실행이 한 건 남는다")
+    void awardRecordsCandidateInsertTimer() {
+
+        givenLockedItem();
+        when(dealCandidateRepository.insertCandidatesFromBids(ITEM_ID)).thenReturn(3);
+        givenCurrentWinner(candidate(101L, 1, 15_000L, DealCandidateStatus.WAITING));
+
+        dealCandidateService.award(itemEnded());
+
+        // 트랜잭션 전체를 재는 upbid.deal.award 와 달리 이 쿼리 하나만 잡혀야 한다.
+        assertThat(meterRegistry.timer("upbid.deal.candidate.insert").count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("후보가 이미 있으면 삽입 쿼리를 부르지 않으므로 타이머도 안 움직인다")
+    void awardDoesNotRecordCandidateInsertWhenAlreadyAwarded() {
+
+        givenLockedItem();
+        when(dealCandidateRepository.existsCandidate(ITEM_ID)).thenReturn(true);
+
+        dealCandidateService.award(itemEnded());
+
+        assertThat(meterRegistry.timer("upbid.deal.candidate.insert").count()).isZero();
     }
 
     @Test
