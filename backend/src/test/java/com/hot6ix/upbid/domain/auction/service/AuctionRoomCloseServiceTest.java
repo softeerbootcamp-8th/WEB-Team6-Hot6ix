@@ -3,8 +3,6 @@ package com.hot6ix.upbid.domain.auction.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,13 +22,12 @@ import com.hot6ix.upbid.global.event.DomainEvent;
 import com.hot6ix.upbid.global.event.payload.RoomClosed;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -53,144 +50,132 @@ class AuctionRoomCloseServiceTest {
     private SellerProfileRepository sellerProfileRepository;
 
     @Mock
-    private AuctionItemCloseService auctionItemCloseService;
-
-    @Mock
     private DomainEventPublisher domainEventPublisher;
 
     @InjectMocks
     private AuctionRoomCloseService auctionRoomCloseService;
 
-    @Test
-    @DisplayName("방을 종료하면 상태가 CLOSED가 되고 종료 시각이 남는다")
-    void close() {
+    @Nested
+    @DisplayName("판매자가 직접 종료할 때")
+    class Close {
 
-        givenActiveSellerProfile();
-        givenOwnedRoom();
-        AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.OPEN);
-        givenInProgressItems();
+        @Test
+        @DisplayName("방을 종료하면 상태가 CLOSED가 되고 종료 시각이 남는다")
+        void close() {
 
-        AuctionRoomPublicResponseDto response = auctionRoomCloseService.close(USER_ID, ROOM_ID);
+            givenActiveSellerProfile();
+            givenOwnedRoom();
+            AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.OPEN);
+            givenInProgressCount(0);
 
-        assertThat(auctionRoom.getStatus()).isEqualTo(AuctionRoomStatus.CLOSED);
-        assertThat(auctionRoom.getClosedAt()).isNotNull();
-        assertThat(response.status()).isEqualTo(AuctionRoomStatus.CLOSED);
-        assertThat(response.closedAt())
-                .as("종료 화면이 '종료 {날짜}'를 그리는 값이라 응답에 실려야 한다")
-                .isEqualTo(auctionRoom.getClosedAt());
-    }
+            AuctionRoomPublicResponseDto response = auctionRoomCloseService.close(USER_ID, ROOM_ID);
 
-    @Test
-    @DisplayName("진행 중인 물품을 ID 오름차순으로 모두 마감한 뒤 방을 닫는다")
-    void closesInProgressItemsInIdOrder() {
+            assertThat(auctionRoom.getStatus()).isEqualTo(AuctionRoomStatus.CLOSED);
+            assertThat(auctionRoom.getClosedAt()).isNotNull();
+            assertThat(response.status()).isEqualTo(AuctionRoomStatus.CLOSED);
+            assertThat(response.closedAt())
+                    .as("종료 화면이 '종료 {날짜}'를 그리는 값이라 응답에 실려야 한다")
+                    .isEqualTo(auctionRoom.getClosedAt());
+        }
 
-        givenActiveSellerProfile();
-        givenOwnedRoom();
-        givenLockedRoom(AuctionRoomStatus.OPEN);
-        givenInProgressItems(31L, 32L, 33L);
+        @Test
+        @DisplayName("진행 중인 물품이 남아 있으면 종료를 거절한다")
+        void rejectsRoomWithInProgressItem() {
 
-        auctionRoomCloseService.close(USER_ID, ROOM_ID);
+            givenActiveSellerProfile();
+            givenOwnedRoom();
+            AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.OPEN);
+            givenInProgressCount(1);
 
-        InOrder inOrder = inOrder(auctionItemCloseService, auctionRoomRepository);
-        inOrder.verify(auctionItemCloseService).close(31L);
-        inOrder.verify(auctionItemCloseService).close(32L);
-        inOrder.verify(auctionItemCloseService).close(33L);
-        inOrder.verify(auctionRoomRepository).findByIdForUpdate(ROOM_ID);
-    }
+            assertThatThrownBy(() -> auctionRoomCloseService.close(USER_ID, ROOM_ID))
+                    .isInstanceOf(ApplicationException.class)
+                    .hasFieldOrPropertyWithValue("errorType",
+                            AuctionErrorType.AUCTION_ROOM_HAS_IN_PROGRESS_ITEM);
 
-    @Test
-    @DisplayName("아직 시작하지 않은 물품은 마감 대상이 아니다")
-    void doesNotTouchReadyItems() {
+            assertThat(auctionRoom.getStatus())
+                    .as("입찰이 붙어 있는 경매가 종료 요청 하나로 사라지면 안 된다")
+                    .isEqualTo(AuctionRoomStatus.OPEN);
+            verify(domainEventPublisher, never()).publish(any());
+        }
 
-        givenActiveSellerProfile();
-        givenOwnedRoom();
-        givenLockedRoom(AuctionRoomStatus.BEFORE);
-        givenInProgressItems();
+        @Test
+        @DisplayName("물품을 하나도 시작하지 않은 방(BEFORE)도 종료할 수 있다")
+        void closesRoomBeforeAnyItemStarted() {
 
-        auctionRoomCloseService.close(USER_ID, ROOM_ID);
+            givenActiveSellerProfile();
+            givenOwnedRoom();
+            AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.BEFORE);
+            givenInProgressCount(0);
 
-        verify(auctionItemRepository).findIdsByRoomAndStatus(ROOM_ID, AuctionItemStatus.IN_PROGRESS);
-        verify(auctionItemCloseService, never()).close(anyLong());
-    }
+            auctionRoomCloseService.close(USER_ID, ROOM_ID);
 
-    @Test
-    @DisplayName("물품을 하나도 시작하지 않은 방(BEFORE)도 종료할 수 있다")
-    void closesRoomBeforeAnyItemStarted() {
+            assertThat(auctionRoom.getStatus())
+                    .as("쓰다 만 방을 정리할 수단이라 시작 전에도 닫을 수 있어야 한다")
+                    .isEqualTo(AuctionRoomStatus.CLOSED);
+        }
 
-        givenActiveSellerProfile();
-        givenOwnedRoom();
-        AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.BEFORE);
-        givenInProgressItems();
+        @Test
+        @DisplayName("종료하면 RoomClosed가 발행된다")
+        void publishesRoomClosed() {
 
-        auctionRoomCloseService.close(USER_ID, ROOM_ID);
+            givenActiveSellerProfile();
+            givenOwnedRoom();
+            AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.OPEN);
+            givenInProgressCount(0);
 
-        assertThat(auctionRoom.getStatus())
-                .as("쓰다 만 방을 정리할 수단이라 시작 전에도 닫을 수 있어야 한다")
-                .isEqualTo(AuctionRoomStatus.CLOSED);
-    }
+            auctionRoomCloseService.close(USER_ID, ROOM_ID);
 
-    @Test
-    @DisplayName("종료하면 RoomClosed가 발행된다")
-    void publishesRoomClosed() {
+            assertThat(publishedEvent()).isInstanceOfSatisfying(RoomClosed.class, event -> {
+                assertThat(event.roomId()).isEqualTo(ROOM_ID);
+                assertThat(event.roomTitle()).isEqualTo("승민의 경매방");
+                assertThat(event.occurredAt()).isEqualTo(auctionRoom.getClosedAt());
+            });
+        }
 
-        givenActiveSellerProfile();
-        givenOwnedRoom();
-        AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.OPEN);
-        givenInProgressItems();
+        @Test
+        @DisplayName("이미 종료된 방은 다시 종료되지 않는다")
+        void rejectsAlreadyClosedRoom() {
 
-        auctionRoomCloseService.close(USER_ID, ROOM_ID);
+            givenActiveSellerProfile();
+            givenOwnedRoom();
+            AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.CLOSED);
 
-        assertThat(publishedEvent()).isInstanceOfSatisfying(RoomClosed.class, event -> {
-            assertThat(event.roomId()).isEqualTo(ROOM_ID);
-            assertThat(event.roomTitle()).isEqualTo("승민의 경매방");
-            assertThat(event.occurredAt()).isEqualTo(auctionRoom.getClosedAt());
-        });
-    }
+            assertThatThrownBy(() -> auctionRoomCloseService.close(USER_ID, ROOM_ID))
+                    .isInstanceOf(ApplicationException.class)
+                    .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_CLOSED);
 
-    @Test
-    @DisplayName("이미 종료된 방은 다시 종료되지 않는다")
-    void rejectsAlreadyClosedRoom() {
+            assertThat(auctionRoom.getClosedAt())
+                    .as("두 번째 종료가 첫 종료 시각을 덮어쓰면 안 된다")
+                    .isNull();
+            verify(domainEventPublisher, never()).publish(any());
+        }
 
-        givenActiveSellerProfile();
-        givenOwnedRoom();
-        AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.CLOSED);
-        givenInProgressItems();
+        @Test
+        @DisplayName("남의 방이거나 없는 방이면 방을 잠그기 전에 거절한다")
+        void rejectsRoomNotOwned() {
 
-        assertThatThrownBy(() -> auctionRoomCloseService.close(USER_ID, ROOM_ID))
-                .isInstanceOf(ApplicationException.class)
-                .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_CLOSED);
+            givenActiveSellerProfile();
+            when(auctionRoomRepository.existsByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
+                    ROOM_ID, SELLER_PROFILE_ID)).thenReturn(false);
 
-        assertThat(auctionRoom.getClosedAt())
-                .as("두 번째 종료가 첫 종료 시각을 덮어쓰면 안 된다")
-                .isNull();
-        verify(domainEventPublisher, never()).publish(any());
-    }
+            assertThatThrownBy(() -> auctionRoomCloseService.close(USER_ID, ROOM_ID))
+                    .isInstanceOf(ApplicationException.class)
+                    .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
 
-    @Test
-    @DisplayName("남의 방이거나 없는 방이면 물품을 건드리기 전에 거절한다")
-    void rejectsRoomNotOwned() {
+            verify(auctionRoomRepository, never()).findByIdForUpdate(ROOM_ID);
+        }
 
-        givenActiveSellerProfile();
-        when(auctionRoomRepository.existsByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-                ROOM_ID, SELLER_PROFILE_ID)).thenReturn(false);
+        @Test
+        @DisplayName("판매자 프로필이 없으면 종료할 수 없다")
+        void rejectsMissingSellerProfile() {
 
-        assertThatThrownBy(() -> auctionRoomCloseService.close(USER_ID, ROOM_ID))
-                .isInstanceOf(ApplicationException.class)
-                .hasFieldOrPropertyWithValue("errorType", AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+            when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
+                    .thenReturn(Optional.empty());
 
-        verify(auctionItemCloseService, never()).close(anyLong());
-    }
-
-    @Test
-    @DisplayName("판매자 프로필이 없으면 종료할 수 없다")
-    void rejectsMissingSellerProfile() {
-
-        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
-                .thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> auctionRoomCloseService.close(USER_ID, ROOM_ID))
-                .isInstanceOf(ApplicationException.class)
-                .hasFieldOrPropertyWithValue("errorType", SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+            assertThatThrownBy(() -> auctionRoomCloseService.close(USER_ID, ROOM_ID))
+                    .isInstanceOf(ApplicationException.class)
+                    .hasFieldOrPropertyWithValue("errorType", SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+        }
     }
 
     private DomainEvent publishedEvent() {
@@ -215,9 +200,9 @@ class AuctionRoomCloseServiceTest {
         return auctionRoom;
     }
 
-    private void givenInProgressItems(Long... auctionItemIds) {
-        when(auctionItemRepository.findIdsByRoomAndStatus(ROOM_ID, AuctionItemStatus.IN_PROGRESS))
-                .thenReturn(List.of(auctionItemIds));
+    private void givenInProgressCount(long count) {
+        when(auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
+                ROOM_ID, AuctionItemStatus.IN_PROGRESS)).thenReturn(count);
     }
 
     private AuctionRoom newRoom(AuctionRoomStatus status) {
