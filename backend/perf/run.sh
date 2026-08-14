@@ -82,6 +82,8 @@ CPUS=2.0
 BULK_ITEMS=0
 SWEEP_INDEX=off
 BURST_MODE=same
+# 시나리오 10(결과 조회) 전용. guest 는 비로그인, member 는 로그인 요청이다 (#329).
+RESULTS_AUTH=guest
 
 # perf 는 측정용 포트를 따로 쓴다. 개발 백엔드(8080)나 프론트(5173)와 안 겹치게 한다.
 # 겹치면 측정을 시작하는 순간 개발 환경이 죽고, 프론트가 조용히 perf 앱에 붙는다.
@@ -99,6 +101,8 @@ usage() {
                      6=탐색 램프, 7=스파이크, 8=동시 출발 정합성
                      9=입장 폭주. 링크를 뿌린 직후의 방 공개 조회 둘을 때린다.
                      절벽이라 --rate 가 있어야 한다 (예: --scenario 9 --rate 200)
+                     10=결과 조회. 종료된 경매방의 결과 조회 하나만 때린다 (#329).
+                     --results-auth 로 게스트/로그인 경로를 가른다
   --vus N            가상 사용자 수. 계단은 10/20/40/80/160 (기본 40)
                      --rate 와 같이 주면 도착률을 채울 VU 수(preAllocatedVUs)가 된다
   --rate N           초당 도착 건수를 고정한다 (열린 모델). 안 주면 예전처럼 닫힌 모델
@@ -139,6 +143,8 @@ usage() {
   --sweep-index on|off  auction_items(status, end_at) 인덱스를 만들지 (기본 off)
                      --bulk-items 와 짝으로 켜고 끄면서 조회 시간이 어떻게 달라지는지 본다
   --burst-mode same|increasing  시나리오 8의 금액. 동일 금액 또는 VU별 증가 금액 (기본 same)
+  --results-auth guest|member   시나리오 10의 로그인 여부 (기본 guest). member 는 캐시가
+                     히트해도 내 순위 조회 한 번이 남는 경로를 잰다
 
   --duration D       측정 길이 (기본 3m)
   --warmup N         워밍업 초 (기본 30)
@@ -197,6 +203,7 @@ while [ $# -gt 0 ]; do
     --bulk-items) BULK_ITEMS="$2"; shift 2 ;;
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
     --burst-mode) BURST_MODE="$2"; shift 2 ;;
+    --results-auth) RESULTS_AUTH="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
     --warmup-vus) WARMUP_VUS="$2"; shift 2 ;;
@@ -228,6 +235,11 @@ fi
 case "$BURST_MODE" in
   same|increasing) ;;
   *) echo "--burst-mode는 same 또는 increasing이다 (받은 값: $BURST_MODE)" >&2; exit 1 ;;
+esac
+
+case "$RESULTS_AUTH" in
+  guest|member) ;;
+  *) echo "--results-auth는 guest 또는 member이다 (받은 값: $RESULTS_AUTH)" >&2; exit 1 ;;
 esac
 
 # 원격 모드에 빠진 값이 있으면 여기서 멈춘다.
@@ -710,11 +722,19 @@ SEED_ENV="$RESULT_DIR/seed.env"
 SEED_START="all"
 case "$SCENARIO" in 4|5) SEED_START="none" ;; esac
 
+# 시나리오 10(결과 조회)은 종료된 방이 있어야 한다. 물품마다 입찰을 넣고 방을 닫아
+# SOLD/FAILED 와 낙찰 후보를 실제 도메인 경로로 만든다 (seed.sh --close-room).
+declare -a SEED_EXTRA_ARGS=()
+if [ "$SCENARIO" = "10" ]; then
+  SEED_EXTRA_ARGS=(--close-room)
+fi
+
 BASE_URL="$APP_URL/api/v1" "$PERF_DIR/seed.sh" \
   --users "$USERS" --items "$ITEMS" --per-room "$PER_ROOM" \
   --start-price "$START_PRICE" --unit "$BID_UNIT" \
   --start "$SEED_START" --out "$SEED_ENV" \
-  --soft-close-trigger "$SOFT_CLOSE_TRIGGER" --soft-close-extend "$SOFT_CLOSE_EXTEND"
+  --soft-close-trigger "$SOFT_CLOSE_TRIGGER" --soft-close-extend "$SOFT_CLOSE_EXTEND" \
+  "${SEED_EXTRA_ARGS[@]+"${SEED_EXTRA_ARGS[@]}"}"
 
 # shellcheck source=/dev/null
 . "$SEED_ENV"
@@ -868,7 +888,8 @@ case "$SCENARIO" in
   7) SCRIPT="spike.js" ;;
   8) SCRIPT="burst.js" ;;
   9) SCRIPT="enter.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~9)" >&2; exit 1 ;;
+  10) SCRIPT="results.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~10)" >&2; exit 1 ;;
 esac
 
 # 6(탐색 램프)과 7(스파이크)은 램프라서 p95 가 구간 평균이 되고 max 계열이 램프 끝 값만
@@ -909,6 +930,7 @@ run_k6() {
   BURST_MODE="$BURST_MODE" \
   DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" RATE="${RUN_RATE:-$RATE}" \
   ENTER_WARMUP="${ENTER_WARMUP:-0}" \
+  RESULTS_AUTH="$RESULTS_AUTH" \
   BASE_URL="$K6_BASE_URL" \
     "${COMPOSE[@]}" run --rm \
       --user "$(id -u):$(id -g)" \
@@ -916,7 +938,7 @@ run_k6() {
       -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
       -e SHARE_CODES -e ROOM_ITEM_IDS \
       -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN -e RATE -e BASE_URL \
-      -e BURST_MODE -e ENTER_WARMUP \
+      -e BURST_MODE -e ENTER_WARMUP -e RESULTS_AUTH \
       k6 run ${@+"$@"} "/scripts/$SCRIPT" \
       2>&1 | tee "$log"
   K6_EXIT="${PIPESTATUS[0]}"
@@ -952,7 +974,7 @@ if [ "$SCENARIO" = "9" ]; then
   ENTER_WARMUP=1 RUN_RATE="$WARMUP_RATE" \
     run_k6 "$WARMUP_VUS" "${WARMUP}s" "" "$RESULT_DIR/k6_warmup.log"
 elif [ "$SCENARIO" = "1" ] || [ "$SCENARIO" = "2" ] \
-  || [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ]; then
+  || [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ] || [ "$SCENARIO" = "10" ]; then
   echo "[6/8] 워밍업 ${WARMUP}초 (vus=$WARMUP_VUS 로 실제 부하를 준다)"
 
   # 워밍업은 항상 닫힌 모델로 돈다. --rate 를 그대로 물려받으면 VU 몇 개로 목표 도착률을
@@ -1160,6 +1182,7 @@ case "$SCENARIO" in
   # 9 는 주인공이 둘이라 정규식으로 묶는다. 하나만 잡으면 나머지 절반이 처리량에서 빠진다.
   # PromQL 문자열이라 중괄호 앞의 역슬래시를 한 번 더 쓴다 (\\{ → 정규식에는 \{ 로 간다).
   9)     MAIN_URI=', uri=~"/api/v1/auction-rooms/share/\\{shareCode\\}(/auction-items)?"' ;;
+  10)    MAIN_URI=', uri="/api/v1/auction-rooms/share/{shareCode}/results"' ;;
   # 3 은 SSE 구독이 주인공인데 끝나지 않는 스트림이라 응답 시간에 안 잡힌다. 그래서 안 좁힌다.
   *)     MAIN_URI='' ;;
 esac
@@ -1314,11 +1337,17 @@ if [ -f "$RESULT_DIR/summary.json" ]; then
   ENTER_OK="$(k6sum enter_ok)"
   ENTER_4XX="$(k6sum enter_4xx)"
   ENTER_FAILED="$(k6sum enter_failed)"
+
+  # 시나리오 10 의 결과 조회. 마찬가지로 다른 시나리오는 0 이다.
+  RESULTS_OK="$(k6sum results_ok)"
+  RESULTS_4XX="$(k6sum results_4xx)"
+  RESULTS_FAILED="$(k6sum results_failed)"
 else
   ACCEPTED=0; REJECTED_AMOUNT=0; REJECTED_ALREADY_TOP=0; REJECTED_CLOSED=0
   CONCURRENT_CONFLICT=0; REJECTED_OTHER=0; FAILED_5XX=0
   DROPPED_ITERATIONS=0
   ENTER_OK=0; ENTER_4XX=0; ENTER_FAILED=0
+  RESULTS_OK=0; RESULTS_4XX=0; RESULTS_FAILED=0
 fi
 
 REJECTED_4XX=$((REJECTED_AMOUNT + REJECTED_ALREADY_TOP + REJECTED_CLOSED + CONCURRENT_CONFLICT + REJECTED_OTHER))
@@ -1763,6 +1792,11 @@ if [ "$SCENARIO" = "9" ]; then
   printf '공개 조회 p95   방 기본 정보 %s ms / 물품 목록 %s ms   (정상 %s / 4xx %s / 실패 %s)\n' \
     "$ROOM_READ_P95_MS" "$ITEMS_READ_P95_MS" "$ENTER_OK" "$ENTER_4XX" "$ENTER_FAILED"
 fi
+# 시나리오 10 은 결과 조회 하나가 주인공이다. 다른 시나리오는 이 경로를 안 때려서 NaN 이다.
+if [ "$SCENARIO" = "10" ]; then
+  printf '결과 조회(%s) p95 %s ms   처리량 %s req/s   (정상 %s / 4xx %s / 실패 %s)\n' \
+    "$RESULTS_AUTH" "$P95_MS" "$RPS" "$RESULTS_OK" "$RESULTS_4XX" "$RESULTS_FAILED"
+fi
 printf '락앞 p95 %s ms → 락대기 p95 %s ms → 락유지 p95 %s ms (접수 %s / 거절 %s, 커밋 %s)\n' \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
   "$LOCK_HOLD_ACC_P95_MS" "$LOCK_HOLD_REJ_P95_MS" "$COMMIT_P95_MS"
@@ -1792,7 +1826,8 @@ echo
 # 이 두 줄이 오늘 밤에 실제로 걸렸던 함정을 잡는 안전망이다.
 # 세션이 안 붙으면 입찰이 전부 401 로 거절되는데, 401 도 4xx 라 "정상 거절"로 세어져서
 # 그래프만 봐서는 안 드러난다. 락 대기가 NaN 인 걸 보고서야 알게 된다.
-if [ "$REJECTED_OTHER" != "0" ] && [ "$SCENARIO" != "0" ] && [ "$SCENARIO" != "3" ]; then
+if [ "$REJECTED_OTHER" != "0" ] && [ "$SCENARIO" != "0" ] && [ "$SCENARIO" != "3" ] \
+  && [ "$SCENARIO" != "10" ]; then
   echo "※ 경고: 입찰이 401·403 으로 거절된 게 ${REJECTED_OTHER}건이다. 세션이나 약관 동의가 안 붙은 것이라" >&2
   echo "  이 줄의 숫자는 서버 한계가 아니다. 폴더는 남기되 표에는 쓰지 않는다." >&2
 fi
@@ -1801,6 +1836,13 @@ fi
 # 이 줄의 숫자는 조회 성능이 아니라 404 를 얼마나 빨리 주는지를 잰 것이 된다.
 if [ "$SCENARIO" = "9" ] && [ "$ENTER_4XX" != "0" ]; then
   echo "※ 경고: 공개 조회가 4xx 로 ${ENTER_4XX}건 돌아왔다. 공유 코드나 시딩이 틀린 것이라" >&2
+  echo "  이 줄의 p95 와 처리량은 조회 성능이 아니다. 표에 쓰지 않는다." >&2
+fi
+
+# 결과 조회도 공개 조회와 같은 이유로 거절 규칙이 없다 (@GuestAllowed). 4xx 가 나왔다는 건
+# 공유 코드가 틀렸거나 seed.sh --close-room 이 방을 못 닫았다는 뜻이다.
+if [ "$SCENARIO" = "10" ] && [ "$RESULTS_4XX" != "0" ]; then
+  echo "※ 경고: 결과 조회가 4xx 로 ${RESULTS_4XX}건 돌아왔다. 공유 코드나 시딩이 틀린 것이라" >&2
   echo "  이 줄의 p95 와 처리량은 조회 성능이 아니다. 표에 쓰지 않는다." >&2
 fi
 
