@@ -1,7 +1,6 @@
 package com.hot6ix.upbid.domain.sse.service;
 
 import java.util.concurrent.Executor;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.SubmissionPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -20,10 +19,9 @@ class EmitterDispatcher {
 
     private final SubmissionPublisher<SseDispatchTask> publisher;
 
-    EmitterDispatcher(Executor vtExecutor, Semaphore semaphore, int queueCapacity,
-                      Long roomId, SseEmitter emitter) {
+    EmitterDispatcher(Executor vtExecutor, int queueCapacity, Long roomId, SseEmitter emitter) {
         this.publisher = new SubmissionPublisher<>(vtExecutor, queueCapacity);
-        this.publisher.subscribe(new EmitterSubscriber(semaphore, roomId, emitter));
+        this.publisher.subscribe(new EmitterSubscriber(roomId, emitter));
     }
 
     /**

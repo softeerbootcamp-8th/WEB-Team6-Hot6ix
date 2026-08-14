@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Semaphore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -37,12 +36,6 @@ public class RoomSseManager {
     private final SseEventPublisher sseEventPublisher;
     /** emitter 별 drain 을 실행하는 VT executor. 전역 하나를 공유한다. */
     private final Executor sseVirtualThreadExecutor;
-    /**
-     * {@link SseEmitter#send} 내부 {@code synchronized} 로 인한 VT pinning 을 제한한다.
-     * 허용 수를 초과한 VT 는 {@code semaphore.acquire()} 에서 park 되어 캐리어 스레드를 반환한다.
-     * Java 23+ 에서 pinning 이 해소되면 이 필드를 제거한다.
-     */
-    private final Semaphore sseEmitterSemaphore;
 
     @PostConstruct
     void bindMetrics() {
@@ -130,7 +123,6 @@ public class RoomSseManager {
 
         dispatchers.put(emitter, new EmitterDispatcher(
                 sseVirtualThreadExecutor,
-                sseEmitterSemaphore,
                 sseProperties.emitterQueueCapacity(),
                 roomId,
                 emitter));

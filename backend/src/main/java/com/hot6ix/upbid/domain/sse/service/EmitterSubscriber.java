@@ -2,7 +2,6 @@ package com.hot6ix.upbid.domain.sse.service;
 
 import java.io.IOException;
 import java.util.concurrent.Flow;
-import java.util.concurrent.Semaphore;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -13,21 +12,16 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * 일어나지 않는다. 전송 실패 시 {@link SseEmitter#completeWithError}를 호출해 emitter
  * 생명주기 콜백({@code onError})이 정리를 이어받게 한다. 이 클래스가 {@code RoomSseManager}를
  * 직접 참조하지 않는 이유다.
- *
- * <p>{@code semaphore}는 {@link SseEmitter#send} 내부의 {@code synchronized} 때문에
- * 발생하는 VT pinning을 제한한다. Java 23 이상에서 pinning 문제가 해결되면 제거할 수 있다.
  */
 @Slf4j
 class EmitterSubscriber implements Flow.Subscriber<SseDispatchTask> {
 
-    private final Semaphore semaphore;
     private final Long roomId;
     private final SseEmitter emitter;
 
     private Flow.Subscription subscription;
 
-    EmitterSubscriber(Semaphore semaphore, Long roomId, SseEmitter emitter) {
-        this.semaphore = semaphore;
+    EmitterSubscriber(Long roomId, SseEmitter emitter) {
         this.roomId = roomId;
         this.emitter = emitter;
     }
@@ -41,16 +35,7 @@ class EmitterSubscriber implements Flow.Subscriber<SseDispatchTask> {
     @Override
     public void onNext(SseDispatchTask task) {
         try {
-            semaphore.acquire();
-            try {
-                send(task);
-            } finally {
-                semaphore.release();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            subscription.cancel();
-            return;
+            send(task);
         } catch (IOException | IllegalStateException e) {
             log.debug("sse 전송 중 끊긴 연결 정리: roomId={}, cause={}", roomId, cause(e));
             subscription.cancel();

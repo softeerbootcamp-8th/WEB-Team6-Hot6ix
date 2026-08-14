@@ -4,7 +4,6 @@ import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import com.hot6ix.upbid.domain.sse.event.SseEventSubscriber;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -65,24 +64,10 @@ public class SseRedisConfig {
      * emitter 별 drain 을 실행하는 VT executor. {@link EmitterDispatcher}가 공유한다.
      *
      * <p>VT 는 OS 스레드와 1:1 이 아니라 캐리어 스레드 위에서 멀티플렉싱되므로, emitter 수만큼
-     * 생성해도 캐리어 스레드 고갈이 일어나지 않는다. 단, {@link org.springframework.web.servlet.mvc.method.annotation.SseEmitter#send}
-     * 내부의 {@code synchronized} 가 VT 를 pinning 하므로 {@link #sseEmitterSemaphore}로
-     * 동시 pinning 수를 제한한다.
+     * 생성해도 캐리어 스레드 고갈이 일어나지 않는다.
      */
     @Bean(destroyMethod = "close")
     public Executor sseVirtualThreadExecutor() {
         return Executors.newVirtualThreadPerTaskExecutor();
-    }
-
-    /**
-     * VT pinning 동시 수를 제한하는 세마포어.
-     *
-     * <p>허용 수({@code availableProcessors * 2})를 넘는 VT 는 {@code semaphore.acquire()}에서
-     * park 되어 캐리어 스레드를 반환한다. park 는 pinning 이 아니므로 캐리어 스레드 고갈이
-     * 일어나지 않는다. Java 23+ 에서 pinning 문제가 해결되면 이 bean 과 관련 코드를 제거한다.
-     */
-    @Bean
-    public Semaphore sseEmitterSemaphore() {
-        return new Semaphore(Runtime.getRuntime().availableProcessors() * 2);
     }
 }
