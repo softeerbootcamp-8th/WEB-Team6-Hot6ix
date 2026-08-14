@@ -129,6 +129,13 @@ upbid:
       # 기본 연결(spring.data.redis.timeout, 5s)보다 훨씬 짧게 잡는다. Redis 가 응답 없이
       # 멈췄을 때 입찰 요청이 이 값만큼만 붙들렸다가 fail-open 으로 통과해야 하기 때문이다.
       command-timeout: ${RATE_LIMIT_REDIS_TIMEOUT:200ms}
+    bid:
+      # 확정값이 아니라 제안값이다. 실사용 로그의 사용자별 req/s 분포로 재조정한다.
+      # 유효 입찰은 최고가를 1건씩 갱신하므로 사람 손으로 낼 수 있는 것은 초당 1~2건이
+      # 상한이고, capacity 는 소프트클로즈 구간 연타를 흡수하는 여유분이다.
+      enabled: ${BID_RATE_LIMIT_ENABLED:true}
+      capacity: ${BID_RATE_LIMIT_CAPACITY:5}
+      refill-per-second: ${BID_RATE_LIMIT_REFILL_PER_SECOND:2}
   sse:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
