@@ -84,6 +84,10 @@ SWEEP_INDEX=off
 BURST_MODE=same
 # 시나리오 10(결과 조회) 전용. guest 는 비로그인, member 는 로그인 요청이다 (#329).
 RESULTS_AUTH=guest
+# 입찰 Rate Limiter(#324). docker-compose.perf.yml 이 이 값을 안 받던 시절에는 로컬
+# .env 의 BID_RATE_LIMIT_ENABLED=false 가 perf 컨테이너에 전혀 전달되지 않아, 껐다고
+# 생각한 상태로 재다가 seed.sh 의 연속 입찰이 7009 로 거절되는 사고가 있었다.
+BID_RATE_LIMIT=on
 
 # perf 는 측정용 포트를 따로 쓴다. 개발 백엔드(8080)나 프론트(5173)와 안 겹치게 한다.
 # 겹치면 측정을 시작하는 순간 개발 환경이 죽고, 프론트가 조용히 perf 앱에 붙는다.
@@ -145,6 +149,8 @@ usage() {
   --burst-mode same|increasing  시나리오 8의 금액. 동일 금액 또는 VU별 증가 금액 (기본 same)
   --results-auth guest|member   시나리오 10의 로그인 여부 (기본 guest). member 는 캐시가
                      히트해도 내 순위 조회 한 번이 남는 경로를 잰다
+  --bid-rate-limit on|off  입찰 Rate Limiter(#324) (기본 on). 로컬 .env 값은 이 컨테이너에
+                     안 전달되므로, 끄고 재려면 여기로 준다
 
   --duration D       측정 길이 (기본 3m)
   --warmup N         워밍업 초 (기본 30)
@@ -204,6 +210,7 @@ while [ $# -gt 0 ]; do
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
     --burst-mode) BURST_MODE="$2"; shift 2 ;;
     --results-auth) RESULTS_AUTH="$2"; shift 2 ;;
+    --bid-rate-limit) BID_RATE_LIMIT="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
     --warmup-vus) WARMUP_VUS="$2"; shift 2 ;;
@@ -240,6 +247,11 @@ esac
 case "$RESULTS_AUTH" in
   guest|member) ;;
   *) echo "--results-auth는 guest 또는 member이다 (받은 값: $RESULTS_AUTH)" >&2; exit 1 ;;
+esac
+
+case "$BID_RATE_LIMIT" in
+  on|off) ;;
+  *) echo "--bid-rate-limit는 on 또는 off이다 (받은 값: $BID_RATE_LIMIT)" >&2; exit 1 ;;
 esac
 
 # 원격 모드에 빠진 값이 있으면 여기서 멈춘다.
@@ -510,6 +522,11 @@ export PERF_RUN_ID="$RUN_ID"
 export DB_POOL_SIZE="$POOL"
 export SCHEDULER_POOL_SIZE="$SCHEDULER_POOL"
 export SSE_HEARTBEAT_MS="$HEARTBEAT_MS"
+if [ "$BID_RATE_LIMIT" = "on" ]; then
+  export BID_RATE_LIMIT_ENABLED=true
+else
+  export BID_RATE_LIMIT_ENABLED=false
+fi
 
 # 한 방에서 동시에 진행할 수 있는 물품 수. 서비스 규칙은 3이고 perf 프로파일이 이미 50으로
 # 올려 두었는데, 그것도 --items 를 그 위로 주면 넘친다. 넘친 물품은 4008 로 거절되고 그대로
