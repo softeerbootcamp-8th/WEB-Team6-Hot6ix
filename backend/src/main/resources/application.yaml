@@ -40,6 +40,28 @@ spring:
           truststore:
             certificate: classpath:redis-ca.crt
 
+  # 로그인 세션 저장소. spring-boot-starter-session-data-redis가 위 data.redis 커넥션을
+  # 그대로 재사용한다 — 이 밑에 새 Lettuce/커넥션 설정을 추가하지 않는다(#294/#299).
+  #
+  # repository-type은 기본값(default, 비색인)을 그대로 쓴다 — 세션 조회가 세션 ID
+  # 기준뿐이라 principal별 색인이 필요 없다.
+  session:
+    # 클래스패스에 다른 세션 저장소 구현(JDBC, Hazelcast 등)이 없으면 자동 감지되긴 하지만,
+    # 나중에 그런 의존성이 늘어나도 조용히 바뀌지 않도록 명시한다.
+    store-type: redis
+    timeout: ${SESSION_TIMEOUT:1h}
+    data:
+      redis:
+        # 기본값(on-save)이면 필터가 요청 끝에 한꺼번에 저장해서, Redis 쓰기 실패가
+        # 컨트롤러·트랜잭션이 다 끝난 뒤 필터 finally에서 터진다 — 이 시점은
+        # GlobalExceptionHandler가 못 잡고, 응답이 이미 나갔을 수도 있다.
+        # setAttribute() 호출 즉시 쓰게 해서, 실패가 비즈니스 로직 안에서 평범한
+        # 예외로 터지고 응답 전송 전에 GlobalExceptionHandler의 공용 500 처리로
+        # 드러나게 한다. login()/signup() 모두 이 실패로 되돌려야 할 DB effect가
+        # 없어서(유저 생성은 unique 제약 덕에 재로그인으로 자연 복구됨) @Transactional로
+        # 트랜잭션을 묶지는 않는다(#302).
+        flush-mode: immediate
+
   # 기본값 1이면 마감 한 건이 입찰의 행 락을 기다리는 동안 다른 물품 마감과 SMS 정리 cron이
   # 함께 밀린다. 값의 근거와 전용 스케줄러 분리 여부는 3주차에 측정하고 정한다.
   task:
@@ -81,7 +103,6 @@ server:
   forward-headers-strategy: framework
   servlet:
     session:
-      timeout: ${SESSION_TIMEOUT:2h}
       cookie:
         name: SESSION
         http-only: true
@@ -103,6 +124,18 @@ upbid:
   # 배포에서 값을 주면 그동안만 엔드포인트가 생기고 헤더가 맞는 요청만 세션을 받는다 (#266).
   dev-login:
     token: ${DEV_LOGIN_TOKEN:}
+  rate-limit:
+    redis:
+      # 기본 연결(spring.data.redis.timeout, 5s)보다 훨씬 짧게 잡는다. Redis 가 응답 없이
+      # 멈췄을 때 입찰 요청이 이 값만큼만 붙들렸다가 fail-open 으로 통과해야 하기 때문이다.
+      command-timeout: ${RATE_LIMIT_REDIS_TIMEOUT:200ms}
+    bid:
+      # 확정값이 아니라 제안값이다. 실사용 로그의 사용자별 req/s 분포로 재조정한다.
+      # 유효 입찰은 최고가를 1건씩 갱신하므로 사람 손으로 낼 수 있는 것은 초당 1~2건이
+      # 상한이고, capacity 는 소프트클로즈 구간 연타를 흡수하는 여유분이다.
+      enabled: ${BID_RATE_LIMIT_ENABLED:true}
+      capacity: ${BID_RATE_LIMIT_CAPACITY:5}
+      refill-per-second: ${BID_RATE_LIMIT_REFILL_PER_SECOND:2}
   sse:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
@@ -154,6 +187,9 @@ upbid:
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
   onboarding-session-timeout: ${ONBOARDING_SESSION_TIMEOUT:10m}
+  cache:
+    # 방이 바뀌는 지점마다 캐시를 직접 지우므로, 이 값은 그중 하나를 빠뜨렸을 때를 위한 안전망이다.
+    time-to-live: ${CACHE_TTL:5m}
   alert:
     slack:
       webhook-url: ${SLACK_WEBHOOK_URL:}

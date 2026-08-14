@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.global.config;
 
+import com.hot6ix.upbid.domain.bid.interceptor.BidRateLimitInterceptor;
 import com.hot6ix.upbid.global.interceptor.AuthInterceptor;
 import com.hot6ix.upbid.global.interceptor.LoginUserIdArgumentResolver;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
     private String frontendUrl;
 
     private final AuthInterceptor authInterceptor;
+    private final BidRateLimitInterceptor bidRateLimitInterceptor;
     private final LoginUserIdArgumentResolver loginUserIdArgumentResolver;
 
     @Override
@@ -35,6 +37,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/v1/**")
                 .excludePathPatterns("/api/v1/oauth/kakao/callback");
+
+        registry.addInterceptor(bidRateLimitInterceptor)
+                .addPathPatterns("/api/v1/auction-items/*/bids");
     }
 
     @Override

@@ -89,6 +89,10 @@ class AuctionRoomCloseServiceIntegrationTest extends AbstractMySqlContainerTest 
     @MockitoBean
     private DomainEventPublisher domainEventPublisher;
 
+    // 조회 캐시는 Redis가 필요해 이 슬라이스에 없다. 종료가 캐시를 지우는지는 단위 테스트에서 본다.
+    @MockitoBean
+    private AuctionRoomPublicCacheService auctionRoomPublicCacheService;
+
     @Test
     @DisplayName("방을 종료하면 진행 중이던 물품이 마감되고 방 상태가 DB에 남는다")
     void closesInProgressItemsAndRoom() {

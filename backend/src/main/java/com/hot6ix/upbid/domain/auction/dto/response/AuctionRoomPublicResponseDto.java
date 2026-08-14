@@ -9,7 +9,7 @@ import lombok.Builder;
  * 누구나 보는 경매방 단독 페이지 정보. 생성·수정·종료 응답과 공개 조회
  * (GET /auction-rooms/share/{shareCode})가 공용으로 쓴다.
  */
-@Builder
+@Builder(toBuilder = true)
 public record AuctionRoomPublicResponseDto(
         Long auctionRoomId,
         /**

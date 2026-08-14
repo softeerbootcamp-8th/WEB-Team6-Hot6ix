@@ -97,6 +97,8 @@ usage() {
   --scenario N       0=부하 발생기 한계, 1~5=시나리오 (기본 1)
                      5 는 마감과 입찰을 겹친다. --items 로 마감할 물품 수를 준다
                      6=탐색 램프, 7=스파이크, 8=동시 출발 정합성
+                     9=입장 폭주. 링크를 뿌린 직후의 방 공개 조회 둘을 때린다.
+                     절벽이라 --rate 가 있어야 한다 (예: --scenario 9 --rate 200)
   --vus N            가상 사용자 수. 계단은 10/20/40/80/160 (기본 40)
                      --rate 와 같이 주면 도착률을 채울 VU 수(preAllocatedVUs)가 된다
   --rate N           초당 도착 건수를 고정한다 (열린 모델). 안 주면 예전처럼 닫힌 모델
@@ -210,6 +212,11 @@ done
 # 컨테이너를 다 띄우고 시딩까지 한 뒤에 k6 가 init 에서 죽으면 몇 분을 버린다. 여기서 막는다.
 if [ "$SCENARIO" = "7" ] && [ "$RATE" -le 0 ] 2>/dev/null; then
   echo "시나리오 7(스파이크)은 --rate 가 있어야 한다. 예: --scenario 7 --rate 200" >&2
+  exit 1
+fi
+
+if [ "$SCENARIO" = "9" ] && [ "$RATE" -le 0 ] 2>/dev/null; then
+  echo "시나리오 9(입장 폭주)는 --rate 가 있어야 한다. 예: --scenario 9 --rate 200" >&2
   exit 1
 fi
 
@@ -860,12 +867,17 @@ case "$SCENARIO" in
   6) SCRIPT="explore.js" ;;
   7) SCRIPT="spike.js" ;;
   8) SCRIPT="burst.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~8)" >&2; exit 1 ;;
+  9) SCRIPT="enter.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~9)" >&2; exit 1 ;;
 esac
 
 # 6(탐색 램프)과 7(스파이크)은 램프라서 p95 가 구간 평균이 되고 max 계열이 램프 끝 값만
 # 남는다. "어느 부하에서 처음 0을 벗어났는지"가 사라지므로 판정 규칙("두 배 올려 1.2배
 # 미만인 첫 줄")이 성립하지 않는다. 그래서 표에는 aborted 로 남기고 노션에 안 붙인다.
+#
+# 9(입장 폭주)도 ramping-arrival-rate 지만 여기 넣지 않는다. 절벽 뒤로 --duration 내내
+# 같은 도착률을 유지해서 구간의 대부분이 평평하고, 캐시 전후를 같은 rate 로 나란히 놓는 것이
+# 이 시나리오의 목적이기 때문이다. 이 줄은 표에 쓴다.
 if [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ]; then
   RAMP_RUN=1
 else
@@ -896,6 +908,7 @@ run_k6() {
   START_PRICE="$START_PRICE" BID_UNIT="$BID_UNIT" \
   BURST_MODE="$BURST_MODE" \
   DEV_LOGIN_TOKEN="${DEV_LOGIN_TOKEN:-}" RATE="${RUN_RATE:-$RATE}" \
+  ENTER_WARMUP="${ENTER_WARMUP:-0}" \
   BASE_URL="$K6_BASE_URL" \
     "${COMPOSE[@]}" run --rm \
       --user "$(id -u):$(id -g)" \
@@ -903,7 +916,7 @@ run_k6() {
       -e BID_START -e CLOSE_BID_UNTIL -e CLOSE_DURATION_MINUTES \
       -e SHARE_CODES -e ROOM_ITEM_IDS \
       -e START_PRICE -e BID_UNIT -e DEV_LOGIN_TOKEN -e RATE -e BASE_URL \
-      -e BURST_MODE \
+      -e BURST_MODE -e ENTER_WARMUP \
       k6 run ${@+"$@"} "/scripts/$SCRIPT" \
       2>&1 | tee "$log"
   K6_EXIT="${PIPESTATUS[0]}"
@@ -921,7 +934,24 @@ run_k6() {
 #
 # 부하를 주는 워밍업은 입찰 시나리오에서만 한다. 3(SSE)과 4·5(마감)는 부하 모양이 달라
 # 같은 스크립트로 데울 수가 없어서 예전처럼 기다리기만 한다.
-if [ "$SCENARIO" = "1" ] || [ "$SCENARIO" = "2" ] \
+if [ "$SCENARIO" = "9" ]; then
+  # 9 는 열린 모델이라 VU 가 아니라 도착률로 데운다. 절벽 모양 그대로 데우면 조용한 구간과
+  # 회복 구간을 워밍업에서도 한 번 더 기다리므로, ENTER_WARMUP=1 로 평평한 한 계단만 돈다.
+  #
+  # ── 워밍업 도착률은 계단과 무관하게 고정한다 ──────────────────
+  # 처음에는 목표의 1/10 로 잡았는데, 그러면 계단마다 데워지는 정도가 달라져서 계단이
+  # 뒤집힌다. 실측으로 rate 200 이 p95 9.5ms, rate 400 이 1.4ms 로 나왔다 (400 쪽 워밍업이
+  # 두 배 세서 더 잘 데워진 것이다).
+  #
+  # 목표 rate 를 그대로 쓰면 워밍업이 본 측정과 같은 부하가 되어 절벽을 두 번 재는 셈이라,
+  # 둘 사이의 고정값을 쓴다.
+  WARMUP_RATE=50
+
+  echo "[6/8] 워밍업 ${WARMUP}초 (초당 ${WARMUP_RATE}건으로 평평하게 데운다)"
+
+  ENTER_WARMUP=1 RUN_RATE="$WARMUP_RATE" \
+    run_k6 "$WARMUP_VUS" "${WARMUP}s" "" "$RESULT_DIR/k6_warmup.log"
+elif [ "$SCENARIO" = "1" ] || [ "$SCENARIO" = "2" ] \
   || [ "$SCENARIO" = "6" ] || [ "$SCENARIO" = "7" ]; then
   echo "[6/8] 워밍업 ${WARMUP}초 (vus=$WARMUP_VUS 로 실제 부하를 준다)"
 
@@ -972,6 +1002,21 @@ com_select() {
   mysql_query "SHOW GLOBAL STATUS LIKE 'Com_select'" | awk '{print $2}'
 }
 COM_SELECT_BEFORE="$(com_select)"
+
+# ── 조회 캐시를 비우고 시작한다 (시나리오 9) ─────────────────────
+# 워밍업이 본 측정과 같은 경로를 때리므로 캐시까지 데워 놓는다. 그 상태로 절벽을 걸면 첫
+# 요청부터 캐시가 맞아서, 정작 재려던 순간(링크를 막 뿌려 아무도 안 들어온 방에 한꺼번에
+# 몰리는 것)을 못 본다.
+#
+# 조회 캐시 키만 지운다. FLUSHALL 을 하면 마감 예약(auction:close:due)까지 날아가서 재는
+# 대상이 아닌 것을 바꿔 버린다.
+if [ "$SCENARIO" = "9" ] && [ "$REMOTE" = "0" ]; then
+  CACHE_KEYS="$("${COMPOSE[@]}" exec -T redis \
+    sh -c "redis-cli --scan --pattern 'auction:room:*' | wc -l" 2>/dev/null | tr -d ' \r')"
+  "${COMPOSE[@]}" exec -T redis \
+    sh -c "redis-cli --scan --pattern 'auction:room:*' | xargs -r redis-cli del" >/dev/null 2>&1 || true
+  echo "[7/8] 조회 캐시 비움 (키 ${CACHE_KEYS:-0}개) — 절벽이 캐시가 빈 상태로 시작하게 한다"
+fi
 
 # ── 7. k6 ─────────────────────────────────────────────────────────
 WINDOW_START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -1112,6 +1157,9 @@ case "$SCENARIO" in
   0)     MAIN_URI=', uri="/actuator/health"' ;;
   1|2|5|8) MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/bids"' ;;
   4)     MAIN_URI=', uri="/api/v1/auction-items/{auctionItemId}/start"' ;;
+  # 9 는 주인공이 둘이라 정규식으로 묶는다. 하나만 잡으면 나머지 절반이 처리량에서 빠진다.
+  # PromQL 문자열이라 중괄호 앞의 역슬래시를 한 번 더 쓴다 (\\{ → 정규식에는 \{ 로 간다).
+  9)     MAIN_URI=', uri=~"/api/v1/auction-rooms/share/\\{shareCode\\}(/auction-items)?"' ;;
   # 3 은 SSE 구독이 주인공인데 끝나지 않는 스트림이라 응답 시간에 안 잡힌다. 그래서 안 좁힌다.
   *)     MAIN_URI='' ;;
 esac
@@ -1144,6 +1192,12 @@ p95_of() {
 RPS="$(promq "sum($(delta "http_server_requests_seconds_count{$MAIN}")) / $WINDOW_SECONDS")"
 P95_MS="$(p95_of "http_server_requests_seconds_bucket{$MAIN}")"
 P99_MS="$(quantile_of "http_server_requests_seconds_bucket{$MAIN}" 0.99)"
+
+# 공개 조회 둘을 따로 본다 (시나리오 9). 합친 p95 만 보면 캐시 효과를 못 가른다 — 방 기본
+# 정보와 물품 목록은 쿼리 수도 응답 크기도 다르고, 캐시를 붙였을 때 줄어드는 폭도 다르다.
+# 다른 시나리오에서는 이 경로를 안 때리므로 NaN 이 정상이다.
+ROOM_READ_P95_MS="$(p95_of "http_server_requests_seconds_bucket{$RUN, uri=\"/api/v1/auction-rooms/share/{shareCode}\"}")"
+ITEMS_READ_P95_MS="$(p95_of "http_server_requests_seconds_bucket{$RUN, uri=\"/api/v1/auction-rooms/share/{shareCode}/auction-items\"}")"
 TOMCAT_BUSY_MAX="$(promq "max(max_over_time(tomcat_threads_busy_threads{$RUN}[$W]))")"
 HIKARI_ACTIVE_MAX="$(promq "max(max_over_time(hikaricp_connections_active{$RUN}[$W]))")"
 HIKARI_PENDING_MAX="$(promq "max(max_over_time(hikaricp_connections_pending{$RUN}[$W]))")"
@@ -1255,10 +1309,16 @@ if [ -f "$RESULT_DIR/summary.json" ]; then
   REJECTED_OTHER="$(k6sum bid_rejected_other)"
   FAILED_5XX="$(k6sum bid_failed)"
   DROPPED_ITERATIONS="$(k6sum dropped_iterations)"
+
+  # 시나리오 9 의 공개 조회 결과. 다른 시나리오는 이 카운터를 안 만들어서 0 이다.
+  ENTER_OK="$(k6sum enter_ok)"
+  ENTER_4XX="$(k6sum enter_4xx)"
+  ENTER_FAILED="$(k6sum enter_failed)"
 else
   ACCEPTED=0; REJECTED_AMOUNT=0; REJECTED_ALREADY_TOP=0; REJECTED_CLOSED=0
   CONCURRENT_CONFLICT=0; REJECTED_OTHER=0; FAILED_5XX=0
   DROPPED_ITERATIONS=0
+  ENTER_OK=0; ENTER_4XX=0; ENTER_FAILED=0
 fi
 
 REJECTED_4XX=$((REJECTED_AMOUNT + REJECTED_ALREADY_TOP + REJECTED_CLOSED + CONCURRENT_CONFLICT + REJECTED_OTHER))
@@ -1503,7 +1563,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -1537,6 +1597,7 @@ VALUES=( \
   "$RUN_ID" "$WHO" "$COMMIT" "$STATUS" "$SCENARIO" "$APPS" "$VUS" "$RATE" "$POOL" "$ITEMS" "$SSE" \
   "$RPS" "$BID_ATTEMPT_PER_S" "$ACCEPTED_PER_S" "$BID_ACCEPT_RATE" \
   "$P95_MS" "$P99_MS" "$K6_P95_MS" "$K6_P99_MS" \
+  "$ROOM_READ_P95_MS" "$ITEMS_READ_P95_MS" \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$CONN_ACQUIRE_P99_MS" "$CONN_USAGE_P95_MS" "$CONN_USAGE_P99_MS" "$CONN_TIMEOUT_COUNT" "$HEAP_MB_MAX" \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
@@ -1617,6 +1678,8 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | **접수 처리량** | **${ACCEPTED_PER_S} 건/s** ← 계단 비교는 이 값으로 |
 | p95 (서버 / k6) | ${P95_MS} / ${K6_P95_MS} ms |
 | p99 (서버 / k6) | ${P99_MS} / ${K6_P99_MS} ms |
+| **공개 조회 p95** 방 기본 정보 / 물품 목록 | **${ROOM_READ_P95_MS} / ${ITEMS_READ_P95_MS} ms** ← 시나리오 9 의 주인공 |
+| 공개 조회 정상 / 4xx / 실패 | ${ENTER_OK} / ${ENTER_4XX} / ${ENTER_FAILED} ← 4xx 는 0이어야 한다 |
 | 톰캣 스레드 max | ${TOMCAT_BUSY_MAX} |
 | 커넥션 active / pending max | ${HIKARI_ACTIVE_MAX} / ${HIKARI_PENDING_MAX} |
 | 커넥션 획득 p95 / p99 | ${CONN_ACQUIRE_P95_MS} / ${CONN_ACQUIRE_P99_MS} ms |
@@ -1694,6 +1757,12 @@ echo "그래프 $GRAFANA_LINK  ← 열어서 grafana.png 로 저장"
 echo "표     $INDEX"
 echo
 printf '처리량 %s req/s   p95 %s ms\n' "$RPS" "$P95_MS"
+
+# 시나리오 9 는 조회 둘이 주인공이라 따로 찍는다. 다른 시나리오는 이 경로를 안 때려서 NaN 이다.
+if [ "$SCENARIO" = "9" ]; then
+  printf '공개 조회 p95   방 기본 정보 %s ms / 물품 목록 %s ms   (정상 %s / 4xx %s / 실패 %s)\n' \
+    "$ROOM_READ_P95_MS" "$ITEMS_READ_P95_MS" "$ENTER_OK" "$ENTER_4XX" "$ENTER_FAILED"
+fi
 printf '락앞 p95 %s ms → 락대기 p95 %s ms → 락유지 p95 %s ms (접수 %s / 거절 %s, 커밋 %s)\n' \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
   "$LOCK_HOLD_ACC_P95_MS" "$LOCK_HOLD_REJ_P95_MS" "$COMMIT_P95_MS"
@@ -1726,6 +1795,13 @@ echo
 if [ "$REJECTED_OTHER" != "0" ] && [ "$SCENARIO" != "0" ] && [ "$SCENARIO" != "3" ]; then
   echo "※ 경고: 입찰이 401·403 으로 거절된 게 ${REJECTED_OTHER}건이다. 세션이나 약관 동의가 안 붙은 것이라" >&2
   echo "  이 줄의 숫자는 서버 한계가 아니다. 폴더는 남기되 표에는 쓰지 않는다." >&2
+fi
+
+# 공개 조회에는 거절 규칙이 없다. 4xx 가 나왔다는 건 공유 코드가 틀렸거나 방이 없다는 뜻이라,
+# 이 줄의 숫자는 조회 성능이 아니라 404 를 얼마나 빨리 주는지를 잰 것이 된다.
+if [ "$SCENARIO" = "9" ] && [ "$ENTER_4XX" != "0" ]; then
+  echo "※ 경고: 공개 조회가 4xx 로 ${ENTER_4XX}건 돌아왔다. 공유 코드나 시딩이 틀린 것이라" >&2
+  echo "  이 줄의 p95 와 처리량은 조회 성능이 아니다. 표에 쓰지 않는다." >&2
 fi
 
 if [ "$CONCURRENT_CONFLICT" != "0" ]; then
