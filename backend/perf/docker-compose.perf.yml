@@ -66,8 +66,9 @@ services:
       - SSE_TIMEOUT_MS=${SSE_TIMEOUT_MS:-3600000}
       # 입찰 Rate Limiter(#324). 로컬 backend/.env 의 값은 이 컨테이너와 무관하다 — 컴포즈
       # 프로젝트 디렉터리가 perf/ 라 그 파일을 안 읽고, env_file: 로 끌어오지도 않는다.
-      # 끄고 재려면 run.sh --bid-rate-limit off 로 준다.
-      - BID_RATE_LIMIT_ENABLED=${BID_RATE_LIMIT_ENABLED:-true}
+      # application-perf.yaml 기본값(false)과 맞춘다 — 부하 테스트 VU 속도에서는 서버가
+      # 아니라 리미터 버킷을 재게 된다. 리미터 자체를 검증하려면 run.sh --bid-rate-limit on.
+      - BID_RATE_LIMIT_ENABLED=${BID_RATE_LIMIT_ENABLED:-false}
       - BID_RATE_LIMIT_CAPACITY=${BID_RATE_LIMIT_CAPACITY:-5}
       - BID_RATE_LIMIT_REFILL_PER_SECOND=${BID_RATE_LIMIT_REFILL_PER_SECOND:-2}
       - MAX_IN_PROGRESS_PER_ROOM=${MAX_IN_PROGRESS_PER_ROOM:-50}
