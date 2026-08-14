@@ -107,6 +107,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         RedisBidDecision.Accepted firstAccepted = (RedisBidDecision.Accepted) first;
         assertThat(retried).isEqualTo(new RedisBidDecision.Accepted(
                 firstAccepted.requestId(),
+                10_000L,
                 firstAccepted.acceptedAtMillis(),
                 firstAccepted.endAtMillis(),
                 firstAccepted.extendedSeconds(),

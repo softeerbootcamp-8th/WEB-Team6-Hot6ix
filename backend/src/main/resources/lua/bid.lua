@@ -12,7 +12,7 @@ local requestId = ARGV[1]
 local cached = redis.call('HGET', KEYS[2], requestId)
 if cached ~= false then
     local result = cjson.decode(cached)
-    return {'ACCEPTED', requestId, tostring(result[1]), tostring(result[2]), tostring(result[3]), '1'}
+    return {'ACCEPTED', requestId, tostring(result[1]), tostring(result[2]), tostring(result[3]), tostring(result[4]), '1'}
 end
 
 if redis.call('EXISTS', KEYS[1]) == 0 then
@@ -101,6 +101,6 @@ redis.call('XADD', KEYS[3], '*',
         'totalExtensionSeconds', totalString)
 
 redis.call('HSET', KEYS[2], requestId,
-        cjson.encode({acceptedAtString, endAtString, extendedString}))
+        cjson.encode({amountString, acceptedAtString, endAtString, extendedString}))
 
-return {'ACCEPTED', requestId, acceptedAtString, endAtString, extendedString, '0'}
+return {'ACCEPTED', requestId, amountString, acceptedAtString, endAtString, extendedString, '0'}

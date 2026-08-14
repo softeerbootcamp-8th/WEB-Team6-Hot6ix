@@ -5,6 +5,7 @@ public sealed interface RedisBidDecision {
 
     record Accepted(
             String requestId,
+            long amount,
             long acceptedAtMillis,
             long endAtMillis,
             int extendedSeconds,
