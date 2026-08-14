@@ -4,8 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.hot6ix.upbid.domain.auction.scheduler.AuctionClosePoller;
 import com.hot6ix.upbid.domain.auction.scheduler.ItemClosingSoonPoller;
+import com.hot6ix.upbid.global.redis.RateLimiterRedisClient;
 import com.hot6ix.upbid.global.redis.RedisDelayQueue;
+import java.util.Arrays;
 import java.util.concurrent.Executor;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,5 +77,29 @@ class ApplicationContextLoadTest extends AbstractMySqlContainerTest {
     void applicationTaskExecutorSurvivesCustomExecutor() {
         // 이게 없어지면 Spring MVC 비동기(SSE)가 요청마다 스레드를 새로 만드는 기본값으로 떨어진다.
         assertThat(applicationContext.containsBean("applicationTaskExecutor")).isTrue();
+    }
+
+    /**
+     * {@code RateLimiterRedisClient}가 자기 커넥션을 빈으로 노출하면 Boot 의
+     * {@code @ConditionalOnMissingBean(RedisConnectionFactory.class)}/{@code (StringRedisTemplate.class)}
+     * 자동설정이 통째로 물러난다. 그러면 이 테스트가 잡는 마감 예약 빈들이 전부 그 리미터
+     * 전용 설정(200ms 타임아웃)으로 갈아타 버린다 — 컨텍스트는 여전히 뜨므로 다른 테스트로는
+     * 못 잡고, 빈 이름과 개수를 직접 세어야 한다.
+     */
+    @Test
+    @DisplayName("리미터 전용 Redis 커넥션이 기본 자동설정 빈을 밀어내지 않는다")
+    void rateLimiterConnectionDoesNotReplaceDefaultRedisBeans() {
+
+        assertThat(applicationContext.getBeanNamesForType(RedisConnectionFactory.class))
+                .containsExactly("redisConnectionFactory");
+
+        assertThat(applicationContext.containsBean("stringRedisTemplate")).isTrue();
+
+        assertThat(applicationContext.getBeanNamesForType(StringRedisTemplate.class))
+                .as("기본 stringRedisTemplate 빈 하나만 노출되어야 한다 (실제 참조: %s)",
+                        Arrays.toString(applicationContext.getBeanNamesForType(StringRedisTemplate.class)))
+                .containsExactly("stringRedisTemplate");
+
+        assertThat(applicationContext.getBean(RateLimiterRedisClient.class)).isNotNull();
     }
 }

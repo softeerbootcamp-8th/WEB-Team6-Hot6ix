@@ -32,6 +32,8 @@ public class AuctionRoomCloseService {
     private final AuctionRoomRepository auctionRoomRepository;
     private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
+    /** 종료로 방 상태와 종료 시각이 바뀌므로 담아 둔 값을 버린다. */
+    private final AuctionRoomPublicCacheService auctionRoomPublicCacheService;
     private final DomainEventPublisher domainEventPublisher;
 
     /**
@@ -148,10 +150,17 @@ public class AuctionRoomCloseService {
                 auctionRoomId, AuctionItemStatus.IN_PROGRESS) > 0;
     }
 
-    /** 방 행 락을 잡고 종료 대상임을 확인한 방을 실제로 닫는다. */
+    /**
+     * 방 행 락을 잡고 종료 대상임을 확인한 방을 실제로 닫는다.
+     *
+     * <p>공개 조회 캐시를 여기서 버리는 것은 <b>자동 종료도 같은 경로를 타게 하려는 것</b>이다
+     * (#326에서는 수동 종료 쪽에만 있었다). 안 버리면 방이 닫힌 뒤에도 공개 화면이 담아 둔
+     * {@code OPEN}을 계속 보여준다.
+     */
     private void closeLocked(AuctionRoom auctionRoom, LocalDateTime closedAt) {
 
         auctionRoom.close(closedAt);
+        auctionRoomPublicCacheService.evict(auctionRoom.getShareCode());
 
         domainEventPublisher.publish(RoomClosed.of(
                 auctionRoom.getAuctionRoomId(), auctionRoom.getName(), closedAt));

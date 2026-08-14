@@ -3,6 +3,7 @@ package com.hot6ix.upbid.global.support;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.bid.ratelimit.BidRateLimiter;
 import com.hot6ix.upbid.global.alert.SlackAlertService;
 import com.hot6ix.upbid.global.session.SessionManager;
 import jakarta.servlet.http.HttpServletRequest;
@@ -39,6 +40,15 @@ public abstract class AbstractControllerTest {
 
     @MockitoBean
     protected SlackAlertService slackAlertService;
+
+    /**
+     * {@code BidRateLimitInterceptor}는 입찰 경로에만 매핑되지만, 그 인터셉터를 생성자로
+     * 받는 {@code WebMvcConfig} 자체가 모든 {@code @WebMvcTest} 슬라이스에 올라오므로 목이
+     * 필요하다. 기본 boolean 반환값({@code false})이 곧 "제한 없음"을 뜻해 별도 스텁 없이도
+     * 통과한다.
+     */
+    @MockitoBean
+    protected BidRateLimiter bidRateLimiter;
 
     @BeforeEach
     void 로그인_세션을_스텁한다() {
