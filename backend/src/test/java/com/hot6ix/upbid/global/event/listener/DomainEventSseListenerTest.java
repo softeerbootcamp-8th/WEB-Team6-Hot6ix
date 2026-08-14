@@ -3,14 +3,13 @@ package com.hot6ix.upbid.global.event.listener;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.hot6ix.upbid.domain.sse.dto.ItemClosingSoonDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
 import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
-import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
@@ -21,11 +20,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+/**
+ * 이 리스너는 도메인 이벤트를 SSE 이벤트로 바꿔 Redis 채널로 내보내는 데까지만 책임진다.
+ * 방 종료 시 연결을 끊는 일은 채널을 받는 쪽으로 옮겨 갔고, {@code SseEventSubscriberTest}가 본다.
+ */
 @ExtendWith(MockitoExtension.class)
 class DomainEventSseListenerTest {
 
@@ -34,7 +36,7 @@ class DomainEventSseListenerTest {
     private static final LocalDateTime OCCURRED_AT = LocalDateTime.of(2026, 8, 4, 21, 0);
 
     @Mock
-    private RoomSseManager roomSseManager;
+    private SseEventPublisher sseEventPublisher;
 
     @InjectMocks
     private DomainEventSseListener domainEventSseListener;
@@ -86,43 +88,19 @@ class DomainEventSseListenerTest {
     }
 
     @Test
-    @DisplayName("경매방 종료는 ROOM_CLOSED를 내보낸 뒤에 연결을 끊는다")
-    void closesRoomAfterRoomClosedBroadcast() {
-
-        domainEventSseListener.on(RoomClosed.of(ROOM_ID, "승민의 경매방", OCCURRED_AT));
-
-        // 순서가 뒤집히면 마지막 이벤트가 도착하기 전에 연결이 끊긴다. 두 동작을 별도
-        // @TransactionalEventListener로 나누면 실행 순서가 정해지지 않아, 한 메서드 안에서
-        // 문장 순서로 고정한다.
-        InOrder inOrder = inOrder(roomSseManager);
-        inOrder.verify(roomSseManager).sendBroadCast(eq("ROOM_CLOSED"), eq(ROOM_ID), any());
-        inOrder.verify(roomSseManager).closeRoom(ROOM_ID);
-    }
-
-    @Test
-    @DisplayName("방 종료가 아닌 이벤트는 연결을 끊지 않는다")
-    void keepsConnectionOnOtherEvents() {
-
-        domainEventSseListener.on(
-                ItemEnded.of(ROOM_ID, ITEM_ID, "한정판 피규어", 12_000L, "한기", OCCURRED_AT));
-
-        verify(roomSseManager, never()).closeRoom(any());
-    }
-
-    @Test
     @DisplayName("화면에 뿌릴 DTO가 없는 이벤트는 내보내지 않는다")
     void skipsEventWithoutDto() {
 
         domainEventSseListener.on(
                 DealRightAssigned.of(ROOM_ID, ITEM_ID, 1L, 1, 40L, 12_000L, OCCURRED_AT));
 
-        verify(roomSseManager, never()).sendBroadCast(any(), any(), any());
+        verify(sseEventPublisher, never()).publish(any(), any(), any());
     }
 
     /** 지정한 이름으로 나간 payload를 꺼낸다. 이름이 다르면 그 자리에서 검증이 실패한다. */
     private Object sentDto(String eventName) {
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
-        verify(roomSseManager).sendBroadCast(eq(eventName), eq(ROOM_ID), captor.capture());
+        verify(sseEventPublisher).publish(eq(eventName), eq(ROOM_ID), captor.capture());
         return captor.getValue();
     }
 }

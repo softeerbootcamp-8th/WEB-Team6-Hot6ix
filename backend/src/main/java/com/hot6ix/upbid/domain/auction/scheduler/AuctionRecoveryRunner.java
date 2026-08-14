@@ -13,17 +13,24 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * DB 를 보고 마감 예약을 다시 채운다. <b>기동할 때 한 번</b>과 <b>그 뒤로 주기적으로</b> 돈다.
+ * DB 를 보고 <b>마감 예약과 마감 임박 알림 예약을 함께</b> 다시 채운다. <b>기동할 때 한 번</b>과
+ * <b>그 뒤로 주기적으로</b> 돈다.
  *
  * <p>예약이 Redis 에만 있어서, Redis 가 비면 진행중인 물품이 마감 시각이 지나도 영영 열린 채로
  * 남는다. 서버가 같이 죽었다면 다시 뜨면서 채우지만, <b>서버는 살아 있는데 Redis 만 비는
  * 경우</b>는 아무도 채워주지 않는다. 주기 실행이 그 자리를 맡는다.
  *
+ * <p>둘을 <b>한 러너에서 채우는 것은 조회가 같기 때문</b>이다(#290). 마감 예약도 알림 예약도
+ * 대상이 "진행중인 물품"이라, 한 번 읽어 둘 다 채우면 진행중 물품 전체 조회가 두 번 돌지 않는다.
+ *
  * <p>판단 기준은 예약이 아니라 <b>DB</b>다. 무엇이 살아 있었는지는 알 수도 없고 알 필요도 없다.
  *
- * <p><b>이미 지난 마감 시각은 따로 가르지 않는다.</b> 지난 시각으로 넣으면 다음 폴링에 곧바로
+ * <p><b>이미 지난 시각은 따로 가르지 않는다.</b> 지난 시각으로 넣으면 다음 폴링에 곧바로
  * 집힌다. 유예를 두지 않는 것은 그렇게 하면 "서버가 꺼져 있던 동안의 입찰"이라는 있을 수 없는
  * 상태를 다뤄야 하기 때문이고, DB 의 {@code end_at}이 판단 기준이라는 팀 원칙과도 맞는다.
+ * 알림도 마찬가지라서, <b>재배포하는 동안 알림 시각이 지나간 물품은 늦게라도 알린다.</b> 알림
+ * 시각이 지났는데 아직 안 닫혔다는 것은 마감까지 트리거 초 안쪽으로 남았다는 뜻이라 "지금
+ * 입찰하면 마감이 밀린다"는 알림 내용이 여전히 맞다.
  */
 @Slf4j
 @Component
@@ -32,6 +39,7 @@ public class AuctionRecoveryRunner {
 
     private final AuctionItemRepository auctionItemRepository;
     private final AuctionCloseScheduler auctionCloseScheduler;
+    private final ItemClosingSoonScheduler itemClosingSoonScheduler;
 
     /**
      * 기동 직후 한 번 채운다.
@@ -63,11 +71,12 @@ public class AuctionRecoveryRunner {
     }
 
     /**
-     * 진행 중인 물품을 읽어 <b>예약이 없는 것만</b> 채운다.
+     * 진행 중인 물품을 읽어 <b>예약이 없는 것만</b> 채운다. 마감 예약과 알림 예약을 같은
+     * 목록으로 함께 채운다.
      *
      * <p>덮어쓰지 않는 것이 중요하다. 이미 있는 줄에는 연장이 반영돼 있거나 지금 어느 서버가
-     * 집어서 처리 중이라는 표시가 들어 있는데, DB 의 원래 마감 시각으로 덮으면 그 둘을
-     * 되돌려서 같은 물품에 두 서버가 달라붙는다.
+     * 집어서 처리 중이라는 표시가 들어 있는데, DB 의 원래 시각으로 덮으면 그 둘을 되돌려서
+     * 같은 물품에 두 서버가 달라붙는다.
      *
      * <p>예외를 삼키고 로그만 남긴다. 기동 시에 던지면 그 서버는 경매를 아예 받지 못하는데,
      * 그건 물품 몇 개가 안 닫히는 것보다 나쁘다.
@@ -78,12 +87,28 @@ public class AuctionRecoveryRunner {
             List<InProgressAuctionItemProjection> targets =
                     auctionItemRepository.findScheduleTargets(AuctionItemStatus.IN_PROGRESS);
 
-            targets.forEach(target ->
-                    auctionCloseScheduler.scheduleIfAbsent(target.auctionItemId(), target.endAt()));
+            targets.forEach(this::scheduleIfAbsent);
 
-            log.debug("마감 예약 재동기화: 진행중 {}건", targets.size());
+            log.debug("마감·알림 예약 재동기화: 진행중 {}건", targets.size());
         } catch (Exception e) {
-            log.error("마감 예약 재동기화 실패. 진행 중이던 물품이 닫히지 않은 채 남을 수 있다", e);
+            log.error("예약 재동기화 실패. 진행 중이던 물품이 닫히지 않거나 알림이 나가지 않을 수 있다", e);
+        }
+    }
+
+    /**
+     * 물품 하나의 마감 예약과 알림 예약을 채운다.
+     *
+     * <p><b>알림은 아직 안 알린 물품만 넣는다.</b> 이미 알린 물품도 알림 시각이 과거라 그냥
+     * 넣으면 걸리는데, 그러면 폴러가 집어서 DB 를 읽고 {@code notified_at} 에 막혀 버리는
+     * 한 바퀴가 재동기화 주기마다 반복된다. 알림이 두 번 나가지는 않지만 밀린 예약 수 지표에
+     * 잡음이 끼고 로그만 쌓인다.
+     */
+    private void scheduleIfAbsent(InProgressAuctionItemProjection target) {
+
+        auctionCloseScheduler.scheduleIfAbsent(target.auctionItemId(), target.endAt());
+
+        if (target.needsClosingSoonSchedule()) {
+            itemClosingSoonScheduler.scheduleIfAbsent(target.auctionItemId(), target.notifyAt());
         }
     }
 }

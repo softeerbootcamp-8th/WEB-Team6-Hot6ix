@@ -49,6 +49,21 @@ public class RedisDelayQueue {
     private static final RedisScript<List> CLAIM_SCRIPT =
             new DefaultRedisScript<>(CLAIM_LUA, List.class);
 
+    /**
+     * 점수가 기대한 값 그대로일 때만 지운다. 읽기와 삭제를 스크립트로 묶는 것은 그 사이에
+     * 다른 서버가 시각을 바꾸면 <b>이미 낡은 판단으로 지우게 되기</b> 때문이다.
+     */
+    private static final String CANCEL_IF_DEFERRED_LUA = """
+            local score = redis.call('ZSCORE', KEYS[1], ARGV[1])
+            if score and tonumber(score) == tonumber(ARGV[2]) then
+                return redis.call('ZREM', KEYS[1], ARGV[1])
+            end
+            return 0
+            """;
+
+    private static final RedisScript<Long> CANCEL_IF_DEFERRED_SCRIPT =
+            new DefaultRedisScript<>(CANCEL_IF_DEFERRED_LUA, Long.class);
+
     private final StringRedisTemplate redisTemplate;
     private final String key;
 
@@ -76,6 +91,34 @@ public class RedisDelayQueue {
     /** 예약을 지운다. 없으면 아무 일도 하지 않는다. */
     public void cancel(Long id) {
         redisTemplate.opsForZSet().remove(key, String.valueOf(id));
+    }
+
+    /**
+     * <b>집으면서 미뤄 둔 시각 그대로일 때만</b> 예약을 지운다. 처리하는 사이에 누가 시각을
+     * 바꿔 놨으면 그대로 둔다.
+     *
+     * <p>{@link #cancel}로 무조건 지우면 <b>처리하는 동안 새로 걸린 예약까지 지운다.</b> 마감은
+     * 처리하고 나면 물품이 닫혀서 새 예약이 들어올 수 없지만, 마감 임박 알림은 발행한 뒤에도
+     * 물품이 그대로 살아 있어서 곧바로 연장이 들어올 수 있다. 하필 알림이 나간 직후가 입찰이
+     * 가장 몰리는 구간이라 실제로 겹친다(#290).
+     *
+     * <p>점수를 문자열이 아니라 <b>수로 견준다.</b> Redis 가 큰 값을 지수 표기로 돌려줄 수 있어
+     * 문자열로 비교하면 같은 값도 다르게 보인다.
+     *
+     * @param claimedAt  {@link #claimDue}에 넘겼던 시각
+     * @param visibility {@link #claimDue}에 넘겼던 유예. 미뤄 둔 시각을 <b>집을 때와 똑같은
+     *                   식으로</b> 다시 구하려고 받는다
+     * @return 지웠으면 {@code true}, 시각이 바뀌어 두었으면 {@code false}
+     */
+    public boolean cancelIfDeferred(Long id, LocalDateTime claimedAt, Duration visibility) {
+
+        Long removed = redisTemplate.execute(
+                CANCEL_IF_DEFERRED_SCRIPT,
+                List.of(key),
+                String.valueOf(id),
+                String.valueOf(toMillis(claimedAt) + visibility.toMillis()));
+
+        return removed != null && removed > 0;
     }
 
     /**

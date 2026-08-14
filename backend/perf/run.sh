@@ -1251,6 +1251,9 @@ CLOSE_LOCK_HOLD_P95_MS="$(p95_of "upbid_auction_close_lock_hold_seconds_bucket{$
 # 마감이 쏜 알림만 본다. 태그를 안 걸고 보면 훨씬 잦은 입찰 알림에 파묻혀 마감 쪽이 안 보인다.
 CLOSE_NOTIFY_P95_MS="$(p95_of "upbid_sse_broadcast_seconds_bucket{$RUN, event=\"ITEM_ENDED\"}")"
 CLOSE_AWARD_P95_MS="$(p95_of "upbid_deal_award_seconds_bucket{$RUN}")"
+# 그 안에서 후보 삽입 쿼리 하나만. 나머지(커넥션 획득·락 대기·이벤트 발행·커밋)는 위에서
+# 이 값을 빼면 나온다. 둘을 가르기 전에는 쿼리를 고쳐도 개선 전후가 표에서 구분되지 않았다.
+CLOSE_AWARD_INSERT_P95_MS="$(p95_of "upbid_deal_candidate_insert_seconds_bucket{$RUN}")"
 # 실패가 0인 실행에서는 시계열이 아예 없다. or vector(0) 으로 받지 않으면 NaN 이 된다.
 CLOSE_FAILURES="$(promq "sum($(delta "upbid_auction_close_failures_total{$RUN}")) or vector(0)")"
 
@@ -1560,7 +1563,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -1603,6 +1606,7 @@ VALUES=( \
   "$CLOSE_DELAY_P50_MS" "$CLOSE_DELAY_P95_MS" "$CLOSE_DELAY_MAX_MS" \
   "$CLOSE_DURATION_P95_MS" \
   "$CLOSE_LOCK_WAIT_P95_MS" "$CLOSE_LOCK_HOLD_P95_MS" "$CLOSE_NOTIFY_P95_MS" "$CLOSE_AWARD_P95_MS" \
+  "$CLOSE_AWARD_INSERT_P95_MS" \
   "$CLOSE_FAILURES" "$CLOSES" "$AWARDS" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$CLOSE_ACTIVE_MAX" "$CLOSE_QUEUED_MAX" "$CLOSE_BACKLOG_MAX" \
   "$SSE_HEARTBEAT_P95_MS" "$HEARTBEAT_RUNS" "$HEARTBEAT_EXPECTED" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
@@ -1775,6 +1779,11 @@ printf '마감 %s 건 (낙찰 %s)   소요 p95 %s ms  =  락대기 %s + 락유�
   "$CLOSES" "$AWARDS" \
   "$CLOSE_DURATION_P95_MS" "$CLOSE_LOCK_WAIT_P95_MS" "$CLOSE_LOCK_HOLD_P95_MS" \
   "$CLOSE_NOTIFY_P95_MS" "$CLOSE_AWARD_P95_MS"
+
+# 후보(=낙찰 트랜잭션 전체) 안에서 삽입 쿼리가 차지한 몫. 이 둘이 크게 벌어지면 남은 시간은
+# 쿼리가 아니라 커넥션 획득·락 대기·커밋이므로, 쿼리를 더 고쳐도 후보 값은 안 내려간다.
+printf '  그중 후보 삽입 쿼리 p95 %s ms (나머지는 커넥션 획득·락 대기·이벤트·커밋)\n' \
+  "$CLOSE_AWARD_INSERT_P95_MS"
 echo
 printf '접수 %s   경합충돌(7006) %s   그밖의거절 %s   실패5xx %s\n' \
   "$ACCEPTED" "$CONCURRENT_CONFLICT" "$REJECTED_OTHER" "$FAILED_5XX"

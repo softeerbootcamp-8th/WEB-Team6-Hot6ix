@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -62,6 +63,171 @@ class AuctionItemRepositoryTest extends AbstractMySqlContainerTest {
                 .user(user)
                 .storeName("승민상점")
                 .build());
+    }
+
+    /**
+     * 마감 임박 알림의 중복 발송을 막는 조건부 UPDATE 와, 재동기화가 읽는 조회를 실제 DB 에
+     * 대고 본다. <b>둘 다 목으로는 검증되지 않는 것이 있어서 여기 둔다</b> — 앞은 조건이 실제로
+     * 행을 걸러내는지, 뒤는 같은 타입 칼럼 셋이 제자리에 들어가는지다.
+     */
+    @Nested
+    @DisplayName("마감 임박 알림")
+    class ClosingSoon {
+
+        private static final int TRIGGER_SECONDS = 60;
+        private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 8, 12, 21, 0);
+        private static final LocalDateTime END_AT = LocalDateTime.of(2026, 8, 12, 21, 10);
+        /** {@link #END_AT} 물품의 알림 시각. */
+        private static final LocalDateTime NOTIFY_AT = END_AT.minusSeconds(TRIGGER_SECONDS);
+
+        @Test
+        @DisplayName("자리를 먼저 잡은 하나만 1을 받는다")
+        void onlyTheFirstClaimWins() {
+
+            AuctionItem item = newInProgressItem();
+
+            int first = markNotified(item, NOTIFY_AT, NOTIFY_AT);
+            int second = markNotified(item, NOTIFY_AT, NOTIFY_AT.plusSeconds(1));
+
+            // 늦게 온 쪽이 0 을 받아야 알림이 한 번만 나간다.
+            assertThat(first).isEqualTo(1);
+            assertThat(second).isZero();
+        }
+
+        @Test
+        @DisplayName("연장으로 알림 시각이 밀리면 다시 1을 받는다")
+        void claimsAgainAfterSoftCloseExtension() {
+
+            AuctionItem item = newInProgressItem();
+            markNotified(item, NOTIFY_AT, NOTIFY_AT);
+
+            int again = markNotified(item, NOTIFY_AT.plusSeconds(30), NOTIFY_AT.plusSeconds(30));
+
+            // 연장 구간을 벗어났다 다시 들어온 경우다. 여기서 막으면 재발송이 죽는다.
+            assertThat(again).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("찍은 시각이 실제로 저장된다")
+        void storesNotifiedAt() {
+
+            AuctionItem item = newInProgressItem();
+
+            markNotified(item, NOTIFY_AT, NOTIFY_AT);
+            entityManager.clear();
+
+            assertThat(entityManager.find(AuctionItem.class, item.getAuctionItemId()).getNotifiedAt())
+                    .isEqualTo(NOTIFY_AT);
+        }
+
+        @Test
+        @DisplayName("재동기화 조회가 마감·시작·알림 시각을 제자리에 담는다")
+        void mapsEachTimestampToItsOwnField() {
+
+            AuctionItem item = newInProgressItem();
+            markNotified(item, NOTIFY_AT, NOTIFY_AT);
+            entityManager.flush();
+            entityManager.clear();
+
+            List<InProgressAuctionItemProjection> targets =
+                    auctionItemRepository.findScheduleTargets(AuctionItemStatus.IN_PROGRESS);
+
+            // 셋 다 LocalDateTime 이라 순서를 바꿔 넣어도 컴파일과 기동 검증을 그대로 통과한다.
+            // 서로 다른 값을 넣어 두는 것이 이 테스트의 전부다.
+            assertThat(targets).singleElement().satisfies(target -> {
+                assertThat(target.endAt()).isEqualTo(END_AT);
+                assertThat(target.startedAt()).isEqualTo(STARTED_AT);
+                assertThat(target.notifiedAt()).isEqualTo(NOTIFY_AT);
+                assertThat(target.softCloseTriggerSeconds()).isEqualTo(TRIGGER_SECONDS);
+            });
+        }
+
+        @Test
+        @DisplayName("연장 설정이 없는 방의 물품도 조회된다")
+        void includesItemWithoutSoftCloseTrigger() {
+
+            AuctionRoom room = entityManager.persist(AuctionRoom.builder()
+                    .bidIncrement(1_000L)
+                    .sellerProfile(sellerProfile)
+                    .name("트리거 없는 방")
+                    .build());
+
+            newInProgressItem(room);
+
+            // 마감 예약은 트리거와 무관하게 걸어야 한다. 조인 때문에 빠지면 안 닫힌다.
+            assertThat(auctionItemRepository.findScheduleTargets(AuctionItemStatus.IN_PROGRESS))
+                    .singleElement()
+                    .satisfies(target -> assertThat(target.softCloseTriggerSeconds()).isNull());
+        }
+
+        @Test
+        @DisplayName("마감 시각이 바뀌었으면 자리를 못 잡는다")
+        void failsWhenEndAtChanged() {
+
+            AuctionItem item = newInProgressItem();
+
+            // 읽은 뒤 UPDATE 가 락을 기다리는 사이에 연장이 커밋된 상황이다. 낡은 end_at 을
+            // 조건으로 걸어야 여기서 걸린다.
+            int claimed = auctionItemRepository.markNotified(item.getAuctionItemId(),
+                    AuctionItemStatus.IN_PROGRESS, END_AT.plusSeconds(30), NOTIFY_AT, NOTIFY_AT);
+
+            assertThat(claimed).isZero();
+            entityManager.clear();
+            assertThat(entityManager.find(AuctionItem.class, item.getAuctionItemId()).getNotifiedAt())
+                    .as("실패한 선점이 값을 남기면 정작 알려야 할 때 자기 표시에 막힌다")
+                    .isNull();
+        }
+
+        @Test
+        @DisplayName("마감된 물품에는 자리를 못 잡는다")
+        void failsWhenClosed() {
+
+            AuctionItem item = newInProgressItem();
+            entityManager.getEntityManager()
+                    .createQuery("update AuctionItem ai set ai.status = :status "
+                            + "where ai.auctionItemId = :id")
+                    .setParameter("status", AuctionItemStatus.SOLD)
+                    .setParameter("id", item.getAuctionItemId())
+                    .executeUpdate();
+
+            int claimed = markNotified(item, NOTIFY_AT, NOTIFY_AT);
+
+            // 상태를 안 걸면 이미 닫힌 물품에 "곧 마감"이 나간다.
+            assertThat(claimed).isZero();
+        }
+
+        private int markNotified(AuctionItem item, LocalDateTime notifyAt, LocalDateTime now) {
+            return auctionItemRepository.markNotified(item.getAuctionItemId(),
+                    AuctionItemStatus.IN_PROGRESS, END_AT, notifyAt, now);
+        }
+
+        private AuctionItem newInProgressItem() {
+            return newInProgressItem(entityManager.persist(AuctionRoom.builder()
+                    .bidIncrement(1_000L)
+                    .sellerProfile(sellerProfile)
+                    .name("임박 알림 방")
+                    .softCloseTriggerSeconds(TRIGGER_SECONDS)
+                    .softCloseExtendSeconds(30)
+                    .build()));
+        }
+
+        private AuctionItem newInProgressItem(AuctionRoom room) {
+
+            AuctionItem item = entityManager.persist(AuctionItem.builder()
+                    .auctionRoom(room)
+                    .product(newProduct("닌텐도 스위치"))
+                    .startingPrice(10_000L)
+                    .bidIncrement(1_000L)
+                    .status(AuctionItemStatus.IN_PROGRESS)
+                    .startedAt(STARTED_AT)
+                    .originalEndAt(END_AT)
+                    .endAt(END_AT)
+                    .build());
+
+            entityManager.flush();
+
+            return item;
+        }
     }
 
     private AuctionRoom newAuctionRoom(String name) {

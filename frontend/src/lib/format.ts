@@ -39,6 +39,22 @@ export function formatRemaining(totalSeconds: number): string {
 }
 
 /**
+ * 진행 중인 물품의 남은 시간 표기.
+ *
+ * 0 이 되어도 마감으로 단정하지 않는다. 마감 판정은 서버 이벤트가 하고, 그
+ * 이벤트가 도착하기 전까지는 "마감 처리 중"으로 둔다. 예전에는 `00:00:00` 이
+ * 그대로 굳어 있어서, 서버가 조금만 늦어도 화면이 멈춘 것처럼 보였다.
+ *
+ * **시작 전 물품에는 쓰지 않는다.** 마감 시각이 없어 남은 시간이 늘 0 이라
+ * 전부 마감 처리 중으로 보인다. 부르는 쪽이 "시작 전"을 따로 그린다.
+ */
+export function formatCountdown(remainingSeconds: number): string {
+  return remainingSeconds <= 0
+    ? '마감 처리 중'
+    : formatRemaining(remainingSeconds)
+}
+
+/**
  * 마감 임박 알림 문구에 들어가는 남은 시간. `1분` · `5분` · `90초` 형태.
  *
  * 이 값은 방마다 다르다. 경매방의 "마감 임박 기준"(Soft Close 트리거)을 서버가 그대로

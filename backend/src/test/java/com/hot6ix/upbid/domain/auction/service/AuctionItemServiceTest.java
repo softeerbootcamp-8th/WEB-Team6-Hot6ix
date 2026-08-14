@@ -99,7 +99,7 @@ class AuctionItemServiceTest {
      */
     @Spy
     // 마감 실행 설정(close)은 이 서비스가 안 읽으므로 채우지 않는다.
-    private AuctionProperties auctionProperties = new AuctionProperties(3, null);
+    private AuctionProperties auctionProperties = new AuctionProperties(3, null, null);
 
     @InjectMocks
     private AuctionItemService auctionItemService;

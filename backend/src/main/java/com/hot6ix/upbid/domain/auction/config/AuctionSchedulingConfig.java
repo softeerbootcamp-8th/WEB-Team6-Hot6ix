@@ -8,14 +8,14 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
- * 마감 예약을 담는 Redis 큐와 마감을 실행하는 스레드 풀을 만든다.
+ * 마감과 마감 임박 알림의 예약을 담는 Redis 큐, 그리고 마감을 실행하는 스레드 풀을 만든다.
  *
  * <p>{@link RedisDelayQueue}는 키 하나당 인스턴스 하나라서 컴포넌트 스캔으로 못 만들고
- * 여기서 키를 주며 등록한다. 마감 임박 알림도 같은 클래스에 다른 키로 빈을 하나 더 만든다.
+ * 여기서 키를 주며 등록한다. 마감과 알림이 <b>같은 클래스를 키만 달리해</b> 쓴다.
  */
 @Configuration
 @EnableConfigurationProperties(AuctionProperties.class)
-public class AuctionCloseConfig {
+public class AuctionSchedulingConfig {
 
     /**
      * 저장소의 첫 Redis 키다. 앞으로 붙을 세션과 SSE 도 {@code 도메인:용도} 두 칸으로 맞춘다.
@@ -23,9 +23,20 @@ public class AuctionCloseConfig {
      */
     public static final String CLOSE_DUE_KEY = "auction:close:due";
 
+    /**
+     * 마감 임박 알림 예약. <b>마감과 키를 나눈다.</b> 같은 물품이라도 알림 시각과 마감 시각이
+     * 달라서 한 ZSET 에 담으면 member 가 겹쳐 서로를 덮어쓴다.
+     */
+    public static final String CLOSING_SOON_DUE_KEY = "auction:closing-soon:due";
+
     @Bean
     public RedisDelayQueue closeDelayQueue(StringRedisTemplate redisTemplate) {
         return new RedisDelayQueue(redisTemplate, CLOSE_DUE_KEY);
+    }
+
+    @Bean
+    public RedisDelayQueue closingSoonDelayQueue(StringRedisTemplate redisTemplate) {
+        return new RedisDelayQueue(redisTemplate, CLOSING_SOON_DUE_KEY);
     }
 
     /**
