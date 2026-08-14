@@ -254,8 +254,8 @@ class AuctionItemServiceTest {
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .thenReturn(Optional.of(sellerProfile));
-        when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-                ROOM_ID, 5L)).thenReturn(Optional.of(newRoom(sellerProfile, status)));
+        when(auctionRoomRepository.findByIdForUpdate(ROOM_ID))
+                .thenReturn(Optional.of(newRoom(sellerProfile, status)));
 
         return sellerProfile;
     }
@@ -525,8 +525,7 @@ class AuctionItemServiceTest {
 
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .thenReturn(Optional.of(sellerProfile));
-        when(auctionRoomRepository.findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
-                ROOM_ID, 5L)).thenReturn(Optional.empty());
+        when(auctionRoomRepository.findByIdForUpdate(ROOM_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> auctionItemService.add(USER_ID, ROOM_ID, newAddRequest()))
                 .isInstanceOf(ApplicationException.class)
