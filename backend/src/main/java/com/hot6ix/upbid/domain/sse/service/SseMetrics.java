@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.sse.service;
 
 import com.hot6ix.upbid.global.event.EventType;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -24,6 +25,14 @@ public class SseMetrics {
     private final Timer heartbeat;
 
     /**
+     * 발행이 실패해 사라진 이벤트 수.
+     *
+     * <p>Redis 가 SSE 의 단일 실패점이라 이 값이 0이 아니면 화면이 실시간을 못 받고 있다는 뜻이다.
+     * 발행 실패는 로그만 남고 호출한 쪽으로 전파되지 않아서, 지표가 없으면 조용히 죽는다.
+     */
+    private final Counter publishFailures;
+
+    /**
      * 방 전원에게 한 번 쏘는 데 걸리는 시간. 이 값이 그대로 부른 쪽 시간에 얹힌다. 입찰이면
      * 응답 시간에(#234), 마감이면 마감 소요 시간에 들어간다.
      *
@@ -40,6 +49,7 @@ public class SseMetrics {
     public SseMetrics(MeterRegistry registry) {
         this.registry = registry;
         this.heartbeat = registry.timer("upbid.sse.heartbeat");
+        this.publishFailures = registry.counter("upbid.sse.publish.failure");
         this.broadcasts = broadcastTimers(registry);
     }
 
@@ -76,6 +86,10 @@ public class SseMetrics {
 
     public void recordHeartbeat(Runnable sweep) {
         heartbeat.record(sweep);
+    }
+
+    public void recordPublishFailure() {
+        publishFailures.increment();
     }
 
     /**
