@@ -5,8 +5,11 @@
   ARGV[1] capacity            버킷 최대 용량
   ARGV[2] refill_rate_per_sec 초당 토큰 충전량
   ARGV[3] requested_tokens    이번 요청이 소모할 토큰 수
-  ARGV[4] now_ms              현재 시각(ms). Redis 서버 시각이 아니라 애플리케이션이 넘겨준
-                              값을 써야 여러 서버 간 시간 편차에서 자유롭다
+
+  현재 시각은 애플리케이션 서버 시각이 아니라 Redis의 TIME 을 쓴다. 여러 WAS가 각자의
+  시계로 now 를 계산해 넘기면 서버 간 clock drift 만큼 토큰이 과다/과소 충전될 수 있는데,
+  이 스크립트를 실행하는 Redis 노드는 항상 하나이므로 TIME 을 기준으로 삼으면 그 문제가
+  사라진다.
 
   반환: 1(허용) 또는 0(거절)
 ]]
@@ -15,7 +18,9 @@ local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
 local refill_rate = tonumber(ARGV[2])
 local requested = tonumber(ARGV[3])
-local now = tonumber(ARGV[4])
+
+local redis_time = redis.call('TIME')
+local now = (tonumber(redis_time[1]) * 1000) + math.floor(tonumber(redis_time[2]) / 1000)
 
 local bucket = redis.call('HMGET', key, 'tokens', 'last_refill')
 local tokens = tonumber(bucket[1])
@@ -46,8 +51,7 @@ if tokens >= requested then
     return 1
 end
 
--- 거절해도 리필 결과는 반영해 둔다. 안 그러면 다음 요청이 지금 계산한 리필을 다시 놓친다.
-redis.call('HMSET', key, 'tokens', tokens, 'last_refill', last_refill)
-redis.call('EXPIRE', key, ttl)
-
+-- 거절 시에는 상태를 쓰지 않는다. 다음 요청이 last_refill 기준으로 경과 시간을 다시
+-- 계산하면 이번에 놓친 리필까지 포함되므로 결과는 같고, 연타/DoS 상황에서 매 거절마다
+-- Redis 쓰기가 발생하는 것만 막을 수 있다.
 return 0

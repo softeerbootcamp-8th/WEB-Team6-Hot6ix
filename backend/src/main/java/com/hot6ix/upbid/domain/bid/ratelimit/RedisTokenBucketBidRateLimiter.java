@@ -45,7 +45,6 @@ public class RedisTokenBucketBidRateLimiter implements BidRateLimiter {
         }
 
         String key = "rate-limit:bid:" + userId;
-        long nowMillis = System.currentTimeMillis();
 
         try {
             Long allowed = redisClient.execute(
@@ -53,8 +52,7 @@ public class RedisTokenBucketBidRateLimiter implements BidRateLimiter {
                     List.of(key),
                     String.valueOf(properties.capacity()),
                     String.valueOf(properties.refillPerSecond()),
-                    "1",
-                    String.valueOf(nowMillis));
+                    "1");
 
             // null 은 정상 실행에서는 나오지 않지만, 나오더라도 fail-open 정책과 같은
             // 방향(허용)으로 처리한다.
