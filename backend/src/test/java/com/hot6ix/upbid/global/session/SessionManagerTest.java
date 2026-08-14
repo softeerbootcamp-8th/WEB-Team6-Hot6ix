@@ -118,6 +118,18 @@ class SessionManagerTest {
 
             assertThat(sessionManager.findUserId(request)).isEqualTo(Optional.of(USER_ID));
         }
+
+        @Test
+        @DisplayName("Redis 왕복 후 Integer로 역직렬화된 userId도 Long으로 반환한다")
+        void returnsLongEvenWhenStoredAsInteger() {
+
+            // GenericJacksonJsonRedisSerializer는 Long 같은 natural type엔 타입 정보를 안 붙여서,
+            // 실제 Redis를 거치면 Integer로 돌아올 수 있다(MockHttpSession은 이 왕복을 안 거치므로
+            // 그 상황을 직접 흉내낸다).
+            request.getSession(true).setAttribute(SessionKeys.USER_ID, USER_ID.intValue());
+
+            assertThat(sessionManager.findUserId(request)).isEqualTo(Optional.of(USER_ID));
+        }
     }
 
     @Nested

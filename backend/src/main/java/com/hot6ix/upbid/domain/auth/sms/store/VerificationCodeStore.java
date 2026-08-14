@@ -6,8 +6,8 @@ import java.util.Optional;
 /**
  * 인증번호 저장소 인터페이스.
  *
- * <p>현재 구현체는 {@link InMemoryVerificationCodeStore}(인메모리)이며,
- * 추후 Redis 도입 시 이 인터페이스의 구현체만 교체하면 된다.
+ * <p>구현체는 {@link RedisVerificationCodeStore}(Redis)다. 여러 인스턴스가
+ * 인증번호·발송 이력을 공유해야 해서 인메모리 구현은 쓰지 않는다.
  *
  * <p>저장소가 관리하는 데이터:
  * <ul>
