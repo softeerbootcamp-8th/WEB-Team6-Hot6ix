@@ -27,6 +27,7 @@ import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.PendingMessage;
 import org.springframework.data.redis.connection.stream.PendingMessages;
+import org.springframework.data.redis.connection.stream.PendingMessagesSummary;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.connection.stream.StreamRecords;
@@ -53,6 +54,8 @@ class BidStreamConsumerTest {
     @BeforeEach
     void setUp() {
         when(redis.opsForStream()).thenReturn(streamOperations);
+        when(streamOperations.pending(STREAM, GROUP))
+                .thenReturn(new PendingMessagesSummary(GROUP, 0, Range.unbounded(), Map.of()));
         BidStreamProperties properties = new BidStreamProperties(
                 STREAM, GROUP, CONSUMER, Duration.ofMillis(100), Duration.ofMillis(50),
                 Duration.ofSeconds(5));
@@ -144,6 +147,10 @@ class BidStreamConsumerTest {
                 pendingId, Consumer.from(GROUP, "dead-consumer"), Duration.ofSeconds(10), 1L);
         when(streamOperations.pending(eq(STREAM), eq(GROUP), any(Range.class), anyLong()))
                 .thenReturn(new PendingMessages(GROUP, List.of(pendingMessage)));
+        when(streamOperations.pending(STREAM, GROUP))
+                .thenReturn(new PendingMessagesSummary(
+                        GROUP, 1, Range.closed(pendingId.getValue(), pendingId.getValue()),
+                        Map.of("dead-consumer", 1L)));
         MapRecord<String, Object, Object> pendingRecord = record(pendingId.getValue());
         when(streamOperations.claim(STREAM, GROUP, CONSUMER, Duration.ZERO, pendingId))
                 .thenReturn(List.of(pendingRecord));

@@ -58,6 +58,10 @@ services:
       - PERF_RUN_ID=${PERF_RUN_ID:-unknown}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - SCHEDULER_POOL_SIZE=${SCHEDULER_POOL_SIZE:-4}
+      # Redis Stream → MySQL 단건 Consumer. 배포 부하에서 pending·lag·persist 시간을 보고 조정한다.
+      - BID_STREAM_POLL_DELAY=${BID_STREAM_POLL_DELAY:-100ms}
+      - BID_STREAM_BLOCK_TIMEOUT=${BID_STREAM_BLOCK_TIMEOUT:-50ms}
+      - BID_STREAM_LOCK_AT_MOST_FOR=${BID_STREAM_LOCK_AT_MOST_FOR:-5s}
       # 마감 예약을 Redis 에서 꺼내 실행하는 값들 (#289). 기본값은 application.yaml 과 같다.
       #
       # 여기와 CICD-BE.yml 의 .env 생성 블록 양쪽에 다 있어야 실제로 먹는다. compose 에만

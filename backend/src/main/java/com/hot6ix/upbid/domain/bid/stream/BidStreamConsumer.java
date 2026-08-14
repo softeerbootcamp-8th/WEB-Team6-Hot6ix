@@ -12,6 +12,7 @@ import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.PendingMessages;
+import org.springframework.data.redis.connection.stream.PendingMessagesSummary;
 import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.RecordId;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
@@ -46,11 +47,15 @@ public class BidStreamConsumer {
 
         MapRecord<String, Object, Object> record = readPendingOrNew();
         if (record == null) {
+            metrics.recordLagMillis(0);
             return;
         }
 
+        Map<String, String> fields = stringFields(record);
+        String eventType = fields.get("type");
+        metrics.recordLagMillis(System.currentTimeMillis() - streamTimestamp(record));
         try {
-            BidStreamEvent event = BidStreamEvent.from(stringFields(record));
+            BidStreamEvent event = BidStreamEvent.from(fields);
             metrics.recordPersistence(() -> persistenceService.persist(event));
 
             try {
@@ -66,9 +71,9 @@ public class BidStreamConsumer {
             }
 
             stream().delete(properties.key(), record.getId());
-            metrics.recordSuccess();
+            metrics.recordSuccess(eventType);
         } catch (RuntimeException e) {
-            metrics.recordFailure();
+            metrics.recordFailure(eventType);
             throw e;
         }
     }
@@ -76,6 +81,8 @@ public class BidStreamConsumer {
     @SuppressWarnings("unchecked")
     private MapRecord<String, Object, Object> readPendingOrNew() {
         StreamOperations<String, Object, Object> stream = stream();
+        PendingMessagesSummary pendingSummary = stream.pending(properties.key(), properties.group());
+        metrics.recordPending(pendingSummary.getTotalPendingMessages());
         PendingMessages pending = stream.pending(
                 properties.key(), properties.group(), Range.unbounded(), 1);
 
@@ -102,5 +109,11 @@ public class BidStreamConsumer {
                 .collect(Collectors.toUnmodifiableMap(
                         entry -> String.valueOf(entry.getKey()),
                         entry -> String.valueOf(entry.getValue())));
+    }
+
+    private static long streamTimestamp(MapRecord<String, Object, Object> record) {
+        String value = record.getId().getValue();
+        int separator = value.indexOf('-');
+        return Long.parseLong(separator < 0 ? value : value.substring(0, separator));
     }
 }

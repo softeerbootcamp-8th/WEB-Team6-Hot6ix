@@ -21,6 +21,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import com.hot6ix.upbid.domain.bid.stream.BidStreamMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 class AuctionRedisInitializerTest extends AbstractRedisContainerTest {
 
@@ -54,7 +56,7 @@ class AuctionRedisInitializerTest extends AbstractRedisContainerTest {
         initializer = new AuctionRedisInitializer(
                 auctionItemRepository,
                 auctionParticipantRepository,
-                new AuctionRedisStore(redis));
+                new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry())));
     }
 
     @Test

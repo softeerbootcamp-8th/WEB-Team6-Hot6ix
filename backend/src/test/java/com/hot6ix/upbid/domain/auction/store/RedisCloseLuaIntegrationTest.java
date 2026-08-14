@@ -20,6 +20,8 @@ import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import com.hot6ix.upbid.domain.bid.stream.BidStreamMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
 
@@ -47,7 +49,7 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
     void setUp() {
         redis.delete(List.of(AuctionRedisKeys.item(ITEM_ID), AuctionRedisKeys.accepted(ITEM_ID),
                 AuctionRedisKeys.participants(ROOM_ID), AuctionRedisKeys.stream()));
-        store = new AuctionRedisStore(redis);
+        store = new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry()));
     }
 
     @Test

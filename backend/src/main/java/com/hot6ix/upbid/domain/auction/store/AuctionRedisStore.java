@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.auction.store;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
+import com.hot6ix.upbid.domain.bid.stream.BidStreamMetrics;
 import com.hot6ix.upbid.domain.user.entity.User;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -38,14 +39,16 @@ import org.springframework.stereotype.Component;
 public class AuctionRedisStore {
 
     private final StringRedisTemplate redis;
+    private final BidStreamMetrics metrics;
     @SuppressWarnings("rawtypes")
     private final RedisScript<List> bidScript;
     private final RedisScript<Long> seedScript;
     @SuppressWarnings("rawtypes")
     private final RedisScript<List> closeScript;
 
-    public AuctionRedisStore(StringRedisTemplate redis) {
+    public AuctionRedisStore(StringRedisTemplate redis, BidStreamMetrics metrics) {
         this.redis = redis;
+        this.metrics = metrics;
         // 스크립트는 한 번 읽어 들고 있는다. Spring Data Redis 가 EVALSHA 로 부르고
         // NOSCRIPT 가 오면 알아서 EVAL 로 한 번 더 보낸다.
         this.bidScript = new DefaultRedisScript<>(readScript("lua/bid.lua"), List.class);
@@ -69,7 +72,13 @@ public class AuctionRedisStore {
                 String.valueOf(amount),
                 String.valueOf(arrivedAtMillis));
 
-        return toDecision(result);
+        RedisBidDecision decision = toDecision(result);
+        switch (decision) {
+            case RedisBidDecision.Accepted ignored -> metrics.recordLuaDecision("accepted");
+            case RedisBidDecision.Rejected rejected -> metrics.recordLuaDecision(
+                    "rejected_" + rejected.reason().name().toLowerCase(java.util.Locale.ROOT));
+        }
+        return decision;
     }
 
     private static RedisBidDecision toDecision(List<String> result) {
@@ -138,10 +147,16 @@ public class AuctionRedisStore {
         args.add(nullableNumber(seed.leaderUserId()));
         seed.participantUserIds().stream().map(String::valueOf).forEach(args::add);
 
-        Long result = redis.execute(
-                seedScript,
-                List.of(AuctionRedisKeys.item(seed.itemId()), AuctionRedisKeys.participants(seed.roomId())),
-                args.toArray());
+        Long result;
+        try {
+            result = redis.execute(
+                    seedScript,
+                    List.of(AuctionRedisKeys.item(seed.itemId()), AuctionRedisKeys.participants(seed.roomId())),
+                    args.toArray());
+        } catch (RuntimeException e) {
+            metrics.recordSeedFailure();
+            throw e;
+        }
 
         return Long.valueOf(1L).equals(result);
     }
