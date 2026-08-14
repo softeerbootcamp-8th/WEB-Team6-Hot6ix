@@ -32,17 +32,39 @@ class EmitterSubscriber implements Flow.Subscriber<SseDispatchTask> {
         subscription.request(1);
     }
 
+    /**
+     * <b>전송이 어떤 이유로 실패하든 연결을 정리한다.</b> 끊긴 연결({@code IOException} 등)만
+     * 잡으면, 직렬화 실패 같은 다른 예외는 {@code SubmissionPublisher}가 구독을 취소하고
+     * {@code onError}로 넘겨 버린다. 그러면 큐만 죽고 emitter 는 맵에 남아, 그 연결은
+     * 타임아웃(1시간)까지 아무것도 못 받으면서 참여자 수에는 계속 잡힌다.
+     *
+     * <p>예외 종류로 로그 수준을 가른다. 끊긴 연결은 정상 종료라 {@code debug}, 나머지는
+     * 코드 문제일 수 있어 {@code warn} 으로 남긴다.
+     */
     @Override
     public void onNext(SseDispatchTask task) {
         try {
             send(task);
         } catch (IOException | IllegalStateException e) {
             log.debug("sse 전송 중 끊긴 연결 정리: roomId={}, cause={}", roomId, cause(e));
-            subscription.cancel();
-            completeWithError(e);
+            abort(e);
+            return;
+        } catch (RuntimeException e) {
+            log.warn("sse 전송 실패로 연결 종료: roomId={}", roomId, e);
+            abort(e);
             return;
         }
         subscription.request(1);
+    }
+
+    /**
+     * 큐 소비를 멈추고 emitter 를 종료시킨다. 둘 다 필요하다. {@code cancel()} 만 하면
+     * emitter 가 맵에 남아 좀비가 되고, {@code completeWithError} 만 하면 죽은 emitter 에
+     * 계속 전송을 시도한다.
+     */
+    private void abort(Exception e) {
+        subscription.cancel();
+        completeWithError(e);
     }
 
     @Override
