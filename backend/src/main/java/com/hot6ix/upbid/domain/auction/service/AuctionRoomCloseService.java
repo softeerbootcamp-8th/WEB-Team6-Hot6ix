@@ -14,6 +14,7 @@ import com.hot6ix.upbid.global.event.payload.RoomClosed;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -23,6 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class AuctionRoomCloseService {
+
+    /** 아직 결과가 나오지 않은 물품 상태. 하나라도 남아 있으면 자동 종료 대상이 아니다. */
+    private static final List<AuctionItemStatus> UNFINISHED_ITEM_STATUSES =
+            List.of(AuctionItemStatus.READY, AuctionItemStatus.IN_PROGRESS);
 
     private final AuctionRoomRepository auctionRoomRepository;
     private final AuctionItemRepository auctionItemRepository;
@@ -37,7 +42,8 @@ public class AuctionRoomCloseService {
      * <p><b>진행 중인 물품이 하나라도 있으면 거절한다.</b> 판매자 버튼 하나로 입찰이 붙어 있는
      * 경매가 사라지지 않게 하려는 것이다. 방을 닫으려면 물품을 먼저
      * {@code AuctionItemCloseService.closeEarly}로 앞당겨 마감시켜야 하고, 그러면 마감이
-     * 확정되기까지 Soft Close 트리거 초만큼 기다리게 된다.
+     * 확정되기까지 Soft Close 트리거 초만큼 기다리게 된다. 그 사이 종료가 손이 묶이는 대신,
+     * 판매자가 방치한 방은 {@link #closeIfIdle}이 12시간 뒤에 닫는다.
      *
      * <p>아직 시작하지 않은 {@code READY} 물품은 <b>건드리지 않는다.</b> 시작한 적 없는 물품을
      * 유찰로 적으면 "입찰자가 없어 유찰"과 "아예 올리지도 않음"이 결과 집계에서 섞인다.
@@ -83,6 +89,53 @@ public class AuctionRoomCloseService {
                 auctionRoom,
                 auctionItemRepository.countByAuctionRoom_AuctionRoomId(auctionRoomId),
                 true, null);
+    }
+
+    /**
+     * 물품이 전부 마감된 채 방치된 경매방을 <b>소유자 확인 없이</b> 종료한다.
+     * {@code AuctionRoomIdleCloseRunner}가 부르는 시스템용 진입점이며, 종료되면 수동 종료와
+     * 똑같은 {@code RoomClosed}가 나간다.
+     *
+     * <p>대상을 고르는 것은 {@code AuctionRoomRepository.findIdleRoomIds}지만, <b>여기서 방 행
+     * 락을 잡고 같은 조건을 다시 본다.</b> 목록을 읽고 여기까지 오는 사이에 판매자가 물품을
+     * 시작했을 수 있어서다. 그러면 방금 시작한 경매가 열리자마자 닫힌다.
+     *
+     * <p><b>조건에 맞지 않으면 조용히 {@code false}를 준다.</b> 이미 닫힌 방, 물품이 다시
+     * 시작된 방, 다른 서버가 먼저 닫은 방이 여기서 함께 걸러진다. 예외를 던지지 않는 것은
+     * 이것이 사용자 요청이 아니라 <b>지나가면서 정리하는 일</b>이라, 대상이 아닌 게 정상
+     * 흐름이기 때문이다.
+     *
+     * <p>{@code READ_COMMITTED}인 이유는 {@link #close}와 같다. 락을 기다리는 동안 커밋된
+     * 물품 시작을 못 보면 락을 잡고도 낡은 값으로 방을 닫는다.
+     *
+     * @param auctionRoomId 종료할 경매방의 ID
+     * @param idleBefore    마지막 물품 마감 시각이 이보다 앞서야 종료한다
+     * @return 실제로 종료했으면 {@code true}
+     */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public boolean closeIfIdle(Long auctionRoomId, LocalDateTime idleBefore) {
+
+        AuctionRoom auctionRoom = auctionRoomRepository.findByIdForUpdate(auctionRoomId)
+                .orElse(null);
+
+        if (auctionRoom == null || auctionRoom.getStatus() != AuctionRoomStatus.OPEN) {
+            return false;
+        }
+
+        if (auctionItemRepository.existsByAuctionRoom_AuctionRoomIdAndStatusIn(
+                auctionRoomId, UNFINISHED_ITEM_STATUSES)) {
+            return false;
+        }
+
+        LocalDateTime lastEndAt = auctionItemRepository.findMaxEndAt(auctionRoomId);
+
+        if (lastEndAt == null || !lastEndAt.isBefore(idleBefore)) {
+            return false;
+        }
+
+        closeLocked(auctionRoom, LocalDateTime.now());
+
+        return true;
     }
 
     /**

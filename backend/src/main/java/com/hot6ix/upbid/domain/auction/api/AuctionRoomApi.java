@@ -197,7 +197,10 @@ public interface AuctionRoomApi {
                     + "물품을 하나도 시작하지 않은 방(BEFORE)도 종료할 수 있다. "
                     + "종료된 방에서는 물품 추가·시작이 모두 막히며, **되돌리는 API는 없다.** "
                     + "응답의 closedAt이 종료 시각이고, 종료를 참여자에게 알리는 ROOM_CLOSED 이벤트가 "
-                    + "SSE로 함께 나간다."
+                    + "SSE로 함께 나간다.\n\n"
+                    + "판매자가 종료하지 않고 방치한 방은 **마지막 물품이 마감되고 12시간이 지나면 "
+                    + "서버가 자동으로 종료한다.** 이때도 같은 ROOM_CLOSED 이벤트가 나가며, "
+                    + "아직 시작하지 않은 READY 물품이 남은 방은 자동 종료 대상이 아니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "종료 성공"),
