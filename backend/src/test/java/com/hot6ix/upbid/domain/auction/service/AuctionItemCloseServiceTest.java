@@ -68,10 +68,11 @@ class AuctionItemCloseServiceTest {
     @DisplayName("입찰이 있던 물품은 낙찰로 마감되고 ItemEnded가 발행된다")
     void closeSoldItem() {
 
-        AuctionItem auctionItem = givenLockedItem(AuctionItemStatus.IN_PROGRESS);
+        AuctionItem auctionItem =
+                givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().minusSeconds(1));
         auctionItem.applyBid(user("한기"), 12_000L);
 
-        auctionItemCloseService.close(ITEM_ID);
+        auctionItemCloseService.closeIfDue(ITEM_ID);
 
         assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.SOLD);
         assertThat(publishedEvent()).isInstanceOfSatisfying(ItemEnded.class, event -> {
@@ -87,9 +88,10 @@ class AuctionItemCloseServiceTest {
     @DisplayName("입찰이 없던 물품은 유찰로 마감되고 ItemPassed가 발행된다")
     void closePassedItem() {
 
-        AuctionItem auctionItem = givenLockedItem(AuctionItemStatus.IN_PROGRESS);
+        AuctionItem auctionItem =
+                givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().minusSeconds(1));
 
-        auctionItemCloseService.close(ITEM_ID);
+        auctionItemCloseService.closeIfDue(ITEM_ID);
 
         assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.FAILED);
         assertThat(publishedEvent()).isInstanceOfSatisfying(ItemPassed.class, event -> {
@@ -106,7 +108,7 @@ class AuctionItemCloseServiceTest {
         AuctionItem auctionItem = givenLockedItem(AuctionItemStatus.SOLD);
         auctionItem.applyBid(user("한기"), 12_000L);
 
-        auctionItemCloseService.close(ITEM_ID);
+        auctionItemCloseService.closeIfDue(ITEM_ID);
 
         assertThat(auctionItem.getStatus())
                 .as("낙찰자가 정해진 뒤 다시 닫히면 거래 상태가 뒤집힌다")
@@ -120,7 +122,7 @@ class AuctionItemCloseServiceTest {
 
         AuctionItem auctionItem = givenLockedItem(AuctionItemStatus.READY);
 
-        auctionItemCloseService.close(ITEM_ID);
+        auctionItemCloseService.closeIfDue(ITEM_ID);
 
         assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.READY);
         verify(domainEventPublisher, never()).publish(any());
@@ -132,7 +134,7 @@ class AuctionItemCloseServiceTest {
 
         when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.empty());
 
-        auctionItemCloseService.close(ITEM_ID);
+        auctionItemCloseService.closeIfDue(ITEM_ID);
 
         verify(domainEventPublisher, never()).publish(any());
     }
@@ -165,20 +167,6 @@ class AuctionItemCloseServiceTest {
         assertThat(rescheduleAt).isEmpty();
         assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.FAILED);
         assertThat(publishedEvent()).isInstanceOf(ItemPassed.class);
-    }
-
-    @Test
-    @DisplayName("판매자가 방을 종료할 때는 마감 시각이 남아 있어도 닫는다")
-    void closeIgnoresRemainingTime() {
-
-        AuctionItem auctionItem =
-                givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().plusMinutes(10));
-
-        auctionItemCloseService.close(ITEM_ID);
-
-        assertThat(auctionItem.getStatus())
-                .as("방송이 끝났는데 물품만 계속 열려 있으면 안 된다")
-                .isEqualTo(AuctionItemStatus.FAILED);
     }
 
     @Test
