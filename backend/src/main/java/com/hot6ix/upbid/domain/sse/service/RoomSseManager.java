@@ -50,7 +50,7 @@ public class RoomSseManager {
      * {@code Last-Event-ID}의 시작점으로 잡는다.
      */
     public SseEmitter subscribe(Long roomId, Long lastEventId) {
-        SseEmitter emitter = new SseEmitter(sseProperties.emitterTimeoutMs());
+        SseEmitter emitter = createEmitter();
 
         register(roomId, emitter);
 
@@ -103,6 +103,18 @@ public class RoomSseManager {
                 }
             }
         });
+    }
+
+    /**
+     * emitter 생성만 떼어 둔다.
+     *
+     * <p>이 클래스의 정리는 전부 emitter 생명주기 콜백({@code onError → disconnect})을 타는데,
+     * 그 콜백을 발화시키는 것은 Spring MVC 의 async handler 다. 유닛 테스트에는 그 계층이
+     * 없어서 맨 {@link SseEmitter}로는 <b>정리가 도는지를 확인할 수 없다.</b> 테스트가 여기를
+     * 재정의해 콜백이 실제로 도는 emitter 로 갈아끼운다.
+     */
+    SseEmitter createEmitter() {
+        return new SseEmitter(sseProperties.emitterTimeoutMs());
     }
 
     public int getParticipantCount(Long roomId) {
