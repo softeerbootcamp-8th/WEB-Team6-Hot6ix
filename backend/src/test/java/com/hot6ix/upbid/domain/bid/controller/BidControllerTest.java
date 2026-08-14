@@ -172,4 +172,20 @@ class BidControllerTest extends AbstractControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(2002));
     }
+
+    @Test
+    @DisplayName("리미터가 제한 상태면 429와 코드 7009를 반환하고 Service를 부르지 않는다")
+    void returnsTooManyRequestsWhenRateLimited() throws Exception {
+
+        when(bidRateLimiter.isRateLimited(LOGIN_USER_ID)).thenReturn(true);
+
+        mockMvc.perform(post(URL)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\": 15000}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(7009));
+
+        verify(bidService, never()).place(anyLong(), anyLong(), anyLong());
+    }
 }
