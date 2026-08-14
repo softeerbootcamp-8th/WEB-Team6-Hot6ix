@@ -177,6 +177,12 @@ upbid:
       # 마감(30s)보다 짧다. 알림은 미뤄 둔 시각에 다시 떠올라도 notified_at 이 중복을 막아
       # 주므로, 길게 잡아 얻는 것이 없고 죽은 서버가 쥔 알림만 늦어진다.
       visibility-timeout: ${CLOSING_SOON_VISIBILITY_TIMEOUT:10s}
+    result-cache:
+      # 종료된 경매방 결과 조회의 공개 부분만 담는다(#329). CLOSED 방만 저장하므로 히트 =
+      # 되돌아갈 수 없는 상태다. 남는 변동은 상품 이름·이미지 수정(ProductService.update가
+      # 이미 소급 반영을 수용한 트레이드오프)과 닉네임·상점명 변경뿐이라 TTL로 경계를 짓는다.
+      enabled: ${RESULT_CACHE_ENABLED:true}
+      ttl: ${RESULT_CACHE_TTL:60s}
   deal:
     award-recovery:
       enabled: ${AWARD_RECOVERY_ENABLED:true}
