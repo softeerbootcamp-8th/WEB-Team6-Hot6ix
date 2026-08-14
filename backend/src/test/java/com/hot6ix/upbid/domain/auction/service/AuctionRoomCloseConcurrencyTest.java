@@ -83,6 +83,10 @@ class AuctionRoomCloseConcurrencyTest extends AbstractMySqlContainerTest {
     @MockitoBean
     private DomainEventPublisher domainEventPublisher;
 
+    // 조회 캐시는 Redis가 필요해 이 슬라이스에 없다.
+    @MockitoBean
+    private AuctionRoomPublicCacheService auctionRoomPublicCacheService;
+
     @Test
     @DisplayName("종료 도중에 다른 요청이 먼저 방을 닫으면 두 번째 종료는 거절된다")
     void rejectsCloseWhenAnotherRequestClosedFirst() {

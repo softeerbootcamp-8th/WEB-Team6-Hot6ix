@@ -173,6 +173,9 @@ upbid:
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
   onboarding-session-timeout: ${ONBOARDING_SESSION_TIMEOUT:10m}
+  cache:
+    # 방이 바뀌는 지점마다 캐시를 직접 지우므로, 이 값은 그중 하나를 빠뜨렸을 때를 위한 안전망이다.
+    time-to-live: ${CACHE_TTL:5m}
   alert:
     slack:
       webhook-url: ${SLACK_WEBHOOK_URL:}

@@ -28,6 +28,8 @@ public class AuctionRoomCloseService {
     private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final AuctionItemCloseService auctionItemCloseService;
+    /** 종료로 방 상태와 종료 시각이 바뀌므로 담아 둔 값을 버린다. */
+    private final AuctionRoomPublicCacheService auctionRoomPublicCacheService;
     private final DomainEventPublisher domainEventPublisher;
 
     /**
@@ -92,6 +94,7 @@ public class AuctionRoomCloseService {
 
         LocalDateTime closedAt = LocalDateTime.now();
         auctionRoom.close(closedAt);
+        auctionRoomPublicCacheService.evict(auctionRoom.getShareCode());
 
         domainEventPublisher.publish(
                 RoomClosed.of(auctionRoomId, auctionRoom.getName(), closedAt));
