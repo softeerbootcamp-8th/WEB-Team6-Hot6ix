@@ -80,6 +80,10 @@ const BY_CODE: Record<number, SellerActionErrorMessage> = {
     title: '이미 마감이 임박했어요',
     description: '연장 구간에 들어와서 더 앞당길 수 없어요.',
   },
+  4012: {
+    title: '진행 중인 물품이 있어요',
+    description: '물품 마감을 먼저 끝낸 뒤에 종료해 주세요.',
+  },
   5001: {
     title: '없는 상품이에요',
     description: '상품 목록에서 빠졌을 수 있어요. 다시 골라주세요.',
