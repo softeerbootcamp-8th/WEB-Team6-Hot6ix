@@ -131,6 +131,17 @@ export type SseEventPayload =
  *
  * 방이 종료되면(`ROOM_CLOSED`) 상태가 `closed` 가 되고 연결을 닫는다. 이유는 아래
  * 리스너 주석 참고 — 닫지 않으면 정상 종료가 연결 실패처럼 보인다.
+ *
+ * ## 이벤트 순서
+ *
+ * 서버가 emitter 별 큐 없이 이벤트마다 가상 스레드로 전송하므로 **도착 순서가 발생
+ * 순서와 다를 수 있다.** `Last-Event-ID` 가 이미 처리한 것보다 작으면 늦게 도착한
+ * 과거 이벤트이므로 버린다(`accept`).
+ *
+ * 버린 만큼은 **복구되지 않는다.** 순서는 지키되 완결성은 포기하는 방식이고,
+ * 큐를 서버에 두는 대안과 비교하기 위한 구현이다. `droppedCount` 가 그 비용을
+ * 그대로 보여주므로, 이 값이 0 이 아니면 그만큼의 이벤트가 화면에 반영되지 않았다는
+ * 뜻이다.
  */
 export function useRealtimeStatus(
   shareCode: string,
@@ -140,6 +151,21 @@ export function useRealtimeStatus(
   const [retryKey, setRetryKey] = useState(0)
   const onEventRef = useRef(onEvent)
 
+  /**
+   * 지금까지 처리한 가장 큰 이벤트 ID.
+   *
+   * 서버가 emitter 별 큐 없이 이벤트마다 가상 스레드로 전송하므로 **같은 연결에서도
+   * 도착 순서가 뒤집힐 수 있다.** 이미 처리한 것보다 작은 ID 가 오면 늦게 도착한
+   * 과거 이벤트이므로 버린다.
+   *
+   * 이 값은 연결이 바뀔 때만 초기화한다. EventSource 는 재연결할 때 `Last-Event-ID`
+   * 를 그대로 들고 가고 서버는 그 뒤부터 replay 하므로, 재연결 후에도 ID 는 계속
+   * 커진다 — 여기서 초기화하면 replay 된 것을 전부 다시 처리하게 된다.
+   */
+  const lastEventIdRef = useRef(-1)
+  /** 순서 역전으로 버린 이벤트 수. 큐 유무를 비교하는 실험의 판정 지표다. */
+  const [droppedCount, setDroppedCount] = useState(0)
+
   // 콜백이 바뀌어도 EventSource 를 다시 열지 않는다.
   useEffect(() => {
     onEventRef.current = onEvent
@@ -147,6 +173,8 @@ export function useRealtimeStatus(
 
   useEffect(() => {
     setStatus('connecting')
+    lastEventIdRef.current = -1
+    setDroppedCount(0)
 
     const es = new EventSource(
       `${API_BASE_URL}/api/v1/auction-rooms/share/${shareCode}/subscribe`,
@@ -174,9 +202,39 @@ export function useRealtimeStatus(
       )
     }
 
+    /**
+     * 도착 순서가 뒤집힌 이벤트를 걸러낸다.
+     *
+     * ID 가 없는 이벤트는 없다 — 서버가 모든 이벤트에 방별 순차 ID 를 붙인다.
+     * heartbeat 만 ID 없이 나가지만 그건 주석(`:`)이라 여기까지 오지 않는다.
+     * 그래도 숫자가 아니면 거르지 않고 통과시킨다. 판단할 근거가 없을 때
+     * 버리는 것보다 중복을 감수하는 편이 낫다.
+     *
+     * @returns 처리해도 되면 true
+     */
+    function accept(kind: SseEventPayload['kind'], e: MessageEvent) {
+      const id = Number(e.lastEventId)
+
+      if (!Number.isFinite(id)) return true
+
+      if (id <= lastEventIdRef.current) {
+        console.warn(
+          '[SSE] 순서 역전 무시', kind, `id=${id}`, `last=${lastEventIdRef.current}`,
+        )
+        setDroppedCount((n) => n + 1)
+        return false
+      }
+
+      lastEventIdRef.current = id
+      return true
+    }
+
     function makeHandler(kind: SseEventPayload['kind']) {
       return (e: MessageEvent) => {
         console.log('[SSE] received', kind, e.data)
+
+        if (!accept(kind, e)) return
+
         try {
           const data = JSON.parse(e.data as string)
           onEventRef.current({ kind, ...data } as SseEventPayload)
@@ -225,5 +283,5 @@ export function useRealtimeStatus(
     setRetryKey((k) => k + 1)
   }, [])
 
-  return { status, retry }
+  return { status, retry, droppedCount }
 }

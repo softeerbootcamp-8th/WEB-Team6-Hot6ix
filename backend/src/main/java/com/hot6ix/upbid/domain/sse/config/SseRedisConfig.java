@@ -61,10 +61,12 @@ public class SseRedisConfig {
     }
 
     /**
-     * emitter 별 drain 을 실행하는 VT executor. {@link EmitterDispatcher}가 공유한다.
+     * SSE 전송을 실행하는 VT executor. {@code RoomSseManager}가 쓴다.
      *
-     * <p>VT 는 OS 스레드와 1:1 이 아니라 캐리어 스레드 위에서 멀티플렉싱되므로, emitter 수만큼
-     * 생성해도 캐리어 스레드 고갈이 일어나지 않는다.
+     * <p>VT 는 OS 스레드와 1:1 이 아니라 캐리어 스레드 위에서 멀티플렉싱되므로, 전송 건수만큼
+     * 생성해도 캐리어 스레드 고갈이 일어나지 않는다. 다만 {@code SseEmitter.send()} 내부가
+     * {@code synchronized} 라, 같은 emitter 에 VT 가 여럿 붙으면 monitor 대기가 캐리어를
+     * 붙잡는다(Java 21 pinning). 그 영향은 {@code jdk.VirtualThreadPinned} 로 잰다.
      */
     @Bean(destroyMethod = "close")
     public Executor sseVirtualThreadExecutor() {

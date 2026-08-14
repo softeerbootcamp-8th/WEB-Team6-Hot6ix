@@ -32,10 +32,8 @@ class RoomSseManagerTest {
     private static final String EVENT_NAME = "TEST_EVENT";
     private static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
     private static final long EMITTER_TIMEOUT_MS = 60 * 60 * 1000L;
-    private static final int QUEUE_CAPACITY = 128;
 
-    private static final SseProperties PROPS =
-            new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50, QUEUE_CAPACITY);
+    private static final SseProperties PROPS = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50);
 
     private final RoomSseManager roomSseManager = newRoomSseManager();
 
@@ -54,10 +52,10 @@ class RoomSseManagerTest {
     }
 
     /**
-     * dispatcher 를 돌리는 executor 로 {@code Runnable::run} 을 준다. 운영에서는 VT 가
-     * 비동기로 전송하지만, 이 테스트가 보는 것은 <b>등록·해제·팬아웃 대상 선정</b>이지
-     * 전송 시점이 아니다. 같은 스레드에서 즉시 실행시켜 {@code deliverLocal} 이 돌아온 뒤
-     * 바로 단언할 수 있게 한다.
+     * 전송을 돌리는 executor 로 {@code Runnable::run} 을 준다. 운영에서는 VT 가 비동기로
+     * 전송하지만, 이 테스트가 보는 것은 <b>등록·해제·팬아웃 대상 선정</b>이지 전송 시점이
+     * 아니다. 같은 스레드에서 즉시 실행시켜 {@code deliverLocal} 이 돌아온 뒤 바로 단언할 수
+     * 있게 한다.
      *
      * <p>emitter 는 {@link FakeMvcEmitter}로 갈아끼운다. 이유는 그 클래스 주석 참고.
      */

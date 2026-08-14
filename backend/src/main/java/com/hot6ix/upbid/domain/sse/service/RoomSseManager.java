@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import jakarta.annotation.PostConstruct;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,6 +17,18 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+/**
+ * 방별 SSE 연결을 들고, 이벤트를 이 인스턴스에 붙은 emitter 로 내보낸다.
+ *
+ * <p><b>전송은 emitter 별 큐 없이 이벤트마다 VT 하나로 처리한다.</b> 느린 구독자가 다른
+ * emitter 를 막지 않는다는 목적은 이것만으로 달성된다 — 막히는 것은 그 emitter 를 맡은 VT
+ * 하나뿐이다.
+ *
+ * <p>대신 <b>같은 emitter 에 VT 여러 개가 동시에 붙을 수 있어 도착 순서가 뒤집힐 수 있다.</b>
+ * 클라이언트가 {@code Last-Event-ID} 로 역전을 걸러낸다(프론트 {@code use-realtime-status.ts}).
+ * 큐를 두는 대안과의 비교 실험이 목적이며, 판단 기준은 {@code jdk.VirtualThreadPinned} 와
+ * 실제 역전 횟수다.
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -26,7 +39,6 @@ public class RoomSseManager {
     static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
 
     private final Map<Long, Set<SseEmitter>> roomEmitters = new ConcurrentHashMap<>();
-    private final Map<SseEmitter, EmitterDispatcher> dispatchers = new ConcurrentHashMap<>();
 
     private final SseProperties sseProperties;
     /** 계측은 이 객체가 안다. 이 클래스는 Micrometer 를 모른다. */
@@ -34,7 +46,7 @@ public class RoomSseManager {
     private final SseEventBuffer sseEventBuffer;
     /** 참여자 수도 다른 이벤트와 같은 경로로 나간다. 여기서 직접 쏘면 다른 인스턴스가 모른다. */
     private final SseEventPublisher sseEventPublisher;
-    /** emitter 별 drain 을 실행하는 VT executor. 전역 하나를 공유한다. */
+    /** 전송을 실행하는 VT executor. 전역 하나를 공유한다. */
     private final Executor sseVirtualThreadExecutor;
 
     @PostConstruct
@@ -59,14 +71,7 @@ public class RoomSseManager {
         emitter.onError(e -> disconnect(roomId, emitter));
 
         if (lastEventId != null) {
-            List<BufferedEvent> missed = sseEventBuffer.getEventsAfter(roomId, lastEventId);
-            EmitterDispatcher dispatcher = dispatchers.get(emitter);
-            for (BufferedEvent event : missed) {
-                if (dispatcher != null) {
-                    dispatcher.enqueue(new SseDispatchTask.Event(
-                            roomId, event.eventName(), event.id(), event.data()));
-                }
-            }
+            replay(roomId, emitter, sseEventBuffer.getEventsAfter(roomId, lastEventId));
         }
 
         broadcastParticipantCount(roomId);
@@ -77,14 +82,38 @@ public class RoomSseManager {
     }
 
     /**
-     * <b>이 인스턴스에</b> 붙어 있는 emitter 별 dispatcher 에 이벤트를 넣는다. 실제 전송은
-     * VT 에서 비동기로 일어나므로 호출 스레드는 즉시 반환된다.
+     * 놓친 이벤트를 <b>VT 하나에서 순서대로</b> 내보낸다.
+     *
+     * <p>실시간 전송과 달리 여기를 이벤트마다 VT 로 흩뿌리면 안 된다. replay 는 최대
+     * {@code buffer-size}(50)개를 한 번에 보내는 <b>이 시스템에서 가장 큰 버스트</b>라 역전이
+     * 가장 심하게 일어나고, 클라이언트가 역전을 버리므로 <b>복구하려고 보낸 것이 대부분
+     * 버려진다.</b> 순서대로 보내면 그런 일이 없다.
+     *
+     * <p>호출 스레드(톰캣)에서 직접 보내지 않는 이유는 최대 50번의 블로킹 write 를 구독 요청에
+     * 얹지 않기 위해서다.
+     */
+    private void replay(Long roomId, SseEmitter emitter, List<BufferedEvent> missed) {
+        if (missed.isEmpty()) {
+            return;
+        }
+
+        sseVirtualThreadExecutor.execute(() -> {
+            for (BufferedEvent event : missed) {
+                if (!send(roomId, emitter, event.eventName(), event.id(), event.data())) {
+                    return;
+                }
+            }
+        });
+    }
+
+    /**
+     * <b>이 인스턴스에</b> 붙어 있는 emitter 각각에 이벤트를 보낸다. 전송은 emitter 마다 VT
+     * 하나에 맡기므로 호출 스레드는 즉시 반환된다.
      *
      * <p>{@code SseEventSubscriber}가 부르는 것이 유일한 경로다. 이벤트를 만든 쪽이 여기를
      * 직접 부르면 자기 방 클라이언트에게 같은 이벤트가 두 번 간다.
      *
-     * <p>{@code upbid.sse.broadcast}로 이 인스턴스의 enqueue 비용을 잰다. 실제 전송 비용은
-     * VT 내부에서 발생하므로 이 타이머는 fan-out 대상 수에 비례하는 enqueue 시간만 측정한다.
+     * <p>{@code upbid.sse.broadcast}는 VT 제출 비용만 잰다. 실제 전송은 VT 안에서 일어난다.
      */
     public void deliverLocal(Long roomId, String name, long id, Object data) {
         Set<SseEmitter> emitters = roomEmitters.get(roomId);
@@ -93,14 +122,9 @@ public class RoomSseManager {
             return;
         }
 
-        SseDispatchTask task = new SseDispatchTask.Event(roomId, name, id, data);
-
         sseMetrics.recordBroadcast(name, () -> {
             for (SseEmitter emitter : emitters) {
-                EmitterDispatcher dispatcher = dispatchers.get(emitter);
-                if (dispatcher != null) {
-                    dispatcher.enqueue(task);
-                }
+                sseVirtualThreadExecutor.execute(() -> send(roomId, emitter, name, id, data));
             }
         });
     }
@@ -122,6 +146,52 @@ public class RoomSseManager {
         return emitters == null ? 0 : emitters.size();
     }
 
+    /**
+     * emitter 하나에 이벤트를 보낸다. 성공 여부를 돌려주는 것은 replay 가 중간에 실패하면
+     * 남은 것을 더 보내지 않기 위해서다.
+     *
+     * <p>실패하면 {@link SseEmitter#completeWithError}를 불러 emitter 생명주기 콜백
+     * ({@code onError → disconnect → unregister})이 정리를 이어받게 한다. 여기서 직접
+     * {@code unregister} 를 부르지 않는 이유는 정리 경로를 하나로 모으기 위해서다.
+     *
+     * <p>끊긴 연결({@code IOException} 등)은 정상 종료라 {@code debug}, 그 밖의 예외는 코드
+     * 문제일 수 있어 {@code warn} 으로 남긴다.
+     */
+    private boolean send(Long roomId, SseEmitter emitter, String name, long id, Object data) {
+        try {
+            emitter.send(SseEmitter.event()
+                    .id(String.valueOf(id))
+                    .name(name)
+                    .data(data));
+            return true;
+
+        } catch (IOException | IllegalStateException e) {
+            log.debug("sse 전송 중 끊긴 연결 정리: roomId={}, name={}, cause={}", roomId, name, cause(e));
+            completeWithError(emitter, e);
+
+        } catch (RuntimeException e) {
+            log.warn("sse 전송 실패로 연결 종료: roomId={}, name={}", roomId, name, e);
+            completeWithError(emitter, e);
+        }
+        return false;
+    }
+
+    /**
+     * 끊긴 연결은 장애가 아니라 정상적인 종료다. 스택트레이스를 남기면 봐야 할 로그가 묻히므로
+     * 예외 종류와 메시지만 남긴다.
+     */
+    private String cause(Exception e) {
+        return e.getClass().getSimpleName() + ": " + e.getMessage();
+    }
+
+    /** 이미 완료된 emitter 에 불러도 터지지 않게 삼킨다. 그 연결은 어차피 정리 대상이다. */
+    private void completeWithError(SseEmitter emitter, Exception e) {
+        try {
+            emitter.completeWithError(e);
+        } catch (IllegalStateException ignored) {
+        }
+    }
+
     private void disconnect(Long roomId, SseEmitter emitter) {
         unregister(roomId, emitter);
         broadcastParticipantCount(roomId);
@@ -132,12 +202,6 @@ public class RoomSseManager {
         roomEmitters
                 .computeIfAbsent(roomId, id -> ConcurrentHashMap.newKeySet())
                 .add(emitter);
-
-        dispatchers.put(emitter, new EmitterDispatcher(
-                sseVirtualThreadExecutor,
-                sseProperties.emitterQueueCapacity(),
-                roomId,
-                emitter));
     }
 
     /**
@@ -162,11 +226,6 @@ public class RoomSseManager {
 
             return emitters.isEmpty() ? null : emitters;
         });
-
-        EmitterDispatcher dispatcher = dispatchers.remove(emitter);
-        if (dispatcher != null) {
-            dispatcher.close();
-        }
     }
 
     /**
@@ -180,33 +239,41 @@ public class RoomSseManager {
     }
 
     /**
-     * 끊긴 연결은 write를 시도할 때만 드러난다. 주기적으로 heartbeat 를 emitter 별 큐에 넣어
-     * 실제 전송을 VT 에 맡기고, 전송 실패 시 {@link EmitterSubscriber}가 emitter 생명주기를
-     * 통해 연결을 정리한다.
+     * 끊긴 연결은 write를 시도할 때만 드러난다. 주기적으로 emitter 마다 heartbeat 전송을 VT 에
+     * 맡기고, 실패하면 {@link #send} 가 emitter 생명주기를 통해 연결을 정리한다.
      *
      * <p>heartbeat 는 버퍼 ID 없이 comment 만 보내므로 {@code Last-Event-ID}에 영향을 주지
-     * 않는다. 큐가 포화된 emitter(느린 구독자)에 대해서는 drop 되며, 이는 이미 죽어가는
-     * 연결이라 무방하다.
+     * 않는다.
      */
     @Scheduled(fixedRateString = "${upbid.sse.heartbeat-interval-ms}")
     public void sendHeartbeat() {
         sseMetrics.recordHeartbeat(() ->
                 roomEmitters.forEach((roomId, emitters) -> {
                     for (SseEmitter emitter : emitters) {
-                        EmitterDispatcher dispatcher = dispatchers.get(emitter);
-                        if (dispatcher != null) {
-                            dispatcher.enqueue(new SseDispatchTask.Heartbeat(roomId));
-                        }
+                        sseVirtualThreadExecutor.execute(() -> ping(roomId, emitter));
                     }
                 }));
+    }
+
+    private void ping(Long roomId, SseEmitter emitter) {
+        try {
+            emitter.send(SseEmitter.event().comment("keep-alive"));
+
+        } catch (IOException | IllegalStateException e) {
+            log.debug("sse heartbeat 실패로 연결 정리: roomId={}, cause={}", roomId, cause(e));
+            completeWithError(emitter, e);
+
+        } catch (RuntimeException e) {
+            log.warn("sse heartbeat 실패로 연결 종료: roomId={}", roomId, e);
+            completeWithError(emitter, e);
+        }
     }
 
     /**
      * 경매방 종료 처리.
      *
-     * <p>dispatcher 를 먼저 닫아 큐에 남은 이벤트를 버리고, emitter 를 완료시킨다.
-     * 단순히 emitter를 Map에서 제거하면 HTTP 연결은 살아있고
-     * EventSource가 자동 재연결할 수 있으므로 {@code complete()}를 호출한다.
+     * <p>단순히 emitter를 Map에서 제거하면 HTTP 연결은 살아있고 EventSource가 자동 재연결할 수
+     * 있으므로 {@code complete()}를 호출한다.
      *
      * <p>종료된 방에 대한 재연결은 구독 시점의 방 상태 검증으로 차단한다.
      *
@@ -218,13 +285,7 @@ public class RoomSseManager {
         Set<SseEmitter> closing = roomEmitters.remove(roomId);
 
         if (closing != null) {
-            closing.forEach(emitter -> {
-                EmitterDispatcher dispatcher = dispatchers.remove(emitter);
-                if (dispatcher != null) {
-                    dispatcher.close();
-                }
-                complete(emitter);
-            });
+            closing.forEach(this::complete);
         }
 
         // 버퍼와 순차 ID 카운터는 둘 다 Redis 에 있어 이 한 번으로 함께 지워진다.
