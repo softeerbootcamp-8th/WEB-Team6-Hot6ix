@@ -107,6 +107,8 @@ upbid:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
     buffer-size: ${SSE_BUFFER_SIZE:50}
+    # emitter 별 이벤트 큐 크기. 포화 시 drop 하므로 heartbeat 주기 안에 처리 가능한 크기로 잡는다.
+    emitter-queue-capacity: ${SSE_EMITTER_QUEUE_CAPACITY:128}
   auction:
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:3}
     close:
