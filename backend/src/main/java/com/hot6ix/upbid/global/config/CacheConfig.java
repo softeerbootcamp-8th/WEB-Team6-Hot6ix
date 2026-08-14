@@ -1,7 +1,15 @@
 package com.hot6ix.upbid.global.config;
 
+import com.hot6ix.upbid.domain.auction.service.AuctionRoomPublicCacheService;
+import io.micrometer.core.instrument.FunctionCounter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.MeterBinder;
 import java.time.Duration;
+import java.util.Set;
+import java.util.function.ToLongFunction;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.cache.CacheStatistics;
+import org.springframework.data.redis.cache.RedisCache;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.Cache;
 import org.springframework.cache.annotation.CachingConfigurer;
@@ -40,11 +48,57 @@ public class CacheConfig implements CachingConfigurer {
         this.timeToLive = timeToLive;
     }
 
+    /**
+     * <b>히트율을 지표로 남긴다.</b> 캐시가 실제로 맞고 있는지는 응답 시간만 봐서는 안 갈린다 —
+     * DB가 한가하면 캐시가 하나도 안 맞아도 빠르기 때문이다. {@code cache_gets_total} 의
+     * {@code result="hit"|"miss"} 로 본다.
+     *
+     * <p>그래서 캐시 이름을 미리 등록한다. Micrometer는 부팅 때 있는 캐시에만 계량기를 붙이는데,
+     * Redis 캐시는 처음 쓰일 때 만들어져서 그냥 두면 지표가 영영 안 붙는다.
+     */
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory redisConnectionFactory) {
         return RedisCacheManager.builder(redisConnectionFactory)
                 .cacheDefaults(cacheConfiguration())
+                .initialCacheNames(Set.of(AuctionRoomPublicCacheService.ROOM_PUBLIC_CACHE))
+                .enableStatistics()
                 .build();
+    }
+
+    /**
+     * 히트율을 Prometheus로 내보낸다. <b>Spring Boot 4에는 Redis 캐시 지표 자동 설정이 없어서</b>
+     * (Micrometer가 들고 있는 것은 Caffeine·Guava·JCache뿐이다) 직접 붙인다.
+     *
+     * <p>{@code cache_gets_total{cache="auction:room:public", result="hit"}} 꼴로 나온다.
+     * 응답 시간만 봐서는 캐시가 맞고 있는지 안 갈린다 — DB가 한가하면 하나도 안 맞아도 빠르다.
+     */
+    @Bean
+    public MeterBinder roomPublicCacheMetrics(RedisCacheManager cacheManager) {
+        return registry -> {
+            Cache cache = cacheManager.getCache(AuctionRoomPublicCacheService.ROOM_PUBLIC_CACHE);
+
+            if (!(cache instanceof RedisCache redisCache)) {
+                return;
+            }
+
+            String name = redisCache.getName();
+
+            counter(registry, redisCache, name, "hit", CacheStatistics::getHits);
+            counter(registry, redisCache, name, "miss", CacheStatistics::getMisses);
+
+            FunctionCounter.builder("cache.puts", redisCache,
+                            c -> c.getStatistics().getPuts())
+                    .tag("cache", name)
+                    .register(registry);
+        };
+    }
+
+    private void counter(MeterRegistry registry, RedisCache cache, String name, String result,
+                         ToLongFunction<CacheStatistics> value) {
+        FunctionCounter.builder("cache.gets", cache, c -> value.applyAsLong(c.getStatistics()))
+                .tag("cache", name)
+                .tag("result", result)
+                .register(registry);
     }
 
     /**
