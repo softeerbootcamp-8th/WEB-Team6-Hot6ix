@@ -14,7 +14,7 @@ import java.util.Optional;
 @Component
 public class SessionManager {
 
-    @Value("${server.servlet.session.timeout}")
+    @Value("${spring.session.timeout}")
     private Duration loginTimeout;
 
     @Value("${server.servlet.session.cookie.name}")
@@ -35,7 +35,11 @@ public class SessionManager {
             return Optional.empty();
         }
 
-        return Optional.ofNullable((Long) session.getAttribute(SessionKeys.USER_ID));
+        // GenericJackson(2)JsonRedisSerializer는 Long 같은 "natural type"에는 타입 정보를
+        // 안 붙인다(둘 다 확인함). Redis 왕복 후 Object로 역직렬화하면 Integer로 돌아올 수
+        // 있어서, Number로 받아 longValue()로 좁혀야 ClassCastException을 피한다.
+        return Optional.ofNullable((Number) session.getAttribute(SessionKeys.USER_ID))
+                .map(Number::longValue);
     }
 
     public void invalidate(HttpServletRequest request, HttpServletResponse response) {
