@@ -393,11 +393,20 @@ export function MobileItemDetailView({
                 </button>
               </div>
 
-              {belowMinimum && (
-                <p className="mt-2.5 text-center text-[11px] font-semibold text-live">
-                  최소 {formatWon(minimum)}부터 입찰할 수 있어요
-                </p>
-              )}
+              {/*
+               * 자리를 항상 잡아 둔다. 남이 입찰하면 최소가가 올라가 이 경고가
+               * 켜졌다가 자동 상향으로 곧 꺼지는데, 조건부로 그리면 그때마다
+               * 하단 입찰 바가 튀어서 누르려던 곳을 못 누른다.
+               */}
+              <p
+                aria-hidden={!belowMinimum}
+                className={cn(
+                  'mt-2.5 min-h-[16px] text-center text-[11px] font-semibold text-live',
+                  belowMinimum ? 'visible' : 'invisible',
+                )}
+              >
+                최소 {formatWon(minimum)}부터 입찰할 수 있어요
+              </p>
             </>
           ) : null}
 

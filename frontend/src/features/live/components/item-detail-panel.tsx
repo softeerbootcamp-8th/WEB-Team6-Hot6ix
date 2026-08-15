@@ -164,71 +164,89 @@ export function ItemDetailPanel({
         {/* 오른쪽 · 리더보드 → 이벤트 → 퀵입찰 */}
         <div className="flex min-w-0 flex-col gap-4 lg:min-h-0">
           {/*
-            남는 높이는 아래 두 칸 중 살아 있는 쪽이 가져간다. 셋 다 고정 높이면
-            패널 아래쪽에 아무것도 없는 빈칸이 크게 남는다.
-          */}
-          <section
-            className={cn(
-              'flex flex-col rounded-2xl border p-5',
-              closed ? 'lg:min-h-0 lg:flex-1' : 'shrink-0',
-            )}
-          >
-            <div className="flex shrink-0 items-baseline">
-              <h3 className="text-[13px] font-bold text-neutral-tertiary">
-                {closed ? '최종 순위' : '실시간 리더보드'}
-              </h3>
-              <span
-                className={cn(
-                  'ml-auto flex items-center gap-1 text-[12px] font-semibold tabular-nums',
-                  urgent ? 'text-live' : 'text-neutral-tertiary',
-                )}
-              >
-                <Clock aria-hidden className="size-[13px]" />
-                {/* 시작 전에는 마감 시각이 아직 없다. 카운트다운을 그리면 0초로 굳는다. */}
-                {closed
-                  ? '마감됨'
-                  : ready
-                    ? '시작 전'
-                    : /*
-                       * 0 초에서는 "남은 시간" 을 떼고 상태만 적는다.
-                       * "남은 시간 마감 처리 중" 은 읽히지 않는다.
-                       */
-                      remaining <= 0
-                      ? '마감 처리 중'
-                      : `남은 시간 ${formatRemaining(remaining)}`}
-              </span>
-            </div>
+            **리더보드와 이벤트만 스크롤한다.** 입찰 영역은 아래에 고정이다.
+            예전에는 오른쪽 열 전체가 스크롤 없이 잘려서, 화면이 낮거나 리더보드가
+            꽉 차면 입찰 칸이 패널 밖으로 밀려 아예 안 보였다.
 
-            <div className="mt-3 min-h-0 flex-1 overflow-y-auto border-t pt-3">
-              {/*
+            남는 높이는 이 안의 두 칸 중 살아 있는 쪽이 가져간다. 셋 다 고정
+            높이면 패널 아래쪽에 아무것도 없는 빈칸이 크게 남는다.
+          */}
+          <div className="flex min-h-0 flex-col gap-4 lg:flex-1 lg:overflow-y-auto">
+            <section
+              className={cn(
+                'flex flex-col rounded-2xl border p-5',
+                closed ? 'lg:min-h-0 lg:flex-1' : 'shrink-0',
+              )}
+            >
+              <div className="flex shrink-0 items-baseline">
+                <h3 className="text-[13px] font-bold text-neutral-tertiary">
+                  {closed ? '최종 순위' : '실시간 리더보드'}
+                </h3>
+                <span
+                  className={cn(
+                    'ml-auto flex items-center gap-1 text-[12px] font-semibold tabular-nums',
+                    urgent ? 'text-live' : 'text-neutral-tertiary',
+                  )}
+                >
+                  <Clock aria-hidden className="size-[13px]" />
+                  {/* 시작 전에는 마감 시각이 아직 없다. 카운트다운을 그리면 0초로 굳는다. */}
+                  {closed
+                    ? '마감됨'
+                    : ready
+                      ? '시작 전'
+                      : /*
+                         * 0 초에서는 "남은 시간" 을 떼고 상태만 적는다.
+                         * "남은 시간 마감 처리 중" 은 읽히지 않는다.
+                         */
+                        remaining <= 0
+                        ? '마감 처리 중'
+                        : `남은 시간 ${formatRemaining(remaining)}`}
+                </span>
+              </div>
+
+              <div className="mt-3 min-h-0 flex-1 overflow-y-auto border-t pt-3">
+                {/*
                 끝난 물품은 이벤트 칸이 빠진 자리를 이 카드가 물려받는다.
                 서버가 상위 3명만 내려주므로(`LEADERBOARD_SIZE`) 입찰자가 적으면
                 카드가 헐렁하다. 더 채우려면 서버가 내려주는 수를 늘려야 한다.
               */}
-              <LeaderboardRows
-                entries={item.leaderboard}
-                emptyText={closed ? '입찰 없이 마감됐어요' : undefined}
-              />
-            </div>
-          </section>
+                <LeaderboardRows
+                  entries={item.leaderboard}
+                  emptyText={closed ? '입찰 없이 마감됐어요' : undefined}
+                />
+              </div>
+            </section>
 
-          {/*
+            {/*
             끝난 물품에는 이벤트 칸을 두지 않는다. 더 들어올 이벤트가 없어
             "시작했습니다 / 마감되었습니다" 두 줄만 남은 칸이 자리만 차지한다.
           */}
-          {!closed && (
-            <div className="flex h-[200px] flex-col overflow-hidden lg:h-auto lg:min-h-[200px] lg:flex-1">
-              <ItemEventList events={events} />
-            </div>
-          )}
+            {!closed && (
+              <div className="flex h-[200px] shrink-0 flex-col overflow-hidden lg:h-auto lg:min-h-[200px] lg:flex-1">
+                <ItemEventList events={events} />
+              </div>
+            )}
+          </div>
 
           {/* 입찰 영역 — 하단 한 줄 고정 */}
           <div className="shrink-0">
-            {!isGuest && amount < minimum && !closed && !ready && (
-              <p className="mb-2 text-[12px] font-medium text-live">
-                최소 {formatWon(minimum)}부터 입찰할 수 있어요.
-              </p>
-            )}
+            {/*
+             * **자리를 항상 잡아 둔다.** 남이 입찰하면 최소가가 올라가 이 경고가
+             * 켜지고, 곧바로 자동 상향이 금액을 올려 다시 꺼진다. 조건부로 그리면
+             * 그때마다 아래 입력칸과 입찰 버튼이 위아래로 튀어서, 입찰이 몰리는
+             * 동안 누르려던 곳을 못 누른다.
+             */}
+            <p
+              aria-hidden={!(!isGuest && amount < minimum && !closed && !ready)}
+              className={cn(
+                'mb-2 min-h-[18px] text-[12px] font-medium text-live',
+                !isGuest && amount < minimum && !closed && !ready
+                  ? 'visible'
+                  : 'invisible',
+              )}
+            >
+              최소 {formatWon(minimum)}부터 입찰할 수 있어요.
+            </p>
 
             {action ? (
               action

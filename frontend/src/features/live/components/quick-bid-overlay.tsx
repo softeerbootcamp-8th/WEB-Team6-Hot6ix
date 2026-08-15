@@ -257,11 +257,20 @@ function QuickBidCard({
             {formatWon(amount)} 입찰하기
           </button>
 
-          {error && (
-            <p className="mt-2 text-center text-[11px] font-medium text-live">
-              {error}
-            </p>
-          )}
+          {/*
+           * 자리를 항상 잡아 둔다. 남이 입찰할 때마다 최소가가 올라가 이 줄이
+           * 켜졌다 꺼지는데, 카드가 세로로 쌓여 있어서 한 줄이 생길 때마다
+           * 아래 카드들이 통째로 밀린다.
+           */}
+          <p
+            aria-hidden={error === null}
+            className={cn(
+              'mt-2 min-h-[15px] text-center text-[11px] font-medium text-live',
+              error === null ? 'invisible' : 'visible',
+            )}
+          >
+            {error ?? ''}
+          </p>
         </>
       )}
     </li>
