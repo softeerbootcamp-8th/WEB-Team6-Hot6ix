@@ -3,12 +3,14 @@ package com.hot6ix.upbid.domain.sse.service;
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
+import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -59,9 +61,9 @@ public class RoomSseManager {
 
         register(roomId, emitter);
 
-        emitter.onCompletion(() -> disconnect(roomId, emitter));
-        emitter.onTimeout(() -> disconnect(roomId, emitter));
-        emitter.onError(e -> disconnect(roomId, emitter));
+        emitter.onCompletion(() -> disconnect(roomId, emitter, SseMetrics.CLOSE_COMPLETED));
+        emitter.onTimeout(() -> disconnect(roomId, emitter, SseMetrics.CLOSE_TIMEOUT));
+        emitter.onError(e -> disconnect(roomId, emitter, SseMetrics.CLOSE_SEND_ERROR));
 
         if (lastEventId != null) {
             List<BufferedEvent> missed = sseEventBuffer.getEventsAfter(roomId, lastEventId);
@@ -118,16 +120,29 @@ public class RoomSseManager {
      *           재연결 시 서버에 보낸다. 초기 이벤트가 없어진 뒤로 ID 없이 나가는 이벤트는 없다.
      */
     private void send(Long roomId, SseEmitter emitter, String name, long id, Object data) {
+        sseMetrics.recordSendAttempt(name);
+        Timer.Sample sample = sseMetrics.startSend();
+
         try {
             emitter.send(SseEmitter.event()
                     .id(String.valueOf(id))
                     .name(name)
                     .data(data));
+
+            sseMetrics.recordSendSuccess(name);
         } catch (IOException | IllegalStateException e) {
-            unregister(roomId, emitter);
+            sseMetrics.recordSendFailure(name, e);
+            disconnect(roomId, emitter, SseMetrics.CLOSE_SEND_ERROR);
             log.debug("sse 전송 중 끊긴 연결 정리: roomId={}, name={}, remaining={}, cause={}",
                     roomId, name, getParticipantCount(roomId), cause(e));
             emitter.completeWithError(e);
+        } catch (RuntimeException e) {
+            sseMetrics.recordSendFailure(name, e);
+            disconnect(roomId, emitter, SseMetrics.CLOSE_SEND_ERROR);
+            log.warn("sse 전송 실패로 연결 종료: roomId={}, name={}", roomId, name, e);
+            emitter.completeWithError(e);
+        } finally {
+            sseMetrics.finishSend(name, sample);
         }
     }
 
@@ -136,20 +151,22 @@ public class RoomSseManager {
      * 예외 종류와 메시지만 남긴다. Broken pipe인지 Connection reset인지, 아니면 이미 완료된
      * emitter였는지는 이 한 줄로 구분된다.
      */
-    private String cause(Exception e) {
+    private String cause(Throwable e) {
         return e.getClass().getSimpleName() + ": " + e.getMessage();
     }
 
-    private void disconnect(Long roomId, SseEmitter emitter) {
-        unregister(roomId, emitter);
-
-        log.info("sse 연결 종료: roomId={}", roomId);
+    private void disconnect(Long roomId, SseEmitter emitter, String reason) {
+        if (unregister(roomId, emitter)) {
+            sseMetrics.recordConnectionClosed(reason);
+            log.info("sse 연결 종료: roomId={}, reason={}", roomId, reason);
+        }
     }
 
     private void register(Long roomId, SseEmitter emitter) {
         roomEmitters
                 .computeIfAbsent(roomId, id -> ConcurrentHashMap.newKeySet())
                 .add(emitter);
+        sseMetrics.recordConnectionOpened();
     }
 
     /**
@@ -164,16 +181,20 @@ public class RoomSseManager {
      * 버려서 방금 붙은 사람이 아무 이벤트도 못 받는다. {@code compute} 는 키 하나에 대해
      * 원자적이라 그 틈이 없다.
      */
-    private void unregister(Long roomId, SseEmitter emitter) {
+    private boolean unregister(Long roomId, SseEmitter emitter) {
+        AtomicBoolean removed = new AtomicBoolean();
+
         roomEmitters.compute(roomId, (id, emitters) -> {
             if (emitters == null) {
                 return null;
             }
 
-            emitters.remove(emitter);
+            removed.set(emitters.remove(emitter));
 
             return emitters.isEmpty() ? null : emitters;
         });
+
+        return removed.get();
     }
 
     /**
@@ -227,15 +248,29 @@ public class RoomSseManager {
      * @return 살아 있으면 true, 걷어냈으면 false
      */
     private boolean ping(Long roomId, SseEmitter emitter) {
+        String eventName = SseMetrics.HEARTBEAT_EVENT;
+        sseMetrics.recordSendAttempt(eventName);
+        Timer.Sample sample = sseMetrics.startSend();
+
         try {
             emitter.send(SseEmitter.event().comment("keep-alive"));
+            sseMetrics.recordSendSuccess(eventName);
             return true;
         } catch (IOException | IllegalStateException e) {
-            unregister(roomId, emitter);
+            sseMetrics.recordSendFailure(eventName, e);
+            disconnect(roomId, emitter, SseMetrics.CLOSE_SEND_ERROR);
             log.debug("sse heartbeat 중 끊긴 연결 정리: roomId={}, remaining={}, cause={}",
                     roomId, getParticipantCount(roomId), cause(e));
             emitter.completeWithError(e);
             return false;
+        } catch (RuntimeException e) {
+            sseMetrics.recordSendFailure(eventName, e);
+            disconnect(roomId, emitter, SseMetrics.CLOSE_SEND_ERROR);
+            log.warn("sse heartbeat 전송 실패로 연결 종료: roomId={}", roomId, e);
+            emitter.completeWithError(e);
+            return false;
+        } finally {
+            sseMetrics.finishSend(eventName, sample);
         }
     }
 
@@ -256,7 +291,10 @@ public class RoomSseManager {
         Set<SseEmitter> closing = roomEmitters.remove(roomId);
 
         if (closing != null) {
-            closing.forEach(this::complete);
+            closing.forEach(emitter -> {
+                sseMetrics.recordConnectionClosed(SseMetrics.CLOSE_ROOM_CLOSED);
+                complete(emitter);
+            });
         }
 
         // 버퍼와 순차 ID 카운터는 둘 다 Redis 에 있어 이 한 번으로 함께 지워진다.

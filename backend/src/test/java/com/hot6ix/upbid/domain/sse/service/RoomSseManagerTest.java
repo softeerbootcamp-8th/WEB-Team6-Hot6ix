@@ -278,6 +278,69 @@ class RoomSseManagerTest {
                 .isZero();
     }
 
+    @Test
+    @DisplayName("일반 이벤트와 heartbeat를 실제 send 지점에서 계측한다")
+    void recordsEventAndHeartbeatAtActualSend() {
+
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RoomSseManager manager = newRoomSseManager(
+                mock(SseEventBuffer.class), mock(SseEventPublisher.class), registry);
+
+        manager.subscribe(ROOM_ID, null);
+        manager.deliverLocal(ROOM_ID, EVENT_NAME, 1L, "payload");
+        manager.sendHeartbeat();
+
+        assertThat(registry.get("upbid.sse.send.attempts")
+                .tag("event", EVENT_NAME)
+                .counter().count()).isEqualTo(1);
+        assertThat(registry.get("upbid.sse.send.successes")
+                .tag("event", EVENT_NAME)
+                .counter().count()).isEqualTo(1);
+        assertThat(registry.get("upbid.sse.send")
+                .tag("event", EVENT_NAME)
+                .timer().count()).isEqualTo(1);
+        assertThat(registry.get("upbid.sse.fanout")
+                .tag("event", EVENT_NAME)
+                .timer().count()).isEqualTo(1);
+
+        assertThat(registry.get("upbid.sse.send.attempts")
+                .tag("event", SseMetrics.HEARTBEAT_EVENT)
+                .counter().count()).isEqualTo(1);
+        assertThat(registry.get("upbid.sse.send.successes")
+                .tag("event", SseMetrics.HEARTBEAT_EVENT)
+                .counter().count()).isEqualTo(1);
+        assertThat(registry.get("upbid.sse.send")
+                .tag("event", SseMetrics.HEARTBEAT_EVENT)
+                .timer().count()).isEqualTo(1);
+
+        assertThat(registry.get("upbid.sse.in.flight").gauge().value()).isZero();
+        assertThat(registry.get("upbid.sse.queue.depth").gauge().value()).isZero();
+    }
+
+    @Test
+    @DisplayName("send 실패를 원인별로 기록하고 연결을 한 번만 종료한다")
+    void recordsSendFailureAndConnectionCloseOnce() {
+
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RoomSseManager manager = newRoomSseManager(
+                mock(SseEventBuffer.class), mock(SseEventPublisher.class), registry);
+        SseEmitter dead = manager.subscribe(ROOM_ID, null);
+        dead.complete();
+
+        manager.deliverLocal(ROOM_ID, EVENT_NAME, 1L, "payload");
+
+        assertThat(registry.get("upbid.sse.send.failures")
+                .tags("event", EVENT_NAME, "cause", "illegal_state")
+                .counter().count()).isEqualTo(1);
+        assertThat(registry.get("upbid.sse.send")
+                .tag("event", EVENT_NAME)
+                .timer().count()).isEqualTo(1);
+        assertThat(registry.get("upbid.sse.connections.closed")
+                .tag("reason", SseMetrics.CLOSE_SEND_ERROR)
+                .counter().count()).isEqualTo(1);
+        assertThat(manager.getParticipantCount(ROOM_ID)).isZero();
+    }
+
     private static double rooms(SimpleMeterRegistry registry) {
         return registry.get("upbid.sse.rooms").gauge().value();
     }

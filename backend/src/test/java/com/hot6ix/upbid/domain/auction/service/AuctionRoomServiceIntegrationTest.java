@@ -58,6 +58,11 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
     @MockitoBean
     private AuctionRoomShareService auctionRoomShareService;
 
+    // 조회 캐시도 슬라이스 밖이다(Redis가 필요하다). 이 테스트가 보는 건 share_code 재시도라
+    // 캐시 동작은 AuctionRoomPublicCacheServiceTest에서 본다.
+    @MockitoBean
+    private AuctionRoomPublicCacheService auctionRoomPublicCacheService;
+
     // @DataJpaTest 슬라이스에는 sse 도메인 빈이 안 올라온다. 목록 조회만 쓰는 의존이라 목으로 채운다.
     @MockitoBean
     private RoomSseManager roomSseManager;

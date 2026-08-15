@@ -41,7 +41,9 @@ public interface BidApi {
             @ApiResponse(responseCode = "409", description = "진행중인 물품이 아님 (code 7001), "
                     + "마감된 물품 (code 7002), 이미 최고 입찰자 (code 7003), "
                     + "최소 입찰 금액 미달 (code 7004), 입찰 단위 불일치 (code 7005), "
-                    + "동시 입찰 충돌 (code 7006)")
+                    + "동시 입찰 충돌 (code 7006)"),
+            @ApiResponse(responseCode = "429", description = "요청이 너무 많음 (code 7009) — "
+                    + "잠시 후 다시 시도하면 통과할 수 있다")
     })
     ResponseEntity<CommonResponse<BidCreateResponseDto>> place(
             @Parameter(description = "입찰할 물품 ID", required = true)

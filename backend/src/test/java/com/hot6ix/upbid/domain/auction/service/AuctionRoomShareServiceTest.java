@@ -37,9 +37,14 @@ class AuctionRoomShareServiceTest {
     @Mock
     private SellerProfileRepository sellerProfileRepository;
 
+    /** 공유 코드로 방을 지목하는 것은 이제 이 캐시를 지난다. */
+    @Mock
+    private AuctionRoomPublicCacheService auctionRoomPublicCacheService;
+
     /** frontendUrl이 조립 로직의 입력이라 테스트마다 다른 값으로 서비스를 만든다. */
     private AuctionRoomShareService newService(String frontendUrl) {
-        return new AuctionRoomShareService(auctionRoomRepository, sellerProfileRepository, frontendUrl);
+        return new AuctionRoomShareService(
+                auctionRoomRepository, sellerProfileRepository, auctionRoomPublicCacheService, frontendUrl);
     }
 
     private SellerProfile newSellerProfile() {

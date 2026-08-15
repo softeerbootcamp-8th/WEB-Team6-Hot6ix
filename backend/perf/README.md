@@ -227,6 +227,7 @@ KAKAO_REDIRECT_URI=http://localhost:8080/api/v1/oauth/kakao/callback
 ./perf/run.sh --scenario 7 --rate 200 --items 1 # 스파이크. 절벽 (판정에 안 씁니다)
 ./perf/run.sh --scenario 8 --vus 50 --burst-mode same       # 동일 금액 동시 출발 정합성
 ./perf/run.sh --scenario 8 --vus 50 --burst-mode increasing # 증가 금액 동시 출발 정합성
+./perf/run.sh --scenario 9 --rate 200           # 입장 폭주. 링크 뿌린 직후의 방 공개 조회
 ```
 
 계단은 **10 / 20 / 40 / 80 / 160**입니다. 한 번에 하나만 올리고 나머지는 그대로 둡니다.
@@ -260,6 +261,25 @@ Soft Close 가 마감을 계속 미루기 때문입니다. 실제로 `--items 20
 `--rate` 와 함께 준 `--vus` 는 **도착률을 채울 VU 수**(`preAllocatedVUs`)입니다. 모자라면 k6 가
 도착률을 못 채우면서 **서버가 못 받은 것처럼 보입니다.** 목표 rate × 예상 응답시간(초)보다
 넉넉히 줍니다.
+
+### 입장 폭주
+
+시나리오 9는 입찰이 아니라 **방 페이지의 공개 조회 둘**을 잽니다. 링크와 QR로 들어오는
+서비스라 이 경로는 고르게 깔리지 않고 링크를 뿌린 직후에 한꺼번에 몰립니다.
+
+- **때리는 경로는 둘입니다.** `GET share/{shareCode}` 와 `GET share/{shareCode}/auction-items`
+  입니다. 한 반복이 방문자 한 명이라 화면과 같은 순서로 이어서 보냅니다.
+- **로그인하지 않습니다.** 둘 다 `@GuestAllowed`라 링크로 처음 들어온 사람과 같은 상태로
+  잽니다. 대신 로그인한 사람에게만 붙는 참여자 동의 조회는 이 실행에 안 잡힙니다.
+- **`--rate`가 필요합니다.** 절벽(0 → 목표 도착률)이 이 시나리오의 모양이고, `--duration`이
+  절벽을 유지하는 시간입니다. 앞의 조용한 구간까지 더해 실제 실행은 그보다 21초 깁니다.
+- **6·7번과 달리 표에 씁니다.** 램프지만 구간의 대부분이 평평해서 같은 `--rate`로 잰 줄끼리
+  p95를 나란히 놓을 수 있습니다.
+- **4xx는 0이어야 합니다.** 공개 조회에는 거절 규칙이 없어서 4xx가 찍히면 공유 코드나 시딩이
+  틀린 것입니다. `run.sh`가 실행 끝에 경고합니다.
+
+`room_read_p95_ms` 와 `items_read_p95_ms` 를 따로 남깁니다. 두 조회는 쿼리 수도 응답 크기도
+달라서 합친 p95만 보면 어느 쪽이 무거운지 안 갈립니다.
 
 ### 동시 출발 정합성
 
@@ -315,6 +335,41 @@ ssh upbid-app 'docker exec app-app-1 printenv PERF_RUN_ID'
 못 채우는 칸도 있습니다. `app_cpu_*` 와 `mysql_cpu_*`, `cpus` 는 `docker stats` 로 뜨던 값이라
 배포에서는 안 나옵니다. 앱은 Grafana 의 `process_cpu_usage`, RDS 와 EC2 는 CloudWatch
 `CPUUtilization` 으로 봅니다. 실행이 끝날 때 이 안내가 같이 찍힙니다.
+
+### SSE 시나리오 3·10은 실제 프레임을 읽습니다
+
+기존 `http.get(..., responseType: 'none')` 방식은 서버에 연결은 만들지만 응답 body를 버려서
+이벤트가 도착했는지 알 수 없었습니다. 현재는 `perf/sse-client/client.mjs`가 별도 Node
+프로세스로 실제 SSE frame의 `id`, `event`, `data`를 파싱합니다.
+
+- 시나리오 3: `--vus`만큼 연결해 연결 유지·heartbeat·FD·메모리와 누락/중복/순서를 봅니다.
+- 시나리오 10: 같은 방식으로 연결을 먼저 안정화한 뒤 `--rate`만큼 입찰을 보내 SSE fan-out을
+  비교합니다.
+- `--sse`를 붙인 다른 시나리오도 같은 실제 구독자를 사용합니다.
+
+기본값은 목표 연결을 **120초에 걸쳐 올리고 30초 안정화한 뒤** 측정을 시작합니다. 연결 자체가
+참여자 수 이벤트를 모든 구독자에게 발행하므로 N명을 동시에 붙이면 입찰을 시작하기도 전에
+O(N²) 전송 폭주가 생기기 때문입니다. 연결 폭주 자체를 재고 싶을 때만 ramp를 0으로 둡니다.
+마지막 입찰이 끝난 뒤에는 서버 성능 측정 구간을 늘리지 않고 클라이언트 수신만 10초 더
+관측하여 emitter queue나 TCP에 남아 있던 마지막 이벤트까지 latency·누락 판정에 포함합니다.
+
+```bash
+# 동기 SSE 구현
+./perf/run.sh --scenario 10 --vus 200 --rate 30
+
+# 연결 폭주를 별도 실험으로 재는 경우
+./perf/run.sh --scenario 3 --vus 200 --sse-ramp-seconds 0 --sse-stabilize-seconds 0
+```
+
+동기 브랜치에는 emitter별 queue나 dispatch worker가 없습니다. 따라서 `sse_vt=false`,
+`sse_dispatch_pool=0`, `sse_queue_depth=0`으로 기록되며 `sse_queue_wait`는 NaN이 정상입니다.
+비동기·가상 스레드 브랜치에서도 같은 VU·rate·duration으로 실행하고 commit과 실행 폴더를
+함께 기록해야 공정하게 비교할 수 있습니다.
+
+`sse_msg_latency`는 운영 SSE payload에 테스트 필드를 추가하지 않습니다. 입찰 k6가 테스트
+네트워크 안의 구독자에게 `itemId + amount + 입찰 요청 시작 시각`을 보내고, 구독자가 실제
+`BID_PLACED`의 `itemId + bidPrice`와 매칭합니다. 따라서 서버 시계와 무관하게 **입찰 POST 시작
+→ 각 audience의 프레임 수신** 전체 시간을 잽니다.
 
 ### 소크는 시나리오가 아니라 실행 방법입니다
 
@@ -396,7 +451,7 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `who` | 잰 사람 | 실행할 때 적은 이름 |
 | `commit` | 어느 코드로 쟀는지 | 개선 전후를 가를 때 씁니다 |
 | `status` | `ok` / `aborted` | **`aborted` 줄은 노션에 붙여넣지 않습니다.** 아래 설명 |
-| `scenario` | 시나리오 번호 (0~4) | |
+| `scenario` | 시나리오 번호 (0~10) | |
 | `vus` | 동시 요청 스트림 수. **사람 수가 아니다** (생각하는 시간이 없어 한 줄이 여러 명 몫을 한다) | 내가 정한 값. `rate` 가 있으면 도착률을 채울 VU 수다 |
 | `rate` | 초당 도착 건수. **0 이면 닫힌 모델**(`--vus` 로 돈 것) | 0 이 아닌 줄끼리만 나란히 놓는다. 모델이 다르면 같은 축이 아니다 |
 | `pool` | DB 커넥션 풀 크기 | 내가 정한 값 (기본 10) |
@@ -409,6 +464,7 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `k6_p95_ms` | k6 가 클라이언트에서 본 p95 | 서버 p95 와 벌어지면 그 차이가 부하 발생기 몫 |
 | **`p95_ms`** | **응답 시간 p95. 100번 중 95번은 이 안에 끝났다** | 작을수록 좋습니다 |
 | `p99_ms`, `k6_p99_ms` | 서버와 k6가 본 응답 시간 p99 | 락 경합의 긴 꼬리를 봅니다 |
+| `bid_api_p95_ms`, `bid_api_p99_ms` | 입찰 API만 분리한 서버 응답 시간 | SSE 구독 요청을 섞지 않고 세 구현의 입찰 영향도를 비교합니다 |
 | `tomcat_busy_max` | 톰캣이 동시에 쓴 스레드 수(최대) | 200에 붙으면 스레드 고갈 |
 | `hikari_active_max` | 실제로 쓰인 DB 커넥션 수(최대) | `pool`에 붙으면 풀이 꽉 찬 것 |
 | `hikari_pending_max` | 커넥션을 못 받고 줄 선 스레드 수(최대) | **0이 정상.** 0보다 크면 풀이 마른 것 |
@@ -430,20 +486,44 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `close_delay_p95_ms` | 마감이 예정 시각보다 늦은 시간 p95 | 시나리오 4의 주인공 |
 | `close_lock_wait_p95_ms` | 마감이 물품 행 락을 기다린 시간 p95 | `lock_wait_p95_ms`(입찰 쪽)와 나란히 놓고 누가 누구를 기다리게 했는지 봅니다 |
 | `close_lock_hold_p95_ms` | 마감이 락을 잡고 있던 시간 p95 (커밋까지) | 이게 크면 그동안 입찰이 못 들어갑니다 |
-| `close_notify_p95_ms` | 마감 알림(`ITEM_ENDED`)을 방 전원에게 쏘는 데 걸린 시간 p95 | 커밋 뒤 같은 스레드에서 돌아 마감 소요에 그대로 들어갑니다 |
+| `close_notify_p95_ms` | 마감 알림(`ITEM_ENDED`)을 방 전체에 동기로 전송한 시간 p95 | 각 emitter의 실제 send 시간은 `sse_send_p95_ms`에서 봅니다 |
 | `close_award_p95_ms` | 낙찰 후보 스냅샷을 만드는 데 걸린 시간 p95. **`award()` 트랜잭션 전체**입니다 | 후보를 입찰자 수만큼 만들어서 입찰이 몰린 물품일수록 길어집니다 |
 | `close_award_insert_p95_ms` | 그중 `insertCandidatesFromBids` **쿼리 하나만** | 위 값에서 이걸 빼면 나머지(커넥션 획득·락 대기·이벤트 발행·커밋)입니다. 아래 설명 |
 | `closes`, `awards` | 구간 안에 실제로 닫힌 물품 수와 낙찰 건수 | **표본 수입니다.** 이게 작으면 위 p95 들이 크게 흔들립니다 |
 | `sse_heartbeat_p95_ms` | 30초마다 전원에게 신호 보내는 데 걸린 시간 | 접속이 늘면 같이 커집니다 |
 | `heartbeat_runs`, `heartbeat_expected` | heartbeat 가 실제로 돈 횟수와 돌았어야 할 횟수 | 실제가 모자라면 스케줄러 스레드가 굶은 것입니다 |
-| `sse_broadcast_p95_ms` | 입찰 하나를 방 전원에게 쏘는 데 걸린 시간 | 시나리오 5의 주인공 (#234) |
+| `sse_broadcast_p95_ms`, `sse_broadcast_p99_ms` | 논리 이벤트 하나를 방 전체에 동기로 전송한 시간 | 모든 emitter의 `send()`가 반환될 때까지 포함합니다. 시나리오 10은 BID_PLACED만 집계합니다 |
 | `sse_conn_max` | 동시에 열려 있던 실시간 접속 수(최대) | 시나리오 3의 주인공 |
+| `sse_connections_opened`, `sse_connections_closed` | 측정 구간의 SSE 연결 수립·종료 횟수 | 종료 원인별 상세는 Grafana에서 `reason` 태그로 봅니다 |
+| `sse_events_published` | Redis에 성공적으로 발행한 논리 SSE 이벤트 수 | 한 이벤트가 여러 구독자에게 전달되어도 1건입니다 |
+| `sse_send_attempts`, `sse_send_successes`, `sse_send_failures` | 각 emitter에 대한 실제 `send()` 시도·성공·실패 수 | 구독자가 N명이면 논리 이벤트 1건이 최대 N회의 send가 됩니다 |
+| **`sse_send_failure_rate`** | **`send 실패 / send 시도 × 100`** | 0%가 정상입니다. 원인별 실패는 Grafana의 `cause` 태그로 봅니다 |
+| `sse_fanout_p95_ms` | 논리 이벤트를 방 전체에 동기로 전송한 시간 p95 | 동기 구현에서는 `sse_broadcast`와 같은 범위입니다. 시나리오 10은 BID_PLACED만 집계합니다 |
+| `sse_queue_wait_p95_ms` | 비동기 구현에서 작업이 큐에 들어간 뒤 worker가 잡기까지의 시간 p95 | 동기 구현에는 큐가 없으므로 NaN이 정상입니다 |
+| `sse_send_p95_ms`, `sse_send_p99_ms` | 실제 `SseEmitter.send()` 호출이 반환할 때까지의 시간 | 느린 클라이언트나 TCP write 정체를 찾습니다. 시나리오 10은 BID_PLACED만 집계합니다 |
+| `sse_queue_depth_max` | 모든 emitter dispatcher에 쌓인 추정 작업 수의 최대 | 동기 구현에는 큐가 없어 항상 0입니다 |
+| `sse_in_flight_max` | 동시에 `send()` 안에서 처리 중이던 작업 수의 최대 | 동기 구현은 보통 1이며 heartbeat가 겹치면 더 커질 수 있습니다 |
+| `sse_rejected` | 닫힌 dispatcher 또는 포화된 큐로 제출하지 못한 작업 수 | 동기 구현에서는 항상 0입니다 |
+| `sse_client_conn_min`, `sse_client_conn_max` | 측정 구간에 실제 SSE frame을 읽던 연결 수의 최소·최대 | 둘 다 `sse` 목표의 95% 이상이어야 합니다 |
+| `sse_client_scrape_up_min` | Prometheus가 SSE 클라이언트 계측 프로세스를 긁은 상태의 최솟값 | 1이어야 하며 0이면 클라이언트 프로세스가 죽은 것입니다 |
+| `sse_client_connections_opened` | 측정 구간에 새로 수립된 클라이언트 연결 수 | 연결은 측정 전에 붙이므로 0보다 크면 재연결이 발생한 것입니다 |
+| `sse_client_unexpected_closes`, `sse_client_connection_errors` | 예상 밖 스트림 종료와 연결 수립 실패 | 모두 0이 정상입니다 |
+| `sse_client_events_received`, `sse_client_bid_events_received` | 클라이언트 callback이 실제 파싱한 전체/BID_PLACED frame 수 | 서버 send 성공과 비교합니다 |
+| `sse_client_delivery_ratio` | 실제 BID_PLACED 수신 / 서버 BID_PLACED send 성공 × 100 | 마지막 Prometheus 스크랩까지 기다려 같은 수집 완료 시점의 두 카운터를 비교하며, ID 누락과 함께 판정합니다 |
+| **`sse_msg_latency_p95_ms`, `sse_msg_latency_p99_ms`** | **입찰 POST 시작부터 각 audience가 BID_PLACED를 파싱할 때까지** | 동기·비동기·가상 스레드의 사용자 체감 전달 시간을 비교합니다 |
+| `sse_msg_latency_samples`, `sse_client_latency_pending` | 매칭된 latency 표본 수와 아직 요청 시작 시각을 못 찾은 수신 이벤트 수 | 접수 입찰이 있는데 표본이 0이면 계측 실패입니다 |
+| `sse_client_missing`, `sse_client_duplicate`, `sse_client_out_of_order` | 방별 순차 SSE ID로 찾은 누락·중복·순서 역전 수 | 모두 0이 정상입니다 |
+| `sse_client_parse_errors`, `sse_correlation_failed` | SSE JSON 파싱 실패와 k6→구독자 correlation 전달 실패 | 모두 0이 정상입니다 |
+| `sse_client_cpu_max` | 실제 프레임 파서가 쓴 CPU 최대 | 높으면 앱보다 부하 발생기가 먼저 병목일 수 있습니다 |
+| `jvm_threads_live_max` | JVM 라이브 플랫폼 스레드 수의 최대 | 동기 구현에는 SSE dispatch worker가 없으므로 다른 구현의 증가분과 비교합니다 |
+| `sse_queue_saturated` | emitter 큐 포화로 연결을 종료한 횟수 | 0이 정상입니다 |
 | `virtual_threads` | 가상 스레드를 켰는지 | 켜면 톰캣도 함께 바뀝니다 |
 | `gc_pause_ms_per_s` | 1초당 GC가 멈춰 세운 시간(ms) | 커지면 힙이 빡빡한 것 |
 | **`k6_cpu_max`** | **부하 발생기가 쓴 CPU(%)** | **100에 가까우면 그 줄은 버립니다** |
 | `cpus` | 앱과 MySQL 에 준 코어 수 | `--cpus` 로 정한 값. 기본 2.0. **다른 값끼리 비교하지 않습니다** |
 | **`app_cpu_avg`**, **`app_cpu_max`** | **앱 컨테이너가 쓴 CPU. 준 코어의 몇 %인지** | 100이면 준 코어를 다 쓴 것입니다 |
 | `process_cpu_avg/max`, `system_cpu_avg/max`, `system_load_avg/max` | JVM CPU, 호스트 CPU, 1분 load average | 배포에서도 같은 정의로 앱 포화를 판정합니다 |
+| `process_open_fds_max`, `process_max_fds`, `process_fd_usage_max` | 열린 FD 최대, FD 한도, 최대 사용률 | SSE 소켓 증가로 FD 한도에 가까워지는지 봅니다. Prometheus 원본 이름은 `process_files_open_files`, `process_files_max_files`입니다 |
 | **`mysql_cpu_avg`**, **`mysql_cpu_max`** | **MySQL 컨테이너가 쓴 CPU. 준 코어의 몇 %인지** | **이 값은 다른 데서 못 구합니다.** Prometheus 가 MySQL 을 안 긁습니다 |
 | `accepted` | 접수된 입찰 수 | |
 | `rejected_4xx` | 규칙대로 거절된 수 | **실패가 아닙니다.** 이미 최고가, 금액 부족 등 |
@@ -602,11 +682,12 @@ CPU 가 묶고 있던 것이고, 안 오르면 아닙니다. 다른 건 아무�
 |---|---|
 | `run.sh` | 측정 한 줄 전체. 이것만 쓰면 됩니다 |
 | `seed.sh` | 데이터 생성. `run.sh`가 부릅니다 |
-| `docker-compose.perf.yml` | nginx, app, mysql, prometheus, grafana, k6 |
+| `docker-compose.perf.yml` | nginx, app, mysql, prometheus, grafana, k6, 실제 SSE 클라이언트 |
 | `nginx.conf` | 1대일 때도 앞에 둡니다 |
 | `prometheus.yml` | `scrape_interval: 5s` |
 | `grafana/dashboards/upbid.json` | 커밋된 대시보드. UI에서 고쳐도 저장 안 됩니다 |
 | `k6/` | 시나리오 스크립트 |
+| `sse-client/` | 실제 SSE frame 파싱, 요청→수신 latency와 누락·중복·순서 계측 |
 | `console-server.py` | 개발 콘솔이 run.sh 실행, 동시 입찰 검증, 실시간 지표, 서버 로그 읽기를 맡기는 작은 서버 |
 | `부하테스트-콘솔 켜기.command` | 측정 콘솔 서버만 따로 띄웁니다 |
 | `../UpBid 개발환경 켜기.command` | **더블클릭하면 개발 환경 전부가 뜹니다.** 앱 로그를 `/tmp/upbid-backend.log` 로도 남겨서 콘솔이 읽습니다 |

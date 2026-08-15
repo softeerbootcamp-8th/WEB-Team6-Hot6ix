@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -24,64 +25,53 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AuctionRoomCloseService {
 
+    /** 아직 결과가 나오지 않은 물품 상태. 하나라도 남아 있으면 자동 종료 대상이 아니다. */
+    private static final List<AuctionItemStatus> UNFINISHED_ITEM_STATUSES =
+            List.of(AuctionItemStatus.READY, AuctionItemStatus.IN_PROGRESS);
+
     private final AuctionRoomRepository auctionRoomRepository;
     private final AuctionItemRepository auctionItemRepository;
     private final SellerProfileRepository sellerProfileRepository;
-    private final AuctionItemCloseService auctionItemCloseService;
+    /** 종료로 방 상태와 종료 시각이 바뀌므로 담아 둔 값을 버린다. */
+    private final AuctionRoomPublicCacheService auctionRoomPublicCacheService;
     private final DomainEventPublisher domainEventPublisher;
 
     /**
-     * 소유자 본인의 경매방을 종료한다. 진행 중이던 물품을 모두 마감한 뒤 방을 {@code CLOSED}로
-     * 바꾸고 {@code RoomClosed}를 발행한다. 방송이 끝났다는 것을 서버에 남기는 유일한 수단이며,
-     * <b>되돌릴 수 없다</b> — 다시 여는 API는 없다.
+     * 소유자 본인의 경매방을 종료한다. 방을 {@code CLOSED}로 바꾸고 {@code RoomClosed}를
+     * 발행한다. 방송이 끝났다는 것을 서버에 남기는 유일한 수단이며, <b>되돌릴 수 없다</b>
+     * (다시 여는 API는 없다).
+     *
+     * <p><b>진행 중인 물품이 하나라도 있으면 거절한다.</b> 판매자 버튼 하나로 입찰이 붙어 있는
+     * 경매가 사라지지 않게 하려는 것이다. 방을 닫으려면 물품을 먼저
+     * {@code AuctionItemCloseService.closeEarly}로 앞당겨 마감시켜야 하고, 그러면 마감이
+     * 확정되기까지 Soft Close 트리거 초만큼 기다리게 된다. 그 사이 종료가 손이 묶이는 대신,
+     * 판매자가 방치한 방은 {@link #closeIfIdle}이 12시간 뒤에 닫는다.
      *
      * <p>아직 시작하지 않은 {@code READY} 물품은 <b>건드리지 않는다.</b> 시작한 적 없는 물품을
      * 유찰로 적으면 "입찰자가 없어 유찰"과 "아예 올리지도 않음"이 결과 집계에서 섞인다.
-     * {@code BEFORE} 상태(물품을 하나도 시작하지 않은) 방도 그대로 종료할 수 있다 — 쓰다 만 방을
+     * {@code BEFORE} 상태(물품을 하나도 시작하지 않은) 방도 그대로 종료할 수 있다. 쓰다 만 방을
      * 정리하는 수단이기도 하다.
      *
-     * <p><b>행 락은 물품(ID 오름차순) → 경매방 순으로 잡는다. 이 순서를 바꾸면 안 된다.</b>
-     *
-     * <p>물품 시작({@code AuctionItemService.start})도 물품 → 경매방 순으로 잡는다. 두 요청이
-     * 같은 물품과 같은 방을 모두 필요로 하는데 집는 순서가 서로 다르면, 각자 하나씩 쥔 채 상대
-     * 것을 기다린다 — 락은 커밋 전까지 놓지 않으므로 그대로 멈춘다.
-     *
-     * <pre>
-     *   시작 요청: 물품5 획득 → 방을 기다림   (종료가 쥐고 있음)
-     *   종료 요청: 방 획득   → 물품5를 기다림 (시작이 쥐고 있음)
-     * </pre>
-     *
-     * <p>순서를 맞추면 이 고리가 생기지 않는다. 물품을 먼저 잡은 쪽이 방도 반드시 잡을 수 있어,
-     * 나머지는 잠깐 기다렸다가 차례로 진행한다. 그래서 방을 먼저 잡고 싶어지는 흐름을 뒤집어
-     * <b>물품을 전부 닫은 뒤에야</b> 방 락을 잡는다. 덤으로 방 락을 쥐는 시간도 짧아진다.
-     *
-     * <p>물품끼리도 같은 이유로 ID 오름차순으로 고정한다
-     * ({@code AuctionItemRepository.findIdsByRoomAndStatus}의 {@code order by}). 같은 방을
-     * 동시에 닫는 두 요청이 물품을 다른 순서로 잡으면 물품끼리 같은 교착이 생긴다.
-     *
-     * <p>물품 마감은 같은 트랜잭션에서 돈다({@code AuctionItemCloseService.close}가
-     * {@code REQUIRED}). 하나라도 실패하면 방 종료까지 통째로 롤백돼, 방은 종료됐는데 물품
-     * 하나만 진행 중으로 남는 상태가 생기지 않는다. 도메인 이벤트는 커밋 후에 나가므로 롤백된
-     * 마감은 화면에도 알려지지 않는다.
-     *
-     * <p>물품을 닫기 <b>전에</b> 방이 이미 종료됐는지 보지 않는 것은, 종료된 방에는 진행 중인
-     * 물품이 있을 수 없어 그 반복문이 어차피 아무 일도 하지 않기 때문이다(마감은 진행 중이 아닌
-     * 물품을 조용히 건너뛴다). 중복 종료 요청은 방 락을 잡은 뒤 4004로 거절된다.
+     * <p><b>{@code READ_COMMITTED}가 진행 중 물품 검사의 나머지 절반이다.</b> 기본값인
+     * REPEATABLE READ에서는 트랜잭션의 첫 일반 조회(여기서는 판매자 프로필 조회) 시점에 읽기
+     * 뷰가 고정되고, 이후 일반 조회는 그 스냅샷만 본다. 그러면 <b>경매방 락을 기다리는 동안
+     * 다른 요청이 커밋한 물품 시작을 개수 세기가 보지 못해</b>, 락이 요청을 줄 세워도 낡은 값으로
+     * 통과시킨다. 결과는 진행 중인 물품을 남겨 둔 채 방이 닫히는 것이다.
+     * {@code AuctionItemService.start}의 "방당 동시 3개" 검사가 같은 이유로 같은 설정을 쓴다.
      *
      * @param userId        종료를 요청한 회원의 ID
      * @param auctionRoomId 종료할 경매방의 ID
      * @return 종료된 경매방
      * @throws ApplicationException 판매자 프로필이 없을 때(SELLER_PROFILE_NOT_FOUND),
      *                               경매방이 없거나 본인 소유가 아닐 때(AUCTION_ROOM_NOT_FOUND),
-     *                               이미 종료된 경매방일 때(AUCTION_ROOM_CLOSED)
+     *                               이미 종료된 경매방일 때(AUCTION_ROOM_CLOSED),
+     *                               진행 중인 물품이 남아 있을 때(AUCTION_ROOM_HAS_IN_PROGRESS_ITEM)
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public AuctionRoomPublicResponseDto close(Long userId, Long auctionRoomId) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
         assertRoomOwned(sellerProfile, auctionRoomId);
-
-        closeInProgressItems(auctionRoomId);
 
         AuctionRoom auctionRoom = auctionRoomRepository.findByIdForUpdate(auctionRoomId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
@@ -90,11 +80,11 @@ public class AuctionRoomCloseService {
             throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_CLOSED);
         }
 
-        LocalDateTime closedAt = LocalDateTime.now();
-        auctionRoom.close(closedAt);
+        if (hasInProgressItem(auctionRoomId)) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_HAS_IN_PROGRESS_ITEM);
+        }
 
-        domainEventPublisher.publish(
-                RoomClosed.of(auctionRoomId, auctionRoom.getName(), closedAt));
+        closeLocked(auctionRoom, LocalDateTime.now());
 
         // 소유 확인을 통과했으므로 요청자가 곧 소유자다.
         return AuctionRoomPublicResponseDto.from(
@@ -104,19 +94,76 @@ public class AuctionRoomCloseService {
     }
 
     /**
-     * 진행 중인 물품을 ID 오름차순으로 하나씩 마감한다. 물품마다 낙찰이면 {@code ItemEnded},
-     * 유찰이면 {@code ItemPassed}가 함께 발행된다.
+     * 물품이 전부 마감된 채 방치된 경매방을 <b>소유자 확인 없이</b> 종료한다.
+     * {@code AuctionRoomIdleCloseRunner}가 부르는 시스템용 진입점이며, 종료되면 수동 종료와
+     * 똑같은 {@code RoomClosed}가 나간다.
      *
-     * <p>한 방에서 동시에 진행할 수 있는 물품이 3개까지라 반복은 최대 3회다. 여기서 읽은 ID가
-     * 실제 마감 시점에는 이미 닫혀 있을 수 있지만, 마감 쪽이 행 락을 걸고 상태를 다시 보고
-     * 판단하므로 문제되지 않는다. 판정 기준은 이 목록이 아니라 DB다.
+     * <p>대상을 고르는 것은 {@code AuctionRoomRepository.findIdleRoomIds}지만, <b>여기서 방 행
+     * 락을 잡고 같은 조건을 다시 본다.</b> 목록을 읽고 여기까지 오는 사이에 판매자가 물품을
+     * 시작했을 수 있어서다. 그러면 방금 시작한 경매가 열리자마자 닫힌다.
+     *
+     * <p><b>조건에 맞지 않으면 조용히 {@code false}를 준다.</b> 이미 닫힌 방, 물품이 다시
+     * 시작된 방, 다른 서버가 먼저 닫은 방이 여기서 함께 걸러진다. 예외를 던지지 않는 것은
+     * 이것이 사용자 요청이 아니라 <b>지나가면서 정리하는 일</b>이라, 대상이 아닌 게 정상
+     * 흐름이기 때문이다.
+     *
+     * <p>{@code READ_COMMITTED}인 이유는 {@link #close}와 같다. 락을 기다리는 동안 커밋된
+     * 물품 시작을 못 보면 락을 잡고도 낡은 값으로 방을 닫는다.
+     *
+     * @param auctionRoomId 종료할 경매방의 ID
+     * @param idleBefore    마지막 물품 마감 시각이 이보다 앞서야 종료한다
+     * @return 실제로 종료했으면 {@code true}
      */
-    private void closeInProgressItems(Long auctionRoomId) {
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public boolean closeIfIdle(Long auctionRoomId, LocalDateTime idleBefore) {
 
-        List<Long> inProgressItemIds = auctionItemRepository.findIdsByRoomAndStatus(
-                auctionRoomId, AuctionItemStatus.IN_PROGRESS);
+        AuctionRoom auctionRoom = auctionRoomRepository.findByIdForUpdate(auctionRoomId)
+                .orElse(null);
 
-        inProgressItemIds.forEach(auctionItemCloseService::close);
+        if (auctionRoom == null || auctionRoom.getStatus() != AuctionRoomStatus.OPEN) {
+            return false;
+        }
+
+        if (auctionItemRepository.existsByAuctionRoom_AuctionRoomIdAndStatusIn(
+                auctionRoomId, UNFINISHED_ITEM_STATUSES)) {
+            return false;
+        }
+
+        LocalDateTime lastEndAt = auctionItemRepository.findMaxEndAt(auctionRoomId);
+
+        if (lastEndAt == null || !lastEndAt.isBefore(idleBefore)) {
+            return false;
+        }
+
+        closeLocked(auctionRoom, LocalDateTime.now());
+
+        return true;
+    }
+
+    /**
+     * 경매방에 진행 중인 물품이 있는지 본다. 이 조회 자체에는 락이 없어서, 정확한 값이 나오려면
+     * <b>경매방 행 락을 쥔 채로</b> {@code READ_COMMITTED} 트랜잭션에서 불러야 한다.
+     * 두 조건이 왜 함께 필요한지는 {@link #close}의 설명에 있다.
+     */
+    private boolean hasInProgressItem(Long auctionRoomId) {
+        return auctionItemRepository.countByAuctionRoom_AuctionRoomIdAndStatus(
+                auctionRoomId, AuctionItemStatus.IN_PROGRESS) > 0;
+    }
+
+    /**
+     * 방 행 락을 잡고 종료 대상임을 확인한 방을 실제로 닫는다.
+     *
+     * <p>공개 조회 캐시를 여기서 버리는 것은 <b>자동 종료도 같은 경로를 타게 하려는 것</b>이다
+     * (#326에서는 수동 종료 쪽에만 있었다). 안 버리면 방이 닫힌 뒤에도 공개 화면이 담아 둔
+     * {@code OPEN}을 계속 보여준다.
+     */
+    private void closeLocked(AuctionRoom auctionRoom, LocalDateTime closedAt) {
+
+        auctionRoom.close(closedAt);
+        auctionRoomPublicCacheService.evict(auctionRoom.getShareCode());
+
+        domainEventPublisher.publish(RoomClosed.of(
+                auctionRoom.getAuctionRoomId(), auctionRoom.getName(), closedAt));
     }
 
     /**
