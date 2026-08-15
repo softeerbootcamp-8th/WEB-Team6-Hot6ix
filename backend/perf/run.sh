@@ -624,7 +624,7 @@ if [ "$REMOTE" = "1" ]; then
   "${COMPOSE[@]}" up -d grafana
 else
   "${COMPOSE[@]}" rm -sfv nginx app mysql redis >/dev/null 2>&1 || true
-  "${COMPOSE[@]}" up -d --build --scale app="$APPS" nginx app mysql redis grafana
+  "${COMPOSE[@]}" up -d --build --scale app="$APPS" nginx app mysql redis prometheus grafana
 
   # nginx 는 upstream 이름을 기동할 때 한 번만 풀어서 들고 있다. 앱을 2대로 늘려도
   # 다시 안 시작하면 계속 처음 본 한 대에만 보낸다.
