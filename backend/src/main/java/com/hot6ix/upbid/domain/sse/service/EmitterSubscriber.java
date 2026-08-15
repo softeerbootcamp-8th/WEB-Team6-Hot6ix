@@ -14,16 +14,18 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * 직접 참조하지 않는 이유다.
  */
 @Slf4j
-class EmitterSubscriber implements Flow.Subscriber<SseDispatchTask> {
+class EmitterSubscriber implements Flow.Subscriber<QueuedSseDispatchTask> {
 
     private final Long roomId;
     private final SseEmitter emitter;
+    private final SseMetrics sseMetrics;
 
     private Flow.Subscription subscription;
 
-    EmitterSubscriber(Long roomId, SseEmitter emitter) {
+    EmitterSubscriber(Long roomId, SseEmitter emitter, SseMetrics sseMetrics) {
         this.roomId = roomId;
         this.emitter = emitter;
+        this.sseMetrics = sseMetrics;
     }
 
     @Override
@@ -42,17 +44,29 @@ class EmitterSubscriber implements Flow.Subscriber<SseDispatchTask> {
      * 코드 문제일 수 있어 {@code warn} 으로 남긴다.
      */
     @Override
-    public void onNext(SseDispatchTask task) {
+    public void onNext(QueuedSseDispatchTask queuedTask) {
+        SseDispatchTask task = queuedTask.task();
+        String eventName = queuedTask.eventName();
+
+        sseMetrics.recordQueueWait(eventName, queuedTask.enqueuedAtNanos());
+        sseMetrics.recordSendAttempt(eventName);
+        io.micrometer.core.instrument.Timer.Sample sample = sseMetrics.startSend();
+
         try {
             send(task);
+            sseMetrics.recordSendSuccess(eventName);
         } catch (IOException | IllegalStateException e) {
+            sseMetrics.recordSendFailure(eventName, e);
             log.debug("sse 전송 중 끊긴 연결 정리: roomId={}, cause={}", roomId, cause(e));
             abort(e);
             return;
         } catch (RuntimeException e) {
+            sseMetrics.recordSendFailure(eventName, e);
             log.warn("sse 전송 실패로 연결 종료: roomId={}", roomId, e);
             abort(e);
             return;
+        } finally {
+            sseMetrics.finishSend(eventName, sample);
         }
         subscription.request(1);
     }

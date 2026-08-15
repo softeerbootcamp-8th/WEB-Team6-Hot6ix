@@ -9,7 +9,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * emitter 하나에 대한 이벤트 큐와 drain을 관리한다.
  *
  * <p>{@link SubmissionPublisher}가 bounded 큐와 순차 drain(1개 보장)을 내장한다.
- * drain은 VT에서 실행되어 느린 구독자가 다른 emitter에 영향을 주지 않는다.
+ * drain은 설정에 따라 가상 스레드 또는 고정 플랫폼 스레드 풀에서 실행된다.
  *
  * <p>큐가 포화되면 emitter를 즉시 종료한다. heartbeat도 같은 큐를 타므로 포화 시
  * heartbeat로는 정리되지 않는다. 포화 즉시 끊으면 EventSource가 재연결해
@@ -18,7 +18,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @Slf4j
 class EmitterDispatcher {
 
-    private final SubmissionPublisher<SseDispatchTask> publisher;
+    private final SubmissionPublisher<QueuedSseDispatchTask> publisher;
 
     private final SseEmitter emitter;
 
@@ -29,11 +29,11 @@ class EmitterDispatcher {
         this.emitter = emitter;
         this.sseMetrics = sseMetrics;
         this.publisher = new SubmissionPublisher<>(vtExecutor, queueCapacity);
-        this.publisher.subscribe(new EmitterSubscriber(roomId, emitter));
+        this.publisher.subscribe(new EmitterSubscriber(roomId, emitter, sseMetrics));
     }
 
     /**
-     * 이벤트를 큐에 넣는다. 즉시 반환하며 실제 전송은 VT에서 비동기로 일어난다.
+     * 이벤트를 큐에 넣는다. 즉시 반환하며 실제 전송은 설정된 executor에서 비동기로 일어난다.
      *
      * <p>publisher가 닫혀 있거나 큐가 포화된 경우 이벤트를 drop하고 emitter를 즉시 종료한다.
      * 큐 포화는 클라이언트가 이벤트를 전혀 소비하지 못하는 상태이므로 연결을 유지해도
@@ -42,15 +42,29 @@ class EmitterDispatcher {
      */
     void enqueue(SseDispatchTask task) {
         if (publisher.isClosed()) {
+            sseMetrics.recordRejected("dispatcher_closed");
             return;
         }
-        publisher.offer(task, (subscriber, dropped) -> {
-            log.warn("sse 큐 포화로 연결 종료: roomId={}, taskType={}",
-                    dropped.roomId(), dropped.getClass().getSimpleName());
-            sseMetrics.recordQueueSaturated();
-            emitter.completeWithError(new IllegalStateException("emitter queue saturated"));
-            return false;
-        });
+        try {
+            publisher.offer(QueuedSseDispatchTask.now(task), (subscriber, dropped) -> {
+                log.warn("sse 큐 포화로 연결 종료: roomId={}, taskType={}",
+                        dropped.task().roomId(), dropped.task().getClass().getSimpleName());
+                sseMetrics.recordQueueSaturated();
+                try {
+                    emitter.completeWithError(new QueueSaturatedException());
+                } catch (IllegalStateException ignored) {
+                    // 완료 콜백과 경합해 이미 닫힌 emitter일 수 있다. 포화 지표는 위에서 남겼다.
+                }
+                return false;
+            });
+        } catch (IllegalStateException e) {
+            // isClosed 확인 직후 다른 스레드가 close할 수 있다. 이 경우도 제출되지 않은 작업이다.
+            sseMetrics.recordRejected("dispatcher_closed");
+        }
+    }
+
+    long estimatedQueueDepth() {
+        return publisher.estimateMaximumLag();
     }
 
     /**
@@ -59,5 +73,12 @@ class EmitterDispatcher {
      */
     void close() {
         publisher.closeExceptionally(new IllegalStateException("emitter closed"));
+    }
+
+    static final class QueueSaturatedException extends IllegalStateException {
+
+        QueueSaturatedException() {
+            super("emitter queue saturated");
+        }
     }
 }

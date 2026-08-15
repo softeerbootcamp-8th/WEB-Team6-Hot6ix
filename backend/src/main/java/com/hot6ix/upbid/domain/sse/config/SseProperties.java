@@ -15,8 +15,8 @@ public record SseProperties(
         long emitterTimeoutMs,
         int bufferSize,
         /**
-         * emitter 별 이벤트 큐의 최대 크기. 포화 시 이벤트를 drop 한다.
-         * 포화는 느린 구독자의 신호이며, 해당 emitter는 곧 heartbeat 실패로 정리된다.
+         * emitter 별 이벤트 큐의 최대 크기. 포화 시 이벤트를 drop하고 해당 emitter를 종료한다.
+         * 포화는 느린 구독자의 신호다.
          */
         int emitterQueueCapacity,
         /**

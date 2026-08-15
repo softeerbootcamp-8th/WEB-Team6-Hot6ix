@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -34,12 +35,13 @@ public class RoomSseManager {
     private final SseEventBuffer sseEventBuffer;
     /** 참여자 수도 다른 이벤트와 같은 경로로 나간다. 여기서 직접 쏘면 다른 인스턴스가 모른다. */
     private final SseEventPublisher sseEventPublisher;
-    /** emitter 별 drain 을 실행하는 VT executor. 전역 하나를 공유한다. */
+    /** emitter 별 drain 을 실행하는 executor. VT 또는 고정 플랫폼 스레드 풀을 전역 공유한다. */
     private final Executor sseVirtualThreadExecutor;
 
     @PostConstruct
     void bindMetrics() {
         sseMetrics.bindConnections(roomEmitters);
+        sseMetrics.bindDispatchers(dispatchers);
     }
 
     /**
@@ -54,9 +56,9 @@ public class RoomSseManager {
 
         register(roomId, emitter);
 
-        emitter.onCompletion(() -> disconnect(roomId, emitter));
-        emitter.onTimeout(() -> disconnect(roomId, emitter));
-        emitter.onError(e -> disconnect(roomId, emitter));
+        emitter.onCompletion(() -> disconnect(roomId, emitter, SseMetrics.CLOSE_COMPLETED));
+        emitter.onTimeout(() -> disconnect(roomId, emitter, SseMetrics.CLOSE_TIMEOUT));
+        emitter.onError(e -> disconnect(roomId, emitter, closeReason(e)));
 
         if (lastEventId != null) {
             List<BufferedEvent> missed = sseEventBuffer.getEventsAfter(roomId, lastEventId);
@@ -78,13 +80,13 @@ public class RoomSseManager {
 
     /**
      * <b>이 인스턴스에</b> 붙어 있는 emitter 별 dispatcher 에 이벤트를 넣는다. 실제 전송은
-     * VT 에서 비동기로 일어나므로 호출 스레드는 즉시 반환된다.
+     * 설정된 executor에서 비동기로 일어나므로 호출 스레드는 즉시 반환된다.
      *
      * <p>{@code SseEventSubscriber}가 부르는 것이 유일한 경로다. 이벤트를 만든 쪽이 여기를
      * 직접 부르면 자기 방 클라이언트에게 같은 이벤트가 두 번 간다.
      *
      * <p>{@code upbid.sse.broadcast}로 이 인스턴스의 enqueue 비용을 잰다. 실제 전송 비용은
-     * VT 내부에서 발생하므로 이 타이머는 fan-out 대상 수에 비례하는 enqueue 시간만 측정한다.
+     * executor 내부에서 발생하므로 이 타이머는 fan-out 대상 수에 비례하는 enqueue 시간만 측정한다.
      */
     public void deliverLocal(Long roomId, String name, long id, Object data) {
         Set<SseEmitter> emitters = roomEmitters.get(roomId);
@@ -122,10 +124,12 @@ public class RoomSseManager {
         return emitters == null ? 0 : emitters.size();
     }
 
-    private void disconnect(Long roomId, SseEmitter emitter) {
-        unregister(roomId, emitter);
-        broadcastParticipantCount(roomId);
-        log.info("sse 연결 종료: roomId={}", roomId);
+    private void disconnect(Long roomId, SseEmitter emitter, String reason) {
+        if (unregister(roomId, emitter)) {
+            sseMetrics.recordConnectionClosed(reason);
+            broadcastParticipantCount(roomId);
+            log.info("sse 연결 종료: roomId={}, reason={}", roomId, reason);
+        }
     }
 
     private void register(Long roomId, SseEmitter emitter) {
@@ -139,6 +143,7 @@ public class RoomSseManager {
                 roomId,
                 emitter,
                 sseMetrics));
+        sseMetrics.recordConnectionOpened();
     }
 
     /**
@@ -153,13 +158,15 @@ public class RoomSseManager {
      * 버려서 방금 붙은 사람이 아무 이벤트도 못 받는다. {@code compute} 는 키 하나에 대해
      * 원자적이라 그 틈이 없다.
      */
-    private void unregister(Long roomId, SseEmitter emitter) {
+    private boolean unregister(Long roomId, SseEmitter emitter) {
+        AtomicBoolean removed = new AtomicBoolean();
+
         roomEmitters.compute(roomId, (id, emitters) -> {
             if (emitters == null) {
                 return null;
             }
 
-            emitters.remove(emitter);
+            removed.set(emitters.remove(emitter));
 
             return emitters.isEmpty() ? null : emitters;
         });
@@ -168,6 +175,8 @@ public class RoomSseManager {
         if (dispatcher != null) {
             dispatcher.close();
         }
+
+        return removed.get();
     }
 
     /**
@@ -182,7 +191,7 @@ public class RoomSseManager {
 
     /**
      * 끊긴 연결은 write를 시도할 때만 드러난다. 주기적으로 heartbeat 를 emitter 별 큐에 넣어
-     * 실제 전송을 VT 에 맡기고, 전송 실패 시 {@link EmitterSubscriber}가 emitter 생명주기를
+     * 실제 전송을 executor에 맡기고, 전송 실패 시 {@link EmitterSubscriber}가 emitter 생명주기를
      * 통해 연결을 정리한다.
      *
      * <p>heartbeat 는 버퍼 ID 없이 comment 만 보내므로 {@code Last-Event-ID}에 영향을 주지
@@ -224,6 +233,7 @@ public class RoomSseManager {
                 if (dispatcher != null) {
                     dispatcher.close();
                 }
+                sseMetrics.recordConnectionClosed(SseMetrics.CLOSE_ROOM_CLOSED);
                 complete(emitter);
             });
         }
@@ -244,5 +254,11 @@ public class RoomSseManager {
         } catch (IllegalStateException e) {
             log.debug("이미 종료된 sse 연결", e);
         }
+    }
+
+    private String closeReason(Throwable cause) {
+        return cause instanceof EmitterDispatcher.QueueSaturatedException
+                ? SseMetrics.CLOSE_QUEUE_SATURATED
+                : SseMetrics.CLOSE_SEND_ERROR;
     }
 }

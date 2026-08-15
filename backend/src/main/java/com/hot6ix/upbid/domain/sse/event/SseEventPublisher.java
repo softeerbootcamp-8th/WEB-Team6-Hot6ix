@@ -56,8 +56,10 @@ public class SseEventPublisher {
                     String.valueOf(sseProperties.bufferSize()), // ARGV[3]
                     String.valueOf(KEY_TTL.toSeconds()));       // ARGV[4]
 
+            sseMetrics.recordEventPublished(eventName);
+
         } catch (RuntimeException e) {
-            sseMetrics.recordPublishFailure();
+            sseMetrics.recordPublishFailure(eventName, e);
             log.error("sse 이벤트 발행 실패: roomId={}, eventName={}", roomId, eventName, e);
         }
     }

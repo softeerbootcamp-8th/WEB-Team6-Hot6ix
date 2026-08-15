@@ -390,6 +390,24 @@ class RoomSseManagerTest {
                 .isZero();
     }
 
+    @Test
+    @DisplayName("연결 수립과 방 종료 연결 수를 중복 없이 기록한다")
+    void recordsOpenedAndRoomClosedConnections() {
+
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RoomSseManager manager = newRoomSseManager(
+                mock(SseEventBuffer.class), mock(SseEventPublisher.class), registry);
+
+        manager.subscribe(ROOM_ID, null);
+        manager.subscribe(ROOM_ID, null);
+        manager.closeRoom(ROOM_ID);
+
+        assertThat(registry.get("upbid.sse.connections.opened").counter().count()).isEqualTo(2);
+        assertThat(registry.get("upbid.sse.connections.closed")
+                .tag("reason", SseMetrics.CLOSE_ROOM_CLOSED)
+                .counter().count()).isEqualTo(2);
+    }
+
     private static double rooms(SimpleMeterRegistry registry) {
         return registry.get("upbid.sse.rooms").gauge().value();
     }
