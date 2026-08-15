@@ -47,7 +47,7 @@ class AuctionResultCacheTest extends AbstractRedisContainerTest {
 
     private AuctionResultCache newCache(boolean enabled, Duration ttl) {
         AuctionProperties properties = new AuctionProperties(
-                0, null, null, new AuctionProperties.ResultCache(enabled, ttl));
+                0, null, null, null, new AuctionProperties.ResultCache(enabled, ttl));
 
         return new AuctionResultCache(redisTemplate, objectMapper, properties, new SimpleMeterRegistry());
     }
@@ -123,7 +123,7 @@ class AuctionResultCacheTest extends AbstractRedisContainerTest {
 
         AuctionResultCache cache = new AuctionResultCache(
                 brokenTemplate, objectMapper,
-                new AuctionProperties(0, null, null,
+                new AuctionProperties(0, null, null, null,
                         new AuctionProperties.ResultCache(true, Duration.ofMinutes(1))),
                 new SimpleMeterRegistry());
 

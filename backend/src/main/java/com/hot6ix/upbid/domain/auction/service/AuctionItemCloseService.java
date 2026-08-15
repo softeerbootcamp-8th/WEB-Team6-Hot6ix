@@ -34,36 +34,6 @@ public class AuctionItemCloseService {
     private final AuctionCloseMetrics auctionCloseMetrics;
 
     /**
-     * 진행 중인 물품을 <b>마감 시각과 관계없이 지금</b> 마감한다. 입찰이 있으면 낙찰({@code SOLD}),
-     * 없으면 유찰({@code FAILED})이며 낙찰은 {@code ItemEnded}를, 유찰은 {@code ItemPassed}를
-     * 발행한다. 유찰에 {@code ItemEnded}를 쓸 수 없는 것은 그 payload가 낙찰가와 낙찰자를 필수로
-     * 요구하기 때문이다.
-     *
-     * <p>판매자가 경매방을 종료할 때 쓴다. 그때는 아직 마감 시각이 남은 물품도 함께 닫아야 하므로
-     * 시각을 보지 않는다. 예약이 만료돼서 닫는 경우는 {@link #closeIfDue}다.
-     *
-     * <p><b>물품이 없거나 진행 중이 아니면 조용히 끝낸다</b> — 제외된 물품, 이미 마감된 물품,
-     * 중복 호출이 여기서 함께 걸러진다.
-     *
-     * <p>물품 행에 쓰기 락을 걸고 읽으므로 마감과 입찰이 한 줄로 직렬화된다. 입찰이 먼저 커밋되면
-     * 그 입찰까지 반영해 닫히고, 마감이 먼저 커밋되면 뒤이은 입찰이 진행중이 아닌 물품으로 거절된다.
-     * 마감 직전 입찰이 조용히 사라지는 구간은 없다.
-     *
-     * @param auctionItemId 마감할 물품의 ID
-     */
-    @Transactional
-    public void close(Long auctionItemId) {
-
-        AuctionItem auctionItem = lockClosableItem(auctionItemId);
-
-        if (auctionItem == null) {
-            return;
-        }
-
-        closeLocked(auctionItem, LocalDateTime.now());
-    }
-
-    /**
      * 마감 시각이 지났으면 물품을 마감하고, <b>아직 안 지났으면 닫지 않고 그 시각을 돌려준다.</b>
      * {@code AuctionCloseScheduler}의 예약이 부른다.
      *

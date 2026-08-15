@@ -189,13 +189,18 @@ public interface AuctionRoomApi {
     @Operation(
             summary = "경매방 종료",
             description = "소유자가 방송을 끝내고 경매방을 종료한다. 요청 본문은 없다. "
-                    + "진행 중이던 물품은 모두 그 자리에서 마감되어 입찰이 있으면 낙찰(SOLD), "
-                    + "없으면 유찰(FAILED)로 확정된다. **아직 시작하지 않은 READY 물품은 그대로 남는다** "
+                    + "**진행 중(IN_PROGRESS)인 물품이 하나라도 있으면 종료할 수 없다 (code 4012).** "
+                    + "판매자 버튼 하나로 입찰이 붙어 있는 경매가 사라지지 않게 하려는 것이며, "
+                    + "먼저 물품 마감 앞당기기로 진행 중인 물품을 정리한 뒤 종료해야 한다. "
+                    + "**아직 시작하지 않은 READY 물품은 그대로 남고 종료도 막지 않는다** "
                     + "— 시작한 적 없는 물품을 유찰로 적으면 결과 집계에서 실제 유찰과 섞이기 때문이다. "
                     + "물품을 하나도 시작하지 않은 방(BEFORE)도 종료할 수 있다. "
                     + "종료된 방에서는 물품 추가·시작이 모두 막히며, **되돌리는 API는 없다.** "
                     + "응답의 closedAt이 종료 시각이고, 종료를 참여자에게 알리는 ROOM_CLOSED 이벤트가 "
-                    + "SSE로 함께 나간다."
+                    + "SSE로 함께 나간다.\n\n"
+                    + "판매자가 종료하지 않고 방치한 방은 **마지막 물품이 마감되고 12시간이 지나면 "
+                    + "서버가 자동으로 종료한다.** 이때도 같은 ROOM_CLOSED 이벤트가 나가며, "
+                    + "아직 시작하지 않은 READY 물품이 남은 방은 자동 종료 대상이 아니다."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "종료 성공"),
@@ -203,7 +208,8 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002) 또는 "
                     + "경매방이 없거나 본인 소유가 아님 (code 4002)"),
-            @ApiResponse(responseCode = "409", description = "이미 종료된 경매방 (code 4004)")
+            @ApiResponse(responseCode = "409", description = "이미 종료된 경매방 (code 4004) 또는 "
+                    + "진행 중인 물품이 남아 있음 (code 4012)")
     })
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> close(
             @Parameter(hidden = true) @LoginUserId Long userId,

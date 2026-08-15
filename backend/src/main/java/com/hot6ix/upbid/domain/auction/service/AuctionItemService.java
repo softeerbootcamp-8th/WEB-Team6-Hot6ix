@@ -171,7 +171,7 @@ public class AuctionItemService {
     public AuctionItemDetailResponseDto add(Long userId, Long auctionRoomId, AuctionItemAddRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
-        AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
+        AuctionRoom auctionRoom = findOwnedRoomForUpdate(sellerProfile, auctionRoomId);
 
         assertRoomNotClosed(auctionRoom);
 
@@ -224,7 +224,7 @@ public class AuctionItemService {
                                                 AuctionItemBulkAddRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
-        AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
+        AuctionRoom auctionRoom = findOwnedRoomForUpdate(sellerProfile, auctionRoomId);
 
         assertRoomNotClosed(auctionRoom);
 
@@ -503,6 +503,36 @@ public class AuctionItemService {
                 .findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
                         auctionRoomId, sellerProfile.getSellerProfileId())
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+    }
+
+    /**
+     * 물품을 추가할 경매방을 <b>쓰기 락을 걸고</b> 읽는다. 소유 확인은 잠근 뒤에 한다.
+     *
+     * <p><b>락이 없으면 종료된 방에 물품이 들어간다.</b> 추가가 방을 읽어 {@code OPEN}을 확인한
+     * 뒤 저장하기까지 사이에 방이 닫힐 수 있는데, 그때 INSERT는 그대로 성공한다. 방 종료는
+     * 되돌릴 수 없어서 그 물품은 영영 시작할 수 없는 상태로 남는다. 자동 종료(#284)가 붙으면서
+     * 판매자가 종료를 누르지 않아도 이 일이 생길 수 있게 됐다.
+     *
+     * <p>격리 수준만으로는 못 막는다. {@code READ_COMMITTED}는 읽는 <b>순간</b>의 최신을 보여줄
+     * 뿐이고, 읽은 뒤 저장까지 그 값이 유지되게 하는 것은 락이다.
+     *
+     * <p><b>락 순서는 경매방 → 상품이다.</b> 물품 시작({@code start})은 물품 → 경매방으로 잡는데,
+     * 방을 쥔 채 <b>물품</b>을 기다리는 코드가 여기에 없어(추가는 물품을 새로 만든다) 두 순서가
+     * 고리를 만들지 않는다. 방을 쥐고 물품 행을 기다리는 코드를 새로 만들면 그때 깨진다.
+     */
+    private AuctionRoom findOwnedRoomForUpdate(SellerProfile sellerProfile, Long auctionRoomId) {
+
+        AuctionRoom auctionRoom = auctionRoomRepository.findByIdForUpdate(auctionRoomId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        // 남의 방도 4002다. 물품 시작({@code assertRoomOwnedBy})이 4001로 감추는 것과 다른 것은,
+        // 여기서는 요청자가 방 ID를 직접 주기 때문에 방의 존재를 숨길 이유가 없어서다.
+        if (!auctionRoom.getSellerProfile().getSellerProfileId()
+                .equals(sellerProfile.getSellerProfileId())) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+        }
+
+        return auctionRoom;
     }
 
     /**

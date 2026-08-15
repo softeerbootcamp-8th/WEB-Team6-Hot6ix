@@ -12,8 +12,25 @@ public record AuctionProperties(
         int maxInProgressPerRoom,
         Close close,
         ClosingSoon closingSoon,
+        Room room,
         ResultCache resultCache
 ) {
+
+    /**
+     * 물품이 모두 마감된 경매방을 자동으로 종료하는 데 쓰는 값들.
+     *
+     * @param idleCloseAfter     마지막 물품이 마감되고 이만큼 지나면 종료 대상이다. 판매자가
+     *                           방송을 마치고 종료를 안 눌렀을 때 서버가 대신 정리하는 시간이라,
+     *                           "잠깐 자리를 비운 것"과 갈릴 만큼 넉넉해야 한다
+     * @param idleCloseBatchSize 한 tick 에 종료할 최대 방 수. <b>여기서 잘린 방은 다음 주기로
+     *                           넘어간다.</b> 상한을 두는 것은 방이 한꺼번에 밀렸을 때 한 tick 이
+     *                           DB 를 오래 붙잡지 않게 하려는 것이다
+     */
+    public record Room(
+            Duration idleCloseAfter,
+            int idleCloseBatchSize
+    ) {
+    }
 
     /**
      * 마감 예약을 Redis 에서 꺼내 실행하는 데 쓰는 값들. 전부 측정하고 정할 값이라 밖으로 뺐다.

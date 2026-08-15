@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomRole;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import jakarta.persistence.LockModeType;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
@@ -57,6 +58,32 @@ public interface AuctionRoomRepository extends JpaRepository<AuctionRoom, Long> 
     @Query("select ar from AuctionRoom ar "
             + "where ar.auctionRoomId = :auctionRoomId and ar.deletedAt is null")
     Optional<AuctionRoom> findByIdForUpdate(@Param("auctionRoomId") Long auctionRoomId);
+
+    /**
+     * 물품이 전부 마감됐는데 판매자가 종료하지 않아 방치된 경매방의 ID를 찾는다.
+     * {@code AuctionRoomIdleCloseRunner}가 자동 종료할 대상을 고르는 데 쓴다.
+     *
+     * <p>아직 시작하지 않은 {@code READY} 물품이 남은 방은 <b>대상에서 뺀다.</b> 판매자가
+     * 이어서 진행할 수 있는 방이고, 수동 종료도 {@code READY}를 건드리지 않는 것과 같은
+     * 이유다. 그래서 {@code READY}만 남겨 둔 방은 자동 종료되지 않고 계속 {@code OPEN}이다.
+     *
+     * <p>여기서 고른 방을 실제로 닫기 전에 {@code AuctionRoomCloseService.closeIfIdle}이
+     * 방 행 락을 잡고 같은 조건을 <b>다시</b> 본다. 조회와 종료 사이에 판매자가 물품을
+     * 시작했을 수 있어서, 판정 기준은 이 목록이 아니라 그때의 DB다.
+     */
+    @Query("select ar.auctionRoomId from AuctionRoom ar "
+            + "where ar.status = com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus.OPEN "
+            + "  and ar.deletedAt is null "
+            + "  and not exists ("
+            + "    select 1 from AuctionItem ai "
+            + "    where ai.auctionRoom = ar "
+            + "      and ai.status in ("
+            + "        com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.READY, "
+            + "        com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus.IN_PROGRESS)) "
+            + "  and (select max(ai2.endAt) from AuctionItem ai2 "
+            + "       where ai2.auctionRoom = ar) < :idleBefore "
+            + "order by ar.auctionRoomId")
+    List<Long> findIdleRoomIds(@Param("idleBefore") LocalDateTime idleBefore, Limit limit);
 
     int DEFAULT_PAGE_SIZE = 20;
 
