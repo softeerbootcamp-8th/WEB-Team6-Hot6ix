@@ -60,19 +60,32 @@ public class AuctionRedisStore {
     public RedisBidDecision evaluateBid(long itemId, String requestId, long bidderUserId,
                                         long amount, long arrivedAtMillis) {
 
-        @SuppressWarnings("unchecked")
-        List<String> result = redis.execute(
-                bidScript,
-                List.of(
-                        AuctionRedisKeys.item(itemId),
-                        AuctionRedisKeys.bidRequest(requestId),
-                        AuctionRedisKeys.stream()),
-                requestId,
-                String.valueOf(bidderUserId),
-                String.valueOf(amount),
-                String.valueOf(arrivedAtMillis));
+        List<String> result;
+        try {
+            @SuppressWarnings("unchecked")
+            List<String> executed = redis.execute(
+                    bidScript,
+                    List.of(
+                            AuctionRedisKeys.item(itemId),
+                            AuctionRedisKeys.bidRequest(requestId),
+                            AuctionRedisKeys.stream()),
+                    requestId,
+                    String.valueOf(bidderUserId),
+                    String.valueOf(amount),
+                    String.valueOf(arrivedAtMillis));
+            result = executed;
+        } catch (RuntimeException e) {
+            metrics.recordLuaFailure("execution");
+            throw e;
+        }
 
-        RedisBidDecision decision = toDecision(result);
+        RedisBidDecision decision;
+        try {
+            decision = toDecision(result);
+        } catch (RuntimeException e) {
+            metrics.recordLuaFailure("parsing");
+            throw e;
+        }
         switch (decision) {
             case RedisBidDecision.Accepted ignored -> metrics.recordLuaDecision("accepted");
             case RedisBidDecision.Rejected rejected -> metrics.recordLuaDecision(

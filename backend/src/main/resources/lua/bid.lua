@@ -13,55 +13,132 @@ local bidderId = ARGV[2]
 local amountArgument = ARGV[3]
 local itemId = string.match(KEYS[1], '(%d+)$')
 
-if redis.call('EXISTS', KEYS[2]) == 1 then
-    if redis.call('HGET', KEYS[2], 'itemId') ~= itemId
-            or redis.call('HGET', KEYS[2], 'bidderUserId') ~= bidderId
-            or redis.call('HGET', KEYS[2], 'amount') ~= amountArgument then
+local function keyType(key)
+    local response = redis.call('TYPE', key)
+    if type(response) == 'table' then
+        return response['ok']
+    end
+    return response
+end
+
+local function requireKeyType(key, expected, allowMissing, label)
+    local actual = keyType(key)
+    if actual ~= expected and not (allowMissing and actual == 'none') then
+        error(label .. ' key has invalid type: ' .. actual)
+    end
+    return actual
+end
+
+local function requireHashValue(key, field, label)
+    local value = redis.call('HGET', key, field)
+    if value == false or value == '' then
+        error(label .. ' hash is missing field: ' .. field)
+    end
+    return value
+end
+
+local function parseInteger(value, label)
+    if value == false or value == nil or value == ''
+            or string.match(value, '^%-?%d+$') == nil then
+        error(label .. ' is not an integer')
+    end
+    return tonumber(value)
+end
+
+local function requireHashInteger(key, field, label)
+    return parseInteger(requireHashValue(key, field, label), label .. '.' .. field)
+end
+
+local function optionalHashInteger(key, field, label)
+    local value = redis.call('HGET', key, field)
+    if value == false or value == '' then
+        return nil
+    end
+    return parseInteger(value, label .. '.' .. field)
+end
+
+local requestKeyType = requireKeyType(KEYS[2], 'hash', true, 'bid request')
+if requestKeyType == 'hash' then
+    local cachedItemId = requireHashValue(KEYS[2], 'itemId', 'bid request')
+    local cachedBidderId = requireHashValue(KEYS[2], 'bidderUserId', 'bid request')
+    local cachedAmount = requireHashValue(KEYS[2], 'amount', 'bid request')
+    local cachedAcceptedAt = requireHashValue(KEYS[2], 'acceptedAt', 'bid request')
+    local cachedEndAt = requireHashValue(KEYS[2], 'endAt', 'bid request')
+    local cachedExtendedSeconds = requireHashValue(KEYS[2], 'extendedSeconds', 'bid request')
+    parseInteger(cachedItemId, 'bid request.itemId')
+    parseInteger(cachedBidderId, 'bid request.bidderUserId')
+    parseInteger(cachedAmount, 'bid request.amount')
+    parseInteger(cachedAcceptedAt, 'bid request.acceptedAt')
+    parseInteger(cachedEndAt, 'bid request.endAt')
+    parseInteger(cachedExtendedSeconds, 'bid request.extendedSeconds')
+
+    if cachedItemId ~= itemId
+            or cachedBidderId ~= bidderId
+            or cachedAmount ~= amountArgument then
         return {'REJECTED', 'IDEMPOTENCY_KEY_CONFLICT'}
     end
     return {'ACCEPTED', requestId,
-        redis.call('HGET', KEYS[2], 'amount'),
-        redis.call('HGET', KEYS[2], 'acceptedAt'),
-        redis.call('HGET', KEYS[2], 'endAt'),
-        redis.call('HGET', KEYS[2], 'extendedSeconds'),
+        cachedAmount,
+        cachedAcceptedAt,
+        cachedEndAt,
+        cachedExtendedSeconds,
         '1'}
 end
 
-if redis.call('EXISTS', KEYS[1]) == 0 then
+local itemKeyType = requireKeyType(KEYS[1], 'hash', true, 'auction item')
+if itemKeyType == 'none' then
     return {'REJECTED', 'KEY_MISSING'}
 end
 
-if redis.call('HGET', KEYS[1], 'status') ~= 'IN_PROGRESS' then
+requireKeyType(KEYS[3], 'stream', true, 'bid stream')
+
+local status = requireHashValue(KEYS[1], 'status', 'auction item')
+local sellerUserId = requireHashValue(KEYS[1], 'sellerUserId', 'auction item')
+local roomId = requireHashValue(KEYS[1], 'roomId', 'auction item')
+local startingPrice = requireHashInteger(KEYS[1], 'startingPrice', 'auction item')
+local currentPrice = requireHashInteger(KEYS[1], 'currentPrice', 'auction item')
+local bidIncrement = requireHashInteger(KEYS[1], 'bidIncrement', 'auction item')
+local endAt = requireHashInteger(KEYS[1], 'endAt', 'auction item')
+local trigger = optionalHashInteger(KEYS[1], 'softCloseTriggerSeconds', 'auction item')
+local extend = optionalHashInteger(KEYS[1], 'softCloseExtendSeconds', 'auction item')
+local total = requireHashInteger(KEYS[1], 'totalExtensionSeconds', 'auction item')
+local maximum = requireHashInteger(KEYS[1], 'maxTotalExtensionSeconds', 'auction item')
+local leaderUserId = redis.call('HGET', KEYS[1], 'leaderUserId')
+local amount = parseInteger(amountArgument, 'bid amount')
+local arrivedAt = parseInteger(ARGV[4], 'bid arrivedAt')
+
+if bidIncrement <= 0 then
+    error('auction item.bidIncrement must be positive')
+end
+
+local participantsKey = 'auction:room:' .. roomId .. ':participants'
+requireKeyType(participantsKey, 'set', true, 'auction participants')
+
+if status ~= 'IN_PROGRESS' then
     return {'REJECTED', 'ITEM_NOT_IN_PROGRESS'}
 end
 
-if redis.call('HGET', KEYS[1], 'sellerUserId') == bidderId then
+if sellerUserId == bidderId then
     return {'REJECTED', 'SELLER_CANNOT_BID'}
 end
 
-local roomId = redis.call('HGET', KEYS[1], 'roomId')
-if redis.call('SISMEMBER', 'auction:room:' .. roomId .. ':participants', bidderId) == 0 then
+if redis.call('SISMEMBER', participantsKey, bidderId) == 0 then
     return {'REJECTED', 'TERMS_NOT_AGREED'}
 end
 
-local endAt = tonumber(redis.call('HGET', KEYS[1], 'endAt'))
-if tonumber(ARGV[4]) >= endAt then
+if arrivedAt >= endAt then
     return {'REJECTED', 'ITEM_CLOSED'}
 end
 
-local leaderUserId = redis.call('HGET', KEYS[1], 'leaderUserId')
 if leaderUserId == bidderId then
     return {'REJECTED', 'ALREADY_TOP_BIDDER'}
 end
 
-local amount = tonumber(amountArgument)
-local startingPrice = tonumber(redis.call('HGET', KEYS[1], 'startingPrice'))
-local bidIncrement = tonumber(redis.call('HGET', KEYS[1], 'bidIncrement'))
 local minimum
 if leaderUserId == false then
     minimum = startingPrice
 else
-    minimum = tonumber(redis.call('HGET', KEYS[1], 'currentPrice')) + bidIncrement
+    minimum = currentPrice + bidIncrement
 end
 
 if amount < minimum then
@@ -73,10 +150,6 @@ end
 
 local redisTime = redis.call('TIME')
 local acceptedAt = tonumber(redisTime[1]) * 1000 + math.floor(tonumber(redisTime[2]) / 1000)
-local trigger = tonumber(redis.call('HGET', KEYS[1], 'softCloseTriggerSeconds'))
-local extend = tonumber(redis.call('HGET', KEYS[1], 'softCloseExtendSeconds'))
-local total = tonumber(redis.call('HGET', KEYS[1], 'totalExtensionSeconds')) or 0
-local maximum = tonumber(redis.call('HGET', KEYS[1], 'maxTotalExtensionSeconds')) or 0
 local extendedSeconds = 0
 
 if trigger ~= nil and extend ~= nil

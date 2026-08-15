@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.bid.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisKeys;
@@ -32,6 +33,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
     private static StringRedisTemplate redis;
 
     private AuctionRedisStore store;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeAll
     static void setUpRedis() {
@@ -52,7 +54,8 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 AuctionRedisKeys.participants(ROOM_ID),
                 AuctionRedisKeys.bidRequest("request-1"),
                 AuctionRedisKeys.stream()));
-        store = new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry()));
+        meterRegistry = new SimpleMeterRegistry();
+        store = new AuctionRedisStore(redis, new BidStreamMetrics(meterRegistry));
     }
 
     @Test
@@ -198,6 +201,72 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
                 .isNull();
         assertThat(redis.hasKey(AuctionRedisKeys.bidRequest("request-low"))).isFalse();
+        assertThat(redis.hasKey(AuctionRedisKeys.stream())).isFalse();
+    }
+
+    @Test
+    @DisplayName("Stream 키 타입이 잘못되면 물품 Hash를 바꾸기 전에 실패한다")
+    void failsBeforeMutationWhenStreamKeyHasWrongType() {
+
+        long endAt = System.currentTimeMillis() + 300_000L;
+        store.seed(seed(endAt, 0, 60, 60));
+        redis.opsForValue().set(AuctionRedisKeys.stream(), "wrong-type");
+
+        assertThatThrownBy(() -> store.evaluateBid(
+                ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis()))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "currentPrice"))
+                .isEqualTo("10000");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
+                .isNull();
+        assertThat(redis.hasKey(AuctionRedisKeys.bidRequest("request-1"))).isFalse();
+        assertThat(meterRegistry.find("upbid.bid.lua.failures")
+                .tag("stage", "execution").counter())
+                .isNotNull()
+                .extracting(counter -> counter.count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("숫자 물품 필드가 손상되면 상태와 Stream을 바꾸기 전에 실패한다")
+    void failsBeforeMutationWhenNumericItemFieldIsCorrupted() {
+
+        long endAt = System.currentTimeMillis() + 300_000L;
+        store.seed(seed(endAt, 0, 60, 60));
+        redis.opsForHash().put(
+                AuctionRedisKeys.item(ITEM_ID), "softCloseTriggerSeconds", "not-a-number");
+
+        assertThatThrownBy(() -> store.evaluateBid(
+                ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis()))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
+                .isNull();
+        assertThat(redis.hasKey(AuctionRedisKeys.bidRequest("request-1"))).isFalse();
+        assertThat(redis.hasKey(AuctionRedisKeys.stream())).isFalse();
+    }
+
+    @Test
+    @DisplayName("기존 승인 결과의 숫자 fingerprint가 손상되면 충돌 응답 대신 실패한다")
+    void failsWhenCachedRequestFingerprintIsCorrupted() {
+
+        long endAt = System.currentTimeMillis() + 300_000L;
+        store.seed(seed(endAt, 0, 60, 60));
+        redis.opsForHash().putAll(AuctionRedisKeys.bidRequest("request-1"), java.util.Map.of(
+                "itemId", "101",
+                "bidderUserId", "not-a-number",
+                "amount", "10000",
+                "acceptedAt", "1000",
+                "endAt", String.valueOf(endAt),
+                "extendedSeconds", "0"));
+
+        assertThatThrownBy(() -> store.evaluateBid(
+                ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis()))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
+                .isNull();
         assertThat(redis.hasKey(AuctionRedisKeys.stream())).isFalse();
     }
 

@@ -58,6 +58,10 @@ public class BidStreamMetrics {
         registry.counter("upbid.bid.lua.decisions", "result", result).increment();
     }
 
+    public void recordLuaFailure(String stage) {
+        registry.counter("upbid.bid.lua.failures", "stage", stage).increment();
+    }
+
     public void recordSeedFailure() {
         seedFailures.increment();
     }
