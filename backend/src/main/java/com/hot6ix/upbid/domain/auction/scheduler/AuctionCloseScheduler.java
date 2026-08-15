@@ -25,22 +25,13 @@ public interface AuctionCloseScheduler {
      * <b>이미 걸려 있던 예약은 취소하고 갈아 끼운다</b> — Soft Close 연장과 재예약이 이
      * 동작에 기댄다. 취소하지 않으면 옛 예약이 살아남아 원래 시각에 물품을 닫아버린다.
      *
+     * <p>DB 를 보고 예약을 다시 채우는 {@link AuctionRecoveryRunner}도 이것을 쓴다. 없을 때만
+     * 넣으면 커밋 뒤 재예약이 실패해 낡은 시각이 남은 줄을 못 고치기 때문이다(#327).
+     *
      * @param auctionItemId 마감할 물품의 ID
      * @param endAt         마감 시각. 서버 시간 기준 절대값
      */
     void schedule(Long auctionItemId, LocalDateTime endAt);
-
-    /**
-     * <b>예약이 없을 때만</b> 건다. 이미 있으면 그대로 두고 시각을 덮어쓰지 않는다.
-     *
-     * <p>DB 를 보고 예약을 다시 채우는 {@link AuctionRecoveryRunner}가 쓴다. 덮어쓰면 안 되는
-     * 것은 이미 걸려 있는 예약이 DB 보다 최신이거나 실행 중일 수 있기 때문이다. 그 예약에는
-     * Soft Close 연장이 반영돼 있거나, 지금 어느 서버가 집어서 처리 중이라는 표시가 들어 있다.
-     *
-     * @param auctionItemId 마감할 물품의 ID
-     * @param endAt         마감 시각. 서버 시간 기준 절대값
-     */
-    void scheduleIfAbsent(Long auctionItemId, LocalDateTime endAt);
 
     /**
      * 물품의 마감 예약을 취소한다. 예약이 없거나 이미 실행이 시작됐으면 아무 일도 하지 않는다.
