@@ -94,8 +94,18 @@ export function MobileItemDetailView({
    */
   const outbid = priceAtConfirm !== null && item.currentPrice > priceAtConfirm
 
+  /**
+   * 마감 시각이 지났는데 서버 마감 이벤트가 아직 안 온 상태.
+   *
+   * "마감 처리 중"으로 적어 두는 동안에도 입찰 바가 살아 있으면 이미 끝난
+   * 물품에 넣어보게 된다. 서버가 `7002` 로 거절하므로 결과는 같지만, 눌리지
+   * 않게 해서 헛수고를 만들지 않는다.
+   */
+  const settling = !closed && !ready && remaining <= 0
+
   /** 지금 금액을 조절할 수 있는 상태인지 */
-  const biddable = !closed && !ready && onAmountChange !== undefined
+  const biddable =
+    !closed && !ready && !settling && onAmountChange !== undefined
   const belowMinimum = amount < minimum
 
   return (
@@ -485,14 +495,16 @@ export function MobileItemDetailView({
                     }
                   : undefined
               }
-              disabled={bidBlocked || pending}
+              disabled={bidBlocked || settling || pending}
               className="ease-soft mt-3 flex h-13 w-full items-center justify-center gap-2 rounded-[14px] bg-brand-500 text-[16px] font-bold text-white transition-all duration-150 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-border-strong disabled:opacity-100 disabled:active:scale-100"
             >
               {closed
                 ? '마감된 물품이에요'
                 : ready
                   ? '아직 시작 전이에요'
-                  : `${formatWon(amount)} 입찰하기`}
+                  : settling
+                    ? '마감 처리 중이에요'
+                    : `${formatWon(amount)} 입찰하기`}
             </button>
           )}
         </div>

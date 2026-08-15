@@ -73,7 +73,25 @@ export function ItemDetailPanel({
 }) {
   const setAmount = (next: number | ((prev: number) => number)) =>
     onAmountChange(typeof next === 'function' ? next(amount) : next)
-  const bidBlocked = closed || ready || amount < minimum
+  /**
+   * 마감 시각이 지났는데 서버 마감 이벤트가 아직 안 온 상태.
+   *
+   * 화면은 이때 "마감 처리 중"으로 적어 두는데, 그 사이에도 입찰 버튼이 살아
+   * 있으면 이미 끝난 물품에 넣어보게 된다. 서버가 `7002` 로 거절하므로 결과는
+   * 같지만, 눌리지 않게 해서 헛수고를 만들지 않는다.
+   */
+  const settling = !closed && !ready && remaining <= 0
+  const bidBlocked = closed || ready || settling || amount < minimum
+
+  /** 지금 입찰을 못 하는 이유. 없으면 `null`. */
+  const blockedReason =
+    isGuest || closed || ready
+      ? null
+      : settling
+        ? '마감 처리 중이에요. 결과가 곧 확정됩니다.'
+        : amount < minimum
+          ? `최소 ${formatWon(minimum)}부터 입찰할 수 있어요.`
+          : null
 
   const [confirming, setConfirming] = useState(false)
   /** 확인 화면을 열 때의 현재가. 그 뒤로 올랐으면 알린다. */
@@ -237,15 +255,13 @@ export function ItemDetailPanel({
              * 동안 누르려던 곳을 못 누른다.
              */}
             <p
-              aria-hidden={!(!isGuest && amount < minimum && !closed && !ready)}
+              aria-hidden={blockedReason === null}
               className={cn(
                 'mb-2 min-h-[18px] text-[12px] font-medium text-live',
-                !isGuest && amount < minimum && !closed && !ready
-                  ? 'visible'
-                  : 'invisible',
+                blockedReason === null ? 'invisible' : 'visible',
               )}
             >
-              최소 {formatWon(minimum)}부터 입찰할 수 있어요.
+              {blockedReason ?? ''}
             </p>
 
             {action ? (

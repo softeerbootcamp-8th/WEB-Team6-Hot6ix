@@ -60,9 +60,19 @@ function QuickBidCard({
     if (!pending) setConfirming(false)
   }, [pending])
 
+  /**
+   * 마감 시각이 지났는데 서버 마감 이벤트가 아직 안 온 상태.
+   *
+   * 카드에는 "마감 처리 중"으로 적히는데(`formatCountdown`) 그 사이에도 입찰
+   * 버튼이 살아 있으면 이미 끝난 물품에 넣어보게 된다. 서버가 `7002` 로
+   * 거절하므로 결과는 같지만, 눌리지 않게 해서 헛수고를 만들지 않는다.
+   */
+  const settling = remaining <= 0
+
   const notOnUnit = (amount - item.currentPrice) % item.bidUnit !== 0
-  const error =
-    amount < minimum
+  const error = settling
+    ? '마감 처리 중이에요'
+    : amount < minimum
       ? `최소 ${formatWon(minimum)}부터`
       : notOnUnit
         ? `입찰 단위 ${formatWon(item.bidUnit)}에 맞춰주세요`
@@ -156,16 +166,21 @@ function QuickBidCard({
             >
               취소
             </button>
+            {/*
+             * 확인하는 사이에 마감 시각이 지나면 확정도 막는다. 남이 더 올린
+             * 경우(`outbid`)는 잠그지 않는데, 그건 다시 부를 수 있는 상황이라
+             * 고르게 두는 게 낫기 때문이다. 마감은 다시 부를 수 없다.
+             */}
             <button
               type="button"
-              disabled={pending}
+              disabled={pending || settling}
               onClick={() => onSubmit(item, amount)}
               className="ease-soft flex h-9 flex-[1.4] items-center justify-center gap-1.5 rounded-xl bg-brand-500 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
             >
               {pending && (
                 <Loader2 aria-hidden className="size-3.5 animate-spin" />
               )}
-              {pending ? '처리 중…' : '입찰 확정'}
+              {pending ? '처리 중…' : settling ? '마감 처리 중' : '입찰 확정'}
             </button>
           </div>
         </div>
