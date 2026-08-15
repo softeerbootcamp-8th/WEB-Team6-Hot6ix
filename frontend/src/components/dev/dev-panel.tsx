@@ -97,7 +97,7 @@ export function DevPanel() {
         sessionStore.signOut()
       } else {
         // key 를 생략하면 기본 회원, 주면 그 key 로 회원이 갈린다.
-        await devLogin(key === 'seller' ? { params: { key: SELLER_KEY } } : {})
+        await devLogin(key === 'seller' ? { key: SELLER_KEY } : undefined)
         await hydrateSession()
       }
       // 앱 초기화 때 채운 캐시가 남아있으면 다음 진입에서 재요청을 안 하므로 지운다.

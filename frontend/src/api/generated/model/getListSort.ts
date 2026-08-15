@@ -10,10 +10,11 @@
  * OpenAPI spec version: v1
  */
 
-export interface AuctionItemStartRequestDto {
-  /**
-   * @minimum 1
-   * @maximum 720
-   */
-  durationMinutes: number;
-}
+export type GetListSort = typeof GetListSort[keyof typeof GetListSort];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetListSort = {
+  LATEST: 'LATEST',
+  OLDEST: 'OLDEST',
+} as const;

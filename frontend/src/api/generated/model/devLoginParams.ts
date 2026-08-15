@@ -10,10 +10,9 @@
  * OpenAPI spec version: v1
  */
 
-export interface AuctionItemStartRequestDto {
-  /**
-   * @minimum 1
-   * @maximum 720
-   */
-  durationMinutes: number;
-}
+export type DevLoginParams = {
+/**
+ * 회원을 가르는 값. 생략하면 기본 테스트 유저
+ */
+key?: string;
+};

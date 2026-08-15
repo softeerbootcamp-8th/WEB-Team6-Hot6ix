@@ -31,6 +31,7 @@ import type {
 import type {
   AuctionItemAddRequestDto,
   AuctionItemBulkAddRequestDto,
+  AuctionItemCloseEarlyRequestDto,
   AuctionItemStartRequestDto,
   CommonResponseAuctionItemBulkAddResponseDto,
   CommonResponseAuctionItemCloseEarlyResponseDto,
@@ -246,23 +247,28 @@ export const useStart = <TError = ErrorType<CommonResponseAuctionItemDetailRespo
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 소유자가 진행 중인 물품의 마감을 **Soft Close 연장 구간이 열리는 순간**(지금 + 경매방의 softCloseTriggerSeconds)으로 앞당긴다. 라이브에서 반응이 없는 물품을 빨리 넘길 때 쓴다.
+ * 소유자가 진행 중인 물품의 마감을 **지금부터 remainingSeconds 만큼 뒤**로 앞당긴다. 라이브에서 반응이 없는 물품을 빨리 넘기거나, 원래 마감보다는 일찍 닫되 얼마간 더 받고 싶을 때 쓴다.
 
-**여기서 물품이 닫히지는 않는다.** 즉시 마감하지 않고 트리거만큼 남겨두는 것은 구매자에게 얼마나 남았는지 알리기 위해서이며, 앞당긴 뒤에도 Soft Close는 그대로 적용돼 그 구간에 입찰이 들어오면 마감이 다시 밀린다. 실제 마감은 새 마감 시각에 스케줄러가 한다.
+**바디는 선택이다.** 안 보내거나 remainingSeconds를 비우면 경매방의 softCloseTriggerSeconds 만큼 남긴다(이 API의 기존 동작). 절대 시각이 아니라 남은 초로 받는 것은 서버가 자기 시계로 계산하게 해서 브라우저와의 시차를 끌어오지 않기 위해서다.
 
-**마감을 뒤로 밀지는 않는다.** 남은 시간이 이미 트리거보다 짧으면 앞당길 자리가 없어 409로 거절한다. 경매방에 트리거 설정이 없으면 60초로 본다(생성 API가 허용하는 최소값). 물품이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다.
+**여기서 물품이 닫히지는 않는다.** 즉시 마감하지 않고 최소 트리거만큼은 남겨두는 것은 구매자에게 얼마나 남았는지 알리기 위해서이며, 앞당긴 뒤에도 Soft Close는 그대로 적용돼 연장 구간에 입찰이 들어오면 마감이 다시 밀린다. 실제 마감은 새 마감 시각에 스케줄러가 한다.
 
-응답의 remainingSeconds는 앞당겨진 마감까지 남은 초이며 경매방의 트리거 값과 같다. 같은 내용이 ITEM_CLOSE_ADVANCED 이벤트로도 경매방 구독자에게 나간다.
+**마감을 뒤로 밀지는 않는다.** 거절이 셋이고 화면 안내가 다르다. 트리거 초로도 마감이 밀리는 상태면 요청 값과 무관하게 4011, 요청한 시간이 트리거보다 짧으면 4013, 지금 마감까지 남은 시간 이상이면 4014다. 경매방에 트리거 설정이 없으면 60초로 본다(생성 API가 허용하는 최소값). 물품이 없을 때와 본인 소유가 아닐 때를 구분하지 않고 모두 404로 응답한다.
+
+응답의 remainingSeconds는 앞당겨진 마감까지 남은 초다. 같은 내용이 ITEM_CLOSE_ADVANCED 이벤트로도 경매방 구독자에게 나간다.
  * @summary 물품 마감 앞당기기
  */
 export const closeEarly = (
     auctionItemId: number,
+    auctionItemCloseEarlyRequestDto: BodyType<AuctionItemCloseEarlyRequestDto>,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
       
       return customInstance<CommonResponseAuctionItemCloseEarlyResponseDto>(
-      {url: `/api/v1/auction-items/${auctionItemId}/close-early`, method: 'POST', signal
+      {url: `/api/v1/auction-items/${auctionItemId}/close-early`, method: 'POST',
+      headers: {'Content-Type': 'application/json', },
+      data: auctionItemCloseEarlyRequestDto, signal
     },
       options);
     }
@@ -270,8 +276,8 @@ export const closeEarly = (
 
 
 export const getCloseEarlyMutationOptions = <TError = ErrorType<CommonResponseAuctionItemCloseEarlyResponseDto>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeEarly>>, TError,{auctionItemId: number}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof closeEarly>>, TError,{auctionItemId: number}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeEarly>>, TError,{auctionItemId: number;data: BodyType<AuctionItemCloseEarlyRequestDto>}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof closeEarly>>, TError,{auctionItemId: number;data: BodyType<AuctionItemCloseEarlyRequestDto>}, TContext> => {
 
 const mutationKey = ['closeEarly'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -283,10 +289,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeEarly>>, {auctionItemId: number}> = (props) => {
-          const {auctionItemId} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeEarly>>, {auctionItemId: number;data: BodyType<AuctionItemCloseEarlyRequestDto>}> = (props) => {
+          const {auctionItemId,data} = props ?? {};
 
-          return  closeEarly(auctionItemId,requestOptions)
+          return  closeEarly(auctionItemId,data,requestOptions)
         }
 
         
@@ -295,18 +301,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type CloseEarlyMutationResult = NonNullable<Awaited<ReturnType<typeof closeEarly>>>
-    
+    export type CloseEarlyMutationBody = BodyType<AuctionItemCloseEarlyRequestDto>
     export type CloseEarlyMutationError = ErrorType<CommonResponseAuctionItemCloseEarlyResponseDto>
 
     /**
  * @summary 물품 마감 앞당기기
  */
 export const useCloseEarly = <TError = ErrorType<CommonResponseAuctionItemCloseEarlyResponseDto>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeEarly>>, TError,{auctionItemId: number}, TContext>, request?: SecondParameter<typeof customInstance>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof closeEarly>>, TError,{auctionItemId: number;data: BodyType<AuctionItemCloseEarlyRequestDto>}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof closeEarly>>,
         TError,
-        {auctionItemId: number},
+        {auctionItemId: number;data: BodyType<AuctionItemCloseEarlyRequestDto>},
         TContext
       > => {
 

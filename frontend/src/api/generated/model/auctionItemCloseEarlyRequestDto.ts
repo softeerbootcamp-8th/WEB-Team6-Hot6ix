@@ -10,10 +10,6 @@
  * OpenAPI spec version: v1
  */
 
-export interface AuctionItemStartRequestDto {
-  /**
-   * @minimum 1
-   * @maximum 720
-   */
-  durationMinutes: number;
+export interface AuctionItemCloseEarlyRequestDto {
+  remainingSeconds?: number;
 }

@@ -50,6 +50,7 @@ import {
 } from '@/features/live/seller-action-error'
 import type { PickedItem } from '@/features/seller/components/item-picker-modal'
 
+import { CloseEarlyRemainingField } from '@/features/live/components/close-early-remaining-field'
 import { EventFeed } from '@/features/live/components/event-feed'
 import { GuestNotice, LiveShell } from '@/features/live/components/live-shell'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
@@ -661,6 +662,14 @@ function LiveRoomPage() {
   const [closingEarlyItemId, setClosingEarlyItemId] = useState<number | null>(
     null,
   )
+  /**
+   * 앞당긴 뒤 마감까지 남길 초. 다이얼로그를 열 때 방의 연장 트리거로 채운다.
+   *
+   * 범위를 벗어났는지는 여기 같이 담지 않고 그릴 때마다 다시 잰다. 상한이 지금
+   * 마감까지 남은 시간이라 다이얼로그를 열어둔 채 1초씩 줄어드는데, 판정을 상태에
+   * 담아두면 입력이 그대로여도 낡은 값이 남는다.
+   */
+  const [closeEarlySeconds, setCloseEarlySeconds] = useState(0)
   /** 판매자가 방 전체를 끝낼 때 한 번 더 확인받는다. */
   const [closingRoom, setClosingRoom] = useState(false)
   /** 판매자가 방 설정을 고치는 중. 라우트를 옮기지 않아 실시간 연결이 유지된다. */
@@ -719,9 +728,22 @@ function LiveRoomPage() {
    * 앞당기기 확인 다이얼로그가 "지금 남은 시간 → 앞당긴 뒤 남은 시간"을 보여준다.
    * 다이얼로그가 닫혀 있을 때 지금 시각을 넣는 것은 상세와 같은 이유다.
    */
-  const closingEarlyRemaining = useCountdown(
+  const closingEarlyCurrent = useCountdown(
     closingEarlyItem?.endsAt ?? new Date().toISOString(),
   )
+
+  /*
+   * 남길 수 있는 최대 초. 지금 마감보다 앞이어야 앞당기기가 되므로 1초를 뺀다.
+   * 트리거 아래로는 내려가지 않게 막아 두는데, 그런 물품은 애초에 앞당기기 버튼이
+   * 잠겨 있어 다이얼로그가 열리지 않는다.
+   */
+  const closeEarlyMaxSeconds = Math.max(
+    room.softCloseTriggerSeconds,
+    closingEarlyCurrent - 1,
+  )
+  const closeEarlyOutOfRange =
+    closeEarlySeconds < room.softCloseTriggerSeconds ||
+    closeEarlySeconds > closeEarlyMaxSeconds
 
   // 상세를 열 때마다 최소 입찰가로 맞춘다.
   useEffect(() => {
@@ -825,7 +847,16 @@ function LiveRoomPage() {
   }
 
   /**
-   * 판매자가 진행 중인 물품의 마감을 연장 구간이 열리는 시각으로 앞당긴다.
+   * 앞당기기 확인 다이얼로그를 연다. 남길 시간은 방의 연장 트리거로 채워 둔다 —
+   * 판매자가 손대지 않고 그대로 누르면 지금까지와 같은 자리로 앞당겨진다.
+   */
+  const openCloseEarly = (item: AuctionItemDetail) => {
+    setCloseEarlySeconds(room.softCloseTriggerSeconds)
+    setClosingEarlyItem(item)
+  }
+
+  /**
+   * 판매자가 진행 중인 물품의 마감을 앞당긴다. 얼마나 남길지는 판매자가 정한다.
    *
    * 물품이 바로 닫히지는 않는다. 서버가 마감 시각만 당기고, 그 시각에 서버
    * 스케줄러가 닫는다. 그래서 여기서 화면을 종료로 바꾸지 않고 목록만 다시 읽는다.
@@ -834,7 +865,7 @@ function LiveRoomPage() {
    * 응답이 먼저 도착할 수 있어 목록을 다시 읽어 카운트다운을 맞춘다.
    */
   const handleCloseEarly = async () => {
-    if (!closingEarlyItem) return
+    if (!closingEarlyItem || closeEarlyOutOfRange) return
 
     const item = closingEarlyItem
     setClosingEarlyItemId(item.id)
@@ -842,11 +873,12 @@ function LiveRoomPage() {
     try {
       const response = await closeEarlyItem.mutateAsync({
         auctionItemId: item.id,
+        data: { remainingSeconds: closeEarlySeconds },
       })
 
       setClosingEarlyItem(null)
       toast.success('마감을 앞당겼어요', {
-        description: `${item.name} · ${formatClosingLead(response.data?.remainingSeconds ?? room.softCloseTriggerSeconds)} 뒤 마감`,
+        description: `${item.name} · ${formatClosingLead(response.data?.remainingSeconds ?? closeEarlySeconds)} 뒤 마감`,
       })
       refreshItems(item.id)
     } catch (error) {
@@ -1272,6 +1304,24 @@ function LiveRoomPage() {
               {closingEarlyItem.name}
             </p>
 
+            {/*
+              물품마다 범위가 달라 다이얼로그를 다시 열 때 입력이 남아 있으면 안 된다.
+              key 로 갈아 끼워 방의 연장 트리거로 다시 채운다.
+            */}
+            <div className="mt-3.5">
+              <p className="mb-2 text-[12px] font-semibold text-neutral-muted">
+                마감까지 남길 시간
+              </p>
+              <CloseEarlyRemainingField
+                key={closingEarlyItem.id}
+                itemName={closingEarlyItem.name}
+                minSeconds={room.softCloseTriggerSeconds}
+                maxSeconds={closeEarlyMaxSeconds}
+                disabled={closeEarlyItem.isPending}
+                onChange={setCloseEarlySeconds}
+              />
+            </div>
+
             {/* 줄글로 적으면 두 시각을 눈으로 대조하기 어려워 한 칸에 모아 둔다. */}
             <div className="mt-3.5 rounded-xl bg-fill px-4 py-4 text-center">
               <p className="text-[11px] font-semibold text-neutral-muted">
@@ -1279,14 +1329,14 @@ function LiveRoomPage() {
               </p>
               <p className="mt-2 flex items-center justify-center gap-3 tabular-nums">
                 <span className="text-[15px] font-semibold text-neutral-tertiary">
-                  {formatRemaining(closingEarlyRemaining)}
+                  {formatRemaining(closingEarlyCurrent)}
                 </span>
                 <ArrowRight
                   aria-hidden
                   className="size-3.5 text-neutral-muted"
                 />
                 <span className="text-[18px] font-bold text-live">
-                  {formatRemaining(room.softCloseTriggerSeconds)}
+                  {formatRemaining(closeEarlySeconds)}
                 </span>
               </p>
             </div>
@@ -1299,6 +1349,7 @@ function LiveRoomPage() {
       }
       confirmLabel="앞당기기"
       pending={closeEarlyItem.isPending}
+      confirmDisabled={closeEarlyOutOfRange}
       onCancel={() => setClosingEarlyItem(null)}
       onConfirm={() => void handleCloseEarly()}
     />
@@ -1346,7 +1397,7 @@ function LiveRoomPage() {
           isDimmed={(item) => removeMode && item.status !== 'READY'}
           seller={sellerControls}
           onStart={isOwner ? handleStart : undefined}
-          onCloseEarly={isOwner ? setClosingEarlyItem : undefined}
+          onCloseEarly={isOwner ? openCloseEarly : undefined}
           closingEarlyItemId={closingEarlyItemId}
           isOwner={isOwner}
           justClosedId={justClosedId}
@@ -1652,7 +1703,7 @@ function LiveRoomPage() {
                   closingEarlyItemId={closingEarlyItemId}
                   softCloseTriggerSeconds={room.softCloseTriggerSeconds}
                   onStart={isOwner ? handleStart : undefined}
-                  onCloseEarly={isOwner ? setClosingEarlyItem : undefined}
+                  onCloseEarly={isOwner ? openCloseEarly : undefined}
                   onSelect={handleSelectItem}
                 />
               ))}

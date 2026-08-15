@@ -84,6 +84,14 @@ const BY_CODE: Record<number, SellerActionErrorMessage> = {
     title: '진행 중인 물품이 있어요',
     description: '물품 마감을 먼저 끝낸 뒤에 종료해 주세요.',
   },
+  4013: {
+    title: '너무 짧게 남겼어요',
+    description: '연장 트리거 시간보다는 길게 남겨야 해요.',
+  },
+  4014: {
+    title: '지금 마감보다 늦어요',
+    description: '지금 남은 시간보다 짧게 남겨야 앞당겨져요.',
+  },
   5001: {
     title: '없는 상품이에요',
     description: '상품 목록에서 빠졌을 수 있어요. 다시 골라주세요.',
