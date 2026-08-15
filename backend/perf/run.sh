@@ -622,15 +622,20 @@ cleanup_oneoff
 # 개발용 DB 볼륨은 그대로 남는 것을 확인했다.
 UP_AT="$(date +%s)"
 
+# prometheus.yml은 단일 파일 bind mount다. git checkout/pull이 파일을 교체하면 오래 살아 있던
+# 컨테이너가 이전 inode를 계속 볼 수 있어 SIGHUP만으로는 새 scrape job이 반영되지 않는다.
+# 매 실행 현재 브랜치의 파일을 다시 mount한다. TSDB는 named volume이라 기존 측정치는 유지된다.
+"${COMPOSE[@]}" up -d --force-recreate prometheus
+
 if [ "$REMOTE" = "1" ]; then
   # 배포 스택은 이 스크립트가 건드리지 않는다. 관측 도구만 띄운다.
   #
   # **앱을 내리지 않는 것이 원격 모드의 전제다.** 내리면 카운터가 0 으로 돌아가서 구간
   # 증가분이 음수가 되고, 다시 뜨는 동안 JIT 와 커넥션 풀이 식어서 첫 계단만 나쁘게 나온다.
-  "${COMPOSE[@]}" up -d prometheus grafana
+  "${COMPOSE[@]}" up -d grafana
 else
   "${COMPOSE[@]}" rm -sfv nginx app mysql redis >/dev/null 2>&1 || true
-  "${COMPOSE[@]}" up -d --build --scale app="$APPS" nginx app mysql redis prometheus grafana
+  "${COMPOSE[@]}" up -d --build --scale app="$APPS" nginx app mysql redis grafana
 
   # nginx 는 upstream 이름을 기동할 때 한 번만 풀어서 들고 있다. 앱을 2대로 늘려도
   # 다시 안 시작하면 계속 처음 본 한 대에만 보낸다.
@@ -638,14 +643,6 @@ else
     "${COMPOSE[@]}" restart nginx >/dev/null 2>&1 || true
   fi
 fi
-
-# Prometheus 가 실행 사이에 살아남게 됐으므로 설정 파일을 다시 읽게 한다.
-#
-# 예전에는 down 이 매번 컨테이너를 새로 만들어서 prometheus.yml 수정이 저절로 반영됐다.
-# 이제는 안 그러므로, 파일만 고치고 "왜 안 먹지" 하는 새 함정이 생긴다. Prometheus 는
-# SIGHUP 으로 설정을 다시 읽는다(--web.enable-lifecycle 을 안 켰으므로 /-/reload 는 없다).
-# 방금 새로 만들어졌으면 그냥 한 번 더 읽는 것이라 아무 일도 안 일어난다.
-"${COMPOSE[@]}" kill -s SIGHUP prometheus >/dev/null 2>&1 || true
 
 echo "[3/8] 기동 대기"
 for _ in $(seq 1 120); do
@@ -939,6 +936,39 @@ if [ "$SSE" -gt 0 ]; then
     SSE_CLIENT_REACHED=0
     echo "※ SSE 연결이 목표의 95%에 못 미쳤다. 이 실행은 결과를 남기되 비교표에는 쓰지 않는다." >&2
     "${COMPOSE[@]}" logs --tail 20 sse-client >&2 || true
+  fi
+
+  # 클라이언트에 직접 붙은 수만 보면 Prometheus가 이 프로세스를 실제로 긁는지는 알 수 없다.
+  # 관측 job이나 시계열이 없으면 3분 부하를 전부 돌린 뒤 latency가 NaN인 것을 알게 되므로,
+  # 측정 시작 전에 target=up과 이번 run 라벨의 connections 시계열을 둘 다 확인한다.
+  SSE_TARGET_HEALTH="missing"
+  SSE_SCRAPED_CONNECTIONS="NaN"
+  TARGETS_JSON=""
+  for _ in $(seq 1 15); do
+    TARGETS_JSON="$(curl -s "$PROM_URL/api/v1/targets" || true)"
+    SSE_TARGET_HEALTH="$(jq -r \
+      '[.data.activeTargets[]? | select(.labels.job == "sse-client") | .health][0] // "missing"' \
+      <<<"$TARGETS_JSON" 2>/dev/null || echo "missing")"
+    SSE_SCRAPED_CONNECTIONS="$(curl -sG "$PROM_URL/api/v1/query" \
+      --data-urlencode "query=max(sse_client_connections{run=\"$SSE_CLIENT_RUN_ID\"})" \
+      | jq -r '.data.result[0].value[1] // "NaN"' 2>/dev/null || echo "NaN")"
+
+    if [ "$SSE_TARGET_HEALTH" = "up" ] && [ "$SSE_SCRAPED_CONNECTIONS" != "NaN" ]; then
+      break
+    fi
+    sleep 2
+  done
+
+  echo "[5/8]   Prometheus SSE target=$SSE_TARGET_HEALTH, 수집 연결=$SSE_SCRAPED_CONNECTIONS"
+  if [ "$SSE_TARGET_HEALTH" != "up" ] || [ "$SSE_SCRAPED_CONNECTIONS" = "NaN" ]; then
+    ACTIVE_JOBS="$(jq -r \
+      '[.data.activeTargets[]?.labels.job] | unique | join(", ")' \
+      <<<"$TARGETS_JSON" 2>/dev/null || echo "조회 실패")"
+    echo "Prometheus가 sse-client 지표를 수집하지 않는다. 부하를 시작하지 않는다." >&2
+    echo "  target 상태=$SSE_TARGET_HEALTH, 수집 연결=$SSE_SCRAPED_CONNECTIONS" >&2
+    echo "  현재 active job=$ACTIVE_JOBS" >&2
+    echo "  prometheus.yml의 sse-client job과 Docker 네트워크를 확인한다." >&2
+    exit 1
   fi
 
   [ "$SSE_STABILIZE_SECONDS" -gt 0 ] && sleep "$SSE_STABILIZE_SECONDS"
