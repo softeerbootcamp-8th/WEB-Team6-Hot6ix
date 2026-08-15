@@ -616,6 +616,24 @@ UP_AT="$(date +%s)"
 # 매 실행 현재 브랜치의 파일을 다시 mount한다. TSDB는 named volume이라 기존 측정치는 유지된다.
 "${COMPOSE[@]}" up -d --force-recreate prometheus
 
+# 방금 만든 Prometheus 가 조회를 받을 수 있을 때까지 기다린다.
+#
+# 뜨는 동안 /api/v1/query 는 JSON 이 아니라 평문 "Service Unavailable" 을 503 으로 돌려주는데,
+# 아래 조회들이 curl -sG 로 받아 그대로 jq 에 넘겨서 다음으로 죽는다.
+#   jq: parse error: Invalid numeric literal at line 1, column 8
+#
+# 기동 시간은 쌓인 TSDB 크기에 비례해 늘어난다. 배포 측정 서버는 볼륨이 632MB 일 때 2.5초였다.
+# 데이터가 적던 때는 우연히 성공하다가 어느 시점부터 매번 걸리게 됐다.
+for _ in $(seq 1 60); do
+  curl -sf "$PROM_URL/-/ready" >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -sf "$PROM_URL/-/ready" >/dev/null 2>&1 || {
+  echo "Prometheus 가 60초 안에 준비되지 않았다. 아래로 원인을 본다." >&2
+  echo "  ${COMPOSE[*]} logs --tail 50 prometheus" >&2
+  exit 1
+}
+
 if [ "$REMOTE" = "1" ]; then
   # 배포 스택은 이 스크립트가 건드리지 않는다. 관측 도구만 띄운다.
   #
