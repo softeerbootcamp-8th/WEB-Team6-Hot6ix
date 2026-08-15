@@ -64,10 +64,12 @@ public class AuctionRecoveryRunner {
      * 쿼리가 서버 수만큼 도는 것을 막는다. 같은 락을 {@code DealAwardRecoveryRunner}도 쓴다.
      *
      * <p>{@code lockAtLeastFor}는 서버 간 시각이 조금 어긋나 같은 tick 이 두 번 도는 것만
-     * 막으면 되므로 짧게 잡는다. 실행 주기보다 길게 잡으면 주기를 줄여도 그만큼 안 돈다.
+     * 막으면 되므로 짧게 잡는다. <b>실행 주기보다 짧아야 한다</b> — 주기와 같거나 길면 다음
+     * tick 이 제 락에 막혀 건너뛰고, 주기를 줄여도 그만큼 안 돈다. 주기를 10s 로 당기면서
+     * 같이 내렸다(#327).
      */
     @Scheduled(fixedDelayString = "${upbid.auction.close.resync-interval-ms}")
-    @SchedulerLock(name = "auction-close-resync", lockAtLeastFor = "10s", lockAtMostFor = "5m")
+    @SchedulerLock(name = "auction-close-resync", lockAtLeastFor = "2s", lockAtMostFor = "5m")
     public void resyncCloseSchedules() {
         resync();
     }
