@@ -827,16 +827,40 @@ fi
 
 # ── 4. 배경 SSE ────────────────────────────────────────────────────
 # 5번(겹쳐 재기)용. 입찰 부하와 별개로 접속을 미리 붙여 둔다.
+
+# k6 기간 문자열("90s", "3m", "1h30m")을 초로 바꾼다. 배경 SSE 를 본 측정보다 길게
+# 잡아야 하는데, 문자열끼리는 더할 수가 없어서 한 번 숫자로 편다.
+to_seconds() {
+  awk -v d="$1" 'BEGIN {
+    total = 0
+    while (match(d, /^[0-9]+(\.[0-9]+)?[hms]/)) {
+      unit = substr(d, RLENGTH, 1)
+      value = substr(d, 1, RLENGTH - 1) + 0
+      total += value * (unit == "h" ? 3600 : unit == "m" ? 60 : 1)
+      d = substr(d, RLENGTH + 1)
+    }
+    printf "%d", total
+  }'
+}
+
 SSE_CONTAINER=""
 if [ "$SSE" -gt 0 ]; then
-  echo "[5/8] 배경 SSE 접속 $SSE 개"
+  # 본 측정이 끝나기 전에 접속이 끊기면 후반부가 통째로 "접속 없는 상태"가 되는데,
+  # 로그에도 결과 표에도 그 사실이 안 남아서 모르고 보면 틀린 결론이 나온다. 접속을
+  # 붙이는 [5/8] 부터 본 측정 끝까지를 다 덮도록 워밍업과 여유 2분을 얹는다.
+  SSE_DURATION_SECONDS=$(( $(to_seconds "$DURATION") + WARMUP + 120 ))
+  if [ "$SSE_DURATION_SECONDS" -le 120 ]; then
+    echo "--duration '$DURATION' 을 초로 못 바꿨다. 90s / 3m / 1h30m 형식으로 준다." >&2
+    exit 1
+  fi
+  echo "[5/8] 배경 SSE 접속 $SSE 개 (${SSE_DURATION_SECONDS}초)"
   # -e 를 하나씩 적어야 한다. docker compose run 은 셸 환경변수를 그냥 물려주지 않는다.
   # (RUN_ID 를 비워 두면 scenario3.js 가 요약 파일을 안 쓴다 — 본 측정 결과를 덮으면 안 된다.)
   # 컨테이너 이름을 받아 둔다. 안 그러면 뒤의 CPU 샘플러가 이 컨테이너와 본 부하 컨테이너를
   # 구분 못 해서, k6_cpu_max 가 둘 중 어느 쪽인지 모르는 값이 된다.
   SSE_CID="$("${COMPOSE[@]}" run --rm -d --no-deps \
     --user "$(id -u):$(id -g)" \
-    -e "VUS=$SSE" -e "SHARE_CODE=$SHARE_CODE" -e "RUN_ID=" -e "DURATION=30m" \
+    -e "VUS=$SSE" -e "SHARE_CODE=$SHARE_CODE" -e "RUN_ID=" -e "DURATION=${SSE_DURATION_SECONDS}s" \
     -e "BASE_URL=$K6_BASE_URL" -e "DEV_LOGIN_TOKEN=${DEV_LOGIN_TOKEN:-}" \
     -e "SHARE_CODES=${SHARE_CODES:-$SHARE_CODE}" -e "ROOM_ITEM_IDS=${ROOM_ITEM_IDS:-}" \
     k6 run /scripts/scenario3.js)"
@@ -1202,6 +1226,22 @@ TOMCAT_BUSY_MAX="$(promq "max(max_over_time(tomcat_threads_busy_threads{$RUN}[$W
 HIKARI_ACTIVE_MAX="$(promq "max(max_over_time(hikaricp_connections_active{$RUN}[$W]))")"
 HIKARI_PENDING_MAX="$(promq "max(max_over_time(hikaricp_connections_pending{$RUN}[$W]))")"
 HEAP_MB_MAX="$(promq "max(max_over_time(sum(jvm_memory_used_bytes{$RUN, area=\"heap\"})[$W:5s])) / 1024 / 1024")"
+
+# 오래 사는 영역과 Full GC. 힙 전체 max 는 새 객체 쪽이 오르내리는 것에 가려서, 무엇이
+# 차오르고 얼마나 오래 멈추는지를 못 본다. 앱이 통째로 멈추는 것은 이쪽에서만 보인다.
+#
+# 영역 이름을 GC 별로 안 박는다. SerialGC 는 "Tenured Gen", G1 은 "G1 Old Gen",
+# Parallel 은 "PS Old Gen" 이라, 하나만 적으면 GC 를 바꾸는 순간 이 열이 통째로 NaN 이 된다.
+# action="end of major GC" 는 셋 다 같아서 그대로 쓴다.
+OLD_GEN="$RUN, area=\"heap\", id=~\".*(Old Gen|Tenured Gen).*\""
+OLD_GEN_MB_MAX="$(promq "max(max_over_time(sum(jvm_memory_used_bytes{$OLD_GEN})[$W:5s])) / 1024 / 1024")"
+# Full GC 가 한 번도 없으면 시계열이 아예 없다. 그대로 두면 NaN 이라 "0 번"과 구분이 안 된다.
+FULL_GC="$RUN, action=\"end of major GC\""
+FULL_GC_COUNT="$(promq "sum($(delta "jvm_gc_pause_seconds_count{$FULL_GC}")) or vector(0)")"
+# 제일 오래 멈춘 한 번. 평균으로 보면 기동 직후의 짧은 것에 희석된다 (실측: 평균 1.66초인데
+# 실제로는 229ms 한 번과 2.45초·3.86초였다).
+FULL_GC_PAUSE_MAX_MS="$(promq "max(max_over_time(jvm_gc_pause_seconds_max{$FULL_GC}[$W])) * 1000")"
+
 LOCK_WAIT_P95_MS="$(p95_of "upbid_bid_lock_wait_seconds_bucket{$RUN}")"
 # 기다린 시간과 짝이다. 대기가 길고 유지가 짧으면 줄이 긴 것이고, 유지도 같이 길면 앞사람이
 # 오래 잡고 있는 것이라 줄을 짧게 해도 안 풀린다.
@@ -1368,6 +1408,9 @@ TOMCAT_BUSY_MAX="$(round "$TOMCAT_BUSY_MAX" 0)"
 HIKARI_ACTIVE_MAX="$(round "$HIKARI_ACTIVE_MAX" 0)"
 HIKARI_PENDING_MAX="$(round "$HIKARI_PENDING_MAX" 0)"
 HEAP_MB_MAX="$(round "$HEAP_MB_MAX" 0)"
+OLD_GEN_MB_MAX="$(round "$OLD_GEN_MB_MAX" 0)"
+FULL_GC_COUNT="$(round "$FULL_GC_COUNT" 0)"
+FULL_GC_PAUSE_MAX_MS="$(round "$FULL_GC_PAUSE_MAX_MS" 0)"
 # 락 구간만 소수 첫째 자리까지 남긴다. 거절 경로가 1ms 안팎, 접수 경로가 5ms 안팎이라
 # 정수로 반올림하면 1 과 5 만 남고 그 사이의 변화를 볼 수 없다.
 LOCK_WAIT_P95_MS="$(round "$LOCK_WAIT_P95_MS" 1)"
@@ -1494,6 +1537,7 @@ SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER
     "system_cpu_usage{$RUN}|system_cpu_usage" \
     "system_load_average_1m{$RUN}|system_load_average_1m" \
     "sum(jvm_memory_used_bytes{$RUN, area=\"heap\"})|heap_bytes" \
+    "sum(jvm_memory_used_bytes{$OLD_GEN})|old_gen_bytes" \
     "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{$RUN}[30s])))|lock_wait_p95_s" \
     "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_hold_seconds_bucket{$RUN}[30s])))|lock_hold_p95_s" \
     "upbid_sse_connections{$RUN}|sse_connections" \
@@ -1563,7 +1607,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,old_gen_mb_max,full_gc_count,full_gc_pause_max_ms,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -1600,6 +1644,7 @@ VALUES=( \
   "$ROOM_READ_P95_MS" "$ITEMS_READ_P95_MS" \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$CONN_ACQUIRE_P99_MS" "$CONN_USAGE_P95_MS" "$CONN_USAGE_P99_MS" "$CONN_TIMEOUT_COUNT" "$HEAP_MB_MAX" \
+  "$OLD_GEN_MB_MAX" "$FULL_GC_COUNT" "$FULL_GC_PAUSE_MAX_MS" \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
   "$LOCK_HOLD_ACC_P95_MS" "$LOCK_HOLD_REJ_P95_MS" "$COMMIT_P95_MS" \
   "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS" \
@@ -1686,6 +1731,8 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 커넥션 사용 p95 / p99 | ${CONN_USAGE_P95_MS} / ${CONN_USAGE_P99_MS} ms |
 | 커넥션 timeout | ${CONN_TIMEOUT_COUNT} 회 |
 | 힙 max | ${HEAP_MB_MAX} MB |
+| &nbsp;&nbsp;└ 오래 사는 영역 max | ${OLD_GEN_MB_MAX} MB |
+| **Full GC** 횟수 / 제일 오래 멈춘 시간 | **${FULL_GC_COUNT} 회 / ${FULL_GC_PAUSE_MAX_MS} ms** ← 이 시간은 앱이 통째로 멈춘다 |
 | **T2** 락 앞 (커넥션 획득 + SELECT 3개) p95 | ${BEFORE_LOCK_P95_MS} ms |
 | **T3** 락 대기 p95 | ${LOCK_WAIT_P95_MS} ms |
 | **T4** 락 유지 p95 (커밋까지) — 전체 | ${LOCK_HOLD_P95_MS} ms |
@@ -1770,6 +1817,8 @@ printf '입찰당 SELECT %s 회   격리 %s   갭 락 표본 %s\n' \
   "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS"
 printf '스레드 %s   커넥션 %s active / %s pending (획득 p95 %s ms)   힙 %s MB   k6 CPU %s%%\n' \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$K6_CPU_MAX"
+printf '오래 사는 영역 max %s MB   Full GC %s 회 (제일 오래 멈춘 %s ms)\n' \
+  "$OLD_GEN_MB_MAX" "$FULL_GC_COUNT" "$FULL_GC_PAUSE_MAX_MS"
 printf 'CPU %s 코어   앱 평균 %s%% 최대 %s%%   MySQL 평균 %s%% 최대 %s%%\n' \
   "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX"
 printf 'SSE 접속 max %s   마감 지연 p95 %s ms\n' "$SSE_CONN_MAX" "$CLOSE_DELAY_P95_MS"
