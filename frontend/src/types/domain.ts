@@ -46,11 +46,9 @@ export interface AuctionItemDetail {
   /**
    * 서버가 준 상품 사진 주소. 판매자가 올리지 않았으면 null 이다.
    *
-   * 목업 물품(`mocks/data.ts`)에는 없다. 사진은 목업으로 채우지 않고
-   * 서버 값만 쓰므로(`adapt-item.ts`) 값이 없으면 회색 아이콘이다.
+   * 판매자가 올리지 않았으면 `ProductThumbnail` 이 회색 아이콘을 그린다.
    */
   imageUrl?: string | null
-  category: string
   /** 판매자가 작성한 상품 설명 */
   description: string
   /** 외부 상품 링크. 없을 수 있다. */
@@ -74,12 +72,8 @@ export interface AuctionItemDetail {
    * 물품의 상세에서 카운트다운이 흐르는 문제가 있었다(이슈 #214).
    */
   endsAt: string | null
-  bidCount: number
   topBidderNickname: string | null
   leaderboard: LeaderboardEntry[]
-  history: BidHistoryEntry[]
-  /** Soft Close 로 연장된 적이 있으면 true */
-  extended: boolean
 }
 
 export interface AuctionRoomDetail {

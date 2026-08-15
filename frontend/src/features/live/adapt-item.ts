@@ -128,11 +128,6 @@ export function toAuctionItemDetail(
      * 낙찰"로 단정해, 입찰이 한 번도 없던 물품에 낙찰가가 붙는다.
      */
     sold: dto.status === 'SOLD',
-    // 다음 커밋에서 타입과 함께 지워지는 임시값. 화면은 이 넷을 읽지 않는다.
-    category: '',
-    bidCount: 0,
-    history: [],
-    extended: false,
   }
 }
 
@@ -160,11 +155,6 @@ export function emptyItem(id: number): AuctionItemDetail {
     endsAt: null,
     topBidderNickname: null,
     leaderboard: [],
-    // 다음 커밋에서 타입과 함께 지워지는 임시값. 화면은 이 넷을 읽지 않는다.
-    category: '',
-    bidCount: 0,
-    history: [],
-    extended: false,
   }
 }
 
