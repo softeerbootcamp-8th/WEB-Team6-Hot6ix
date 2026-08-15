@@ -14,6 +14,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.BidContextProjection;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.entity.Bid;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
@@ -62,6 +63,7 @@ class BidServiceTest {
 
     private static final int SOFT_CLOSE_TRIGGER_SECONDS = 30;
     private static final int SOFT_CLOSE_EXTEND_SECONDS = 30;
+    private static final String PRODUCT_NAME = "한정판피규어";
 
     @Mock
     private BidRepository bidRepository;
@@ -133,7 +135,7 @@ class BidServiceTest {
                 .build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", ROOM_ID);
 
-        Product product = Product.builder().name("한정판피규어").build();
+        Product product = Product.builder().name(PRODUCT_NAME).build();
 
         AuctionItem auctionItem = AuctionItem.builder()
                 .auctionRoom(auctionRoom)
@@ -163,14 +165,31 @@ class BidServiceTest {
         when(userRepository.findByUserIdAndDeletedAtIsNull(BIDDER_ID)).thenReturn(Optional.of(bidder));
     }
 
-    /** 판매자 검사는 락 앞에서 하므로 판매자 조회 하나면 된다. */
+    /**
+     * 판매자 검사는 락 앞에서 하므로 락 앞 조회 하나면 된다.
+     *
+     * <p>연장 설정을 비워 둔다. 이걸 쓰는 테스트는 판매자나 참여 기록에서 걸려 락까지 못 가므로
+     * 연장 판정에 닿지 않는다.
+     */
     private void givenSeller(Long sellerUserId) {
-        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(sellerUserId));
+        when(auctionItemRepository.findBidContext(ITEM_ID)).thenReturn(
+                Optional.of(new BidContextProjection(sellerUserId, PRODUCT_NAME, null, null)));
     }
 
-    /** 정상 경로 — 판매자가 남이고, 참여 기록이 있고, 물품을 락으로 읽는다. */
+    /**
+     * 정상 경로 — 판매자가 남이고, 참여 기록이 있고, 물품을 락으로 읽는다.
+     *
+     * <p><b>락 앞 조회를 물품에서 뽑아 만든다.</b> 서비스가 상품명과 연장 설정을 엔티티가 아니라
+     * 이 조회 결과에서 꺼내므로, 손으로 적은 값을 넣으면 물품과 어긋난 채로 통과해 버린다.
+     */
     private void givenItem(AuctionItem auctionItem) {
-        givenSeller(SELLER_ID);
+        AuctionRoom auctionRoom = auctionItem.getAuctionRoom();
+        when(auctionItemRepository.findBidContext(ITEM_ID)).thenReturn(
+                Optional.of(new BidContextProjection(
+                        SELLER_ID,
+                        auctionItem.getProduct().getName(),
+                        auctionRoom.getSoftCloseTriggerSeconds(),
+                        auctionRoom.getSoftCloseExtendSeconds())));
         when(auctionItemRepository.existsParticipant(ITEM_ID, BIDDER_ID)).thenReturn(true);
         when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
     }
@@ -368,7 +387,7 @@ class BidServiceTest {
     void rejectsMissingItem() {
 
         givenBidder();
-        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.empty());
+        when(auctionItemRepository.findBidContext(ITEM_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, STARTING_PRICE))
                 .isInstanceOf(ApplicationException.class)
@@ -463,6 +482,35 @@ class BidServiceTest {
         assertThat(published.endAt())
                 .as("화면과 스케줄러가 이 값으로 마감 시각을 다시 맞춘다")
                 .isEqualTo(auctionItem.getEndAt());
+    }
+
+    @Test
+    @DisplayName("연장 판정과 이벤트는 락 앞에서 읽은 값을 쓴다")
+    void usesValuesReadBeforeLock() {
+
+        // 물품의 경매방과 상품에는 값을 안 남긴다. 여기서 값이 나오면 락을 쥔 채로 지연 로딩이
+        // 돌았다는 뜻이라, 그 SELECT 만큼 같은 물품에 몰린 다른 입찰이 뒤로 밀린다.
+        AuctionItem auctionItem = auctionItem(AuctionItemStatus.IN_PROGRESS,
+                LocalDateTime.now().plusSeconds(SOFT_CLOSE_TRIGGER_SECONDS - 5L), null, null);
+        LocalDateTime endAtBefore = auctionItem.getEndAt();
+
+        givenBidder();
+        when(auctionItemRepository.findBidContext(ITEM_ID)).thenReturn(
+                Optional.of(new BidContextProjection(SELLER_ID, "락 앞에서 읽은 이름",
+                        SOFT_CLOSE_TRIGGER_SECONDS, SOFT_CLOSE_EXTEND_SECONDS)));
+        when(auctionItemRepository.existsParticipant(ITEM_ID, BIDDER_ID)).thenReturn(true);
+        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.of(auctionItem));
+        givenSaveSucceeds();
+
+        bidService.place(ITEM_ID, BIDDER_ID, 15_000L);
+
+        assertThat(auctionItem.getEndAt())
+                .as("물품의 방에는 설정이 없다. 연장이 일어났다면 락 앞에서 읽은 설정을 쓴 것이다")
+                .isEqualTo(endAtBefore.plusSeconds(SOFT_CLOSE_EXTEND_SECONDS));
+
+        assertThat(((BidPlaced) publishedEvents().get(0)).itemName()).isEqualTo("락 앞에서 읽은 이름");
+        assertThat(((SoftCloseExtended) publishedEvents().get(1)).itemName())
+                .isEqualTo("락 앞에서 읽은 이름");
     }
 
     @Test

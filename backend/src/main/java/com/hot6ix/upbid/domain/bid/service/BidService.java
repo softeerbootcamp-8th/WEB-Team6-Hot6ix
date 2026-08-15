@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.BidContextProjection;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.entity.Bid;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
@@ -42,6 +43,12 @@ public class BidService {
      * <p>물품 행에 쓰기 락을 걸고 읽으므로 같은 물품에 대한 입찰이 한 줄로 직렬화된다.
      * 자기 차례에 최신 현재가를 읽기 때문에, 경합에 밀렸어도 금액이 여전히 유효하면 그대로
      * 통과한다. 락을 잡기 전에 끝낼 수 있는 입찰자 조회는 먼저 해서 락 유지 시간을 줄인다.
+     *
+     * <p><b>락 안에서는 지연 로딩을 걸지 않는다.</b> {@code findByIdForUpdate}는 fetch join을
+     * 하지 않으므로({@code FOR UPDATE}가 조인된 행까지 잠근다) 경매방과 상품이 프록시로 남는데,
+     * 거기서 값을 꺼내면 락을 쥔 채로 SELECT가 나간다. 상품명과 Soft Close 설정은 입찰하는 동안
+     * 바뀌지 않으므로 락 앞에서 {@link BidContextProjection}으로 한 번에 읽어 둔다.
+     * 판매자 ID만 읽던 쿼리를 넓힌 것이라 입찰당 SELECT 수는 늘지 않는다.
      *
      * <p>판매자 본인인지와 이 방의 참여자인지는 물품 상태와 무관해 락 없이 판정할 수 있다.
      * 락 앞에서 걸러 자격 없는 요청이 물품 행 락을 잡지 않게 한다({@link #validateEntitled}).
@@ -82,10 +89,10 @@ public class BidService {
         User bidder = userRepository.findByUserIdAndDeletedAtIsNull(bidderUserId)
                 .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
 
-        Long sellerUserId = auctionItemRepository.findSellerUserId(auctionItemId)
+        BidContextProjection context = auctionItemRepository.findBidContext(auctionItemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
-        validateEntitled(auctionItemId, bidder, sellerUserId);
+        validateEntitled(auctionItemId, bidder, context.sellerUserId());
 
         bidMetrics.recordBeforeLock(enteredAt);
 
@@ -106,12 +113,12 @@ public class BidService {
         domainEventPublisher.publish(BidPlaced.of(
                 auctionItem.getAuctionRoom().getAuctionRoomId(),
                 auctionItem.getAuctionItemId(),
-                auctionItem.getProduct().getName(),
+                context.productName(),
                 bidder.getNickname(),
                 amount,
                 bid.getAcceptedAt()));
 
-        publishIfExtended(auctionItem, now);
+        publishIfExtended(auctionItem, context, now);
 
         return BidCreateResponseDto.from(bid);
     }
@@ -124,20 +131,22 @@ public class BidService {
      *
      * <p>이 이벤트는 {@code AuctionCloseScheduler}가 마감 예약을 갈아 끼우는 신호이기도 하다.
      *
-     * @param now 락을 잡은 뒤에 구한 현재 시각. 받아들일지 판정한 {@code arrivedAt}과 달리
-     *            <b>지금</b>을 기준으로 임박 여부를 봐야 연장을 놓치지 않는다
+     * @param context 락을 잡기 전에 읽어 둔 상품명과 연장 설정. 엔티티에서 꺼내면 둘 다 LAZY라
+     *                <b>락을 쥔 채로</b> SELECT가 나간다
+     * @param now     락을 잡은 뒤에 구한 현재 시각. 받아들일지 판정한 {@code arrivedAt}과 달리
+     *                <b>지금</b>을 기준으로 임박 여부를 봐야 연장을 놓치지 않는다
      */
-    private void publishIfExtended(AuctionItem auctionItem, LocalDateTime now) {
+    private void publishIfExtended(AuctionItem auctionItem, BidContextProjection context, LocalDateTime now) {
 
-        if (!auctionItem.extendIfClosingSoon(now)) {
+        if (!auctionItem.extendIfClosingSoon(now, context.softCloseSetting())) {
             return;
         }
 
         domainEventPublisher.publish(SoftCloseExtended.of(
                 auctionItem.getAuctionRoom().getAuctionRoomId(),
                 auctionItem.getAuctionItemId(),
-                auctionItem.getProduct().getName(),
-                auctionItem.getAuctionRoom().getSoftCloseExtendSeconds(),
+                context.productName(),
+                context.softCloseExtendSeconds(),
                 auctionItem.getEndAt(),
                 now));
     }

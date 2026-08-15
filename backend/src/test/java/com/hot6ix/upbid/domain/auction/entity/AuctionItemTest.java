@@ -17,6 +17,11 @@ class AuctionItemTest {
     private static final int TRIGGER_SECONDS = 30;
     private static final int EXTEND_SECONDS = 30;
 
+    /** 물품이 속한 방의 설정. 엔티티가 방을 직접 읽지 않고 부르는 쪽이 넘긴다. */
+    private static final SoftCloseSetting SETTING =
+            new SoftCloseSetting(TRIGGER_SECONDS, EXTEND_SECONDS);
+    private static final SoftCloseSetting NO_SETTING = new SoftCloseSetting(null, null);
+
     @Nested
     @DisplayName("extendIfClosingSoon")
     class ExtendIfClosingSoon {
@@ -27,7 +32,7 @@ class AuctionItemTest {
 
             AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
 
-            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15));
+            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15), SETTING);
 
             assertThat(extended).isTrue();
             assertThat(auctionItem.getEndAt()).isEqualTo(END_AT.plusSeconds(EXTEND_SECONDS));
@@ -41,7 +46,7 @@ class AuctionItemTest {
             AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
             ReflectionTestUtils.setField(auctionItem, "originalEndAt", END_AT);
 
-            auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15));
+            auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15), SETTING);
 
             assertThat(auctionItem.getOriginalEndAt())
                     .as("연장이 몇 번 붙었든 원래 언제 끝날 예정이었는지는 남아 있어야 한다")
@@ -54,7 +59,7 @@ class AuctionItemTest {
 
             AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
 
-            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(31));
+            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(31), SETTING);
 
             assertThat(extended).isFalse();
             assertThat(auctionItem.getEndAt()).isEqualTo(END_AT);
@@ -67,7 +72,7 @@ class AuctionItemTest {
 
             AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
 
-            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(TRIGGER_SECONDS));
+            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(TRIGGER_SECONDS), SETTING);
 
             assertThat(extended)
                     .as("경계를 열어두지 않으면 설정한 트리거 초가 실제보다 1초 짧게 동작한다")
@@ -82,7 +87,7 @@ class AuctionItemTest {
             AuctionItem auctionItem =
                     newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, almostFull);
 
-            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15));
+            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15), SETTING);
 
             assertThat(extended).isFalse();
             assertThat(auctionItem.getEndAt())
@@ -98,7 +103,7 @@ class AuctionItemTest {
             int room = AuctionItem.MAX_TOTAL_EXTENSION_SECONDS - EXTEND_SECONDS;
             AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, room);
 
-            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15));
+            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15), SETTING);
 
             assertThat(extended).isTrue();
             assertThat(auctionItem.getTotalExtensionSeconds())
@@ -111,8 +116,8 @@ class AuctionItemTest {
 
             AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
 
-            auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15));
-            auctionItem.extendIfClosingSoon(auctionItem.getEndAt().minusSeconds(15));
+            auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15), SETTING);
+            auctionItem.extendIfClosingSoon(auctionItem.getEndAt().minusSeconds(15), SETTING);
 
             assertThat(auctionItem.getEndAt()).isEqualTo(END_AT.plusSeconds(EXTEND_SECONDS * 2L));
             assertThat(auctionItem.getTotalExtensionSeconds()).isEqualTo(EXTEND_SECONDS * 2);
@@ -124,7 +129,7 @@ class AuctionItemTest {
 
             AuctionItem auctionItem = newItem(newRoom(null, null), END_AT, 0);
 
-            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15));
+            boolean extended = auctionItem.extendIfClosingSoon(END_AT.minusSeconds(15), NO_SETTING);
 
             assertThat(extended).isFalse();
             assertThat(auctionItem.getEndAt()).isEqualTo(END_AT);
@@ -136,7 +141,7 @@ class AuctionItemTest {
 
             AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), null, 0);
 
-            boolean extended = auctionItem.extendIfClosingSoon(END_AT);
+            boolean extended = auctionItem.extendIfClosingSoon(END_AT, SETTING);
 
             assertThat(extended).isFalse();
             assertThat(auctionItem.getEndAt()).isNull();
@@ -266,7 +271,7 @@ class AuctionItemTest {
             AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
             auctionItem.closeEarly(NOW);
 
-            boolean extended = auctionItem.extendIfClosingSoon(NOW.plusSeconds(5));
+            boolean extended = auctionItem.extendIfClosingSoon(NOW.plusSeconds(5), SETTING);
 
             assertThat(extended)
                     .as("앞당긴 순간부터가 연장 구간이라 그 뒤 입찰은 마감을 민다")
