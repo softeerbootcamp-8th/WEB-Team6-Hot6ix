@@ -85,13 +85,6 @@ export function LeaderboardRows({
       positions.current.set(nickname, next)
       if (reduced || first) return
 
-      /*
-       * 먼저 돌던 애니메이션을 걷어낸다. 입찰이 몰리면 이전 것이 끝나기 전에
-       * 다음 것이 걸리는데, 밀려난 줄은 `fill: backwards` 로 시작 위치에
-       * 붙들려 있어서 그대로 어긋난 자리에 멈춰 있었다.
-       */
-      element.getAnimations().forEach((animation) => animation.cancel())
-
       if (previous === undefined) {
         // 새로 치고 들어온 사람 — 목록 아래에서 끼어든다.
         element.animate(
@@ -119,6 +112,17 @@ export function LeaderboardRows({
        * 둔다. 틀린 거리로 날아가는 것보다 안 움직이는 편이 낫다.
        */
       if (Math.abs(delta) > 100) return
+
+      /*
+       * 먼저 돌던 애니메이션을 걷어낸다. 입찰이 몰리면 이전 것이 끝나기 전에
+       * 다음 것이 걸리는데, 밀려난 줄은 `fill: backwards` 로 시작 위치에
+       * 붙들려 있어서 그대로 어긋난 자리에 멈춰 있었다.
+       *
+       * **자리를 옮기는 줄만 걷어낸다.** 안 움직이는 줄까지 걷어내면 직전에
+       * 켜진 강조 배경(`flash`, 1.2초)이 다음 입찰에서 잘려서, 입찰이 몰릴수록
+       * 강조가 거의 안 보인다.
+       */
+      element.getAnimations().forEach((animation) => animation.cancel())
 
       if (delta > 0) {
         /*
