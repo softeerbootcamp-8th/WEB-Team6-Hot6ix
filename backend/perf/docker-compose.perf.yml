@@ -65,6 +65,10 @@ services:
       - SSE_HEARTBEAT_MS=${SSE_HEARTBEAT_MS:-30000}
       - SSE_TIMEOUT_MS=${SSE_TIMEOUT_MS:-3600000}
       - MAX_IN_PROGRESS_PER_ROOM=${MAX_IN_PROGRESS_PER_ROOM:-50}
+      # 입찰 rate limit (#319). 켜 두면 부하 스크립트가 쉬지 않고 때리는 순간 토큰이 말라
+      # 요청이 전부 429 로 되돌아가서, 서버 한계가 아니라 rate limiter 한계를 재게 된다.
+      # run.sh 가 입찰 시나리오에서 off 로 채운다 (--bid-rate-limit 로 켤 수 있다).
+      - BID_RATE_LIMIT_ENABLED=${BID_RATE_LIMIT_ENABLED:-true}
       # 전역 스위치다. 스케줄러뿐 아니라 톰캣도 함께 가상 스레드로 바뀐다.
       - VIRTUAL_THREADS=${VIRTUAL_THREADS:-false}
       # 프론트를 안 띄우므로 CORS 는 의미가 없지만 값이 없으면 부팅이 안 된다.

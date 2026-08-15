@@ -82,6 +82,8 @@ CPUS=2.0
 BULK_ITEMS=0
 SWEEP_INDEX=off
 BURST_MODE=same
+# 빈 값이면 시나리오를 보고 정한다. 입찰을 넣는 시나리오는 off, 나머지는 앱 기본값 그대로다.
+BID_RATE_LIMIT=""
 
 # perf 는 측정용 포트를 따로 쓴다. 개발 백엔드(8080)나 프론트(5173)와 안 겹치게 한다.
 # 겹치면 측정을 시작하는 순간 개발 환경이 죽고, 프론트가 조용히 perf 앱에 붙는다.
@@ -139,6 +141,9 @@ usage() {
   --sweep-index on|off  auction_items(status, end_at) 인덱스를 만들지 (기본 off)
                      --bulk-items 와 짝으로 켜고 끄면서 조회 시간이 어떻게 달라지는지 본다
   --burst-mode same|increasing  시나리오 8의 금액. 동일 금액 또는 VU별 증가 금액 (기본 same)
+  --bid-rate-limit on|off  입찰 rate limit (#319). 입찰 시나리오는 기본 off, 나머지는 앱 기본값
+                     켜 두면 부하 스크립트가 쉬지 않고 때리는 순간 토큰이 말라 요청이 전부
+                     429 로 되돌아간다. 그러면 서버 한계가 아니라 rate limiter 한계를 재게 된다
 
   --duration D       측정 길이 (기본 3m)
   --warmup N         워밍업 초 (기본 30)
@@ -194,6 +199,7 @@ while [ $# -gt 0 ]; do
     --close-bid-until) CLOSE_BID_UNTIL="$2"; shift 2 ;;
     --close-duration-min) CLOSE_DURATION_MINUTES="$2"; shift 2 ;;
     --isolation) ISOLATION="$2"; shift 2 ;;
+    --bid-rate-limit) BID_RATE_LIMIT="$2"; shift 2 ;;
     --bulk-items) BULK_ITEMS="$2"; shift 2 ;;
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
     --burst-mode) BURST_MODE="$2"; shift 2 ;;
@@ -262,6 +268,25 @@ export TX_ISOLATION
 case "$SWEEP_INDEX" in
   on|off) ;;
   *) echo "--sweep-index 는 on 또는 off 다 (받은 값: $SWEEP_INDEX)" >&2; exit 1 ;;
+esac
+
+# 입찰 rate limit (#319). 안 주면 시나리오를 보고 정한다.
+#
+# 입찰을 넣는 시나리오는 끈다. 사용자당 capacity 5 에 초당 2개 충전이라, 쉬지 않고 때리는
+# 부하 스크립트는 몇 초 만에 토큰이 말라 그 뒤로 전부 429 로 되돌아간다. 실측으로 30초에
+# 27,751 건이 그렇게 튕겼고, 그러면 요청이 물품 행 락까지 도달을 안 해서 락 지표가 통째로
+# 의미를 잃는다. 서버 한계가 아니라 rate limiter 한계를 재는 셈이다.
+if [ -z "$BID_RATE_LIMIT" ]; then
+  case "$SCENARIO" in
+    1|2|5|6|7|8) BID_RATE_LIMIT=off ;;
+    *) BID_RATE_LIMIT=on ;;
+  esac
+fi
+
+case "$BID_RATE_LIMIT" in
+  on) export BID_RATE_LIMIT_ENABLED=true ;;
+  off) export BID_RATE_LIMIT_ENABLED=false ;;
+  *) echo "--bid-rate-limit 은 on 또는 off 다 (받은 값: $BID_RATE_LIMIT)" >&2; exit 1 ;;
 esac
 
 command -v jq >/dev/null || { echo "jq 가 필요하다: brew install jq" >&2; exit 1; }
@@ -1411,6 +1436,15 @@ HEAP_MB_MAX="$(round "$HEAP_MB_MAX" 0)"
 OLD_GEN_MB_MAX="$(round "$OLD_GEN_MB_MAX" 0)"
 FULL_GC_COUNT="$(round "$FULL_GC_COUNT" 0)"
 FULL_GC_PAUSE_MAX_MS="$(round "$FULL_GC_PAUSE_MAX_MS" 0)"
+
+# 구간 안에 Full GC 가 없었으면 정지 시간도 비운다.
+#
+# jvm_gc_pause_seconds_max 는 롤링 윈도우 게이지라 구간 **밖**에서(대개 기동 직후) 일어난
+# Full GC 가 아직 남아 있다. 횟수는 구간 증가분이라 0 인데 정지 시간만 찍히면, 이 구간에서
+# 일어나지도 않은 멈춤이 표에 들어간다 (실측: 3분 줄에 "0 회 / 436ms").
+if [ "$FULL_GC_COUNT" = "0" ]; then
+  FULL_GC_PAUSE_MAX_MS="NaN"
+fi
 # 락 구간만 소수 첫째 자리까지 남긴다. 거절 경로가 1ms 안팎, 접수 경로가 5ms 안팎이라
 # 정수로 반올림하면 1 과 5 만 남고 그 사이의 변화를 볼 수 없다.
 LOCK_WAIT_P95_MS="$(round "$LOCK_WAIT_P95_MS" 1)"
@@ -1596,6 +1630,7 @@ jq -n \
   --argjson heartbeat_ms "$HEARTBEAT_MS" --argjson scheduler_pool "$SCHEDULER_POOL" \
   --arg virtual_threads "$VIRTUAL_THREADS" --arg xmx "$JAVA_OPTS" \
   --arg isolation "$ISOLATION" --arg sweep_index "$SWEEP_INDEX" \
+  --arg bid_rate_limit "$BID_RATE_LIMIT" \
   --argjson bulk_items "$BULK_ITEMS" \
   --argjson window_seconds "$WINDOW_SECONDS" \
   '{run_id:$run_id, scenario:$scenario, commit:$commit, dirty:($dirty=="true"), who:$who,
@@ -1603,11 +1638,12 @@ jq -n \
             heartbeat_ms:$heartbeat_ms, scheduler_pool:$scheduler_pool,
             virtual_threads:($virtual_threads=="true"), xmx:$xmx,
             isolation:$isolation, bulk_items:$bulk_items,
+            bid_rate_limit:($bid_rate_limit=="on"),
             sweep_index:($sweep_index=="on")},
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,old_gen_mb_max,full_gc_count,full_gc_pause_max_ms,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,old_gen_mb_max,full_gc_count,full_gc_pause_max_ms,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,bid_rate_limit,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -1647,7 +1683,7 @@ VALUES=( \
   "$OLD_GEN_MB_MAX" "$FULL_GC_COUNT" "$FULL_GC_PAUSE_MAX_MS" \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
   "$LOCK_HOLD_ACC_P95_MS" "$LOCK_HOLD_REJ_P95_MS" "$COMMIT_P95_MS" \
-  "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS" \
+  "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS" "$BID_RATE_LIMIT" \
   "$CLOSE_DELAY_P50_MS" "$CLOSE_DELAY_P95_MS" "$CLOSE_DELAY_MAX_MS" \
   "$CLOSE_DURATION_P95_MS" \
   "$CLOSE_LOCK_WAIT_P95_MS" "$CLOSE_LOCK_HOLD_P95_MS" "$CLOSE_NOTIFY_P95_MS" "$CLOSE_AWARD_P95_MS" \
@@ -1752,6 +1788,7 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | &nbsp;&nbsp;└ fsync 대기 \`Innodb_os_log_pending_fsyncs\` 평균 / 최대 | ${LOG_PENDING_AVG} / ${LOG_PENDING_MAX} |
 | 입찰 한 건당 SELECT | ${SELECT_PER_BID} 회 |
 | 격리 수준 / 갭 락 표본 | ${ISOLATION} / ${GAP_LOCKS} |
+| 입찰 rate limit | ${BID_RATE_LIMIT} (on 이면 429 가 섞여 서버 한계가 아니다) |
 | 마감 지연 p50 / p95 / 최대 | ${CLOSE_DELAY_P50_MS} / ${CLOSE_DELAY_P95_MS} / ${CLOSE_DELAY_MAX_MS} ms |
 | 마감 소요 p95 (락 대기 포함) | ${CLOSE_DURATION_P95_MS} ms |
 | 마감 실패 | ${CLOSE_FAILURES} 건 |
@@ -1813,8 +1850,8 @@ fi
 printf '락앞 p95 %s ms → 락대기 p95 %s ms → 락유지 p95 %s ms (접수 %s / 거절 %s, 커밋 %s)\n' \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
   "$LOCK_HOLD_ACC_P95_MS" "$LOCK_HOLD_REJ_P95_MS" "$COMMIT_P95_MS"
-printf '입찰당 SELECT %s 회   격리 %s   갭 락 표본 %s\n' \
-  "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS"
+printf '입찰당 SELECT %s 회   격리 %s   갭 락 표본 %s   입찰 rate limit %s\n' \
+  "$SELECT_PER_BID" "$ISOLATION" "$GAP_LOCKS" "$BID_RATE_LIMIT"
 printf '스레드 %s   커넥션 %s active / %s pending (획득 p95 %s ms)   힙 %s MB   k6 CPU %s%%\n' \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$K6_CPU_MAX"
 printf '오래 사는 영역 max %s MB   Full GC %s 회 (제일 오래 멈춘 %s ms)\n' \
@@ -1841,9 +1878,17 @@ echo
 # 이 두 줄이 오늘 밤에 실제로 걸렸던 함정을 잡는 안전망이다.
 # 세션이 안 붙으면 입찰이 전부 401 로 거절되는데, 401 도 4xx 라 "정상 거절"로 세어져서
 # 그래프만 봐서는 안 드러난다. 락 대기가 NaN 인 걸 보고서야 알게 된다.
+#
+# rate limit 을 켜고 재면 같은 자리에 429(7009)가 쌓인다. 원인이 아예 다른데 문구가 하나면
+# 세션을 들여다보다 시간을 버리므로, 켜 둔 실행에서는 그쪽을 먼저 짚는다.
 if [ "$REJECTED_OTHER" != "0" ] && [ "$SCENARIO" != "0" ] && [ "$SCENARIO" != "3" ]; then
-  echo "※ 경고: 입찰이 401·403 으로 거절된 게 ${REJECTED_OTHER}건이다. 세션이나 약관 동의가 안 붙은 것이라" >&2
-  echo "  이 줄의 숫자는 서버 한계가 아니다. 폴더는 남기되 표에는 쓰지 않는다." >&2
+  if [ "$BID_RATE_LIMIT" = "on" ]; then
+    echo "※ 경고: 입찰이 ${REJECTED_OTHER}건 거절됐다. rate limit 을 켜고 쟀으므로 429(7009)일 수 있다." >&2
+    echo "  요청이 물품 행 락까지 도달하지 않아 락 지표가 서버 한계가 아니다. --bid-rate-limit off 로 다시 잰다." >&2
+  else
+    echo "※ 경고: 입찰이 401·403 으로 거절된 게 ${REJECTED_OTHER}건이다. 세션이나 약관 동의가 안 붙은 것이라" >&2
+    echo "  이 줄의 숫자는 서버 한계가 아니다. 폴더는 남기되 표에는 쓰지 않는다." >&2
+  fi
 fi
 
 # 공개 조회에는 거절 규칙이 없다. 4xx 가 나왔다는 건 공유 코드가 틀렸거나 방이 없다는 뜻이라,
