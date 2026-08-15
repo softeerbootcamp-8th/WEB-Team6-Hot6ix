@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auction.controller;
 import com.hot6ix.upbid.domain.auction.api.AuctionItemApi;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemCloseEarlyRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
@@ -97,10 +98,10 @@ public class AuctionItemController implements AuctionItemApi {
     @PostMapping("/auction-items/{auctionItemId}/close-early")
     @Override
     public ResponseEntity<CommonResponse<AuctionItemCloseEarlyResponseDto>> closeEarly(
-            Long auctionItemId, Long userId) {
+            Long auctionItemId, Long userId, AuctionItemCloseEarlyRequestDto request) {
 
         AuctionItemCloseEarlyResponseDto response =
-                auctionItemCloseService.closeEarly(userId, auctionItemId);
+                auctionItemCloseService.closeEarly(userId, auctionItemId, request);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "물품 마감이 앞당겨졌습니다."));
     }

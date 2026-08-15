@@ -12,7 +12,8 @@ import java.time.LocalDateTime;
  * 앞당김은 실시간 이벤트로도 나가므로 화면의 다른 값은 그쪽에서 맞춰진다.
  *
  * @param endAt            앞당겨진 뒤의 마감 시각
- * @param remainingSeconds 그 시각까지 남은 초. 경매방의 Soft Close 트리거 값과 같다
+ * @param remainingSeconds 그 시각까지 남은 초. 요청한 값이며, 요청이 없었으면 경매방의 Soft Close
+ *                         트리거 값이다
  */
 public record AuctionItemCloseEarlyResponseDto(
         Long auctionItemId,

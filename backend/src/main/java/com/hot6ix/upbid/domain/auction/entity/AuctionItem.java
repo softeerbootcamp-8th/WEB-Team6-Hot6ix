@@ -165,52 +165,80 @@ public class AuctionItem extends BaseTimeEntity {
     }
 
     /**
-     * 마감을 <b>Soft Close 연장 구간이 열리는 순간</b>({@code 지금 + 트리거 초})으로 앞당긴다.
-     * 판매자가 물품을 빨리 넘기고 싶을 때 쓰며, 상태·소유자 검증은 Service가 마치고 호출한다.
+     * 마감을 <b>지금부터 {@code remainingSeconds}만큼 뒤</b>로 앞당긴다. 판매자가 물품을 빨리
+     * 넘기고 싶을 때 쓰며, 상태·소유자 검증은 Service가 마치고 호출한다.
      *
-     * <p>지금 바로 닫지 않고 트리거만큼 남겨두는 것은 <b>구매자에게 얼마나 남았는지 알릴 수
-     * 있게</b> 하려는 것이다. 앞당긴 뒤에도 {@link #extendIfClosingSoon}은 그대로 살아 있어,
-     * 이 구간에 입찰이 들어오면 지금까지처럼 마감이 밀린다.
+     * <p>남길 시간을 절대 시각이 아니라 <b>남은 초로</b> 받는 것은 서버가 자기 시계로 계산하게
+     * 해서 브라우저와의 시차를 끌어오지 않으려는 것이다(#182, #183).
      *
-     * <p><b>마감을 뒤로 밀지는 않는다.</b> 이미 연장 구간 안이면(= 남은 시간이 트리거보다
-     * 짧으면) 앞당길 자리가 없으므로 아무 값도 바꾸지 않고 {@code false}를 돌려준다. 부르는
-     * 쪽은 이걸 거절로 옮긴다.
+     * <p>지금 바로 닫지 않고 최소 트리거만큼은 남겨두는 것은 <b>구매자에게 얼마나 남았는지 알릴
+     * 수 있게</b> 하려는 것이다. 앞당긴 뒤에도 {@link #extendIfClosingSoon}은 그대로 살아 있어,
+     * 연장 구간에 입찰이 들어오면 지금까지처럼 마감이 밀린다.
+     *
+     * <p>거절이 셋이고 이유가 다르다.
+     *
+     * <ul>
+     *   <li>{@code ALREADY_CLOSING_SOON} — 가장 짧게 남길 수 있는 트리거 초로도 마감이 뒤로
+     *       밀린다. 요청 값과 무관하게 앞당길 자리 자체가 없는 경우다.
+     *   <li>{@code REMAINING_TOO_SHORT} — 트리거보다 짧게 남기려 한다. 받아주면 앞당기는 즉시
+     *       연장 구간 안이라 알릴 순간이 없다.
+     *   <li>{@code REMAINING_TOO_LONG} — 지금 마감보다 뒤다. <b>막지 않으면 앞당기기가 마감을
+     *       미루는 셈이 된다.</b>
+     * </ul>
      *
      * <p>{@code originalEndAt}과 {@code totalExtensionSeconds}는 건드리지 않는다. 앞은 원래
      * 마감이 언제였는지를 남기는 값이라 앞당겼다고 달라지지 않고, 뒤는 연장 누적이라 앞당기기가
      * 더할 것이 없다.
      *
-     * <p><b>{@code notifiedAt}에 지금을 찍는다. 앞당기기를 "이미 알린 것"으로 치는 것이다.</b>
-     * 앞당긴 뒤의 알림 시각({@code endAt - 트리거})은 정확히 지금이라 이미 지난 시각이고, 남은
-     * 초는 앞당김 이벤트가 화면에 직접 알리므로 알림이 따로 나갈 이유가 없다. 찍지 않으면
+     * <p><b>{@code notifiedAt}은 딱 트리거만큼 남길 때만 지금으로 찍는다.</b> 그때만 앞당긴 뒤의
+     * 알림 시각({@code endAt - 트리거})이 정확히 지금이라 이미 지난 시각이고, 남은 초는 앞당김
+     * 이벤트가 화면에 직접 알리므로 알림이 따로 나갈 이유가 없다. 안 찍으면
      * {@code AuctionRecoveryRunner}가 "알림 예약이 빠졌다"고 보고 되살려서, <b>트리거만큼 남은
-     * 물품에 "마감 N초 전"이 뒤늦게 나간다</b>(#290).
+     * 물품에 "마감 N초 전"이 뒤늦게 나간다</b>(#290). 반대로 그보다 길게 남기면 알림 시각이
+     * 아직 미래라 <b>알림이 나가야 하므로 찍으면 안 된다</b>.
      *
      * <p>그러고도 <b>연장 재발송은 그대로 산다.</b> 앞당긴 뒤 입찰이 들어와 마감이 밀리면 알림
      * 시각도 함께 밀려서 여기 찍은 값보다 뒤가 되고, 그러면 다시 알린다.
      *
      * <p>연장이 {@code endAt}을 바꾸는 다른 경로와 마찬가지로 <b>물품 행 락을 잡은 채</b>
-     * 불러야 하고, 호출한 쪽은 걸어둔 마감 예약을 새 시각으로 갈아 끼워야 한다.
+     * 불러야 하고, 호출한 쪽은 걸어둔 마감 예약과 알림 예약을 새 시각으로 갈아 끼워야 한다.
      *
-     * @param now 새 마감 시각의 기준. 같은 트랜잭션의 다른 검증과 <b>같은 값</b>을 받아야 한다
-     * @return 앞당겼으면 {@code true}. {@code false}면 아무 값도 바뀌지 않았다
+     * @param now              새 마감 시각의 기준. 같은 트랜잭션의 다른 검증과 <b>같은 값</b>을
+     *                         받아야 한다
+     * @param remainingSeconds 마감까지 남길 초. <b>{@code null}이면 트리거 초</b>다
+     * @return 앞당겼으면 {@code ADVANCED}. 나머지는 거절이며 아무 값도 바뀌지 않았다
      */
-    public boolean closeEarly(LocalDateTime now) {
+    public CloseEarlyResult closeEarly(LocalDateTime now, Integer remainingSeconds) {
 
         if (endAt == null) {
-            return false;
+            return CloseEarlyResult.ALREADY_CLOSING_SOON;
         }
 
-        LocalDateTime advancedEndAt = now.plusSeconds(resolveSoftCloseTriggerSeconds());
+        int triggerSeconds = resolveSoftCloseTriggerSeconds();
+
+        if (!now.plusSeconds(triggerSeconds).isBefore(endAt)) {
+            return CloseEarlyResult.ALREADY_CLOSING_SOON;
+        }
+
+        int seconds = remainingSeconds != null ? remainingSeconds : triggerSeconds;
+
+        if (seconds < triggerSeconds) {
+            return CloseEarlyResult.REMAINING_TOO_SHORT;
+        }
+
+        LocalDateTime advancedEndAt = now.plusSeconds(seconds);
 
         if (!advancedEndAt.isBefore(endAt)) {
-            return false;
+            return CloseEarlyResult.REMAINING_TOO_LONG;
         }
 
         this.endAt = advancedEndAt;
-        this.notifiedAt = now;
 
-        return true;
+        if (seconds == triggerSeconds) {
+            this.notifiedAt = now;
+        }
+
+        return CloseEarlyResult.ADVANCED;
     }
 
     /**

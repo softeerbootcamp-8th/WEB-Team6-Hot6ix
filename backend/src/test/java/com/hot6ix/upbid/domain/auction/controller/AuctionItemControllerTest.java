@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemCloseEarlyRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
@@ -644,10 +645,71 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     }
 
     @Test
-    @DisplayName("마감을 앞당기면 200과 앞당겨진 마감 시각을 반환한다")
+    @DisplayName("남길 시간을 지정해 마감을 앞당기면 200과 그 값을 반환한다")
+    void closeEarlyWithRemainingSeconds() throws Exception {
+
+        AuctionItemCloseEarlyRequestDto request = new AuctionItemCloseEarlyRequestDto(600);
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L, request))
+                .thenReturn(new AuctionItemCloseEarlyResponseDto(
+                        30L, LocalDateTime.now().plusSeconds(600), 600));
+
+        mockMvc.perform(post("/api/v1/auction-items/30/close-early")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.remainingSeconds").value(600));
+    }
+
+    @Test
+    @DisplayName("남길 시간이 0 이하면 400을 반환한다")
+    void closeEarlyRejectsNonPositiveRemainingSeconds() throws Exception {
+
+        mockMvc.perform(post("/api/v1/auction-items/30/close-early")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new AuctionItemCloseEarlyRequestDto(0))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    @DisplayName("남길 시간이 트리거보다 짧으면 409와 4013을 반환한다")
+    void closeEarlyRemainingTooShort() throws Exception {
+
+        AuctionItemCloseEarlyRequestDto request = new AuctionItemCloseEarlyRequestDto(10);
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L, request))
+                .thenThrow(new ApplicationException(
+                        AuctionErrorType.AUCTION_ITEM_CLOSE_EARLY_REMAINING_TOO_SHORT));
+
+        mockMvc.perform(post("/api/v1/auction-items/30/close-early")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(4013));
+    }
+
+    @Test
+    @DisplayName("남길 시간이 지금 마감보다 뒤면 409와 4014를 반환한다")
+    void closeEarlyRemainingTooLong() throws Exception {
+
+        AuctionItemCloseEarlyRequestDto request = new AuctionItemCloseEarlyRequestDto(99999);
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L, request))
+                .thenThrow(new ApplicationException(
+                        AuctionErrorType.AUCTION_ITEM_CLOSE_EARLY_REMAINING_TOO_LONG));
+
+        mockMvc.perform(post("/api/v1/auction-items/30/close-early")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(4014));
+    }
+
+    @Test
+    @DisplayName("바디 없이 마감을 앞당기면 200과 앞당겨진 마감 시각을 반환한다")
     void closeEarly() throws Exception {
 
-        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L))
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L, null))
                 .thenReturn(new AuctionItemCloseEarlyResponseDto(
                         30L, LocalDateTime.now().plusSeconds(60), 60));
 
@@ -663,7 +725,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("없거나 남의 물품의 마감을 앞당기면 404와 4001을 반환한다")
     void closeEarlyItemNotFound() throws Exception {
 
-        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 999L))
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 999L, null))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         mockMvc.perform(post("/api/v1/auction-items/999/close-early"))
@@ -676,7 +738,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("진행 중이 아닌 물품의 마감을 앞당기면 409와 4010을 반환한다")
     void closeEarlyItemNotInProgress() throws Exception {
 
-        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L))
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L, null))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_IN_PROGRESS));
 
         mockMvc.perform(post("/api/v1/auction-items/30/close-early"))
@@ -689,7 +751,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("이미 마감이 임박했으면 앞당기기에 409와 4011을 반환한다")
     void closeEarlyAlreadyClosingSoon() throws Exception {
 
-        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L))
+        when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L, null))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_ALREADY_CLOSING_SOON));
 
         mockMvc.perform(post("/api/v1/auction-items/30/close-early"))

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemCloseEarlyRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
@@ -170,7 +171,7 @@ class AuctionItemCloseServiceTest {
     }
 
     @Test
-    @DisplayName("마감을 앞당기면 지금부터 트리거 초 뒤로 밀리고 ItemCloseAdvanced가 발행된다")
+    @DisplayName("요청이 없으면 지금부터 트리거 초 뒤로 밀린다")
     void closeEarlyAdvancesEndAt() {
 
         LocalDateTime before = LocalDateTime.now();
@@ -178,7 +179,7 @@ class AuctionItemCloseServiceTest {
                 givenOwnedItem(AuctionItemStatus.IN_PROGRESS, before.plusMinutes(10));
 
         AuctionItemCloseEarlyResponseDto response =
-                auctionItemCloseService.closeEarly(USER_ID, ITEM_ID);
+                auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null);
 
         int trigger = AuctionItem.DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS;
         assertThat(response.remainingSeconds()).isEqualTo(trigger);
@@ -198,13 +199,72 @@ class AuctionItemCloseServiceTest {
     }
 
     @Test
+    @DisplayName("요청한 남은 초만큼 밀리고 그 값이 응답과 이벤트에 실린다")
+    void closeEarlyAdvancesToRequestedRemaining() {
+
+        int remainingSeconds = 600;
+        LocalDateTime before = LocalDateTime.now();
+        AuctionItem auctionItem =
+                givenOwnedItem(AuctionItemStatus.IN_PROGRESS, before.plusMinutes(60));
+
+        AuctionItemCloseEarlyResponseDto response = auctionItemCloseService.closeEarly(
+                USER_ID, ITEM_ID, new AuctionItemCloseEarlyRequestDto(remainingSeconds));
+
+        assertThat(response.remainingSeconds()).isEqualTo(remainingSeconds);
+        assertThat(response.endAt())
+                .isEqualTo(auctionItem.getEndAt())
+                .isBetween(before.plusSeconds(remainingSeconds),
+                        LocalDateTime.now().plusSeconds(remainingSeconds));
+        assertThat(auctionItem.getNotifiedAt())
+                .as("알림 시각이 아직 미래라 마감 임박 알림이 나가야 한다")
+                .isNull();
+        assertThat(publishedEvent()).isInstanceOfSatisfying(ItemCloseAdvanced.class, event ->
+                assertThat(event.remainingSeconds()).isEqualTo(remainingSeconds));
+    }
+
+    @Test
+    @DisplayName("트리거보다 짧게 남기려 하면 임박 거절과 다른 에러로 거절한다")
+    void closeEarlyRejectsRemainingShorterThanTrigger() {
+
+        LocalDateTime endAt = LocalDateTime.now().plusMinutes(10);
+        AuctionItem auctionItem = givenOwnedItem(AuctionItemStatus.IN_PROGRESS, endAt);
+
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID,
+                new AuctionItemCloseEarlyRequestDto(
+                        AuctionItem.DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS - 1)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_CLOSE_EARLY_REMAINING_TOO_SHORT);
+        assertThat(auctionItem.getEndAt()).isEqualTo(endAt);
+        verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("지금 마감보다 뒤로 남기려 하면 거절한다")
+    void closeEarlyRejectsRemainingBeyondCurrentEndAt() {
+
+        LocalDateTime endAt = LocalDateTime.now().plusMinutes(10);
+        AuctionItem auctionItem = givenOwnedItem(AuctionItemStatus.IN_PROGRESS, endAt);
+
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(
+                USER_ID, ITEM_ID, new AuctionItemCloseEarlyRequestDto(20 * 60)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_CLOSE_EARLY_REMAINING_TOO_LONG);
+        assertThat(auctionItem.getEndAt())
+                .as("막지 않으면 앞당기기가 마감을 미루는 셈이 된다")
+                .isEqualTo(endAt);
+        verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
     @DisplayName("남의 방 물품은 마감을 앞당길 수 없고 물품이 없을 때와 같은 응답을 준다")
     void closeEarlyRejectsOtherSellersItem() {
 
         givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().plusMinutes(10));
         givenSellerProfile(SELLER_PROFILE_ID + 1);
 
-        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
@@ -217,7 +277,7 @@ class AuctionItemCloseServiceTest {
 
         givenOwnedItem(AuctionItemStatus.READY, null);
 
-        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_IN_PROGRESS);
@@ -231,7 +291,7 @@ class AuctionItemCloseServiceTest {
         LocalDateTime endAt = LocalDateTime.now().plusSeconds(10);
         AuctionItem auctionItem = givenOwnedItem(AuctionItemStatus.IN_PROGRESS, endAt);
 
-        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_ALREADY_CLOSING_SOON);
@@ -248,7 +308,7 @@ class AuctionItemCloseServiceTest {
         when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
                 .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);

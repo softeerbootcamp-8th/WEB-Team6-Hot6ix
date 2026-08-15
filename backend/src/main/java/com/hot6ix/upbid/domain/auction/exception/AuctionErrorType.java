@@ -24,7 +24,11 @@ public enum AuctionErrorType implements ErrorType {
     AUCTION_ITEM_ALREADY_CLOSING_SOON(HttpStatus.CONFLICT, 4011,
             "이미 마감이 임박한 물품입니다."),
     AUCTION_ROOM_HAS_IN_PROGRESS_ITEM(HttpStatus.CONFLICT, 4012,
-            "진행 중인 물품이 있어 경매방을 종료할 수 없습니다.");
+            "진행 중인 물품이 있어 경매방을 종료할 수 없습니다."),
+    AUCTION_ITEM_CLOSE_EARLY_REMAINING_TOO_SHORT(HttpStatus.CONFLICT, 4013,
+            "마감까지 남길 시간은 경매방의 연장 트리거 시간 이상이어야 합니다."),
+    AUCTION_ITEM_CLOSE_EARLY_REMAINING_TOO_LONG(HttpStatus.CONFLICT, 4014,
+            "마감까지 남길 시간은 지금 마감까지 남은 시간보다 짧아야 합니다.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;

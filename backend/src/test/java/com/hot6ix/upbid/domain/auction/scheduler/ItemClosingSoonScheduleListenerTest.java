@@ -28,9 +28,9 @@ import org.springframework.dao.QueryTimeoutException;
  * {@code RedisItemClosingSoonScheduler}가, 꺼내서 실행하는 것은
  * {@link ItemClosingSoonPollerTest}가 맡는다.
  *
- * <p>마감({@link AuctionCloseScheduleListenerTest})과 판단이 둘 다르다. 알림 시각은 이벤트에
- * 실려 오지 않아 {@link ItemClosingSoonService}에 물어봐야 하고, 마감 앞당기기는 재예약이
- * 아니라 취소다.
+ * <p>마감({@link AuctionCloseScheduleListenerTest})과 판단이 다르다. 알림 시각은 이벤트에
+ * 실려 오지 않아 {@link ItemClosingSoonService}에 물어봐야 하고, 마감 앞당기기는 새 알림 시각이
+ * 남아 있는지에 따라 재예약과 취소로 갈린다.
  */
 @ExtendWith(MockitoExtension.class)
 class ItemClosingSoonScheduleListenerTest {
@@ -147,8 +147,10 @@ class ItemClosingSoonScheduleListenerTest {
     }
 
     @Test
-    @DisplayName("판매자가 마감을 앞당기면 알림 예약을 취소하고 다시 걸지 않는다")
+    @DisplayName("트리거만큼만 남기고 앞당기면 알림 예약을 취소하고 다시 걸지 않는다")
     void cancelsScheduleOnItemCloseAdvanced() {
+
+        givenNotifyAt(LocalDateTime.now().minusSeconds(1));
 
         itemClosingSoonScheduleListener.on(itemCloseAdvanced());
 
@@ -156,6 +158,20 @@ class ItemClosingSoonScheduleListenerTest {
         verify(itemClosingSoonScheduler).cancel(ITEM_ID);
         // 앞당긴 순간이 곧 알림 시각이라 새로 걸 예약이 없다.
         verify(itemClosingSoonScheduler, never()).schedule(any(), any());
+    }
+
+    @Test
+    @DisplayName("트리거보다 길게 남기고 앞당기면 알림 예약을 새 시각으로 다시 건다")
+    void reschedulesOnItemCloseAdvancedWhenNotifyAtIsStillAhead() {
+
+        LocalDateTime notifyAt = LocalDateTime.now().plusMinutes(9);
+        givenNotifyAt(notifyAt);
+
+        itemClosingSoonScheduleListener.on(itemCloseAdvanced());
+
+        // 앞당겼어도 알림 시각이 아직 미래라 "곧 마감"을 알릴 순간이 남아 있다.
+        verify(itemClosingSoonScheduler).cancel(ITEM_ID);
+        verify(itemClosingSoonScheduler).schedule(ITEM_ID, notifyAt);
     }
 
     @Test
