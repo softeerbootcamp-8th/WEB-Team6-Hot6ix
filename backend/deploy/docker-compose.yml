@@ -98,3 +98,17 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
     restart: unless-stopped
+    # 도커 기본 json-file 은 로테이션이 없어서 로그가 무한히 쌓인다. 지금까지는 앱이 로그를
+    # 거의 안 남겨서(22시간에 32KB) 문제가 안 됐는데, 요청마다 한 줄을 남기는 접근 로그가
+    # 붙으면서 전제가 달라졌다. 부하 측정 한 번이면 수십 MB 다.
+    #
+    # 150MB 로 묶는다. 앱 EC2 디스크 여유가 11GB 라 넉넉하지만, 여기서 디스크를 채우면
+    # 로그만 못 남기는 게 아니라 앱이 통째로 멈춘다.
+    #
+    # 이걸로 "재배포하면 이전 로그가 사라진다" 는 해결되지 않는다. 컨테이너를 새로 만들면
+    # 로그 파일도 새로 생기기 때문이고, 그건 로그를 밖으로 보내야 풀린다 (이슈 #332 4단계).
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
