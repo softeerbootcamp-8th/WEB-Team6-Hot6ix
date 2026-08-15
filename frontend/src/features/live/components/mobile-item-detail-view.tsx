@@ -12,7 +12,7 @@ import {
   formatWon,
   toHref,
 } from '@/lib/format'
-import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
+import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
 
 /**
  * 모바일 물품 상세 (Figma `MOB-05 · 구매자 · 물품 상세 (LIVE)`, 713:4920).

@@ -31,7 +31,7 @@ import {
   useRealtimeStatus,
   type SseEventPayload,
 } from '@/features/live/use-realtime-status'
-import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
+import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
 
 /**
  * 물품 상세 (Figma `WEB-13 · 구매자 · 물품 상세 (LIVE)`).

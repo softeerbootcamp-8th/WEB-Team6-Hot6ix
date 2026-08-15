@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/format'
-import type { RoomRole, RoomStatus } from '@/mocks/types'
+import type { RoomRole, RoomStatus } from '@/types/domain'
 
 /**
  * 카드가 그리는 데 필요한 값만 추린 모양.

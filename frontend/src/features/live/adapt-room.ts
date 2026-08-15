@@ -3,7 +3,7 @@ import type {
   AuctionItemDetail,
   AuctionRoomDetail,
   RoomStatus,
-} from '@/mocks/types'
+} from '@/types/domain'
 
 /**
  * 서버 경매방 DTO 를 화면이 쓰는 `AuctionRoomDetail` 로 바꾼다.

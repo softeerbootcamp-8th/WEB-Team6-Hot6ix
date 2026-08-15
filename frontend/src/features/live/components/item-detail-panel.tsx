@@ -14,7 +14,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
 
-import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
+import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
 
 /** Figma 퀵입찰 칩: 입찰 단위의 1배 / 5배. 누를 때마다 그만큼 더해진다. */
 const PRESETS = [1, 5] as const

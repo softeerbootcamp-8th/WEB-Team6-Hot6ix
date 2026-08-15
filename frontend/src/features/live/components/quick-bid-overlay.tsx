@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { formatCountdown, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { cn } from '@/lib/utils'
-import type { AuctionItemDetail } from '@/mocks/types'
+import type { AuctionItemDetail } from '@/types/domain'
 
 /** Figma 옵션 칩: 입찰 단위의 1배 / 5배 / 직접 입력 */
 const PRESETS = [1, 5] as const

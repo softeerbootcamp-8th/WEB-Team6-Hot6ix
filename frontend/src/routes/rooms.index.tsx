@@ -14,7 +14,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useMyRoomList } from '@/features/rooms/use-my-room-list'
 import { useMyRoomCounts } from '@/features/rooms/use-my-room-counts'
 import type { GetMyRoomsStatus } from '@/api/generated/model'
-import type { RoomStatus } from '@/mocks/types'
+import type { RoomStatus } from '@/types/domain'
 import { cn } from '@/lib/utils'
 import { requireMember } from '@/lib/route-guards'
 

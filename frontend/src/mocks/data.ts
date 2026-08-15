@@ -4,7 +4,7 @@ import type {
   AuctionRoomSummary,
   Product,
   TradeSummary,
-} from '@/mocks/types'
+} from '@/types/domain'
 
 /**
  * 화면 확인용 목업 데이터.

@@ -8,7 +8,7 @@ import type {
   AuctionItemDetail,
   ItemStatus,
   LeaderboardEntry,
-} from '@/mocks/types'
+} from '@/types/domain'
 
 /**
  * 서버 물품 DTO 를 화면이 쓰는 `AuctionItemDetail` 로 바꾼다.

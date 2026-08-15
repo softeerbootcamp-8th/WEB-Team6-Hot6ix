@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
-import type { LeaderboardEntry } from '@/mocks/types'
+import type { LeaderboardEntry } from '@/types/domain'
 
 /** 방금 무슨 일이 있었는지. 배지로 잠깐 보여준다. */
 type Movement = { kind: 'up' | 'down' | 'new'; delta: number }

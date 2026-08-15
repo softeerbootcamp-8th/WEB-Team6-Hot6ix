@@ -21,7 +21,7 @@ import type {
   AuctionItemDetail,
   AuctionRoomDetail,
   RoomEvent,
-} from '@/mocks/types'
+} from '@/types/domain'
 
 /**
  * 모바일 라이브 경매방 (Figma `MOB-04 · 구매자 · 라이브`, 713:4862).

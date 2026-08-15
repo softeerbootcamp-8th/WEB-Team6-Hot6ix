@@ -78,7 +78,7 @@ import {
   useRealtimeStatus,
   type SseEventPayload,
 } from '@/features/live/use-realtime-status'
-import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
+import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
 
 /**
  * 라이브 경매방 (Figma `WEB-09 · 구매자 · 라이브`).

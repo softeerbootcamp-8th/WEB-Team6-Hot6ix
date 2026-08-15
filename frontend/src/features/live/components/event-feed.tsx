@@ -6,7 +6,7 @@ import { EventItemTag } from '@/features/live/components/event-item-tag'
 import { resolveEventTone } from '@/features/live/components/event-tone'
 import { formatTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type { RoomEvent } from '@/mocks/types'
+import type { RoomEvent } from '@/types/domain'
 
 /**
  * 경매방 실시간 이벤트 피드.

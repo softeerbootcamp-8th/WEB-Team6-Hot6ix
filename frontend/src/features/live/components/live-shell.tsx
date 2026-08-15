@@ -5,7 +5,7 @@ import { useEffect, type ReactNode } from 'react'
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
 import { RoomRuleChips } from '@/features/live/components/room-rule-chips'
 import { cn } from '@/lib/utils'
-import type { AuctionRoomDetail } from '@/mocks/types'
+import type { AuctionRoomDetail } from '@/types/domain'
 
 /**
  * 라이브 화면 공통 골격 (Figma `WEB-09` / `WEB-13`).
