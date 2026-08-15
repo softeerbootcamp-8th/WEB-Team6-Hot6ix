@@ -22,8 +22,12 @@ class EmitterDispatcher {
 
     private final SseEmitter emitter;
 
-    EmitterDispatcher(Executor vtExecutor, int queueCapacity, Long roomId, SseEmitter emitter) {
+    private final SseMetrics sseMetrics;
+
+    EmitterDispatcher(Executor vtExecutor, int queueCapacity, Long roomId, SseEmitter emitter,
+            SseMetrics sseMetrics) {
         this.emitter = emitter;
+        this.sseMetrics = sseMetrics;
         this.publisher = new SubmissionPublisher<>(vtExecutor, queueCapacity);
         this.publisher.subscribe(new EmitterSubscriber(roomId, emitter));
     }
@@ -43,6 +47,7 @@ class EmitterDispatcher {
         publisher.offer(task, (subscriber, dropped) -> {
             log.warn("sse 큐 포화로 연결 종료: roomId={}, taskType={}",
                     dropped.roomId(), dropped.getClass().getSimpleName());
+            sseMetrics.recordQueueSaturated();
             emitter.completeWithError(new IllegalStateException("emitter queue saturated"));
             return false;
         });

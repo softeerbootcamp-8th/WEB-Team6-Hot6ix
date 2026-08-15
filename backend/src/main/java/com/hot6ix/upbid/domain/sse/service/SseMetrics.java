@@ -33,6 +33,14 @@ public class SseMetrics {
     private final Counter publishFailures;
 
     /**
+     * emitter 별 큐가 포화되어 연결을 끊은 횟수.
+     *
+     * <p>값이 0이 아니면 느린 구독자(TCP 버퍼 포화 또는 네트워크 지연)가 있다는 뜻이다.
+     * 끊긴 쪽은 {@code EventSource}가 재연결하고 {@code Last-Event-ID}로 빠진 이벤트를 받는다.
+     */
+    private final Counter queueSaturated;
+
+    /**
      * 방 전원에게 한 번 쏘는 데 걸리는 시간. 이 값이 그대로 부른 쪽 시간에 얹힌다. 입찰이면
      * 응답 시간에(#234), 마감이면 마감 소요 시간에 들어간다.
      *
@@ -50,6 +58,7 @@ public class SseMetrics {
         this.registry = registry;
         this.heartbeat = registry.timer("upbid.sse.heartbeat");
         this.publishFailures = registry.counter("upbid.sse.publish.failure");
+        this.queueSaturated = registry.counter("upbid.sse.queue.saturated");
         this.broadcasts = broadcastTimers(registry);
     }
 
@@ -90,6 +99,10 @@ public class SseMetrics {
 
     public void recordPublishFailure() {
         publishFailures.increment();
+    }
+
+    public void recordQueueSaturated() {
+        queueSaturated.increment();
     }
 
     /**

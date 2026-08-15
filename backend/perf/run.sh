@@ -63,6 +63,11 @@ JAVA_OPTS=""
 SKIP_BUILD=0
 JFR=0
 VIRTUAL_THREADS=false
+# SSE emitter 별 drain 을 가상 스레드로 할지. true 가 기본이다.
+# --no-sse-vt 로 끄면 플랫폼 스레드(newCachedThreadPool)로 바뀐다.
+SSE_VT=true
+# --no-sse-vt 일 때 drain 스레드 풀 크기. 기본 4 = t4g.micro(2 vCPU) × 2.
+SSE_POOL=4
 BID_ITEMS=0
 
 # 시나리오 5 전용. 방을 만들 때 주는 마감 임박 설정과, 마감 대상 물품에 입찰을 언제까지
@@ -99,6 +104,7 @@ usage() {
                      6=탐색 램프, 7=스파이크, 8=동시 출발 정합성
                      9=입장 폭주. 링크를 뿌린 직후의 방 공개 조회 둘을 때린다.
                      절벽이라 --rate 가 있어야 한다 (예: --scenario 9 --rate 200)
+                     10=SSE dispatch 부하. --vus 는 SSE 연결 수, --rate 는 초당 입찰 수
   --vus N            가상 사용자 수. 계단은 10/20/40/80/160 (기본 40)
                      --rate 와 같이 주면 도착률을 채울 VU 수(preAllocatedVUs)가 된다
   --rate N           초당 도착 건수를 고정한다 (열린 모델). 안 주면 예전처럼 닫힌 모델
@@ -116,6 +122,9 @@ usage() {
   --heartbeat-ms N   SSE heartbeat 주기 (기본 30000)
   --xmx SIZE         앱 힙 상한. 예: 512m
   --virtual-threads  가상 스레드를 켠다. **톰캣도 함께 바뀐다**(전역 스위치)
+  --sse-vt           SSE emitter drain 을 가상 스레드로 한다 (기본 on)
+  --no-sse-vt        SSE emitter drain 을 bounded 스레드 풀로 한다 (시나리오 10 비교용)
+  --sse-pool N       --no-sse-vt 일 때 drain 스레드 풀 크기 (기본 4)
   --bid-items N      시나리오 5 에서 입찰을 넣을 물품 수. 나머지는 마감 대상이 된다
   --bid-start T      입찰 VU 가 뛰기까지 기다릴 시간 (기본 10s). 물품을 다 시작하기 전에
                      입찰이 들어가면 전부 4xx 로 거절되므로, --items 를 올리면 같이 올린다
@@ -186,6 +195,9 @@ while [ $# -gt 0 ]; do
     --heartbeat-ms) HEARTBEAT_MS="$2"; shift 2 ;;
     --xmx) JAVA_OPTS="-Xmx$2"; shift 2 ;;
     --virtual-threads) VIRTUAL_THREADS=true; shift ;;
+    --sse-vt) SSE_VT=true; shift ;;
+    --no-sse-vt) SSE_VT=false; shift ;;
+    --sse-pool) SSE_POOL="$2"; shift 2 ;;
     --bid-items) BID_ITEMS="$2"; shift 2 ;;
     --cpus) CPUS="$2"; shift 2 ;;
     --soft-close-trigger) SOFT_CLOSE_TRIGGER="$2"; shift 2 ;;
@@ -462,7 +474,15 @@ preflight
 # 라벨을 도입해 막았던 "직전 실행 값을 집어오는" 문제가 그대로 다시 열린다.
 # 실측으로 겪었다 — 3연속 실행에서 2회차가 2/8 단계에 죽고 3회차가 같은 이름을 가져갔다.
 STAMP="$(date +%Y-%m-%dT%H-%M-%S)"
-RUN_ID="${STAMP}_s${SCENARIO}_vus${VUS}_pool${POOL}_items${ITEMS}_sse${SSE}"
+SSE_VT_SUFFIX=""
+if [ "$SCENARIO" = "10" ]; then
+  if [ "$SSE_VT" = "true" ]; then
+    SSE_VT_SUFFIX="_ssevttrue"
+  else
+    SSE_VT_SUFFIX="_ssevtfalse_p${SSE_POOL}"
+  fi
+fi
+RUN_ID="${STAMP}_s${SCENARIO}_vus${VUS}_pool${POOL}_items${ITEMS}_sse${SSE}${SSE_VT_SUFFIX}"
 RESULT_DIR="$PERF_DIR/results/$RUN_ID"
 mkdir -p "$RESULT_DIR"
 
@@ -522,6 +542,8 @@ fi
 
 export APP_JAVA_OPTS="$JAVA_OPTS"
 export VIRTUAL_THREADS
+export SSE_USE_VIRTUAL_THREADS="$SSE_VT"
+export SSE_DISPATCH_POOL_SIZE="$SSE_POOL"
 export PERF_CPUS="$CPUS"
 
 # 일회성 컨테이너(docker compose run 으로 띄운 k6)는 down 이 안 지운다. 설계가 그렇다.
@@ -868,7 +890,8 @@ case "$SCENARIO" in
   7) SCRIPT="spike.js" ;;
   8) SCRIPT="burst.js" ;;
   9) SCRIPT="enter.js" ;;
-  *) echo "모르는 시나리오: $SCENARIO (0~9)" >&2; exit 1 ;;
+  10) SCRIPT="scenario10.js" ;;
+  *) echo "모르는 시나리오: $SCENARIO (0~10)" >&2; exit 1 ;;
 esac
 
 # 6(탐색 램프)과 7(스파이크)은 램프라서 p95 가 구간 평균이 되고 max 계열이 램프 끝 값만
@@ -1232,7 +1255,13 @@ HEARTBEAT_RUNS="$(promq "sum($(delta "upbid_sse_heartbeat_seconds_count{$RUN}"))
 HEARTBEAT_EXPECTED="$(awk -v w="$WINDOW_SECONDS" -v ms="$HEARTBEAT_MS" \
   'BEGIN { printf "%.0f", (ms > 0 ? w / (ms / 1000) : 0) }')"
 SSE_BROADCAST_P95_MS="$(p95_of "upbid_sse_broadcast_seconds_bucket{$RUN}")"
+SSE_BROADCAST_P99_MS="$(quantile_of "upbid_sse_broadcast_seconds_bucket{$RUN}" 0.99)"
 SSE_CONN_MAX="$(promq "max(max_over_time(upbid_sse_connections{$RUN}[$W]))")"
+# VT vs 플랫폼 스레드 비교의 핵심 지표.
+# 플랫폼 스레드면 연결 수만큼 오르고, VT면 캐리어 스레드 수만큼만 유지된다.
+JVM_THREADS_LIVE_MAX="$(promq "max(max_over_time(jvm_threads_live_threads{$RUN}[$W]))")"
+# 큐 포화로 끊긴 연결 수. 0이 정상이고, 값이 있으면 느린 구독자가 있다는 뜻이다.
+SSE_QUEUE_SATURATED="$(promq "sum($(delta "upbid_sse_queue_saturated_total{$RUN}")) or vector(0)")"
 
 # 마감은 p95 만으로 부족하다. 한 건이라도 크게 튀면 스레드가 그만큼 묶이므로 최대값을 같이 본다.
 CLOSE_DELAY_P50_MS="$(quantile_of "upbid_auction_close_delay_seconds_bucket{$RUN}" 0.50)"
@@ -1385,7 +1414,10 @@ CLOSE_DELAY_P95_MS="$(round "$CLOSE_DELAY_P95_MS" 0)"
 SSE_HEARTBEAT_P95_MS="$(round "$SSE_HEARTBEAT_P95_MS" 0)"
 HEARTBEAT_RUNS="$(round "$HEARTBEAT_RUNS" 0)"
 SSE_BROADCAST_P95_MS="$(round "$SSE_BROADCAST_P95_MS" 0)"
+SSE_BROADCAST_P99_MS="$(round "$SSE_BROADCAST_P99_MS" 0)"
 SSE_CONN_MAX="$(round "$SSE_CONN_MAX" 0)"
+JVM_THREADS_LIVE_MAX="$(round "$JVM_THREADS_LIVE_MAX" 0)"
+SSE_QUEUE_SATURATED="$(round "$SSE_QUEUE_SATURATED" 0)"
 CLOSE_DELAY_P50_MS="$(round "$CLOSE_DELAY_P50_MS" 0)"
 CLOSE_DELAY_MAX_MS="$(round "$CLOSE_DELAY_MAX_MS" 0)"
 CLOSE_DURATION_P95_MS="$(round "$CLOSE_DURATION_P95_MS" 0)"
@@ -1563,7 +1595,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_broadcast_p99_ms,sse_conn_max,jvm_threads_live_max,sse_queue_saturated,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,sse_vt,sse_dispatch_pool,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -1609,10 +1641,10 @@ VALUES=( \
   "$CLOSE_AWARD_INSERT_P95_MS" \
   "$CLOSE_FAILURES" "$CLOSES" "$AWARDS" "$SCHED_ACTIVE_MAX" "$SCHED_QUEUED_MAX" \
   "$CLOSE_ACTIVE_MAX" "$CLOSE_QUEUED_MAX" "$CLOSE_BACKLOG_MAX" \
-  "$SSE_HEARTBEAT_P95_MS" "$HEARTBEAT_RUNS" "$HEARTBEAT_EXPECTED" "$SSE_BROADCAST_P95_MS" "$SSE_CONN_MAX" \
+  "$SSE_HEARTBEAT_P95_MS" "$HEARTBEAT_RUNS" "$HEARTBEAT_EXPECTED" "$SSE_BROADCAST_P95_MS" "$SSE_BROADCAST_P99_MS" "$SSE_CONN_MAX" "$JVM_THREADS_LIVE_MAX" "$SSE_QUEUE_SATURATED" \
   "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" \
   "$PROCESS_CPU_AVG" "$PROCESS_CPU_MAX" "$SYSTEM_CPU_AVG" "$SYSTEM_CPU_MAX" "$SYSTEM_LOAD_AVG" "$SYSTEM_LOAD_MAX" \
-  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$BULK_ITEMS" "$SWEEP_INDEX" \
+  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$SSE_VT" "$SSE_POOL" "$BULK_ITEMS" "$SWEEP_INDEX" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" "$DROPPED_ITERATIONS" "" "" \
 )
 (IFS=,; echo "${VALUES[*]}") >>"$INDEX"
@@ -1633,6 +1665,23 @@ if [ "$VIRTUAL_THREADS" = "true" ]; then
 > 스케줄러 일꾼/대기열이 NaN 인 것도 정상이다 (풀도 큐도 없는 구현으로 바뀐다).
 
 "
+fi
+
+SSE_VT_NOTE=""
+if [ "$SCENARIO" = "10" ]; then
+  if [ "$SSE_VT" = "true" ]; then
+    SSE_VT_NOTE="> **시나리오 10 — SSE emitter drain 을 가상 스레드로 잰 숫자다.**
+> 플랫폼 스레드 결과와 비교할 때 --no-sse-vt 를 붙인 줄을 나란히 놓는다.
+> jvm_threads_live 가 연결 수만큼 안 오르고, 힙이 낮게 유지되면 VT 효과가 있는 것이다.
+
+"
+  else
+    SSE_VT_NOTE="> **시나리오 10 — SSE emitter drain 을 플랫폼 스레드로 잰 숫자다.**
+> 가상 스레드 결과와 비교할 때 --sse-vt (기본) 를 붙인 줄을 나란히 놓는다.
+> jvm_threads_live 가 연결 수만큼 오르고 힙이 높게 유지되면 플랫폼 스레드 비용이 드러난 것이다.
+
+"
+  fi
 fi
 
 # 배포는 보류 조건이 하나 늘어난다. 자원 넷이 다 여유로운데 처리량이 안 오르는 그림이
@@ -1714,7 +1763,9 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | SSE 접속 max | ${SSE_CONN_MAX} |
 | SSE heartbeat p95 | ${SSE_HEARTBEAT_P95_MS} ms |
 | **heartbeat 실행 횟수** | **${HEARTBEAT_RUNS} / ${HEARTBEAT_EXPECTED} 회** ← 모자라면 굶은 것 |
-| SSE broadcast p95 | ${SSE_BROADCAST_P95_MS} ms |
+| SSE broadcast p95 / p99 | ${SSE_BROADCAST_P95_MS} / ${SSE_BROADCAST_P99_MS} ms |
+| **JVM 스레드 수 max** | **${JVM_THREADS_LIVE_MAX}** ← VT면 연결 수보다 훨씬 낮아야 한다 |
+| SSE 큐 포화(연결 끊김) | ${SSE_QUEUE_SATURATED} 건 ← 0이 정상 |
 | **앱 CPU max** | **${APP_CPU_MAX} %** ← 천장이 200%(cpus: 2.0). 여기 붙었으면 이 줄은 CPU 실험이다 |
 | JVM process CPU 평균 / 최대 | ${PROCESS_CPU_AVG} / ${PROCESS_CPU_MAX} % |
 | 호스트 system CPU 평균 / 최대 | ${SYSTEM_CPU_AVG} / ${SYSTEM_CPU_MAX} % |
@@ -1732,7 +1783,7 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 실패 (5xx·타임아웃) | ${FAILED_5XX} |
 | k6 dropped iteration | ${DROPPED_ITERATIONS} |
 
-${VIRTUAL_THREADS_NOTE}${REMOTE_NOTE}## 판정
+${VIRTUAL_THREADS_NOTE}${SSE_VT_NOTE}${REMOTE_NOTE}## 판정
 
 판정:  Y / N / ?  —
        (직전 계단 대비 처리량이 몇 배인지, 그때 자원 넷이 어땠는지)

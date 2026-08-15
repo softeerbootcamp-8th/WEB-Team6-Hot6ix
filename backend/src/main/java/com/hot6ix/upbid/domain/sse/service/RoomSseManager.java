@@ -137,7 +137,8 @@ public class RoomSseManager {
                 sseVirtualThreadExecutor,
                 sseProperties.emitterQueueCapacity(),
                 roomId,
-                emitter));
+                emitter,
+                sseMetrics));
     }
 
     /**

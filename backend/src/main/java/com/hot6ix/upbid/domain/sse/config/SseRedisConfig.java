@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import com.hot6ix.upbid.domain.sse.event.SseEventSubscriber;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -61,13 +62,22 @@ public class SseRedisConfig {
     }
 
     /**
-     * emitter 별 drain 을 실행하는 VT executor. {@link EmitterDispatcher}가 공유한다.
+     * emitter 별 drain 을 실행하는 executor. {@link EmitterDispatcher}가 공유한다.
      *
-     * <p>VT 는 OS 스레드와 1:1 이 아니라 캐리어 스레드 위에서 멀티플렉싱되므로, emitter 수만큼
-     * 생성해도 캐리어 스레드 고갈이 일어나지 않는다.
+     * <p>기본값은 가상 스레드({@code true})다. 부하 측정에서 플랫폼 스레드와 비교할 때
+     * {@code SSE_USE_VIRTUAL_THREADS=false} 환경변수로 전환한다.
+     *
+     * <ul>
+     *   <li>가상 스레드: emitter 수만큼 생성해도 캐리어 스레드 고갈이 없다.</li>
+     *   <li>플랫폼 스레드: send() 블록 시 OS 스레드를 점유하며 연결 수만큼 스레드가 늘어난다.</li>
+     * </ul>
      */
     @Bean(destroyMethod = "close")
-    public Executor sseVirtualThreadExecutor() {
-        return Executors.newVirtualThreadPerTaskExecutor();
+    public Executor sseVirtualThreadExecutor(
+            @Value("${upbid.sse.use-virtual-threads:true}") boolean useVirtualThreads,
+            @Value("${upbid.sse.dispatch-pool-size:4}") int dispatchPoolSize) {
+        return useVirtualThreads
+                ? Executors.newVirtualThreadPerTaskExecutor()
+                : Executors.newFixedThreadPool(dispatchPoolSize);
     }
 }
