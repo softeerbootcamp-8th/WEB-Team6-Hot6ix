@@ -2,8 +2,11 @@ package com.hot6ix.upbid.domain.sse.config;
 
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import com.hot6ix.upbid.domain.sse.event.SseEventSubscriber;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -79,5 +82,31 @@ public class SseRedisConfig {
         return useVirtualThreads
                 ? Executors.newVirtualThreadPerTaskExecutor()
                 : Executors.newFixedThreadPool(dispatchPoolSize);
+    }
+
+    /**
+     * {@code useQueue=false} 일 때 emitter 에 직접 전송하는 executor.
+     *
+     * <p>queue 모드의 {@link #sseVirtualThreadExecutor}는 emitter 당 drain 태스크가 최대 1개라
+     * executor 내부 큐가 자연스럽게 emitter 수에 바인딩된다. no-queue 모드는 이벤트마다 태스크를
+     * 직접 제출하므로 FixedPool 의 {@code LinkedBlockingQueue}(무제한)를 그대로 쓰면
+     * 부하 시 큐가 폭발한다. {@link ArrayBlockingQueue}로 상한을 두고 포화 시 drop 한다.
+     *
+     * <p>VT 는 태스크마다 VirtualThread 를 새로 만들어 내부 큐가 없으므로 bounded 설정이 무의미하다.
+     * 그래서 VT 일 때는 {@link #sseVirtualThreadExecutor}와 동일하게 만든다.
+     */
+    @Bean(destroyMethod = "close")
+    public Executor sseNoQueueExecutor(
+            @Value("${upbid.sse.use-virtual-threads:true}") boolean useVirtualThreads,
+            @Value("${upbid.sse.dispatch-pool-size:4}") int dispatchPoolSize,
+            @Value("${upbid.sse.no-queue-executor-capacity:1024}") int noQueueCapacity) {
+        if (useVirtualThreads) {
+            return Executors.newVirtualThreadPerTaskExecutor();
+        }
+        return new ThreadPoolExecutor(
+                dispatchPoolSize, dispatchPoolSize,
+                0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(noQueueCapacity),
+                new ThreadPoolExecutor.DiscardPolicy());
     }
 }

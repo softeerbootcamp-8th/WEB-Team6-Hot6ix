@@ -35,7 +35,7 @@ class RoomSseManagerTest {
     private static final int QUEUE_CAPACITY = 128;
 
     private static final SseProperties PROPS =
-            new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50, QUEUE_CAPACITY, 4);
+            new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50, QUEUE_CAPACITY, 4, true, 1024);
 
     private final RoomSseManager roomSseManager = newRoomSseManager();
 
@@ -63,7 +63,7 @@ class RoomSseManagerTest {
      */
     private static RoomSseManager newRoomSseManager(
             SseEventBuffer buffer, SseEventPublisher publisher, SimpleMeterRegistry registry) {
-        return new RoomSseManager(PROPS, new SseMetrics(registry), buffer, publisher, Runnable::run) {
+        return new RoomSseManager(PROPS, new SseMetrics(registry), buffer, publisher, Runnable::run, Runnable::run) {
             @Override
             SseEmitter createEmitter() {
                 return new FakeMvcEmitter();

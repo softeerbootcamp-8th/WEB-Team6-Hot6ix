@@ -4,6 +4,7 @@ import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import jakarta.annotation.PostConstruct;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,6 +38,12 @@ public class RoomSseManager {
     private final SseEventPublisher sseEventPublisher;
     /** emitter 별 drain 을 실행하는 executor. VT 또는 고정 플랫폼 스레드 풀을 전역 공유한다. */
     private final Executor sseVirtualThreadExecutor;
+    /**
+     * {@code useQueue=false} 일 때 emitter 에 직접 전송하는 executor.
+     * FixedPool 조합에서 내부 큐가 bounded {@link java.util.concurrent.ArrayBlockingQueue}라
+     * queue 모드와 공정하게 비교할 수 있다.
+     */
+    private final Executor sseNoQueueExecutor;
 
     @PostConstruct
     void bindMetrics() {
@@ -62,11 +69,19 @@ public class RoomSseManager {
 
         if (lastEventId != null) {
             List<BufferedEvent> missed = sseEventBuffer.getEventsAfter(roomId, lastEventId);
-            EmitterDispatcher dispatcher = dispatchers.get(emitter);
-            for (BufferedEvent event : missed) {
-                if (dispatcher != null) {
-                    dispatcher.enqueue(new SseDispatchTask.Event(
-                            roomId, event.eventName(), event.id(), event.data()));
+            if (sseProperties.useQueue()) {
+                EmitterDispatcher dispatcher = dispatchers.get(emitter);
+                for (BufferedEvent event : missed) {
+                    if (dispatcher != null) {
+                        dispatcher.enqueue(new SseDispatchTask.Event(
+                                roomId, event.eventName(), event.id(), event.data()));
+                    }
+                }
+            } else {
+                for (BufferedEvent event : missed) {
+                    SseDispatchTask task = new SseDispatchTask.Event(
+                            roomId, event.eventName(), event.id(), event.data());
+                    sseNoQueueExecutor.execute(() -> sendDirect(roomId, emitter, task));
                 }
             }
         }
@@ -99,9 +114,13 @@ public class RoomSseManager {
 
         sseMetrics.recordBroadcast(name, () -> {
             for (SseEmitter emitter : emitters) {
-                EmitterDispatcher dispatcher = dispatchers.get(emitter);
-                if (dispatcher != null) {
-                    dispatcher.enqueue(task);
+                if (sseProperties.useQueue()) {
+                    EmitterDispatcher dispatcher = dispatchers.get(emitter);
+                    if (dispatcher != null) {
+                        dispatcher.enqueue(task);
+                    }
+                } else {
+                    sseNoQueueExecutor.execute(() -> sendDirect(roomId, emitter, task));
                 }
             }
         });
@@ -137,12 +156,14 @@ public class RoomSseManager {
                 .computeIfAbsent(roomId, id -> ConcurrentHashMap.newKeySet())
                 .add(emitter);
 
-        dispatchers.put(emitter, new EmitterDispatcher(
-                sseVirtualThreadExecutor,
-                sseProperties.emitterQueueCapacity(),
-                roomId,
-                emitter,
-                sseMetrics));
+        if (sseProperties.useQueue()) {
+            dispatchers.put(emitter, new EmitterDispatcher(
+                    sseVirtualThreadExecutor,
+                    sseProperties.emitterQueueCapacity(),
+                    roomId,
+                    emitter,
+                    sseMetrics));
+        }
         sseMetrics.recordConnectionOpened();
     }
 
@@ -203,9 +224,14 @@ public class RoomSseManager {
         sseMetrics.recordHeartbeat(() ->
                 roomEmitters.forEach((roomId, emitters) -> {
                     for (SseEmitter emitter : emitters) {
-                        EmitterDispatcher dispatcher = dispatchers.get(emitter);
-                        if (dispatcher != null) {
-                            dispatcher.enqueue(new SseDispatchTask.Heartbeat(roomId));
+                        SseDispatchTask task = new SseDispatchTask.Heartbeat(roomId);
+                        if (sseProperties.useQueue()) {
+                            EmitterDispatcher dispatcher = dispatchers.get(emitter);
+                            if (dispatcher != null) {
+                                dispatcher.enqueue(task);
+                            }
+                        } else {
+                            sseNoQueueExecutor.execute(() -> sendDirect(roomId, emitter, task));
                         }
                     }
                 }));
@@ -260,5 +286,39 @@ public class RoomSseManager {
         return cause instanceof EmitterDispatcher.QueueSaturatedException
                 ? SseMetrics.CLOSE_QUEUE_SATURATED
                 : SseMetrics.CLOSE_SEND_ERROR;
+    }
+
+    /**
+     * 큐 없이 직접 전송한다. {@code useQueue=false} 일 때 executor 에 제출되는 작업이다.
+     *
+     * <p>전송 실패 시 emitter 를 종료해 생명주기 콜백({@code onError → disconnect})이
+     * 정리를 이어받게 한다. 큐 경로의 {@link EmitterSubscriber}와 같은 패턴이다.
+     */
+    private void sendDirect(Long roomId, SseEmitter emitter, SseDispatchTask task) {
+        try {
+            switch (task) {
+                case SseDispatchTask.Event e ->
+                        emitter.send(SseEmitter.event()
+                                .id(String.valueOf(e.id()))
+                                .name(e.name())
+                                .data(e.data()));
+                case SseDispatchTask.Heartbeat h ->
+                        emitter.send(SseEmitter.event().comment("keep-alive"));
+            }
+        } catch (IOException | IllegalStateException e) {
+            log.debug("sse 직접 전송 중 끊긴 연결: roomId={}, cause={}", roomId,
+                    e.getClass().getSimpleName());
+            completeWithError(emitter, e);
+        } catch (RuntimeException e) {
+            log.warn("sse 직접 전송 실패: roomId={}", roomId, e);
+            completeWithError(emitter, e);
+        }
+    }
+
+    private void completeWithError(SseEmitter emitter, Exception e) {
+        try {
+            emitter.completeWithError(e);
+        } catch (IllegalStateException ignored) {
+        }
     }
 }

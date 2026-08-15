@@ -142,6 +142,12 @@ upbid:
     buffer-size: ${SSE_BUFFER_SIZE:50}
     # emitter 별 이벤트 큐 크기. 포화 시 drop 하므로 heartbeat 주기 안에 처리 가능한 크기로 잡는다.
     emitter-queue-capacity: ${SSE_EMITTER_QUEUE_CAPACITY:128}
+    # true(기본): emitter 별 bounded 큐를 통해 비동기 전송(순서 보장, 포화 제어).
+    # false: 큐 없이 no-queue executor 에 직접 제출(배포 환경 큐 유무 비교용).
+    use-queue: ${SSE_USE_QUEUE:true}
+    # useQueue=false + FixedPool 조합에서 executor 내부 큐 크기. 포화 시 이벤트 drop.
+    # VT 조합에서는 무시된다. 기본값 1024 = 예상 최대 emitter 200 × burst 여유 5.
+    no-queue-executor-capacity: ${SSE_NO_QUEUE_EXECUTOR_CAPACITY:1024}
     # true(기본): 가상 스레드. false: 플랫폼 스레드(부하 측정 비교용).
     use-virtual-threads: ${SSE_USE_VIRTUAL_THREADS:true}
     # use-virtual-threads=false 일 때만 쓴다. 기본 4 는 t4g.micro(2 vCPU) × 2.
