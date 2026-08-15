@@ -239,6 +239,19 @@
     outline-color: color-mix(in oklab, var(--ring) 50%, transparent);
   }
 
+  /*
+   * 스크롤바 자리를 항상 비워 둔다.
+   *
+   * 라이브 경매방은 페이지가 스크롤되면 안 되는 화면이라 `html`/`body` 의
+   * `overflow` 를 잠그는데(`live-shell.tsx`), 그러면 스크롤바가 사라지면서
+   * 뷰포트가 그 폭만큼 넓어진다. 가운데 정렬된 `max-w-[1280px]` 컨테이너가
+   * 절반만큼 밀려서, **같은 상단바인데 라이브 화면에서만 로고가 안쪽으로
+   * 들어가 보였다.** 자리를 미리 잡아 두면 잠가도 폭이 안 변한다.
+   */
+  html {
+    scrollbar-gutter: stable;
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);

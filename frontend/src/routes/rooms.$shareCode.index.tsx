@@ -1531,10 +1531,21 @@ function LiveRoomPage() {
           onClose={() => setPanel('leaderboard')}
           labelledBy="mobile-panel-title"
           dismissible={biddingItemId === null}
-          // 안쪽 패널이 `h-full` 을 쓰므로 다이얼로그 높이를 확정해야 한다.
-          // auto 로 두면 목록이 0 높이로 접혀 화면이 깨진다.
-          // 안쪽 패널이 다이얼로그 테두리에 딱 붙지 않도록 여백을 조금 준다.
-          className="flex h-[min(680px,calc(100svh-3rem))] max-w-[420px] flex-col p-2"
+          /*
+           * 안쪽 패널이 `h-full` 을 쓰므로 다이얼로그 높이를 확정해야 한다.
+           * auto 로 두면 목록이 0 높이로 접혀 화면이 깨진다.
+           * 안쪽 패널이 다이얼로그 테두리에 딱 붙지 않도록 여백을 조금 준다.
+           *
+           * **높이는 패널마다 다르다.** 퀵입찰은 물품이 여러 개 쌓이는 목록이라
+           * 높이가 필요하지만, 공유와 판매자 정보는 내용이 정해져 있어서 같은
+           * 680px 을 주면 아래가 휑하게 빈다.
+           */
+          className={cn(
+            'flex max-w-[420px] flex-col p-2',
+            panel === 'quickBid'
+              ? 'h-[min(680px,calc(100svh-3rem))]'
+              : 'h-[min(520px,calc(100svh-3rem))]',
+          )}
         >
           <h2 id="mobile-panel-title" className="sr-only">
             {PANEL_LABEL[panel]}

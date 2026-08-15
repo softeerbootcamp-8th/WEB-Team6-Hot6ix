@@ -147,8 +147,8 @@ export function MobileLiveView({
        * 안에서만 스크롤된다.
        */}
       <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
-        {/* 앱바 — 375×64 */}
-        <header className="z-30 flex h-16 shrink-0 items-center gap-2 border-b bg-card px-4">
+        {/* 앱바 — 제목 줄. 판매자·참여자·규칙은 아래 정보 줄로 뺐다. */}
+        <header className="z-30 flex h-14 shrink-0 items-center gap-2 border-b bg-card px-4">
           <button
             type="button"
             onClick={onBack}
@@ -158,45 +158,17 @@ export function MobileLiveView({
             <ChevronLeft aria-hidden className="size-6" strokeWidth={2} />
           </button>
 
-          <div className="min-w-0 flex-1">
-            {/*
-             * 두 줄까지 보여준다. 한 줄 말줄임이면 긴 이름이 앞부분만 남아서
-             * 어느 방인지 알 수 없었다(#328). 서버가 100자까지 받으므로 두 줄로도
-             * 다 못 담는 이름은 여전히 있다.
-             *
-             * **`leading-tight` 를 같이 걸어야 한다.** 앱바가 64px 고정이라 기본
-             * 줄간격으로 두 줄을 쓰면 아래 참여자 줄이 밀려 나간다.
-             */}
-            <p className="line-clamp-2 text-[16px] leading-tight font-bold text-foreground">
-              {room.title}
-            </p>
-            {/*
-             * 누가 파는 방인지. 링크만 받고 들어온 사람에게는 이게 첫 단서다.
-             * 판매자 이름을 누르면 판매자 정보가 열리고 방송 링크도 거기 있다(#192·#193).
-             */}
-            <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-[12px] font-medium text-neutral-tertiary">
-              {room.sellerName && onOpenSeller && (
-                <>
-                  <button
-                    type="button"
-                    onClick={onOpenSeller}
-                    className="ease-soft flex min-w-0 items-center gap-1 rounded font-bold text-neutral-secondary underline decoration-dotted underline-offset-2 transition-all duration-150 active:scale-95"
-                  >
-                    <ProfilePhoto
-                      src={room.sellerImageUrl}
-                      iconClassName="size-2.5"
-                      className="size-4 shrink-0 rounded-full bg-brand-50"
-                    />
-                    <span className="min-w-0 truncate">{room.sellerName}</span>
-                  </button>
-                  <span aria-hidden>·</span>
-                </>
-              )}
-              <span className="shrink-0">
-                {participantCount ?? room.participantCount}명 참여 중
-              </span>
-            </p>
-          </div>
+          {/*
+           * 두 줄까지 보여준다. 한 줄 말줄임이면 긴 이름이 앞부분만 남아서 어느
+           * 방인지 알 수 없었다(#328). 서버가 100자까지 받으므로 두 줄로도 다 못
+           * 담는 이름은 여전히 있다.
+           *
+           * **`leading-tight` 를 같이 걸어야 한다.** 앱바 높이가 고정이라 기본
+           * 줄간격으로 두 줄을 쓰면 넘친다.
+           */}
+          <p className="line-clamp-2 min-w-0 flex-1 text-[14px] leading-tight font-bold text-foreground">
+            {room.title}
+          </p>
 
           <button
             type="button"
@@ -234,6 +206,41 @@ export function MobileLiveView({
           {/* 라이브에서도 다른 섹션으로 나갈 수 있어야 한다 */}
           <MobileNavDrawer />
         </header>
+
+        {/*
+         * 정보 줄 — 판매자와 참여자 수, 방 규칙을 한 줄에 모은다.
+         *
+         * 데스크톱 헤더(`live-shell.tsx`)의 둘째 줄과 같은 구성이다. 예전에는
+         * 판매자·참여자가 앱바 안에 있고 규칙 칩만 목록 위에 따로 떨어져 있어서,
+         * 같은 방을 폭만 바꿔 봐도 정보가 다른 자리에 흩어져 보였다.
+         */}
+        <div className="z-20 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b bg-card px-4 py-2">
+          {room.sellerName &&
+            (onOpenSeller ? (
+              <button
+                type="button"
+                onClick={onOpenSeller}
+                className="ease-soft flex min-w-0 items-center gap-1 rounded text-[12px] font-bold text-neutral-secondary underline decoration-dotted underline-offset-2 transition-all duration-150 active:scale-95"
+              >
+                <ProfilePhoto
+                  src={room.sellerImageUrl}
+                  iconClassName="size-2.5"
+                  className="size-4 shrink-0 rounded-full bg-brand-50"
+                />
+                <span className="min-w-0 truncate">{room.sellerName}</span>
+              </button>
+            ) : (
+              <span className="min-w-0 truncate text-[12px] font-bold text-neutral-secondary">
+                {room.sellerName}
+              </span>
+            ))}
+
+          <span className="shrink-0 text-[12px] font-medium text-neutral-tertiary">
+            {participantCount ?? room.participantCount}명 참여 중
+          </span>
+
+          <RoomRuleChips room={room} />
+        </div>
 
         {/* 개발용 조작 — 데스크톱 헤더의 버튼들과 같은 역할이다 */}
         {import.meta.env.DEV && devTools && (
@@ -284,9 +291,6 @@ export function MobileLiveView({
 
         <main className="flex min-h-0 flex-1 flex-col px-4 pt-4">
           {isGuest && <GuestNotice redirectTo={`/rooms/${room.id}`} />}
-
-          {/* 좁아서 헤더에 못 넣는다. 목록 바로 위 한 줄로 둔다. */}
-          <RoomRuleChips room={room} className="shrink-0 pb-3" />
 
           {/*
            * 데스크톱과 같은 목록을 쓴다. 진행 중만 보여주면 시작 전·종료 물품을
