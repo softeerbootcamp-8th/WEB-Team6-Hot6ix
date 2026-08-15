@@ -30,13 +30,22 @@ export function useListFlip<T extends HTMLElement>(
     mounted.current = true
 
     nodes.current.forEach((element, key) => {
-      const next = element.getBoundingClientRect().top
+      /*
+       * **뷰포트가 아니라 `offsetTop` 으로 잰다.** `getBoundingClientRect().top`
+       * 은 스크롤 위치가 섞인 좌표라, 목록이 스크롤되거나 위쪽 레이아웃이 밀리면
+       * 이전 값과 기준이 달라진다. 그러면 한 칸 움직인 항목이 수백 px 을 이동한
+       * 것으로 계산돼 다른 영역 위까지 솟아오른다.
+       */
+      const next = element.offsetTop
       const previous = positions.current.get(key)
       positions.current.set(key, next)
 
       if (reduced || first || previous === undefined) return
       const delta = previous - next
       if (delta === 0) return
+
+      // 먼저 돌던 것이 남아 있으면 어긋난 자리에 멈춘다.
+      element.getAnimations().forEach((animation) => animation.cancel())
 
       element.animate(
         [
