@@ -148,7 +148,7 @@ export function MobileItemDetailView({
             {item.name}
           </h2>
           <p className="mt-2 text-[12px] font-medium text-neutral-tertiary">
-            {sellerName} · {item.category}
+            {sellerName}
           </p>
 
           {/* 현재 최고가 알약 — 브랜드색으로 강조한다. */}
@@ -382,13 +382,14 @@ export function MobileItemDetailView({
                     +{(item.bidUnit * multiplier).toLocaleString('ko-KR')}
                   </button>
                 ))}
+                {/* 칸을 비우는 게 아니라 최소 입찰가를 넣는다. `quick-bid-overlay.tsx` 참고. */}
                 <button
                   type="button"
                   onClick={() => onAmountChange?.(minimum)}
                   disabled={amount === minimum}
                   className="ease-soft h-10 shrink-0 rounded-xl bg-fill px-3 text-[13px] font-bold text-neutral-tertiary transition-all duration-150 active:scale-95 disabled:opacity-40"
                 >
-                  초기화
+                  최소가
                 </button>
               </div>
 

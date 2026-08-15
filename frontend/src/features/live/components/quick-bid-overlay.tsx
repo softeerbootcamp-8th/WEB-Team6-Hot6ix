@@ -233,13 +233,18 @@ function QuickBidCard({
               </button>
             ))}
 
+            {/*
+             * "초기화" 가 아니라 "최소가" 다. 이 버튼은 칸을 비우는 게 아니라
+             * `현재가 + 입찰 단위` 를 넣는데, 초기화라고 적혀 있으면 쓰던 금액이
+             * 지워지는 줄 알고 눌렀다가 3,000원 같은 값이 들어온 것으로 본다(#328).
+             */}
             <button
               type="button"
               onClick={() => setAmount(minimum)}
               disabled={amount === minimum}
               className="ease-soft h-9 shrink-0 rounded-xl bg-fill px-3 text-[13px] font-bold text-neutral-tertiary transition-all duration-150 active:scale-95 disabled:opacity-40"
             >
-              초기화
+              최소가
             </button>
           </div>
 
