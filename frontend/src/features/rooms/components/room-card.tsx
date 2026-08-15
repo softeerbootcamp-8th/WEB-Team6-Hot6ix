@@ -39,7 +39,14 @@ export function RoomCard({ room }: { room: RoomCardData }) {
   const isClosed = room.status === 'CLOSED'
 
   return (
-    <li className="rounded-2xl border bg-card p-4">
+    /*
+     * **`min-w-0` 이 없으면 카드가 화면 밖으로 넘어간다.** 목록이 `grid` 인데
+     * 항목의 기본 `min-width` 는 `auto` 라 내용의 min-content 폭까지 늘어난다.
+     * 제목에 걸린 `truncate` 가 `nowrap` 이라 방 이름이 길면 min-content 가 그
+     * 길이만큼 커지고, 카드가 넓어지면서 오른쪽 끝의 입장 버튼이 화면 밖으로
+     * 밀려 아예 안 보였다 (`UI-RULES.md` 4장의 같은 지뢰).
+     */
+    <li className="min-w-0 rounded-2xl border bg-card p-4">
       {/*
         모바일은 카드 폭이 좁아 썸네일을 한 단계 줄이고 사이 여백을 넓힌다.
         124 + 16 이면 오른쪽 글자 칸이 눌려 제목이 금방 잘렸다.
@@ -47,7 +54,7 @@ export function RoomCard({ room }: { room: RoomCardData }) {
       <div className="flex gap-5 sm:gap-4">
         <ProductThumbnail
           src={room.imageUrl}
-          className="flex size-[104px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-fill text-neutral-muted sm:size-[136px]"
+          className="flex size-[88px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-fill text-neutral-muted sm:size-[136px]"
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -83,20 +90,29 @@ export function RoomCard({ room }: { room: RoomCardData }) {
             </span>
           </div>
 
-          <h3 className="mt-2.5 truncate text-[17px] font-bold text-foreground">
+          {/*
+            길면 자른다. 방 이름은 서버가 100자까지 받는데, 카드 폭은 정해져
+            있어서 통째로 보여줄 방법이 없다.
+          */}
+          <h3 className="mt-2.5 truncate text-[15px] font-bold text-foreground sm:text-[17px]">
             {room.title}
           </h3>
           <p className="mt-1.5 text-[13px] font-medium text-neutral-tertiary">
             {room.sellerName}
           </p>
 
+          {/*
+            **버튼은 절대 줄어들지 않는다.** `shrink-0` 이 없으면 공간이 모자랄 때
+            flex 가 버튼부터 짓눌러서, 방 이름이 긴 카드에서는 "입장하기" 가
+            폭 0 까지 밀려 아예 안 보였다. 좁으면 글자 쪽이 줄어야 한다.
+          */}
           <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-2 pt-4">
-            <p className="text-[12px] font-semibold text-neutral-secondary">
+            <p className="shrink-0 text-[12px] font-semibold text-neutral-secondary">
               물품 {room.itemCount}
             </p>
             {/* 참여자 수를 모르면 "0명"이라고 단정하지 않고 줄을 뺀다. */}
             {room.participantCount != null && (
-              <p className="text-[12px] font-medium text-neutral-tertiary">
+              <p className="min-w-0 truncate text-[12px] font-medium text-neutral-tertiary">
                 {isLive
                   ? `${room.participantCount}명 참여 중`
                   : `참여 ${room.participantCount}명`}
@@ -107,7 +123,7 @@ export function RoomCard({ room }: { room: RoomCardData }) {
               <Link
                 to="/rooms/$shareCode"
                 params={{ shareCode: room.shareCode }}
-                className="ml-auto flex h-9 items-center rounded-[10px] bg-brand-500 px-5 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+                className="ml-auto flex h-9 shrink-0 items-center rounded-[10px] bg-brand-500 px-5 text-[13px] font-bold whitespace-nowrap text-white transition-opacity hover:opacity-90"
               >
                 입장하기
               </Link>
@@ -116,7 +132,7 @@ export function RoomCard({ room }: { room: RoomCardData }) {
               <Link
                 to="/rooms/$shareCode"
                 params={{ shareCode: room.shareCode }}
-                className="ease-soft ml-auto flex h-9 items-center rounded-[10px] border px-4 text-[13px] font-semibold text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95"
+                className="ease-soft ml-auto flex h-9 shrink-0 items-center rounded-[10px] border px-4 text-[13px] font-semibold whitespace-nowrap text-neutral-secondary transition-all duration-150 hover:border-border-strong active:scale-95"
               >
                 {isClosed
                   ? `종료 ${room.closedAt ? formatDate(room.closedAt) : ''}`
