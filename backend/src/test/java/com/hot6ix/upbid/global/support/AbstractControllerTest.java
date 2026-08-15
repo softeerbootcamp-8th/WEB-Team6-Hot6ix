@@ -4,7 +4,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.bid.ratelimit.BidRateLimiter;
-import com.hot6ix.upbid.global.alert.SlackAlertService;
 import com.hot6ix.upbid.global.session.SessionManager;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,9 +36,6 @@ public abstract class AbstractControllerTest {
 
     @MockitoBean
     protected SessionManager sessionManager;
-
-    @MockitoBean
-    protected SlackAlertService slackAlertService;
 
     /**
      * {@code BidRateLimitInterceptor}는 입찰 경로에만 매핑되지만, 그 인터셉터를 생성자로

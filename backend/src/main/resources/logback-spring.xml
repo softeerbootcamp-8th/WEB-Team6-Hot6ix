@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  이 파일이 없던 동안 Spring Boot 기본 콘솔 설정만 나갔다. 그대로 두면 나중에 로그를
+  수집기로 보낼 때 붙일 자리가 없어서 여기서 한 번 잡아 둔다.
+
+  콘솔 출력은 Boot 기본을 그대로 include 한다. 형식을 직접 적으면 Boot 를 올릴 때마다
+  기본 패턴과 어긋나고, application.yaml 의 logging.level 설정도 계속 그대로 먹는다.
+-->
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!--
+      appender 는 Spring 빈이 아니라 @Value 나 주입을 못 받는다. 값을 넘길 수 있는 통로가
+      springProperty 뿐이라 여기서 읽어 아래 appender 의 setter 로 넣는다.
+    -->
+    <springProperty scope="context" name="SLACK_WEBHOOK_URL"
+                    source="app.alert.slack.webhook-url"/>
+    <springProperty scope="context" name="SLACK_COOLDOWN_SECONDS"
+                    source="app.alert.slack.cooldown-seconds" defaultValue="60"/>
+
+    <springProfile name="prod">
+        <!--
+          운영에서만 켠다. 로컬과 부하 측정에서 켜면 팀 채널이 개발 중 에러로 덮인다.
+
+          ThresholdFilter 로 ERROR 만 통과시킨다. 알림 여부를 로그 레벨에 묶는 것이 이 방식의
+          핵심이라, "알릴 만한 실패면 log.error 로 남긴다"가 곧 규칙이 된다.
+        -->
+        <appender name="SLACK" class="com.hot6ix.upbid.global.alert.SlackAppender">
+            <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                <level>ERROR</level>
+            </filter>
+            <webhookUrl>${SLACK_WEBHOOK_URL}</webhookUrl>
+            <cooldownSeconds>${SLACK_COOLDOWN_SECONDS}</cooldownSeconds>
+        </appender>
+    </springProfile>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <springProfile name="prod">
+            <appender-ref ref="SLACK"/>
+        </springProfile>
+    </root>
+
+</configuration>
