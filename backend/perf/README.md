@@ -300,11 +300,21 @@ Soft Close 가 마감을 계속 미루기 때문입니다. 실제로 `--items 20
   히트율이 왜 0인지 나중에서야 알게 됩니다.
 - **4xx는 0이어야 합니다.** 결과 조회도 `@GuestAllowed`라 거절 규칙이 없습니다. 4xx가
   찍히면 공유 코드나 시딩이 틀린 것입니다.
+- **`--result-cache on|off`(기본 on)로 캐시(#329)를 껐다 켰다 합니다.** 값 하나만 바꿔
+  같은 조건을 두 번 재는 것이 이 시나리오의 목적입니다 — `--sweep-index`와 같은 방식입니다.
 
 ```bash
-./perf/run.sh --scenario 10 --rate 200 --vus 200 --results-auth guest
-./perf/run.sh --scenario 10 --rate 200 --vus 200 --results-auth member
+./perf/run.sh --scenario 10 --rate 200 --vus 200 --results-auth guest  --result-cache off
+./perf/run.sh --scenario 10 --rate 200 --vus 200 --results-auth guest  --result-cache on
+./perf/run.sh --scenario 10 --rate 200 --vus 200 --results-auth member --result-cache off
+./perf/run.sh --scenario 10 --rate 200 --vus 200 --results-auth member --result-cache on
 ```
+
+`result_cache_hit_rate`가 1에 가까운지 먼저 봅니다(0에 가까우면 시딩이 방을 못 닫은
+것이라 그 줄은 버립니다). 그다음 `select_per_result`(캐시가 실제로 DB를 안 건드린다는
+직접 증거 — guest는 0에 수렴, member는 로그인 요청마다 남는 순위 조회 1건 때문에 1
+근처)를 `p95_ms`·`throughput_req_per_s`·`mysql_cpu_avg`·`hikari_*`와 함께 off 줄과
+나란히 놓습니다.
 
 ### 동시 출발 정합성
 

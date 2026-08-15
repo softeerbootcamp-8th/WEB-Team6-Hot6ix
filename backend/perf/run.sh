@@ -84,6 +84,9 @@ SWEEP_INDEX=off
 BURST_MODE=same
 # 시나리오 10(결과 조회) 전용. guest 는 비로그인, member 는 로그인 요청이다 (#329).
 RESULTS_AUTH=guest
+# 결과 조회 캐시(#329). off/on 한 값만 바꿔 같은 조건을 두 번 재는 것이 이 시나리오의
+# 목적이다 (--sweep-index 와 같은 방식).
+RESULT_CACHE=on
 # 입찰 Rate Limiter(#324). 서비스 규칙(초당 1~2건)은 사람 손 속도 기준이라, 부하
 # 테스트 VU 처럼 응답을 받는 즉시 다음 요청을 쏘면 서버 처리량이 아니라 이 버킷의
 # 재충전 속도를 재게 된다 — 실측으로 seed.sh 의 연속 입찰조차 7009 로 거절됐다.
@@ -150,6 +153,8 @@ usage() {
   --burst-mode same|increasing  시나리오 8의 금액. 동일 금액 또는 VU별 증가 금액 (기본 same)
   --results-auth guest|member   시나리오 10의 로그인 여부 (기본 guest). member 는 캐시가
                      히트해도 내 순위 조회 한 번이 남는 경로를 잰다
+  --result-cache on|off  결과 조회 캐시(#329) (기본 on). off/on 한 값만 바꿔 두 번 재서
+                     전/후를 비교한다 — 값 하나만 바꾼다는 원칙은 --sweep-index 와 같다
   --bid-rate-limit on|off  입찰 Rate Limiter(#324) (기본 off — 부하 테스트 VU 속도에서는
                      서버가 아니라 리미터 버킷을 재게 된다). 리미터 자체를 검증하려면 on
 
@@ -211,6 +216,7 @@ while [ $# -gt 0 ]; do
     --sweep-index) SWEEP_INDEX="$2"; shift 2 ;;
     --burst-mode) BURST_MODE="$2"; shift 2 ;;
     --results-auth) RESULTS_AUTH="$2"; shift 2 ;;
+    --result-cache) RESULT_CACHE="$2"; shift 2 ;;
     --bid-rate-limit) BID_RATE_LIMIT="$2"; shift 2 ;;
     --duration) DURATION="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
@@ -248,6 +254,11 @@ esac
 case "$RESULTS_AUTH" in
   guest|member) ;;
   *) echo "--results-auth는 guest 또는 member이다 (받은 값: $RESULTS_AUTH)" >&2; exit 1 ;;
+esac
+
+case "$RESULT_CACHE" in
+  on|off) ;;
+  *) echo "--result-cache는 on 또는 off이다 (받은 값: $RESULT_CACHE)" >&2; exit 1 ;;
 esac
 
 case "$BID_RATE_LIMIT" in
@@ -527,6 +538,15 @@ if [ "$BID_RATE_LIMIT" = "on" ]; then
   export BID_RATE_LIMIT_ENABLED=true
 else
   export BID_RATE_LIMIT_ENABLED=false
+fi
+if [ "$RESULT_CACHE" = "on" ]; then
+  export RESULT_CACHE_ENABLED=true
+  # index.csv 한 칸에 TTL까지 담아 칸 수를 안 불린다 (isolation과 같은 성격).
+  # TTL을 CLI로 따로 안 열어서 docker-compose.perf.yml 기본값과 여기 표기를 함께 바꾼다.
+  RESULT_CACHE_LABEL="on:60s"
+else
+  export RESULT_CACHE_ENABLED=false
+  RESULT_CACHE_LABEL="off"
 fi
 
 # 한 방에서 동시에 진행할 수 있는 물품 수. 서비스 규칙은 3이고 perf 프로파일이 이미 50으로
@@ -1239,6 +1259,23 @@ P99_MS="$(quantile_of "http_server_requests_seconds_bucket{$MAIN}" 0.99)"
 # 다른 시나리오에서는 이 경로를 안 때리므로 NaN 이 정상이다.
 ROOM_READ_P95_MS="$(p95_of "http_server_requests_seconds_bucket{$RUN, uri=\"/api/v1/auction-rooms/share/{shareCode}\"}")"
 ITEMS_READ_P95_MS="$(p95_of "http_server_requests_seconds_bucket{$RUN, uri=\"/api/v1/auction-rooms/share/{shareCode}/auction-items\"}")"
+
+# 시나리오 10(결과 조회, #329)의 캐시 히트율. Counter `upbid.auction.result.cache`가
+# `result=hit|miss` 태그로 갈린다 — 생성자에서 미리 등록해 둬서 첫 요청 전에도 시계열이
+# 있다. 다른 시나리오는 이 카운터를 건드리지 않아 hits+misses가 0 이라 NaN 이 정상이다.
+#
+# 쿼리를 변수에 먼저 담고 나서 promq 에 넘긴다. `promq "sum($(delta "..."))..."`처럼
+# $(delta ...) 를 promq 호출 안에서 바로 중첩하면 태그 필터(result="hit")가 있는 조건에서
+# 실측으로 NaN 이 나왔다 — 만들어진 쿼리 문자열은 바이트까지 동일한데(diff 로 확인),
+# 변수에 먼저 담아 한 단계 거쳐 넘기면 항상 값이 나온다. 원인은 못 밝혔지만 재현 가능한
+# 회피책이라 이 형태로 고정한다.
+RESULT_CACHE_HIT_QUERY="sum($(delta "upbid_auction_result_cache_total{$RUN, result=\"hit\"}")) or vector(0)"
+RESULT_CACHE_MISS_QUERY="sum($(delta "upbid_auction_result_cache_total{$RUN, result=\"miss\"}")) or vector(0)"
+RESULT_CACHE_HITS="$(promq "$RESULT_CACHE_HIT_QUERY")"
+RESULT_CACHE_MISSES="$(promq "$RESULT_CACHE_MISS_QUERY")"
+RESULT_CACHE_HIT_RATE="$(awk -v h="$RESULT_CACHE_HITS" -v m="$RESULT_CACHE_MISSES" \
+  'BEGIN { t = h + m; if (t > 0) printf "%.4f", h / t; else print "NaN" }')"
+
 TOMCAT_BUSY_MAX="$(promq "max(max_over_time(tomcat_threads_busy_threads{$RUN}[$W]))")"
 HIKARI_ACTIVE_MAX="$(promq "max(max_over_time(hikaricp_connections_active{$RUN}[$W]))")"
 HIKARI_PENDING_MAX="$(promq "max(max_over_time(hikaricp_connections_pending{$RUN}[$W]))")"
@@ -1527,6 +1564,14 @@ SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER
   'BEGIN { if (attempts + 0 <= 0 || after == "" || before == "") print "NaN";
            else printf "%.1f\n", (after - before) / attempts }')"
 
+# 시나리오 10(결과 조회, #329) 전용. 캐시가 실제로 DB를 안 건드린다는 직접 증거다 —
+# on 이면 0에 가깝고(guest) 로그인 요청은 내 순위 쿼리 1건만 남아 1 근처여야 한다.
+# 다른 시나리오는 RESULTS_OK 가 0 이라 NaN 이 정상이다.
+SELECT_PER_RESULT="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER" \
+                          -v n="$RESULTS_OK" \
+  'BEGIN { if (n + 0 <= 0 || after == "" || before == "") print "NaN";
+           else printf "%.2f\n", (after - before) / n }')"
+
 # 그래프를 나중에 다시 그릴 수 있게 원본 시계열도 남긴다.
 # 숫자 몇 개만 남기면 "이 계단은 왜 이렇지"를 되짚을 수 없다.
 {
@@ -1610,7 +1655,7 @@ jq -n \
     window:{start:$start, end:$end, seconds:$window_seconds},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,result_cache,result_auth,result_cache_hit_rate,select_per_result,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_conn_max,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -1645,6 +1690,7 @@ VALUES=( \
   "$RPS" "$BID_ATTEMPT_PER_S" "$ACCEPTED_PER_S" "$BID_ACCEPT_RATE" \
   "$P95_MS" "$P99_MS" "$K6_P95_MS" "$K6_P99_MS" \
   "$ROOM_READ_P95_MS" "$ITEMS_READ_P95_MS" \
+  "$RESULT_CACHE_LABEL" "$RESULTS_AUTH" "$RESULT_CACHE_HIT_RATE" "$SELECT_PER_RESULT" \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$CONN_ACQUIRE_P99_MS" "$CONN_USAGE_P95_MS" "$CONN_USAGE_P99_MS" "$CONN_TIMEOUT_COUNT" "$HEAP_MB_MAX" \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
@@ -1812,8 +1858,10 @@ if [ "$SCENARIO" = "9" ]; then
 fi
 # 시나리오 10 은 결과 조회 하나가 주인공이다. 다른 시나리오는 이 경로를 안 때려서 NaN 이다.
 if [ "$SCENARIO" = "10" ]; then
-  printf '결과 조회(%s) p95 %s ms   처리량 %s req/s   (정상 %s / 4xx %s / 실패 %s)\n' \
-    "$RESULTS_AUTH" "$P95_MS" "$RPS" "$RESULTS_OK" "$RESULTS_4XX" "$RESULTS_FAILED"
+  printf '결과 조회(%s, 캐시 %s) p95 %s ms   처리량 %s req/s   (정상 %s / 4xx %s / 실패 %s)\n' \
+    "$RESULTS_AUTH" "$RESULT_CACHE_LABEL" "$P95_MS" "$RPS" "$RESULTS_OK" "$RESULTS_4XX" "$RESULTS_FAILED"
+  printf '  캐시 히트율 %s   (히트 %s / 미스 %s)   요청당 SELECT %s 회\n' \
+    "$RESULT_CACHE_HIT_RATE" "$RESULT_CACHE_HITS" "$RESULT_CACHE_MISSES" "$SELECT_PER_RESULT"
 fi
 printf '락앞 p95 %s ms → 락대기 p95 %s ms → 락유지 p95 %s ms (접수 %s / 거절 %s, 커밋 %s)\n' \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
