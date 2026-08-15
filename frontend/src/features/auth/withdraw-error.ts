@@ -1,5 +1,7 @@
 import { isAxiosError } from 'axios'
 
+import { readValidationMessage } from '@/lib/validation-message'
+
 /**
  * 회원탈퇴가 거절된 이유를 사용자 문구로 바꾼다.
  *
@@ -53,5 +55,9 @@ export function toWithdrawErrorMessage(error: unknown): WithdrawErrorMessage {
     )
   }
 
-  return known ?? UNKNOWN
+  // 어느 칸이 왜 걸렸는지는 서버가 알려준 문구가 표보다 정확하다.
+  const detail = readValidationMessage(error)
+  const message = known ?? UNKNOWN
+
+  return detail === null ? message : { ...message, description: detail }
 }
