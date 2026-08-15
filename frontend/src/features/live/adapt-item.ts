@@ -74,6 +74,14 @@ function toLeaderboard(
 
 export function toAuctionItemDetail(
   dto: AuctionItemSummaryResponseDto | AuctionItemDetailResponseDto,
+  /**
+   * 방 기본 입찰 단위. **목록 응답에는 입찰 단위가 없어서 이게 필요하다.**
+   *
+   * 서버가 물품을 담을 때 방 값을 그대로 복사하므로(`AuctionItemService.add`)
+   * 둘은 항상 같다. 예전에는 이 자리를 목업 물품이 채우고 있어서 빠진 줄 몰랐고,
+   * 목업을 걷어내자 빠른 입찰의 증액 버튼이 `+0원` 이 됐다.
+   */
+  roomBidUnit = 0,
 ): AuctionItemDetail {
   // 상세 DTO 에만 있는 필드. 목록 응답이면 undefined 다.
   const detail = dto as AuctionItemDetailResponseDto
@@ -105,7 +113,7 @@ export function toAuctionItemDetail(
      */
     startPrice: detail.startingPrice ?? dto.currentPrice ?? 0,
     currentPrice: dto.currentPrice ?? 0,
-    bidUnit: detail.bidIncrement ?? 0,
+    bidUnit: detail.bidIncrement ?? roomBidUnit,
     leaderboard,
     /*
      * 최고 입찰자는 리더보드 1등이다. 서버가 리더보드를 준 이상 별도 필드가
@@ -161,8 +169,9 @@ export function emptyItem(id: number): AuctionItemDetail {
 /** 목록 응답을 화면 배열로 바꾼다. */
 export function toAuctionItems(
   dtos: AuctionItemSummaryResponseDto[],
+  roomBidUnit = 0,
 ): AuctionItemDetail[] {
-  return dtos.map((dto) => toAuctionItemDetail(dto))
+  return dtos.map((dto) => toAuctionItemDetail(dto, roomBidUnit))
 }
 
 /**

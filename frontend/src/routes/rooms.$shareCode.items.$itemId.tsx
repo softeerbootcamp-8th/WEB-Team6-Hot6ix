@@ -76,17 +76,22 @@ function AuctionItemPage() {
    */
   const myBidsRef = useRef<Set<string>>(new Set())
 
-  const serverItems = useMemo(
-    () => toAuctionItems(summaries.data?.data ?? []),
-    [summaries.data],
-  )
-
   /*
    * 방 정보도 서버에서 받는다. 예전에는 제목·판매자명만 쓴다고 목업으로
    * 뒀는데, 헤더가 입찰 단위와 연장 규칙까지 보여주게 되면서 남의 방 숫자가
    * 사실인 것처럼 붙었다. 규칙은 방마다 달라 목업으로 대신할 수 없다.
+   *
+   * **물품 목록보다 먼저 읽는다.** 목록 응답에 입찰 단위가 없어서 방 값을
+   * 넘겨야 하기 때문이다.
    */
   const roomQuery = useGetRoomByShareCode(shareCode)
+  const roomBidUnit = roomQuery.data?.data?.bidIncrement ?? 0
+
+  const serverItems = useMemo(
+    () => toAuctionItems(summaries.data?.data ?? [], roomBidUnit),
+    [summaries.data, roomBidUnit],
+  )
+
   const room = useMemo(
     () => toAuctionRoomDetail(roomQuery.data?.data ?? {}, serverItems),
     [roomQuery.data, serverItems],
@@ -117,8 +122,8 @@ function AuctionItemPage() {
       serverItems.find((candidate) => candidate.id === auctionItemId) ??
       emptyItem(auctionItemId)
     if (!detailDto || detailDto.auctionItemId !== auctionItemId) return listItem
-    return toAuctionItemDetail(detailDto)
-  }, [serverItems, detailDto, auctionItemId])
+    return toAuctionItemDetail(detailDto, roomBidUnit)
+  }, [serverItems, detailDto, auctionItemId, roomBidUnit])
 
   const item = override?.id === base.id ? override : base
 

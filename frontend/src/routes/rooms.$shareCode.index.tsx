@@ -226,9 +226,14 @@ function LiveRoomPage() {
 
   const queryClient = useQueryClient()
   const summaries = useGetSummaries(shareCode)
+  /*
+   * 목록 응답에는 입찰 단위가 없다. 방 값을 넘겨 채운다 — 서버가 물품을 담을 때
+   * 방 값을 복사하므로 둘은 항상 같다.
+   */
+  const roomBidUnit = roomQuery.data?.data?.bidIncrement ?? 0
   const serverItems = useMemo(
-    () => toAuctionItems(summaries.data?.data ?? []),
-    [summaries.data],
+    () => toAuctionItems(summaries.data?.data ?? [], roomBidUnit),
+    [summaries.data, roomBidUnit],
   )
 
   /*
