@@ -64,6 +64,8 @@ services:
       - SCHEDULER_POOL_SIZE=${SCHEDULER_POOL_SIZE:-4}
       - SSE_HEARTBEAT_MS=${SSE_HEARTBEAT_MS:-30000}
       - SSE_TIMEOUT_MS=${SSE_TIMEOUT_MS:-3600000}
+      - SSE_USE_VIRTUAL_THREADS=${SSE_USE_VIRTUAL_THREADS:-true}
+      - SSE_DISPATCH_POOL_SIZE=${SSE_DISPATCH_POOL_SIZE:-4}
       - MAX_IN_PROGRESS_PER_ROOM=${MAX_IN_PROGRESS_PER_ROOM:-50}
       # 전역 스위치다. 스케줄러뿐 아니라 톰캣도 함께 가상 스레드로 바뀐다.
       - VIRTUAL_THREADS=${VIRTUAL_THREADS:-false}
@@ -180,6 +182,26 @@ services:
       # k6 자체 지표도 히스토그램으로 밀어 넣어야 p95 를 Grafana 에서 뽑는다.
       - K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),max,avg
       - BASE_URL=http://nginx/api/v1
+
+  # k6의 일반 HTTP API는 스트리밍 응답 본문을 이벤트 단위로 넘겨주지 않는다. 이 프로세스가
+  # 실제 SSE 프레임을 끝까지 읽으면서 누락·중복·순서·E2E 지연을 계측한다. 서버 자원 제한에
+  # 포함시키면 부하 발생기가 앱과 CPU를 나눠 쓰게 되므로 cpus/mem_limit은 일부러 두지 않는다.
+  sse-client:
+    image: node:24-alpine
+    profiles: ["tools"]
+    init: true
+    working_dir: /app
+    volumes:
+      - ./sse-client:/app:ro
+    command: ["node", "/app/client.mjs"]
+    environment:
+      - BASE_URL=${SSE_CLIENT_BASE_URL:-http://nginx/api/v1}
+      - RUN_ID=${SSE_CLIENT_RUN_ID:-standalone}
+      - SHARE_CODES=${SSE_CLIENT_SHARE_CODES:-}
+      - CONNECTIONS=${SSE_CLIENT_CONNECTIONS:-1}
+      - RAMP_UP_SECONDS=${SSE_CLIENT_RAMP_SECONDS:-120}
+      - METRICS_PORT=9091
+    stop_grace_period: 10s
 
 volumes:
   prometheus-data:

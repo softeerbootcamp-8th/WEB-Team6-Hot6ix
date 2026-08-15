@@ -26,6 +26,8 @@ const rejectedClosed = new Counter('bid_rejected_closed')       // 7001, 7002
 const concurrentConflict = new Counter('bid_concurrent_conflict') // 7006 — 나오면 그게 발견이다
 const rejectedOther = new Counter('bid_rejected_other')         // 401·403 등. 나오면 세팅이 잘못된 것
 const serverFailed = new Counter('bid_failed')                  // 5xx·타임아웃. 진짜 실패는 이것뿐
+const sseCorrelationFailed = new Counter('sse_correlation_failed')
+const SSE_CORRELATION_URL = __ENV.SSE_CORRELATION_URL || ''
 
 export function setupCheck() {
   if (ITEM_IDS.length === 0) {
@@ -110,6 +112,10 @@ export function prepareBid(itemIds = null) {
 
 /** 준비가 끝난 입찰 POST를 보내고 기존과 같은 결과 counter에 기록한다. */
 export function submitBid(itemId, amount) {
+  // SSE payload에는 서버 발행 시각이 없다. 운영 계약을 바꾸지 않고 요청→수신 E2E 지연을
+  // 재기 위해 요청을 보내기 직전의 시각을 실제 SSE 파서에 전달한다. itemId+amount는 접수된
+  // 입찰마다 유일하고 BID_PLACED payload에도 그대로 들어 있어 양쪽을 정확히 매칭할 수 있다.
+  const sentAtMs = Date.now()
   const res = http.post(`${BASE}/auction-items/${itemId}/bids`, JSON.stringify({ amount }), {
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     // 전역 discardResponseBodies 를 여기서만 뒤집는다. code 를 읽어야 거절 종류를 가른다.
@@ -118,6 +124,17 @@ export function submitBid(itemId, amount) {
   })
 
   countResult(res)
+
+  if (res.status === 201 && SSE_CORRELATION_URL) {
+    const correlation = http.post(SSE_CORRELATION_URL, JSON.stringify({ itemId, amount, sentAtMs }), {
+      headers: { 'Content-Type': 'application/json' },
+      responseType: 'none',
+      tags: { name: 'sse-correlation' },
+    })
+    if (correlation.status !== 202) {
+      sseCorrelationFailed.add(1)
+    }
+  }
 
   return res
 }

@@ -76,6 +76,7 @@ public class BidService {
     @Transactional
     public BidCreateResponseDto place(Long auctionItemId, Long bidderUserId, Long amount) {
 
+        long enteredAt = System.nanoTime();
         LocalDateTime arrivedAt = LocalDateTime.now(clock);
 
         User bidder = userRepository.findByUserIdAndDeletedAtIsNull(bidderUserId)
@@ -85,6 +86,8 @@ public class BidService {
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         validateEntitled(auctionItemId, bidder, sellerUserId);
+
+        bidMetrics.recordBeforeLock(enteredAt);
 
         // 락 시작. 여기서 기다린 시간을 잰다 (자세한 이유는 BidMetrics 참고).
         AuctionItem auctionItem = bidMetrics.recordLockWait(() ->

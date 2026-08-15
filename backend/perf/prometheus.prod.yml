@@ -23,3 +23,9 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+  # 측정 EC2 안에서 도는 실제 SSE 프레임 파서. 실행 중이 아닐 때 target down은 정상이다.
+  - job_name: sse-client
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["sse-client:9091"]

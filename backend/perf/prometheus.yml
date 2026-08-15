@@ -22,3 +22,10 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+  # 시나리오 3·10과 --sse 실행에서만 뜬다. 없을 때 target이 down인 것은 정상이다.
+  # 앱의 send 성공과 실제 클라이언트 수신을 같은 Prometheus 시각축에서 비교한다.
+  - job_name: sse-client
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["sse-client:9091"]
