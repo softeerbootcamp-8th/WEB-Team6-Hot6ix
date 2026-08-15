@@ -163,6 +163,10 @@ jobs:
             REDIS_PORT='${{ vars.REDIS_PORT }}'
             REDIS_PASSWORD='${{ secrets.REDIS_PASSWORD }}'
             REDIS_SSL_ENABLED='${{ vars.REDIS_SSL_ENABLED }}'
+            RATE_LIMIT_REDIS_TIMEOUT='${{ vars.RATE_LIMIT_REDIS_TIMEOUT }}'
+            BID_RATE_LIMIT_ENABLED='${{ vars.BID_RATE_LIMIT_ENABLED }}'
+            BID_RATE_LIMIT_CAPACITY='${{ vars.BID_RATE_LIMIT_CAPACITY }}'
+            BID_RATE_LIMIT_REFILL_PER_SECOND='${{ vars.BID_RATE_LIMIT_REFILL_PER_SECOND }}'
             EOF
             docker compose pull app
             docker compose up -d

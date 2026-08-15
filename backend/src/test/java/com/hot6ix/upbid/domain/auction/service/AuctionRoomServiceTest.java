@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auction.dto.cache.AuctionRoomPublicSnapshot;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto;
@@ -68,6 +69,14 @@ class AuctionRoomServiceTest {
 
     @Mock
     private AuctionRoomShareService auctionRoomShareService;
+
+    /**
+     * 공개 조회의 방 부분은 이 빈이 캐시에서 읽어 온다. 여기서는 무엇을 담아 오는지가 아니라
+     * 그 위에 보는 사람 몫(isOwner, agreedToTerms)을 얹는 규칙을 본다. 읽어 오는 쪽은
+     * {@link AuctionRoomPublicCacheServiceTest}에서 본다.
+     */
+    @Mock
+    private AuctionRoomPublicCacheService auctionRoomPublicCacheService;
 
     @Mock
     private DealCandidateRepository dealCandidateRepository;
@@ -211,8 +220,8 @@ class AuctionRoomServiceTest {
                 .softCloseExtendSeconds(60)
                 .build();
 
-        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("aBcD1234aBcD1234"))
-                .thenReturn(Optional.of(auctionRoom));
+        when(auctionRoomPublicCacheService.findSnapshot("aBcD1234aBcD1234"))
+                .thenReturn(AuctionRoomPublicSnapshot.from(auctionRoom, 0L));
 
         assertThat(auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", SELLER_USER_ID + 1)
                 .isOwner()).isFalse();
@@ -235,9 +244,8 @@ class AuctionRoomServiceTest {
                 .build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
 
-        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("aBcD1234aBcD1234"))
-                .thenReturn(Optional.of(auctionRoom));
-        when(auctionItemRepository.countByAuctionRoom_AuctionRoomId(10L)).thenReturn(3L);
+        when(auctionRoomPublicCacheService.findSnapshot("aBcD1234aBcD1234"))
+                .thenReturn(AuctionRoomPublicSnapshot.from(auctionRoom, 3L));
 
         AuctionRoomPublicResponseDto response =
                 auctionRoomService.getRoomByShareCode("aBcD1234aBcD1234", SELLER_USER_ID);
@@ -267,8 +275,8 @@ class AuctionRoomServiceTest {
                 .build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
 
-        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
-                .thenReturn(Optional.of(auctionRoom));
+        when(auctionRoomPublicCacheService.findSnapshot(SHARE_CODE))
+                .thenReturn(AuctionRoomPublicSnapshot.from(auctionRoom, 0L));
         when(auctionParticipantRepository
                 .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(10L, SELLER_USER_ID + 1))
                 .thenReturn(true);
@@ -296,8 +304,8 @@ class AuctionRoomServiceTest {
                 .build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
 
-        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
-                .thenReturn(Optional.of(auctionRoom));
+        when(auctionRoomPublicCacheService.findSnapshot(SHARE_CODE))
+                .thenReturn(AuctionRoomPublicSnapshot.from(auctionRoom, 0L));
 
         AuctionRoomPublicResponseDto response =
                 auctionRoomService.getRoomByShareCode(SHARE_CODE, SELLER_USER_ID);
@@ -323,8 +331,8 @@ class AuctionRoomServiceTest {
                 .build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
 
-        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
-                .thenReturn(Optional.of(auctionRoom));
+        when(auctionRoomPublicCacheService.findSnapshot(SHARE_CODE))
+                .thenReturn(AuctionRoomPublicSnapshot.from(auctionRoom, 0L));
         when(auctionParticipantRepository
                 .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(10L, SELLER_USER_ID + 1))
                 .thenReturn(false);
@@ -352,8 +360,8 @@ class AuctionRoomServiceTest {
                 .build();
         ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
 
-        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
-                .thenReturn(Optional.of(auctionRoom));
+        when(auctionRoomPublicCacheService.findSnapshot(SHARE_CODE))
+                .thenReturn(AuctionRoomPublicSnapshot.from(auctionRoom, 0L));
 
         assertThat(auctionRoomService.getRoomByShareCode(SHARE_CODE, null)
                 .agreedToTerms()).isNull();
@@ -365,8 +373,9 @@ class AuctionRoomServiceTest {
     @DisplayName("존재하지 않는 공유 코드로 조회하면 예외가 발생한다")
     void getRoomByShareCode_notFound() {
 
-        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull("unknownShareCode"))
-                .thenReturn(Optional.empty());
+        // 없는 방은 캐시에 담기지 않는다. 캐시 계층이 그대로 예외를 올려보낸다.
+        when(auctionRoomPublicCacheService.findSnapshot("unknownShareCode"))
+                .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         assertThatThrownBy(() -> auctionRoomService.getRoomByShareCode("unknownShareCode", SELLER_USER_ID))
                 .isInstanceOf(ApplicationException.class)

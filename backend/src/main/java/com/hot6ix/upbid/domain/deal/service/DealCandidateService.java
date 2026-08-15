@@ -39,6 +39,7 @@ public class DealCandidateService {
     private final AuctionItemRepository auctionItemRepository;
     private final DealCandidateRepository dealCandidateRepository;
     private final DomainEventPublisher domainEventPublisher;
+    private final DealMetrics dealMetrics;
 
     /**
      * 마감 이벤트를 받아 낙찰 후보를 만든다. {@link #award(Long, Long)}으로 위임한다 — 실제
@@ -70,7 +71,13 @@ public class DealCandidateService {
         }
 
         // 삽입 행이 0이면 입찰이 없었다는 뜻이다. 유찰 이벤트는 마감 쪽이 발행한다.
-        if (dealCandidateRepository.insertCandidatesFromBids(itemId) == 0) {
+        //
+        // 이 호출만 따로 재는 이유는 DealMetrics.candidateInsert 에 적어 두었다 — 트랜잭션
+        // 전체를 재는 upbid.deal.award 로는 이 쿼리가 좋아졌는지 알 수 없다.
+        int inserted = dealMetrics.recordCandidateInsert(
+                () -> dealCandidateRepository.insertCandidatesFromBids(itemId));
+
+        if (inserted == 0) {
             return;
         }
 

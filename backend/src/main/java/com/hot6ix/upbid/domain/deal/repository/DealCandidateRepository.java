@@ -82,22 +82,22 @@ public interface DealCandidateRepository extends JpaRepository<DealCandidate, Lo
 
     @Modifying
     @Query(value = """
-            INSERT INTO deal_candidates
-                (auction_item_id, bidder_user_id, candidate_rank, bid_amount, status)
-            SELECT :auctionItemId,
-                   t.bidder_user_id,
-                   ROW_NUMBER() OVER (ORDER BY t.amount DESC, t.bidder_user_id ASC),
-                   t.amount,
-                   :status
-              FROM (SELECT b.bidder_user_id,
-                           MAX(b.amount) AS amount
-                      FROM bids b
-                      JOIN users u
-                        ON u.user_id = b.bidder_user_id
-                       AND u.deleted_at IS NULL
-                     WHERE b.auction_item_id = :auctionItemId
-                     GROUP BY b.bidder_user_id) t
-            """, nativeQuery = true)
+        INSERT INTO deal_candidates
+            (auction_item_id, bidder_user_id, candidate_rank, bid_amount, status)
+        SELECT :auctionItemId,
+               t.bidder_user_id,
+               ROW_NUMBER() OVER (ORDER BY t.amount DESC, t.bidder_user_id ASC),
+               t.amount,
+               :status
+          FROM (SELECT bidder_user_id,
+                       MAX(amount) AS amount
+                  FROM bids
+                 WHERE auction_item_id = :auctionItemId
+                 GROUP BY bidder_user_id) t
+          JOIN users u
+            ON u.user_id = t.bidder_user_id
+           AND u.deleted_at IS NULL
+        """, nativeQuery = true)
     int insertCandidatesFromBids(@Param("auctionItemId") Long auctionItemId,
                                  @Param("status") String status);
 

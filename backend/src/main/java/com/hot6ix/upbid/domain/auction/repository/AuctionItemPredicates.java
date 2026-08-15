@@ -19,7 +19,7 @@ public final class AuctionItemPredicates {
     /**
      * 낙찰됐고 아직 살아 있는 거래가 붙어 있는 물품. 판매자 화면(거래 현황)의 판정을 맞춘다.
      *
-     * <p>{@code AuctionItemCloseService.close()}가 SOLD를 커밋한 뒤 후보가 실제로
+     * <p>{@code AuctionItemCloseService.closeIfDue()}가 SOLD를 커밋한 뒤 후보가 실제로
      * INSERT되기까지 수 ms의 창이 있다({@code DealCandidateAwardListener}가
      * {@code AFTER_COMMIT}으로 비동기 처리). 그 사이엔 "SOLD인데 후보 0건"이라 이 식이
      * false를 주고 재등록 가능으로 보인다 — 판매자가 그 순간을 노릴 수 없어 수용한다.

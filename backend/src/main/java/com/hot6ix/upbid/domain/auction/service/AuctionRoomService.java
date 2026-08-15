@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.auction.service;
 
+import com.hot6ix.upbid.domain.auction.dto.cache.AuctionRoomPublicSnapshot;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomCreateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemResultResponseDto;
@@ -50,6 +51,8 @@ public class AuctionRoomService {
     private final AuctionParticipantRepository auctionParticipantRepository;
     private final SellerProfileRepository sellerProfileRepository;
     private final AuctionRoomShareService auctionRoomShareService;
+    /** 공개 조회의 방 부분을 캐시에서 읽고, 방이 바뀌면 지운다. */
+    private final AuctionRoomPublicCacheService auctionRoomPublicCacheService;
     private final RoomSseManager roomSseManager;
     /**
      * 결과 화면의 "내 최종 순위"만을 위해 거래 도메인을 읽는다. 낙찰자는 경매 물품에, 순위는
@@ -100,6 +103,9 @@ public class AuctionRoomService {
      * 판매자 조작 UI를 띄울지 정하는 값이고, 실제 권한은 조작 API가 다시 검증한다.
      * {@code agreedToTerms}는 참여자에게만 의미가 있어서 게스트와 방 주인에게는 null이다.
      *
+     * <p><b>방 부분은 캐시에서 온다</b>({@link AuctionRoomPublicCacheService}). 게스트는 이
+     * 메서드가 DB를 한 번도 안 읽는다. 로그인한 참여자만 동의 여부를 확인하려고 한 번 읽는다.
+     *
      * @param shareCode    조회할 경매방의 공유 코드
      * @param viewerUserId 조회한 회원의 ID. 로그인하지 않았으면 null
      * @return 조회된 경매방
@@ -107,21 +113,17 @@ public class AuctionRoomService {
      */
     public AuctionRoomPublicResponseDto getRoomByShareCode(String shareCode, Long viewerUserId) {
 
-        AuctionRoom auctionRoom = findRoomByShareCode(shareCode);
-        Long roomId = auctionRoom.getAuctionRoomId();
-        boolean isOwner = isOwnedBy(auctionRoom, viewerUserId);
+        AuctionRoomPublicSnapshot snapshot = auctionRoomPublicCacheService.findSnapshot(shareCode);
+        boolean isOwner = snapshot.isOwnedBy(viewerUserId);
 
         // 방 주인은 참여자가 아니라 진행자다. 동의 여부를 묻는 대상이 아니므로 게스트와 같이 null이고,
         // 참여 기록도 읽지 않는다. false를 주면 판매자가 자기 방에 들어갈 때마다 동의 화면을 만난다.
         Boolean agreedToTerms = (viewerUserId == null || isOwner) ? null
                 : auctionParticipantRepository
-                        .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(roomId, viewerUserId);
+                        .existsByAuctionRoom_AuctionRoomIdAndUser_UserIdAndAgreedAtIsNotNull(
+                                snapshot.auctionRoomId(), viewerUserId);
 
-        return AuctionRoomPublicResponseDto.from(
-                auctionRoom,
-                countItems(roomId),
-                isOwner,
-                agreedToTerms);
+        return snapshot.toResponse(isOwner, agreedToTerms);
     }
 
     /**
@@ -280,6 +282,7 @@ public class AuctionRoomService {
         }
 
         auctionRoom.update(request);
+        auctionRoomPublicCacheService.evict(auctionRoom.getShareCode());
 
         /*
          * 이미 방에 들어와 있는 사람들에게 방 정보를 다시 읽으라고 알린다. 이게 없으면
@@ -289,17 +292,6 @@ public class AuctionRoomService {
 
         // findOwnedRoom을 통과했으므로 요청자가 곧 소유자다.
         return AuctionRoomPublicResponseDto.from(auctionRoom, countItems(auctionRoomId), true, null);
-    }
-
-    /**
-     * 보는 사람이 이 방의 주인인지 판정한다. 판매자 프로필을 따로 조회하지 않고 방에 매달린
-     * 프로필의 user_id와 바로 비교한다 — 프로필이 없는 평범한 구매자까지 조회 예외로 걸러야
-     * 하는 흐름을 피하려는 것이고, LAZY 프록시에서 식별자만 꺼내는 것은 초기화를 일으키지
-     * 않아 추가 쿼리도 없다.
-     */
-    private boolean isOwnedBy(AuctionRoom auctionRoom, Long viewerUserId) {
-        return viewerUserId != null
-                && viewerUserId.equals(auctionRoom.getSellerProfile().getUser().getUserId());
     }
 
     private AuctionRoom findRoomByShareCode(String shareCode) {

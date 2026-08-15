@@ -11,6 +11,7 @@ import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.security.SecureRandom;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,15 +33,18 @@ public class AuctionRoomShareService {
 
     private final AuctionRoomRepository auctionRoomRepository;
     private final SellerProfileRepository sellerProfileRepository;
+    private final AuctionRoomPublicCacheService auctionRoomPublicCacheService;
     private final String frontendUrl;
 
     public AuctionRoomShareService(
             AuctionRoomRepository auctionRoomRepository,
             SellerProfileRepository sellerProfileRepository,
+            AuctionRoomPublicCacheService auctionRoomPublicCacheService,
             @Value("${app.frontend-url}") String frontendUrl) {
 
         this.auctionRoomRepository = auctionRoomRepository;
         this.sellerProfileRepository = sellerProfileRepository;
+        this.auctionRoomPublicCacheService = auctionRoomPublicCacheService;
         this.frontendUrl = frontendUrl;
     }
 
@@ -51,14 +55,19 @@ public class AuctionRoomShareService {
      * <p>없는 코드와 삭제된 방을 구분하지 않고 모두 404다. 구분하면 코드를 넣어보는 것만으로
      * 그 방이 있었는지 알아낼 수 있다.
      *
+     * <p><b>방 조회 캐시에서 꺼낸다</b>({@link AuctionRoomPublicCacheService}). 물품 목록 조회가
+     * 방을 지목하려고 매번 쿼리를 하나 쓰고 있었는데, 같은 방을 공개 조회도 함께 읽으므로
+     * 캐시를 따로 두지 않고 하나를 나눠 쓴다 (#320).
+     *
+     * <p>ID만 읽던 것보다 캐시가 비었을 때 하는 일이 늘지만(방 전체와 물품 수를 읽는다),
+     * 그 결과를 공개 조회가 그대로 다시 쓰기 때문에 방 하나당 한 번이면 된다.
+     *
      * @param shareCode 공개 URL로 들어온 공유 코드
      * @return 그 방의 내부 식별자
      * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 삭제되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    @Transactional(readOnly = true)
     public Long resolveRoomId(String shareCode) {
-        return auctionRoomRepository.findIdByShareCode(shareCode)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+        return auctionRoomPublicCacheService.findSnapshot(shareCode).auctionRoomId();
     }
 
     /**
