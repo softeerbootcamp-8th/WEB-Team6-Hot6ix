@@ -10,11 +10,9 @@
  * OpenAPI spec version: v1
  */
 
-export interface BidCreateResponseDto {
-  requestId?: string;
-  auctionItemId?: number;
-  amount?: number;
-  acceptedAt?: string;
-  endAt?: string;
-  extendedSeconds?: number;
-}
+export type DevLoginParams = {
+/**
+ * 회원을 가르는 값. 생략하면 기본 테스트 유저
+ */
+key?: string;
+};

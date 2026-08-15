@@ -10,11 +10,9 @@
  * OpenAPI spec version: v1
  */
 
-export interface BidCreateResponseDto {
-  requestId?: string;
-  auctionItemId?: number;
-  amount?: number;
-  acceptedAt?: string;
-  endAt?: string;
-  extendedSeconds?: number;
-}
+export type SubscribeHeaders = {
+/**
+ * 재연결 시 마지막으로 수신한 이벤트 ID. 최초 연결 시 생략.
+ */
+'Last-Event-ID'?: number;
+};

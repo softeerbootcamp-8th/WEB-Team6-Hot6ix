@@ -21,7 +21,8 @@ import type {
 
 import type {
   BidCreateRequestDto,
-  CommonResponseBidCreateResponseDto
+  CommonResponseBidCreateResponseDto,
+  PlaceHeaders
 } from '.././model';
 
 import { customInstance } from '../../mutator/custom-instance';
@@ -33,19 +34,20 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
- * 진행중인 물품에 입찰한다. 접수되면 물품의 현재가와 최고 입찰자가 함께 갱신된다. 최소 입찰 금액은 입찰이 아직 없으면 시작가, 있으면 현재가 + 입찰 단위다. 시작가와 같은 금액으로 첫 입찰을 할 수 있다. 금액은 (금액 - 시작가)가 입찰 단위의 배수여야 하며, 여러 단위를 한 번에 올릴 수 있다. 이미 최고 입찰자인 회원은 다시 입찰할 수 없다. 물품을 올린 판매자 본인은 입찰할 수 없다. 공유 링크로 들어와 경매방 입장 약관에 동의한 회원만 입찰할 수 있다. 로그인 세션의 회원으로 입찰한다.
+ * 진행중인 물품에 입찰한다. Idempotency-Key는 최초 요청과 재요청에서 동일해야 한다. 접수되면 Redis의 현재가와 최고 입찰자가 갱신되고 MySQL에는 비동기로 저장된다. 최소 입찰 금액은 입찰이 아직 없으면 시작가, 있으면 현재가 + 입찰 단위다. 시작가와 같은 금액으로 첫 입찰을 할 수 있다. 금액은 (금액 - 시작가)가 입찰 단위의 배수여야 하며, 여러 단위를 한 번에 올릴 수 있다. 이미 최고 입찰자인 회원은 다시 입찰할 수 없다. 물품을 올린 판매자 본인은 입찰할 수 없다. 공유 링크로 들어와 경매방 입장 약관에 동의한 회원만 입찰할 수 있다. 로그인 세션의 회원으로 입찰한다.
  * @summary 입찰 등록
  */
 export const place = (
     auctionItemId: number,
     bidCreateRequestDto: BodyType<BidCreateRequestDto>,
+    headers: PlaceHeaders,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
       
       return customInstance<CommonResponseBidCreateResponseDto>(
       {url: `/api/v1/auction-items/${auctionItemId}/bids`, method: 'POST',
-      headers: {'Content-Type': 'application/json', },
+      headers: {'Content-Type': 'application/json', ...headers},
       data: bidCreateRequestDto, signal
     },
       options);
@@ -54,8 +56,8 @@ export const place = (
 
 
 export const getPlaceMutationOptions = <TError = ErrorType<CommonResponseBidCreateResponseDto>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof place>>, TError,{auctionItemId: number;data: BodyType<BidCreateRequestDto>}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof place>>, TError,{auctionItemId: number;data: BodyType<BidCreateRequestDto>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof place>>, TError,{auctionItemId: number;data: BodyType<BidCreateRequestDto>;headers: PlaceHeaders}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof place>>, TError,{auctionItemId: number;data: BodyType<BidCreateRequestDto>;headers: PlaceHeaders}, TContext> => {
 
 const mutationKey = ['place'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -67,10 +69,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof place>>, {auctionItemId: number;data: BodyType<BidCreateRequestDto>}> = (props) => {
-          const {auctionItemId,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof place>>, {auctionItemId: number;data: BodyType<BidCreateRequestDto>;headers: PlaceHeaders}> = (props) => {
+          const {auctionItemId,data,headers} = props ?? {};
 
-          return  place(auctionItemId,data,requestOptions)
+          return  place(auctionItemId,data,headers,requestOptions)
         }
 
         
@@ -86,11 +88,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary 입찰 등록
  */
 export const usePlace = <TError = ErrorType<CommonResponseBidCreateResponseDto>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof place>>, TError,{auctionItemId: number;data: BodyType<BidCreateRequestDto>}, TContext>, request?: SecondParameter<typeof customInstance>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof place>>, TError,{auctionItemId: number;data: BodyType<BidCreateRequestDto>;headers: PlaceHeaders}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof place>>,
         TError,
-        {auctionItemId: number;data: BodyType<BidCreateRequestDto>},
+        {auctionItemId: number;data: BodyType<BidCreateRequestDto>;headers: PlaceHeaders},
         TContext
       > => {
 

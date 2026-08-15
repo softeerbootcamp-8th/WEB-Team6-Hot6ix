@@ -10,11 +10,11 @@
  * OpenAPI spec version: v1
  */
 
-export interface BidCreateResponseDto {
-  requestId?: string;
-  auctionItemId?: number;
-  amount?: number;
-  acceptedAt?: string;
-  endAt?: string;
-  extendedSeconds?: number;
-}
+export type PlaceHeaders = {
+/**
+ * 재요청에도 동일하게 사용하는 입찰 요청 식별자
+ * @minLength 0
+ * @maxLength 64
+ */
+'Idempotency-Key': string;
+};

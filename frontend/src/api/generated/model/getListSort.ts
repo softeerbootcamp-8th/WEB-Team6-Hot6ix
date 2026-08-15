@@ -10,11 +10,11 @@
  * OpenAPI spec version: v1
  */
 
-export interface BidCreateResponseDto {
-  requestId?: string;
-  auctionItemId?: number;
-  amount?: number;
-  acceptedAt?: string;
-  endAt?: string;
-  extendedSeconds?: number;
-}
+export type GetListSort = typeof GetListSort[keyof typeof GetListSort];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GetListSort = {
+  LATEST: 'LATEST',
+  OLDEST: 'OLDEST',
+} as const;

@@ -10,11 +10,9 @@
  * OpenAPI spec version: v1
  */
 
-export interface BidCreateResponseDto {
-  requestId?: string;
-  auctionItemId?: number;
-  amount?: number;
-  acceptedAt?: string;
-  endAt?: string;
-  extendedSeconds?: number;
-}
+export type DevLoginHeaders = {
+/**
+ * 운영에서 게이트를 걸어 둔 동안에만 필요한 토큰
+ */
+'X-Dev-Login-Token'?: string;
+};
