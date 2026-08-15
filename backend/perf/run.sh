@@ -55,6 +55,11 @@ SSE_STABILIZE_SECONDS=30
 # 마지막 입찰 응답이 끝난 뒤에도 emitter 큐와 TCP에 남은 이벤트가 audience까지 갈 시간을 준다.
 # 서버 성능 구간은 늘리지 않고, 클라이언트 전달 정확성 관측 창만 이만큼 연장한다.
 SSE_DRAIN_SECONDS=10
+# Prometheus는 5초마다 긁는다. k6 종료 시각을 그대로 @ 시점으로 쓰면 마지막 스크랩 뒤에
+# 완료된 요청이 결과에서 빠진다. 관측 창을 닫은 뒤 다음 스크랩까지 기다리고, 카운터와
+# 히스토그램의 끝값은 그 수집 완료 시점에서 읽는다. 처리량 분모는 원래 k6 구간을 유지한다.
+PROM_SCRAPE_INTERVAL_SECONDS=5
+PROM_SCRAPE_SETTLE_SECONDS=$((PROM_SCRAPE_INTERVAL_SECONDS + 2))
 USERS=200
 HEARTBEAT_MS=30000
 SCHEDULER_POOL=4
@@ -874,6 +879,7 @@ for _ in $(seq 1 10); do
                 upbid_sse_send_failures_total upbid_sse_rejected_total \
                 upbid_sse_send_seconds_bucket upbid_sse_fanout_seconds_bucket \
                 upbid_sse_queue_wait_seconds_bucket upbid_sse_queue_depth upbid_sse_in_flight \
+                upbid_bid_before_lock_seconds_bucket \
                 upbid_bid_lock_wait_seconds_bucket \
                 upbid_bid_lock_hold_seconds_bucket \
                 upbid_auction_close_delay_seconds_bucket \
@@ -915,10 +921,15 @@ if [ "$SSE" -gt 0 ]; then
   SSE_CLIENT_STARTED=1
   SSE_CORRELATION_URL="http://sse-client:9091/published"
 
-  # target의 95%가 실제 응답 body를 읽는 상태가 될 때까지 기다린다. 서버 actuator 한 대의
+  # target의 연결이 실제 응답 body를 읽는 상태가 될 때까지 기다린다. 서버 actuator 한 대의
   # gauge가 아니라 클라이언트 자신의 active 값을 읽으므로 --apps 2에서도 합계가 정확하다.
+  # 시나리오 10은 구현별 fan-out 작업량을 같게 해야 하므로 목표 전원이 붙어야 시작한다.
   ATTACHED=0
-  TARGET_MIN=$(((SSE * 95 + 99) / 100))
+  if [ "$SCENARIO" = "10" ]; then
+    TARGET_MIN="$SSE"
+  else
+    TARGET_MIN=$(((SSE * 95 + 99) / 100))
+  fi
   STARTUP_WAIT=$((SSE_RAMP_SECONDS + 60))
   for _ in $(seq 0 2 "$STARTUP_WAIT"); do
     CLIENT_METRICS="$("${COMPOSE[@]}" exec -T sse-client \
@@ -1243,6 +1254,14 @@ if [ "$SSE" -gt 0 ]; then
 fi
 SSE_OBSERVATION_SECONDS=$((SSE_OBSERVATION_END_EPOCH - WINDOW_START_EPOCH))
 
+# 방금 끝난 요청의 카운터가 Prometheus에 들어오기 전에 조회하면 실제 전달은 성공했는데도
+# 발행/전송 수가 적게 기록된다. scrape interval 한 주기보다 조금 더 기다린 뒤 끝값을 읽는다.
+# 이 대기 시간은 WINDOW_SECONDS와 SSE_OBSERVATION_SECONDS에 포함하지 않는다.
+echo "      Prometheus 마지막 스크랩 ${PROM_SCRAPE_SETTLE_SECONDS}초 대기"
+sleep "$PROM_SCRAPE_SETTLE_SECONDS"
+METRIC_COLLECTION_END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+METRIC_COLLECTION_END_EPOCH="$(date +%s)"
+
 # 표본에서 갭까지 잠근 락이 몇 번 보였는지 센다.
 #
 # MySQL 은 넥스트키 락을 LOCK_MODE 에 그냥 X 로 적는다. 갭만 잠근 것이 X,GAP 이고 행 하나만
@@ -1269,10 +1288,24 @@ promq() {
 
 promq_at() {
   local query="$1" time="$2"
-  curl -sG "$PROM_URL/api/v1/query" \
-    --data-urlencode "query=$query" \
-    --data-urlencode "time=$time" \
-    | jq -r '.data.result[0].value[1] // "NaN"'
+  local response value
+
+  # API 연결 실패나 재기동 직후의 일시 오류를 NaN 지표로 오인하지 않는다. Prometheus가
+  # 정상 응답했지만 계열이 없는 경우는 실제 NaN이므로 바로 반환한다.
+  for _ in 1 2 3; do
+    response="$(curl -sfG "$PROM_URL/api/v1/query" \
+      --data-urlencode "query=$query" \
+      --data-urlencode "time=$time" 2>/dev/null || true)"
+
+    if [ -n "$response" ] && [ "$(jq -r '.status // "error"' <<<"$response" 2>/dev/null)" = "success" ]; then
+      value="$(jq -r '.data.result[0].value[1] // "NaN"' <<<"$response")"
+      printf '%s\n' "$value"
+      return 0
+    fi
+    sleep 1
+  done
+
+  printf 'NaN\n'
 }
 
 W="${WINDOW_SECONDS}s"
@@ -1315,19 +1348,32 @@ MAIN="$NOT_ACTUATOR$MAIN_URI"
 # run.sh 는 실행마다 컨테이너를 새로 띄우므로 카운터가 0에서 시작하는 것도 이 계산을 돕는다.
 delta() {
   printf '((%s @ %s) - ((%s @ %s) or (%s @ %s) * 0))' \
-    "$1" "$WINDOW_END_EPOCH" "$1" "$WINDOW_START_EPOCH" "$1" "$WINDOW_END_EPOCH"
+    "$1" "$METRIC_COLLECTION_END_EPOCH" "$1" "$WINDOW_START_EPOCH" \
+    "$1" "$METRIC_COLLECTION_END_EPOCH"
 }
 
 client_delta() {
   printf '((%s @ %s) - ((%s @ %s) or (%s @ %s) * 0))' \
-    "$1" "$SSE_OBSERVATION_END_EPOCH" "$1" "$WINDOW_START_EPOCH" \
-    "$1" "$SSE_OBSERVATION_END_EPOCH"
+    "$1" "$METRIC_COLLECTION_END_EPOCH" "$1" "$WINDOW_START_EPOCH" \
+    "$1" "$METRIC_COLLECTION_END_EPOCH"
+}
+
+# selector 안에 쉼표가 있는 event 태그 쿼리를 아래처럼 중첩 생성하면 macOS 기본 Bash 3.2에서
+# 인용 경계가 깨져 `metric{run=..., event=...}`가 두 단어로 갈라질 수 있다. selector, delta,
+# 최종 쿼리를 단계별 변수로 만들면 셸 brace expansion을 거치지 않고 PromQL이 그대로 전달된다.
+client_delta_sum() {
+  local selector="$1" delta_expression
+  delta_expression="$(client_delta "$selector")"
+  promq_at "sum($delta_expression) or vector(0)" "$METRIC_COLLECTION_END_EPOCH"
 }
 
 # 구간 전체를 하나의 histogram_quantile 로 계산한다.
 # 5초마다 찍힌 p95 점들을 평균 내는 것은 수학적으로 틀리므로 그래프를 눈으로 읽어 적지 않는다.
 quantile_of() {
-  promq "histogram_quantile($2, sum by (le) ($(delta "$1"))) * 1000"
+  # delta의 끝값은 마지막 스크랩 시점이다. 쿼리 평가 시각도 그 시점으로 맞춰, 실행 중 새로
+  # 생긴 event 태그 계열을 과거 평가 시각에서 미래 @ 표본으로 조회하지 않는다.
+  promq_at "histogram_quantile($2, sum by (le) ($(delta "$1"))) * 1000" \
+    "$METRIC_COLLECTION_END_EPOCH"
 }
 
 p95_of() {
@@ -1336,7 +1382,7 @@ p95_of() {
 
 client_quantile_of() {
   promq_at "histogram_quantile($2, sum by (le) ($(client_delta "$1"))) * 1000" \
-    "$SSE_OBSERVATION_END_EPOCH"
+    "$METRIC_COLLECTION_END_EPOCH"
 }
 
 RPS="$(promq "sum($(delta "http_server_requests_seconds_count{$MAIN}")) / $WINDOW_SECONDS")"
@@ -1387,15 +1433,21 @@ HEARTBEAT_RUNS="$(promq "sum($(delta "upbid_sse_heartbeat_seconds_count{$RUN}"))
 # 몇 바퀴 돌았어야 하는지. 이 둘을 나란히 놓아야 "굶었다"를 말할 수 있다.
 HEARTBEAT_EXPECTED="$(awk -v w="$WINDOW_SECONDS" -v ms="$HEARTBEAT_MS" \
   'BEGIN { printf "%.0f", (ms > 0 ? w / (ms / 1000) : 0) }')"
-SSE_BROADCAST_P95_MS="$(p95_of "upbid_sse_broadcast_seconds_bucket{$RUN}")"
-SSE_BROADCAST_P99_MS="$(quantile_of "upbid_sse_broadcast_seconds_bucket{$RUN}" 0.99)"
+# 시나리오 10은 입찰 fan-out 구현 비교다. 30초 heartbeat가 구현별 표본에 다른 비율로 섞이지
+# 않도록 핵심 지연은 BID_PLACED만 본다. 다른 시나리오는 기존처럼 전체 이벤트를 집계한다.
+SSE_PERF="$RUN"
+if [ "$SCENARIO" = "10" ]; then
+  SSE_PERF="$RUN, event=\"BID_PLACED\""
+fi
+SSE_BROADCAST_P95_MS="$(p95_of "upbid_sse_broadcast_seconds_bucket{$SSE_PERF}")"
+SSE_BROADCAST_P99_MS="$(quantile_of "upbid_sse_broadcast_seconds_bucket{$SSE_PERF}" 0.99)"
 SSE_CONN_MAX="$(promq "max_over_time((sum(upbid_sse_connections{$RUN}))[$W:5s])")"
 # SSE 단계별 지연을 분리한다. fanout은 로컬 emitter 큐에 배분하는 시간, queue_wait은
 # 배분 후 실제 worker가 잡기까지의 시간, send는 실제 emitter.send() 호출 시간이다.
-SSE_FANOUT_P95_MS="$(p95_of "upbid_sse_fanout_seconds_bucket{$RUN}")"
-SSE_SEND_P95_MS="$(p95_of "upbid_sse_send_seconds_bucket{$RUN}")"
-SSE_SEND_P99_MS="$(quantile_of "upbid_sse_send_seconds_bucket{$RUN}" 0.99)"
-SSE_QUEUE_WAIT_P95_MS="$(p95_of "upbid_sse_queue_wait_seconds_bucket{$RUN}")"
+SSE_FANOUT_P95_MS="$(p95_of "upbid_sse_fanout_seconds_bucket{$SSE_PERF}")"
+SSE_SEND_P95_MS="$(p95_of "upbid_sse_send_seconds_bucket{$SSE_PERF}")"
+SSE_SEND_P99_MS="$(quantile_of "upbid_sse_send_seconds_bucket{$SSE_PERF}" 0.99)"
+SSE_QUEUE_WAIT_P95_MS="$(p95_of "upbid_sse_queue_wait_seconds_bucket{$SSE_PERF}")"
 
 # 연결·발행·전송 카운터는 테스트 구간의 증가분으로 집계한다. 실패와 reject 계열은 0건이면
 # 시계열 자체가 없으므로 vector(0)을 붙여 정상적인 0으로 남긴다.
@@ -1422,20 +1474,22 @@ SSE_QUEUE_SATURATED="$(promq "sum($(delta "upbid_sse_queue_saturated_total{$RUN}
 SSE_CLIENT_CONN_MAX="$(promq_at "max_over_time(sse_client_connections{$RUN}[$SSE_W])" "$SSE_OBSERVATION_END_EPOCH")"
 SSE_CLIENT_CONN_MIN="$(promq_at "min_over_time(sse_client_connections{$RUN}[$SSE_W])" "$SSE_OBSERVATION_END_EPOCH")"
 SSE_CLIENT_SCRAPE_UP_MIN="$(promq_at "min_over_time(up{job=\"sse-client\"}[$SSE_W])" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_CONNECTIONS_OPENED="$(promq_at "sum($(client_delta "sse_client_connections_opened_total{$RUN}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_UNEXPECTED_CLOSES="$(promq_at "sum($(client_delta "sse_client_unexpected_closes_total{$RUN}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_CONNECTION_ERRORS="$(promq_at "sum($(client_delta "sse_client_connection_errors_total{$RUN}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_EVENTS_RECEIVED="$(promq_at "sum($(client_delta "sse_client_events_received_total{$RUN}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_BID_EVENTS_RECEIVED="$(promq_at "sum($(client_delta "sse_client_events_received_total{$RUN, event=\"BID_PLACED\"}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_MISSING="$(promq_at "sum($(client_delta "sse_client_missing_events_total{$RUN}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_DUPLICATE="$(promq_at "sum($(client_delta "sse_client_duplicate_events_total{$RUN}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_OUT_OF_ORDER="$(promq_at "sum($(client_delta "sse_client_out_of_order_events_total{$RUN}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_PARSE_ERRORS="$(promq_at "sum($(client_delta "sse_client_parse_errors_total{$RUN}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
+SSE_CLIENT_CONNECTIONS_OPENED="$(client_delta_sum "sse_client_connections_opened_total{$RUN}")"
+SSE_CLIENT_UNEXPECTED_CLOSES="$(client_delta_sum "sse_client_unexpected_closes_total{$RUN}")"
+SSE_CLIENT_CONNECTION_ERRORS="$(client_delta_sum "sse_client_connection_errors_total{$RUN}")"
+SSE_CLIENT_EVENTS_RECEIVED="$(client_delta_sum "sse_client_events_received_total{$RUN}")"
+SSE_CLIENT_BID_SELECTOR="sse_client_events_received_total{$RUN, event=\"BID_PLACED\"}"
+SSE_CLIENT_BID_EVENTS_RECEIVED="$(client_delta_sum "$SSE_CLIENT_BID_SELECTOR")"
+SSE_CLIENT_MISSING="$(client_delta_sum "sse_client_missing_events_total{$RUN}")"
+SSE_CLIENT_DUPLICATE="$(client_delta_sum "sse_client_duplicate_events_total{$RUN}")"
+SSE_CLIENT_OUT_OF_ORDER="$(client_delta_sum "sse_client_out_of_order_events_total{$RUN}")"
+SSE_CLIENT_PARSE_ERRORS="$(client_delta_sum "sse_client_parse_errors_total{$RUN}")"
 SSE_MSG_LATENCY_P95_MS="$(client_quantile_of "sse_client_msg_latency_seconds_bucket{$RUN}" 0.95)"
 SSE_MSG_LATENCY_P99_MS="$(client_quantile_of "sse_client_msg_latency_seconds_bucket{$RUN}" 0.99)"
-SSE_MSG_LATENCY_SAMPLES="$(promq_at "sum($(client_delta "sse_client_msg_latency_seconds_count{$RUN}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_CLIENT_LATENCY_PENDING="$(promq_at "sum(sse_client_latency_pending_events{$RUN}) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
-SSE_BID_SEND_SUCCESSES="$(promq_at "sum($(client_delta "upbid_sse_send_successes_total{$RUN, event=\"BID_PLACED\"}")) or vector(0)" "$SSE_OBSERVATION_END_EPOCH")"
+SSE_MSG_LATENCY_SAMPLES="$(client_delta_sum "sse_client_msg_latency_seconds_count{$RUN}")"
+SSE_CLIENT_LATENCY_PENDING="$(promq_at "sum(sse_client_latency_pending_events{$RUN} @ $METRIC_COLLECTION_END_EPOCH) or vector(0)" "$METRIC_COLLECTION_END_EPOCH")"
+SSE_BID_SEND_SELECTOR="upbid_sse_send_successes_total{$RUN, event=\"BID_PLACED\"}"
+SSE_BID_SEND_SUCCESSES="$(client_delta_sum "$SSE_BID_SEND_SELECTOR")"
 SSE_CLIENT_DELIVERY_RATIO="$(awk -v received="$SSE_CLIENT_BID_EVENTS_RECEIVED" -v sent="$SSE_BID_SEND_SUCCESSES" \
   'BEGIN { if (sent > 0) printf "%.3f", received / sent * 100; else print "NaN" }')"
 
@@ -1780,7 +1834,7 @@ SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER
     curl -sG "$PROM_URL/api/v1/query_range" \
       --data-urlencode "query=$q" \
       --data-urlencode "start=$WINDOW_START_EPOCH" \
-      --data-urlencode "end=$SSE_OBSERVATION_END_EPOCH" \
+      --data-urlencode "end=$METRIC_COLLECTION_END_EPOCH" \
       --data-urlencode "step=5" \
       | jq -r --arg m "$label" '.data.result[]?.values[]? | "\($m),\(.[0]),\(.[1])"'
   done
@@ -1820,7 +1874,11 @@ if [ "$FAILED_5XX" != "0" ] || [ "$DROPPED_ITERATIONS" != "0" ]; then
 fi
 
 if [ "$SSE" -gt 0 ]; then
-  TARGET_MIN=$(((SSE * 95 + 99) / 100))
+  if [ "$SCENARIO" = "10" ]; then
+    TARGET_MIN="$SSE"
+  else
+    TARGET_MIN=$(((SSE * 95 + 99) / 100))
+  fi
   if [ "$SSE_CLIENT_REACHED" -ne 1 ] \
     || [ "$SSE_CLIENT_SCRAPE_UP_MIN" != "1" ] \
     || [ "$SSE_CLIENT_CONN_MIN" = "NaN" ] \
@@ -1831,12 +1889,36 @@ if [ "$SSE" -gt 0 ]; then
     || [ "$SSE_CLIENT_DUPLICATE" != "0" ] \
     || [ "$SSE_CLIENT_OUT_OF_ORDER" != "0" ] \
     || [ "$SSE_CLIENT_PARSE_ERRORS" != "0" ] \
-    || [ "$SSE_CORRELATION_FAILED" != "0" ]; then
+    || [ "$SSE_CORRELATION_FAILED" != "0" ] \
+    || [ "$SSE_SEND_FAILURES" != "0" ] \
+    || [ "$SSE_REJECTED" != "0" ] \
+    || [ "$SSE_QUEUE_SATURATED" != "0" ]; then
     STATUS="aborted"
     SSE_VALIDATION_FAILED=1
   fi
 
-  if [ "$ACCEPTED" -gt 0 ] 2>/dev/null && [ "$SSE_MSG_LATENCY_SAMPLES" = "0" ]; then
+  if [ "$ACCEPTED" -gt 0 ] 2>/dev/null; then
+    # 순차 ID는 마지막 꼬리 이벤트 전체가 안 온 경우를 발견하지 못한다. 서버 send 성공과
+    # 실제 BID_PLACED 수신 수를 같은 수집 완료 시점에서 비교해 그 경우까지 실패시킨다.
+    if [ "$SSE_CLIENT_BID_EVENTS_RECEIVED" = "NaN" ] \
+      || [ "$SSE_CLIENT_DELIVERY_RATIO" = "NaN" ] \
+      || [ "$SSE_MSG_LATENCY_P95_MS" = "NaN" ] \
+      || [ "$SSE_MSG_LATENCY_P99_MS" = "NaN" ] \
+      || [ "$SSE_MSG_LATENCY_SAMPLES" = "0" ] \
+      || [ "$SSE_MSG_LATENCY_SAMPLES" != "$SSE_CLIENT_BID_EVENTS_RECEIVED" ] \
+      || ! awk -v ratio="$SSE_CLIENT_DELIVERY_RATIO" \
+          'BEGIN { exit !(ratio + 0 >= 99.9 && ratio + 0 <= 100.1) }'; then
+      STATUS="aborted"
+      SSE_VALIDATION_FAILED=1
+    fi
+  fi
+
+  # 시나리오 10의 비교 핵심 계측이다. 빠진 구현을 정상 결과로 섞지 않는다. 동기 구현에서도
+  # 실제 emitter.send()와 전체 broadcast 시간은 동일한 이름으로 반드시 기록해야 한다.
+  if [ "$SCENARIO" = "10" ] && { [ "$SSE_SEND_P95_MS" = "NaN" ] \
+    || [ "$SSE_SEND_P99_MS" = "NaN" ] \
+    || [ "$SSE_BROADCAST_P95_MS" = "NaN" ] \
+    || [ "$SSE_BROADCAST_P99_MS" = "NaN" ]; }; then
     STATUS="aborted"
     SSE_VALIDATION_FAILED=1
   fi
@@ -1853,6 +1935,7 @@ jq -n \
   --arg run_id "$RUN_ID" --arg who "$WHO" --arg commit "$COMMIT" \
   --arg status "$STATUS" --arg start "$WINDOW_START" --arg end "$WINDOW_END" \
   --arg sse_observation_end "$SSE_OBSERVATION_END" \
+  --arg metric_collection_end "$METRIC_COLLECTION_END" \
   --arg dirty "$([ -n "$DIRTY" ] && echo true || echo false)" \
   --argjson scenario "$SCENARIO" --argjson vus "$VUS" --argjson rate "$RATE" \
   --argjson pool "$POOL" \
@@ -1860,6 +1943,7 @@ jq -n \
   --argjson sse_ramp_seconds "$SSE_RAMP_SECONDS" \
   --argjson sse_stabilize_seconds "$SSE_STABILIZE_SECONDS" \
   --argjson sse_drain_seconds "$SSE_DRAIN_SECONDS" \
+  --argjson prometheus_settle_seconds "$PROM_SCRAPE_SETTLE_SECONDS" \
   --arg sse_client_reached "$SSE_CLIENT_REACHED" \
   --argjson heartbeat_ms "$HEARTBEAT_MS" --argjson scheduler_pool "$SCHEDULER_POOL" \
   --arg virtual_threads "$VIRTUAL_THREADS" --arg xmx "$JAVA_OPTS" \
@@ -1872,13 +1956,15 @@ jq -n \
             sse_ramp_seconds:$sse_ramp_seconds,
             sse_stabilize_seconds:$sse_stabilize_seconds,
             sse_drain_seconds:$sse_drain_seconds,
+            prometheus_settle_seconds:$prometheus_settle_seconds,
             heartbeat_ms:$heartbeat_ms, scheduler_pool:$scheduler_pool,
             virtual_threads:($virtual_threads=="true"), xmx:$xmx,
             isolation:$isolation, bulk_items:$bulk_items,
             sweep_index:($sweep_index=="on")},
     window:{start:$start, end:$end, seconds:$window_seconds,
             sse_observation_end:$sse_observation_end,
-            sse_observation_seconds:$sse_observation_seconds},
+            sse_observation_seconds:$sse_observation_seconds,
+            metric_collection_end:$metric_collection_end},
     sse_client:{target_reached:($sse_client_reached=="1")},
     status:$status}' >"$RESULT_DIR/meta.json"
 
@@ -1952,7 +2038,7 @@ VALUES=( \
 # 전부 겹쳐 그려서, 계단 하나를 보려는데 다른 계단이 같이 나온다.
 # 대시보드가 run 라벨로 거르므로 조회에 쓴 값과 같아야 한다. 원격은 앱이 부팅 때 받은
 # 값(기본 unknown)이라 실행 이름과 다르고, RUN_ID 를 넣으면 화면이 전부 no data 가 된다.
-GRAFANA_LINK="$GRAFANA_URL/d/upbid-perf?var-run=${RUN_LABEL:-$RUN_ID}&from=${WINDOW_START_EPOCH}000&to=${SSE_OBSERVATION_END_EPOCH}000"
+GRAFANA_LINK="$GRAFANA_URL/d/upbid-perf?var-run=${RUN_LABEL:-$RUN_ID}&from=${WINDOW_START_EPOCH}000&to=${METRIC_COLLECTION_END_EPOCH}000"
 
 # 가상 스레드는 전역 스위치라 톰캣도 함께 바뀐다. 이 단서를 안 적으면 나중에 이 숫자를
 # 스케줄러 근거로 잘못 쓴다. 스케줄러가 SimpleAsyncTaskScheduler 로 바뀌어 풀도 큐도
@@ -2203,7 +2289,9 @@ if [ "$STATUS" = "aborted" ]; then
     echo "  연결 min/max=${SSE_CLIENT_CONN_MIN}/${SSE_CLIENT_CONN_MAX} (목표 $SSE), scrape up min=${SSE_CLIENT_SCRAPE_UP_MIN}" >&2
     echo "  예상 밖 종료=${SSE_CLIENT_UNEXPECTED_CLOSES}, 연결 오류=${SSE_CLIENT_CONNECTION_ERRORS}," >&2
     echo "  누락=${SSE_CLIENT_MISSING}, 중복=${SSE_CLIENT_DUPLICATE}, 순서 역전=${SSE_CLIENT_OUT_OF_ORDER}, 파싱 실패=${SSE_CLIENT_PARSE_ERRORS}" >&2
-    echo "  latency 표본=${SSE_MSG_LATENCY_SAMPLES}, correlation 실패=${SSE_CORRELATION_FAILED}" >&2
+    echo "  BID 수신=${SSE_CLIENT_BID_EVENTS_RECEIVED}, delivery=${SSE_CLIENT_DELIVERY_RATIO}%, 서버 send 성공=${SSE_BID_SEND_SUCCESSES}" >&2
+    echo "  latency p95/p99=${SSE_MSG_LATENCY_P95_MS}/${SSE_MSG_LATENCY_P99_MS}ms, 표본=${SSE_MSG_LATENCY_SAMPLES}, correlation 실패=${SSE_CORRELATION_FAILED}" >&2
+    echo "  send 실패=${SSE_SEND_FAILURES}, queue 거부=${SSE_REJECTED}, queue 포화=${SSE_QUEUE_SATURATED}" >&2
     echo "  index.csv에는 남기되 이 줄은 비교표에 쓰지 않는다: $RESULT_DIR" >&2
   else
     echo "※ 이 실행은 aborted 다. k6 중단, 5xx, dropped iteration 또는 구간 불일치가 있었다." >&2

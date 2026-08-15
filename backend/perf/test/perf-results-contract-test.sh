@@ -22,6 +22,20 @@ for symbol in \
   [ "$count" -ge 3 ] || fail "$symbol 이 계산·CSV·note에 모두 연결되지 않았습니다 (등장 ${count}회)"
 done
 
+for symbol in PROM_SCRAPE_SETTLE_SECONDS METRIC_COLLECTION_END_EPOCH client_delta_sum SSE_CLIENT_DELIVERY_RATIO; do
+  grep -q "$symbol" "$RUN" || fail "$symbol 기반 종료 경계 검증이 없습니다"
+done
+
+grep -q 'upbid_bid_before_lock_seconds_bucket' "$RUN" \
+  || fail "측정 전 검사에 before-lock 지표가 없습니다"
+
+grep -q 'ratio + 0 >= 99.9 && ratio + 0 <= 100.1' "$RUN" \
+  || fail "BID_PLACED 실제 전달률 실패 판정이 없습니다"
+grep -q 'SSE_MSG_LATENCY_SAMPLES.*SSE_CLIENT_BID_EVENTS_RECEIVED' "$RUN" \
+  || fail "BID_PLACED 수신 수와 latency 표본 정합성 판정이 없습니다"
+grep -q 'SSE_PERF=.*BID_PLACED' "$RUN" \
+  || fail "시나리오 10 핵심 지연에서 heartbeat를 제외하지 않았습니다"
+
 grep -q 'hikaricp_connections_usage_seconds_bucket' "$DASHBOARD" \
   || fail "Grafana에 Hikari usage 지표가 없습니다"
 grep -q 'process_cpu_usage' "$DASHBOARD" \

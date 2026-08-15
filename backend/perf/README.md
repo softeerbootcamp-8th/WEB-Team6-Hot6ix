@@ -490,15 +490,15 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `closes`, `awards` | 구간 안에 실제로 닫힌 물품 수와 낙찰 건수 | **표본 수입니다.** 이게 작으면 위 p95 들이 크게 흔들립니다 |
 | `sse_heartbeat_p95_ms` | 30초마다 전원에게 신호 보내는 데 걸린 시간 | 접속이 늘면 같이 커집니다 |
 | `heartbeat_runs`, `heartbeat_expected` | heartbeat 가 실제로 돈 횟수와 돌았어야 할 횟수 | 실제가 모자라면 스케줄러 스레드가 굶은 것입니다 |
-| `sse_broadcast_p95_ms`, `sse_broadcast_p99_ms` | 논리 이벤트 하나를 방의 emitter 큐에 배분하는 시간(기존 이름) | 실제 send 완료 시간이 아니라 fan-out enqueue 시간입니다 |
+| `sse_broadcast_p95_ms`, `sse_broadcast_p99_ms` | 논리 이벤트 하나를 방의 emitter 큐에 배분하는 시간(기존 이름) | 실제 send 완료 시간이 아니라 fan-out enqueue 시간입니다. 시나리오 10은 BID_PLACED만 집계합니다 |
 | `sse_conn_max` | 동시에 열려 있던 실시간 접속 수(최대) | 시나리오 3의 주인공 |
 | `sse_connections_opened`, `sse_connections_closed` | 측정 구간의 SSE 연결 수립·종료 횟수 | 종료 원인별 상세는 Grafana에서 `reason` 태그로 봅니다 |
 | `sse_events_published` | Redis에 성공적으로 발행한 논리 SSE 이벤트 수 | 한 이벤트가 여러 구독자에게 전달되어도 1건입니다 |
 | `sse_send_attempts`, `sse_send_successes`, `sse_send_failures` | 각 emitter에 대한 실제 `send()` 시도·성공·실패 수 | 구독자가 N명이면 논리 이벤트 1건이 최대 N회의 send가 됩니다 |
 | **`sse_send_failure_rate`** | **`send 실패 / send 시도 × 100`** | 0%가 정상입니다. 원인별 실패는 Grafana의 `cause` 태그로 봅니다 |
-| `sse_fanout_p95_ms` | 논리 이벤트를 방의 emitter 큐에 배분한 시간 p95 | 구독자 수 증가에 따른 순회·enqueue 비용입니다 |
-| `sse_queue_wait_p95_ms` | 작업이 emitter 큐에 들어간 뒤 worker가 잡기까지의 시간 p95 | 커지면 전송 처리량보다 생산 속도가 빠른 것입니다 |
-| `sse_send_p95_ms`, `sse_send_p99_ms` | 실제 `SseEmitter.send()` 호출이 반환할 때까지의 시간 | 느린 클라이언트나 TCP write 정체를 찾습니다 |
+| `sse_fanout_p95_ms` | 논리 이벤트를 방의 emitter 큐에 배분한 시간 p95 | 구독자 수 증가에 따른 순회·enqueue 비용입니다. 시나리오 10은 BID_PLACED만 집계합니다 |
+| `sse_queue_wait_p95_ms` | 작업이 emitter 큐에 들어간 뒤 worker가 잡기까지의 시간 p95 | 커지면 전송 처리량보다 생산 속도가 빠른 것입니다. 시나리오 10은 BID_PLACED만 집계합니다 |
+| `sse_send_p95_ms`, `sse_send_p99_ms` | 실제 `SseEmitter.send()` 호출이 반환할 때까지의 시간 | 느린 클라이언트나 TCP write 정체를 찾습니다. 시나리오 10은 BID_PLACED만 집계합니다 |
 | `sse_queue_depth_max` | 모든 emitter dispatcher에 쌓인 추정 작업 수의 최대 | 지속 증가하면 큐 적체입니다 |
 | `sse_in_flight_max` | 동시에 `send()` 안에서 처리 중이던 작업 수의 최대 | 플랫폼 스레드·가상 스레드 구현의 동시 처리 폭을 비교합니다 |
 | `sse_rejected` | 닫힌 dispatcher 또는 포화된 큐로 제출하지 못한 작업 수 | 0이 정상입니다 |
@@ -507,7 +507,7 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `sse_client_connections_opened` | 측정 구간에 새로 수립된 클라이언트 연결 수 | 연결은 측정 전에 붙이므로 0보다 크면 재연결이 발생한 것입니다 |
 | `sse_client_unexpected_closes`, `sse_client_connection_errors` | 예상 밖 스트림 종료와 연결 수립 실패 | 모두 0이 정상입니다 |
 | `sse_client_events_received`, `sse_client_bid_events_received` | 클라이언트 callback이 실제 파싱한 전체/BID_PLACED frame 수 | 서버 send 성공과 비교합니다 |
-| `sse_client_delivery_ratio` | 실제 BID_PLACED 수신 / 서버 BID_PLACED send 성공 × 100 | scrape 경계 오차가 있어 ID 누락과 함께 봅니다 |
+| `sse_client_delivery_ratio` | 실제 BID_PLACED 수신 / 서버 BID_PLACED send 성공 × 100 | 마지막 Prometheus 스크랩까지 기다려 같은 수집 완료 시점의 두 카운터를 비교하며, ID 누락과 함께 판정합니다 |
 | **`sse_msg_latency_p95_ms`, `sse_msg_latency_p99_ms`** | **입찰 POST 시작부터 각 audience가 BID_PLACED를 파싱할 때까지** | 동기·비동기·가상 스레드의 사용자 체감 전달 시간을 비교합니다 |
 | `sse_msg_latency_samples`, `sse_client_latency_pending` | 매칭된 latency 표본 수와 아직 요청 시작 시각을 못 찾은 수신 이벤트 수 | 접수 입찰이 있는데 표본이 0이면 계측 실패입니다 |
 | `sse_client_missing`, `sse_client_duplicate`, `sse_client_out_of_order` | 방별 순차 SSE ID로 찾은 누락·중복·순서 역전 수 | 모두 0이 정상입니다 |
