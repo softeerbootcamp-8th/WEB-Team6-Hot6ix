@@ -32,6 +32,10 @@ public interface AuctionItemApi {
                     + "한 사람이 여러 번 입찰해도 그 사람의 최고가로 한 줄만 나오고, "
                     + "탈퇴한 회원은 순위에서 빠진다. 입찰이 없으면 빈 배열이다. "
                     + "비로그인으로 조회할 수 있다.\n\n"
+                    + "리더보드의 `isMe`는 그 줄이 조회한 본인인지를 서버가 판정해 담은 값이다. "
+                    + "입찰자의 회원 ID를 응답에 싣지 않으려는 것이고, 닉네임에 unique 제약이 없어 "
+                    + "화면이 닉네임으로 비교하면 동명이인이 본인으로 강조되기 때문이다. "
+                    + "비로그인 조회에서는 모든 줄이 `false`다.\n\n"
                     + "인증이 필요 없는 공개 경로라 경매방을 숫자 ID가 아닌 공유 코드로 지목한다."
     )
     @ApiResponses({
@@ -40,7 +44,8 @@ public interface AuctionItemApi {
     })
     ResponseEntity<CommonResponse<List<AuctionItemSummaryResponseDto>>> getSummaries(
             @Parameter(description = "조회할 경매방의 공유 코드", required = true)
-            @PathVariable String shareCode);
+            @PathVariable String shareCode,
+            @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
             summary = "경매 물품 상세 조회",
@@ -61,7 +66,8 @@ public interface AuctionItemApi {
             @Parameter(description = "물품이 속한 경매방의 공유 코드", required = true)
             @PathVariable String shareCode,
             @Parameter(description = "조회할 물품 ID", required = true)
-            @PathVariable Long auctionItemId);
+            @PathVariable Long auctionItemId,
+            @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
             summary = "경매방 물품 추가",
