@@ -11,6 +11,7 @@ import { useState, type ReactNode } from 'react'
 import type { AuctionStartFlashState } from '@/features/live/components/auction-start-flash'
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
+import { ProfilePhoto } from '@/components/profile-photo'
 import { GuestNotice } from '@/features/live/components/live-shell'
 import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { LiveItemList } from '@/features/live/components/live-item-list'
@@ -49,6 +50,7 @@ export function MobileLiveView({
   closingEarlyItemId = null,
   devTools,
   onShare,
+  onOpenSeller,
   onOpenSettings,
   onCloseRoom,
   onBack,
@@ -95,6 +97,8 @@ export function MobileLiveView({
     onDemoBid: (shuffle: boolean) => void
   }
   onShare: () => void
+  /** 판매자 이름을 누르면 판매자 정보 다이얼로그를 연다. 방송 링크도 거기 있다. */
+  onOpenSeller?: () => void
   /** 판매자만 받는다. 방 설정 수정 모달을 연다. */
   onOpenSettings?: () => void
   /** 판매자만 받는다. 방 전체를 끝낸다. */
@@ -155,13 +159,42 @@ export function MobileLiveView({
           </button>
 
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[16px] font-bold text-foreground">
+            {/*
+             * 두 줄까지 보여준다. 한 줄 말줄임이면 긴 이름이 앞부분만 남아서
+             * 어느 방인지 알 수 없었다(#328). 서버가 100자까지 받으므로 두 줄로도
+             * 다 못 담는 이름은 여전히 있다.
+             *
+             * **`leading-tight` 를 같이 걸어야 한다.** 앱바가 64px 고정이라 기본
+             * 줄간격으로 두 줄을 쓰면 아래 참여자 줄이 밀려 나간다.
+             */}
+            <p className="line-clamp-2 text-[16px] leading-tight font-bold text-foreground">
               {room.title}
             </p>
-            {/* 누가 파는 방인지. 링크만 받고 들어온 사람에게는 이게 첫 단서다. */}
-            <p className="mt-0.5 truncate text-[12px] font-medium text-neutral-tertiary">
-              {room.sellerName ? `${room.sellerName} · ` : ''}
-              {participantCount ?? room.participantCount}명 참여 중
+            {/*
+             * 누가 파는 방인지. 링크만 받고 들어온 사람에게는 이게 첫 단서다.
+             * 판매자 이름을 누르면 판매자 정보가 열리고 방송 링크도 거기 있다(#192·#193).
+             */}
+            <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-[12px] font-medium text-neutral-tertiary">
+              {room.sellerName && onOpenSeller && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onOpenSeller}
+                    className="ease-soft flex min-w-0 items-center gap-1 rounded font-bold text-neutral-secondary underline decoration-dotted underline-offset-2 transition-all duration-150 active:scale-95"
+                  >
+                    <ProfilePhoto
+                      src={room.sellerImageUrl}
+                      iconClassName="size-2.5"
+                      className="size-4 shrink-0 rounded-full bg-brand-50"
+                    />
+                    <span className="min-w-0 truncate">{room.sellerName}</span>
+                  </button>
+                  <span aria-hidden>·</span>
+                </>
+              )}
+              <span className="shrink-0">
+                {participantCount ?? room.participantCount}명 참여 중
+              </span>
             </p>
           </div>
 

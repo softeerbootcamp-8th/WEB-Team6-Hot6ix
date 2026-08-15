@@ -37,6 +37,14 @@ export function toAuctionRoomDetail(
     title: dto.name ?? '',
     description: dto.description ?? '',
     sellerName: dto.sellerStoreName ?? '',
+    /*
+     * 목업으로 떨어지지 않는다. 없으면 `ProfilePhoto` 가 사람 아이콘을 그린다 —
+     * 가게명을 씨앗으로 목업 사진을 고르면 사진을 올린 적 없는 판매자에게
+     * 남의 얼굴이 붙는다(#139).
+     */
+    sellerImageUrl: dto.sellerStoreImageUrl ?? null,
+    // 없는 방이 많다. 없으면 판매자 패널이 방송 버튼 자체를 안 그린다.
+    liveUrl: dto.liveUrl ?? null,
     status: toRoomStatus(dto.status),
     /*
      * 방을 만든 사람이면 판매자다. 서버가 조회자를 보고 판정해 준다.

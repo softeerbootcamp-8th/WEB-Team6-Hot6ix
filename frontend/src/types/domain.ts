@@ -87,6 +87,15 @@ export interface AuctionRoomDetail {
   title: string
   description: string
   sellerName: string
+  /** 판매자 가게 사진. 없으면 `ProfilePhoto` 가 사람 아이콘을 그린다. */
+  sellerImageUrl: string | null
+  /**
+   * 판매자가 방송 중인 SNS 주소. 없는 방이 많다.
+   *
+   * UpBid 는 영상을 직접 내보내지 않고 남의 방송에 입찰만 얹으므로, 이 링크가
+   * 구매자가 방송으로 건너가는 유일한 통로다.
+   */
+  liveUrl: string | null
   status: RoomStatus
   role: RoomRole
   participantCount: number

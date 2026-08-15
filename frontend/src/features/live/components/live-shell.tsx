@@ -3,6 +3,7 @@ import { Settings, Share2, Square, Users } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
+import { ProfilePhoto } from '@/components/profile-photo'
 import { RoomRuleChips } from '@/features/live/components/room-rule-chips'
 import { cn } from '@/lib/utils'
 import type { AuctionRoomDetail } from '@/types/domain'
@@ -22,6 +23,7 @@ export function LiveShell({
   isGuest,
   participantCount,
   onShare,
+  onOpenSeller,
   onOpenSettings,
   onCloseRoom,
   left,
@@ -41,6 +43,8 @@ export function LiveShell({
   participantCount?: number | null
   /** 방 헤더의 공유 버튼. 오른쪽 열에 공유 패널을 띄운다. */
   onShare?: () => void
+  /** 판매자 이름을 누르면 오른쪽 열에 판매자 패널을 띄운다. 방송 링크도 거기 있다. */
+  onOpenSeller?: () => void
   /** 공유 버튼 왼쪽에 들어가는 보조 조작(개발용 시점 전환 등) */
   headerActions?: ReactNode
   /** 판매자만 받는다. 방 설정 수정 모달을 연다. */
@@ -112,12 +116,29 @@ export function LiveShell({
             {room.title}
           </h1>
 
-          {/* 누가 파는 방인지. 링크만 받고 들어온 사람에게는 이게 첫 단서다. */}
-          {room.sellerName && (
-            <p className="min-w-0 truncate text-[13px] font-medium text-neutral-secondary">
-              {room.sellerName}
-            </p>
-          )}
+          {/*
+           * 누가 파는 방인지. 링크만 받고 들어온 사람에게는 이게 첫 단서다.
+           * 누르면 판매자 패널이 열리고, 방송 링크는 그 안에 있다(#192·#193).
+           */}
+          {room.sellerName &&
+            (onOpenSeller ? (
+              <button
+                type="button"
+                onClick={onOpenSeller}
+                className="ease-soft flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-0.5 text-[13px] font-medium text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
+              >
+                <ProfilePhoto
+                  src={room.sellerImageUrl}
+                  iconClassName="size-3"
+                  className="size-5 shrink-0 rounded-full bg-brand-50"
+                />
+                <span className="min-w-0 truncate">{room.sellerName}</span>
+              </button>
+            ) : (
+              <p className="min-w-0 truncate text-[13px] font-medium text-neutral-secondary">
+                {room.sellerName}
+              </p>
+            ))}
 
           <p className="flex items-center gap-1.5 text-[13px] font-medium text-neutral-tertiary">
             <Users aria-hidden className="size-[15px]" />
