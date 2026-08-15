@@ -177,6 +177,17 @@ upbid:
       # 마감(30s)보다 짧다. 알림은 미뤄 둔 시각에 다시 떠올라도 notified_at 이 중복을 막아
       # 주므로, 길게 잡아 얻는 것이 없고 죽은 서버가 쥔 알림만 늦어진다.
       visibility-timeout: ${CLOSING_SOON_VISIBILITY_TIMEOUT:10s}
+    room:
+      # 물품이 다 마감됐는데 판매자가 종료를 안 누른 방을 서버가 대신 닫는다(#284).
+      #
+      # 12시간은 "방송을 마치고 종료를 안 눌렀다"와 "잠깐 자리를 비웠다"를 가르는 값이다.
+      # 짧게 잡으면 판매자가 쉬었다 이어서 물품을 올리려던 방까지 닫힌다.
+      idle-close-after: ${ROOM_IDLE_CLOSE_AFTER:12h}
+      # 12시간을 재는 일이라 주기가 늦어도 손해가 없다. 대신 이 주기마다 방 전체를 훑는
+      # 조회가 한 번 돌므로 짧게 잡지 않는다.
+      idle-close-interval-ms: ${ROOM_IDLE_CLOSE_INTERVAL_MS:600000}
+      # 한 tick 에 닫을 방 수 상한. 잘린 방은 다음 주기에 다시 집힌다.
+      idle-close-batch-size: ${ROOM_IDLE_CLOSE_BATCH_SIZE:50}
   deal:
     award-recovery:
       enabled: ${AWARD_RECOVERY_ENABLED:true}

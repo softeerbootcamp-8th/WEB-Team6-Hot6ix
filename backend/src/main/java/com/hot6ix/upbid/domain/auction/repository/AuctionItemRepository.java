@@ -37,6 +37,26 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
     long countByAuctionRoom_AuctionRoomIdAndStatus(Long auctionRoomId, AuctionItemStatus status);
 
     /**
+     * 경매방에 지정 상태인 물품이 하나라도 있는지 본다. 자동 종료가 아직 안 끝난 물품
+     * ({@code READY}, {@code IN_PROGRESS})이 남았는지 확인하는 데 쓴다.
+     */
+    boolean existsByAuctionRoom_AuctionRoomIdAndStatusIn(
+            Long auctionRoomId, Collection<AuctionItemStatus> statuses);
+
+    /**
+     * 경매방 물품의 마감 시각 중 가장 늦은 것. 물품이 하나도 없거나 전부 시작 전이면
+     * {@code null}이다.
+     *
+     * <p>자동 종료가 "마지막 물품이 마감된 지 얼마나 지났나"를 재는 기준으로 쓴다. 실제로
+     * 닫힌 시각이 아니라 <b>닫히기로 한 시각</b>이지만, {@code OPEN}인 방에서 물품이 닫히는
+     * 경로는 {@code AuctionItemCloseService.closeIfDue} 하나뿐이고 그것은 이 시각이 지나야만
+     * 닫으므로 둘의 차이는 폴링 주기와 락 대기만큼이다. 12시간을 재는 데는 문제되지 않는다.
+     */
+    @Query("select max(ai.endAt) from AuctionItem ai "
+            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId")
+    LocalDateTime findMaxEndAt(@Param("auctionRoomId") Long auctionRoomId);
+
+    /**
      * 목록 정렬 순위를 만드는 식. 진행중 → 대기 → 낙찰 → 유찰 순이며
      * {@code AuctionItemStatus} 선언 순서와 다르므로 식으로 계산한다.
      * 별칭 {@code ai}에 묶여 있으므로 다른 별칭을 쓰는 쿼리에 그대로 가져다 쓸 수 없다.
@@ -146,23 +166,6 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select ai from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItem> findByIdForUpdate(@Param("auctionItemId") Long auctionItemId);
-
-    /**
-     * 경매방에서 지정 상태인 물품의 ID를 <b>오름차순으로</b> 조회한다. 방 종료가 진행 중인 물품을
-     * 한꺼번에 마감할 때 쓴다.
-     *
-     * <p>정렬이 이 쿼리의 핵심이다. 방 종료는 물품마다 행 락을 잡는데, 잡는 순서가 요청마다
-     * 다르면 같은 방을 동시에 닫는 두 요청이 서로의 물품을 기다리다 데드락에 빠진다. ID
-     * 오름차순으로 고정하면 그 순환이 만들어지지 않는다.
-     *
-     * <p>엔티티가 아니라 ID만 뽑는 이유는 실제 마감이 {@code AuctionItemCloseService}에서
-     * 행 락을 걸고 다시 읽기 때문이다. 여기서 엔티티를 읽어봐야 그 사이에 값이 바뀔 수 있다.
-     */
-    @Query("select ai.auctionItemId from AuctionItem ai "
-            + "where ai.auctionRoom.auctionRoomId = :auctionRoomId and ai.status = :status "
-            + "order by ai.auctionItemId asc")
-    List<Long> findIdsByRoomAndStatus(
-            @Param("auctionRoomId") Long auctionRoomId, @Param("status") AuctionItemStatus status);
 
     /**
      * 마감 임박 알림을 판정하는 데 필요한 값만 한 번에 읽는다. 알림 시각이
