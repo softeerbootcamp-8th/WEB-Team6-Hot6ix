@@ -24,6 +24,7 @@ public sealed interface RedisBidDecision {
         BID_AMOUNT_TOO_LOW,
         INVALID_BID_UNIT,
         SELLER_CANNOT_BID,
-        TERMS_NOT_AGREED
+        TERMS_NOT_AGREED,
+        IDEMPOTENCY_KEY_CONFLICT
     }
 }

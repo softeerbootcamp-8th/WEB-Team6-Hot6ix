@@ -43,7 +43,8 @@ public interface BidApi {
                     + "약관에 동의한 뒤에는 통과한다"),
             @ApiResponse(responseCode = "409", description = "진행중인 물품이 아님 (code 7001), "
                     + "마감된 물품 (code 7002), 이미 최고 입찰자 (code 7003), "
-                    + "최소 입찰 금액 미달 (code 7004), 입찰 단위 불일치 (code 7005)")
+                    + "최소 입찰 금액 미달 (code 7004), 입찰 단위 불일치 (code 7005), "
+                    + "멱등 키 재사용 충돌 (code 7009)")
     })
     ResponseEntity<CommonResponse<BidCreateResponseDto>> place(
             @Parameter(description = "입찰할 물품 ID", required = true)

@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.bid.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -29,10 +30,14 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -98,10 +103,18 @@ class BidStreamPersistenceServiceTest {
     }
 
     @Test
-    @DisplayName("이미 저장한 requestId는 Bid와 이벤트를 다시 만들지 않는다")
+    @DisplayName("이미 저장한 requestId의 물품과 입찰자와 금액이 같으면 다시 저장하지 않는다")
     void ignoresAlreadyPersistedRequest() {
 
-        Bid existingBid = org.mockito.Mockito.mock(Bid.class);
+        User bidder = user(11L, "한기");
+        Bid existingBid = Bid.builder()
+                .requestId("request-1")
+                .auctionItem(auctionItem)
+                .bidder(bidder)
+                .amount(20_000L)
+                .acceptedAt(LocalDateTime.ofInstant(
+                        Instant.parse("2026-08-13T13:04:00Z"), ZONE))
+                .build();
         BidStreamEvent.BidAccepted event = event(
                 "request-1", 11L, 20_000L, 0, 0,
                 Instant.parse("2026-08-13T13:04:00Z"),
@@ -110,6 +123,31 @@ class BidStreamPersistenceServiceTest {
 
         persistenceService.persist(event);
 
+        verify(bidRepository, never()).saveAndFlush(any(Bid.class));
+        verifyNoInteractions(auctionItemRepository, userRepository, domainEventPublisher);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("conflictingRedeliveries")
+    @DisplayName("이미 저장한 requestId의 fingerprint가 다르면 Stream 불일치로 실패한다")
+    void rejectsConflictingAlreadyPersistedRequest(
+            String description,
+            BidStreamEvent.BidAccepted conflictingEvent) {
+
+        User bidder = user(11L, "한기");
+        Bid existingBid = Bid.builder()
+                .requestId("request-1")
+                .auctionItem(auctionItem)
+                .bidder(bidder)
+                .amount(20_000L)
+                .acceptedAt(LocalDateTime.ofInstant(
+                        Instant.parse("2026-08-13T13:04:00Z"), ZONE))
+                .build();
+        when(bidRepository.findByRequestId("request-1")).thenReturn(Optional.of(existingBid));
+
+        assertThatThrownBy(() -> persistenceService.persist(conflictingEvent))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("request-1");
         verify(bidRepository, never()).saveAndFlush(any(Bid.class));
         verifyNoInteractions(auctionItemRepository, userRepository, domainEventPublisher);
     }
@@ -213,6 +251,21 @@ class BidStreamPersistenceServiceTest {
                 requestId, ITEM_ID, ROOM_ID, bidderUserId, amount,
                 acceptedAt.toEpochMilli(), endAt.toEpochMilli(), extendedSeconds,
                 totalExtensionSeconds);
+    }
+
+    private static Stream<Arguments> conflictingRedeliveries() {
+        long acceptedAt = Instant.parse("2026-08-13T13:04:00Z").toEpochMilli();
+        long endAt = Instant.parse("2026-08-13T13:05:00Z").toEpochMilli();
+        return Stream.of(
+                Arguments.of("물품이 다름", new BidStreamEvent.BidAccepted(
+                        "request-1", ITEM_ID + 1, ROOM_ID, 11L, 20_000L,
+                        acceptedAt, endAt, 0, 0)),
+                Arguments.of("입찰자가 다름", new BidStreamEvent.BidAccepted(
+                        "request-1", ITEM_ID, ROOM_ID, 12L, 20_000L,
+                        acceptedAt, endAt, 0, 0)),
+                Arguments.of("금액이 다름", new BidStreamEvent.BidAccepted(
+                        "request-1", ITEM_ID, ROOM_ID, 11L, 21_000L,
+                        acceptedAt, endAt, 0, 0)));
     }
 
     private static User user(long userId, String nickname) {

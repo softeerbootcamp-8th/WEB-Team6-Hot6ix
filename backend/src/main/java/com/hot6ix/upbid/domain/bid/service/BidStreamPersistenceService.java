@@ -38,9 +38,10 @@ public class BidStreamPersistenceService {
     /**
      * Stream 이벤트 한 건을 하나의 DB 트랜잭션으로 반영한다.
      *
-     * <p>{@code requestId}가 이미 있으면 이전 처리가 커밋된 것이므로 아무 일도 하지 않는다.
-     * 선조회 뒤 동시에 들어오는 중복은 DB UNIQUE 제약이 최종적으로 막는다. 그 충돌은 이
-     * 트랜잭션을 롤백시켜 ACK되지 않게 하고, 다음 전달에서 이 선조회가 성공 처리한다.
+     * <p>{@code requestId}가 이미 있으면 물품·입찰자·금액이 같은 정상 재전달인지 확인한 뒤
+     * 아무 일도 하지 않는다. 내용이 다르면 Stream 불일치로 실패해 ACK되지 않게 한다. 선조회
+     * 뒤 동시에 들어오는 중복은 DB UNIQUE 제약이 최종적으로 막는다. 그 충돌은 이 트랜잭션을
+     * 롤백시켜 ACK되지 않게 하고, 다음 전달에서 이 선조회가 정상 재전달로 처리한다.
      *
      * <p>물품 행 잠금은 Redis의 입찰 판정을 대신하지 않는다. 서로 다른 Stream 이벤트의 DB
      * 커밋과 판매자 마감 앞당기기가 같은 행을 동시에 덮지 않도록 비동기 반영 구간만
@@ -58,7 +59,9 @@ public class BidStreamPersistenceService {
 
     private void persistAccepted(BidStreamEvent.BidAccepted event) {
 
-        if (bidRepository.findByRequestId(event.requestId()).isPresent()) {
+        Bid existing = bidRepository.findByRequestId(event.requestId()).orElse(null);
+        if (existing != null) {
+            assertSameRequest(existing, event);
             return;
         }
 
@@ -93,6 +96,16 @@ public class BidStreamPersistenceService {
             domainEventPublisher.publish(SoftCloseExtended.of(
                     event.roomId(), event.itemId(), item.getProduct().getName(),
                     event.extendedSeconds(), endAt, acceptedAt));
+        }
+    }
+
+    private static void assertSameRequest(Bid existing, BidStreamEvent.BidAccepted event) {
+        boolean sameItem = existing.getAuctionItem().getAuctionItemId().equals(event.itemId());
+        boolean sameBidder = existing.getBidder().getUserId().equals(event.bidderUserId());
+        boolean sameAmount = existing.getAmount().equals(event.amount());
+        if (!sameItem || !sameBidder || !sameAmount) {
+            throw new IllegalStateException(
+                    "같은 requestId의 Stream 내용이 이미 저장된 입찰과 다르다: " + event.requestId());
         }
     }
 

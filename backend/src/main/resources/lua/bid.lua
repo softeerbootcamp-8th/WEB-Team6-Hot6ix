@@ -1,7 +1,7 @@
 -- 입찰 판정, Soft Close, 승인 결과 캐시, 영속화 Stream 기록을 원자적으로 수행한다.
 --
 -- KEYS[1] auction:item:{itemId} Hash
--- KEYS[2] auction:item:{itemId}:accepted Hash (field=requestId)
+-- KEYS[2] auction:bid:request:{requestId} Hash
 -- KEYS[3] auction:bid:stream Stream
 -- ARGV[1] requestId
 -- ARGV[2] bidderUserId
@@ -9,10 +9,22 @@
 -- ARGV[4] arrivedAt epoch millis
 
 local requestId = ARGV[1]
-local cached = redis.call('HGET', KEYS[2], requestId)
-if cached ~= false then
-    local result = cjson.decode(cached)
-    return {'ACCEPTED', requestId, tostring(result[1]), tostring(result[2]), tostring(result[3]), tostring(result[4]), '1'}
+local bidderId = ARGV[2]
+local amountArgument = ARGV[3]
+local itemId = string.match(KEYS[1], '(%d+)$')
+
+if redis.call('EXISTS', KEYS[2]) == 1 then
+    if redis.call('HGET', KEYS[2], 'itemId') ~= itemId
+            or redis.call('HGET', KEYS[2], 'bidderUserId') ~= bidderId
+            or redis.call('HGET', KEYS[2], 'amount') ~= amountArgument then
+        return {'REJECTED', 'IDEMPOTENCY_KEY_CONFLICT'}
+    end
+    return {'ACCEPTED', requestId,
+        redis.call('HGET', KEYS[2], 'amount'),
+        redis.call('HGET', KEYS[2], 'acceptedAt'),
+        redis.call('HGET', KEYS[2], 'endAt'),
+        redis.call('HGET', KEYS[2], 'extendedSeconds'),
+        '1'}
 end
 
 if redis.call('EXISTS', KEYS[1]) == 0 then
@@ -23,7 +35,6 @@ if redis.call('HGET', KEYS[1], 'status') ~= 'IN_PROGRESS' then
     return {'REJECTED', 'ITEM_NOT_IN_PROGRESS'}
 end
 
-local bidderId = ARGV[2]
 if redis.call('HGET', KEYS[1], 'sellerUserId') == bidderId then
     return {'REJECTED', 'SELLER_CANNOT_BID'}
 end
@@ -43,7 +54,7 @@ if leaderUserId == bidderId then
     return {'REJECTED', 'ALREADY_TOP_BIDDER'}
 end
 
-local amount = tonumber(ARGV[3])
+local amount = tonumber(amountArgument)
 local startingPrice = tonumber(redis.call('HGET', KEYS[1], 'startingPrice'))
 local bidIncrement = tonumber(redis.call('HGET', KEYS[1], 'bidIncrement'))
 local minimum
@@ -91,7 +102,7 @@ redis.call('HSET', KEYS[1],
 redis.call('XADD', KEYS[3], '*',
         'type', 'BID_ACCEPTED',
         'requestId', requestId,
-        'itemId', string.match(KEYS[1], '(%d+)$'),
+        'itemId', itemId,
         'roomId', roomId,
         'bidderUserId', bidderId,
         'amount', amountString,
@@ -100,7 +111,12 @@ redis.call('XADD', KEYS[3], '*',
         'extendedSeconds', extendedString,
         'totalExtensionSeconds', totalString)
 
-redis.call('HSET', KEYS[2], requestId,
-        cjson.encode({amountString, acceptedAtString, endAtString, extendedString}))
+redis.call('HSET', KEYS[2],
+        'itemId', itemId,
+        'bidderUserId', bidderId,
+        'amount', amountString,
+        'acceptedAt', acceptedAtString,
+        'endAt', endAtString,
+        'extendedSeconds', extendedString)
 
 return {'ACCEPTED', requestId, amountString, acceptedAtString, endAtString, extendedString, '0'}

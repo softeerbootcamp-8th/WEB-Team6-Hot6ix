@@ -47,6 +47,7 @@ public class BidService {
             case INVALID_BID_UNIT -> BidErrorType.INVALID_BID_UNIT;
             case SELLER_CANNOT_BID -> BidErrorType.SELLER_CANNOT_BID;
             case TERMS_NOT_AGREED -> BidErrorType.TERMS_NOT_AGREED;
+            case IDEMPOTENCY_KEY_CONFLICT -> BidErrorType.IDEMPOTENCY_KEY_CONFLICT;
         };
     }
 }

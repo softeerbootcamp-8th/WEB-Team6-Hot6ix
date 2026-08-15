@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 /**
  * 입찰 판정에 쓰는 Redis 값을 읽고 쓴다 (이슈 #246 의 비교군 C).
  *
- * <p>물품 Hash와 참여자 Set으로 판정하고, 승인 결과 Hash와 Stream을 함께 남긴다. 판정은
+ * <p>물품 Hash와 참여자 Set으로 판정하고, 전역 요청 결과 Hash와 Stream을 함께 남긴다. 판정은
  * {@code lua/bid.lua}가 하고 이 클래스는 스크립트 호출과 반환 타입 변환만 담당한다.
  *
  * <pre>
@@ -26,7 +26,7 @@ import org.springframework.stereotype.Component;
  *                                         startingPrice bidIncrement sellerUserId
  *                                         Soft Close 설정과 누적 연장 시간
  *   auction:room:{id}:participants  SET   약관 동의를 마친 userId
- *   auction:item:{id}:accepted      HASH  requestId별 첫 승인 결과
+ *   auction:bid:request:{requestId} HASH  전역 requestId별 fingerprint와 첫 승인 결과
  *   auction:bid:stream              STREAM MySQL에 반영할 승인 이벤트
  * </pre>
  *
@@ -65,7 +65,7 @@ public class AuctionRedisStore {
                 bidScript,
                 List.of(
                         AuctionRedisKeys.item(itemId),
-                        AuctionRedisKeys.accepted(itemId),
+                        AuctionRedisKeys.bidRequest(requestId),
                         AuctionRedisKeys.stream()),
                 requestId,
                 String.valueOf(bidderUserId),

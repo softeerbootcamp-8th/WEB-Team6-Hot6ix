@@ -47,7 +47,7 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
 
     @BeforeEach
     void setUp() {
-        redis.delete(List.of(AuctionRedisKeys.item(ITEM_ID), AuctionRedisKeys.accepted(ITEM_ID),
+        redis.delete(List.of(AuctionRedisKeys.item(ITEM_ID),
                 AuctionRedisKeys.participants(ROOM_ID), AuctionRedisKeys.stream()));
         store = new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry()));
     }
@@ -127,7 +127,7 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
     void serializesBidAndNaturalClose() throws Exception {
         for (int attempt = 0; attempt < 20; attempt++) {
             int requestNumber = attempt;
-            redis.delete(List.of(AuctionRedisKeys.item(ITEM_ID), AuctionRedisKeys.accepted(ITEM_ID),
+            redis.delete(List.of(AuctionRedisKeys.item(ITEM_ID), AuctionRedisKeys.bidRequest("request-" + requestNumber),
                     AuctionRedisKeys.participants(ROOM_ID), AuctionRedisKeys.stream()));
             long dueAt = System.currentTimeMillis();
             seed(dueAt);

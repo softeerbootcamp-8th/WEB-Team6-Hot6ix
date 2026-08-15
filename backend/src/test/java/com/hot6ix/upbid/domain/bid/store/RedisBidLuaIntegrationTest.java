@@ -24,6 +24,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
 
     private static final long ITEM_ID = 101L;
+    private static final long OTHER_ITEM_ID = 102L;
     private static final long ROOM_ID = 202L;
     private static final long BIDDER_ID = 11L;
 
@@ -47,8 +48,9 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
     void setUp() {
         redis.delete(List.of(
                 AuctionRedisKeys.item(ITEM_ID),
+                AuctionRedisKeys.item(OTHER_ITEM_ID),
                 AuctionRedisKeys.participants(ROOM_ID),
-                AuctionRedisKeys.accepted(ITEM_ID),
+                AuctionRedisKeys.bidRequest("request-1"),
                 AuctionRedisKeys.stream()));
         store = new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry()));
     }
@@ -76,8 +78,11 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 .isEqualTo("10000");
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
                 .isEqualTo("11");
-        assertThat(redis.opsForHash().hasKey(AuctionRedisKeys.accepted(ITEM_ID), "request-1"))
-                .isTrue();
+        assertThat(redis.opsForHash().entries(AuctionRedisKeys.bidRequest("request-1")))
+                .containsAllEntriesOf(java.util.Map.of(
+                        "itemId", "101",
+                        "bidderUserId", "11",
+                        "amount", "10000"));
         assertThat(redis.opsForStream().size(AuctionRedisKeys.stream())).isEqualTo(1L);
         assertThat(redis.opsForStream().range(AuctionRedisKeys.stream(), Range.unbounded()))
                 .singleElement()
@@ -95,7 +100,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
     }
 
     @Test
-    @DisplayName("같은 requestId 재시도는 첫 승인 결과를 돌려주고 상태와 Stream을 다시 쓰지 않는다")
+    @DisplayName("같은 requestId와 같은 요청 내용의 재시도는 첫 승인 결과를 돌려주고 다시 쓰지 않는다")
     void duplicateRequestReturnsFirstResultWithoutAnotherEvent() {
 
         long endAt = System.currentTimeMillis() + 300_000L;
@@ -104,7 +109,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
 
         RedisBidDecision retried =
-                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 20_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
 
         RedisBidDecision.Accepted firstAccepted = (RedisBidDecision.Accepted) first;
         assertThat(retried).isEqualTo(new RedisBidDecision.Accepted(
@@ -116,6 +121,63 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 true));
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "currentPrice"))
                 .isEqualTo("10000");
+        assertThat(redis.opsForStream().size(AuctionRedisKeys.stream())).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("같은 requestId를 다른 금액에 재사용하면 멱등 키 충돌로 거절한다")
+    void rejectsRequestIdReusedWithDifferentAmount() {
+
+        long endAt = System.currentTimeMillis() + 300_000L;
+        store.seed(seed(ITEM_ID, endAt, 0, 60, 60));
+        store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+
+        RedisBidDecision retried =
+                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 20_000L, System.currentTimeMillis());
+
+        assertThat(retried).isInstanceOfSatisfying(RedisBidDecision.Rejected.class,
+                rejected -> assertThat(rejected.reason().name()).isEqualTo("IDEMPOTENCY_KEY_CONFLICT"));
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "currentPrice"))
+                .isEqualTo("10000");
+        assertThat(redis.opsForStream().size(AuctionRedisKeys.stream())).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("같은 requestId를 다른 입찰자가 재사용하면 멱등 키 충돌로 거절한다")
+    void rejectsRequestIdReusedByDifferentBidder() {
+
+        long endAt = System.currentTimeMillis() + 300_000L;
+        store.seed(seed(ITEM_ID, endAt, 0, 60, 60));
+        redis.opsForSet().add(AuctionRedisKeys.participants(ROOM_ID), "12");
+        store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+
+        RedisBidDecision retried =
+                store.evaluateBid(ITEM_ID, "request-1", 12L, 10_000L, System.currentTimeMillis());
+
+        assertThat(retried).isInstanceOfSatisfying(RedisBidDecision.Rejected.class,
+                rejected -> assertThat(rejected.reason())
+                        .isEqualTo(RedisBidDecision.Reason.IDEMPOTENCY_KEY_CONFLICT));
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
+                .isEqualTo("11");
+        assertThat(redis.opsForStream().size(AuctionRedisKeys.stream())).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("같은 requestId를 다른 물품에 재사용하면 전역 멱등 키 충돌로 거절한다")
+    void rejectsRequestIdReusedForDifferentItem() {
+
+        long endAt = System.currentTimeMillis() + 300_000L;
+        store.seed(seed(ITEM_ID, endAt, 0, 60, 60));
+        store.seed(seed(OTHER_ITEM_ID, endAt, 0, 60, 60));
+        store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+
+        RedisBidDecision retried =
+                store.evaluateBid(OTHER_ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+
+        assertThat(retried).isInstanceOfSatisfying(RedisBidDecision.Rejected.class,
+                rejected -> assertThat(rejected.reason().name()).isEqualTo("IDEMPOTENCY_KEY_CONFLICT"));
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(OTHER_ITEM_ID), "leaderUserId"))
+                .isNull();
         assertThat(redis.opsForStream().size(AuctionRedisKeys.stream())).isEqualTo(1L);
     }
 
@@ -135,7 +197,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 .isEqualTo("10000");
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
                 .isNull();
-        assertThat(redis.hasKey(AuctionRedisKeys.accepted(ITEM_ID))).isFalse();
+        assertThat(redis.hasKey(AuctionRedisKeys.bidRequest("request-low"))).isFalse();
         assertThat(redis.hasKey(AuctionRedisKeys.stream())).isFalse();
     }
 
@@ -242,8 +304,13 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
 
     private static AuctionRedisSeed seed(long endAtMillis, int totalExtensionSeconds,
                                          Integer triggerSeconds, Integer extendSeconds) {
+        return seed(ITEM_ID, endAtMillis, totalExtensionSeconds, triggerSeconds, extendSeconds);
+    }
+
+    private static AuctionRedisSeed seed(long itemId, long endAtMillis, int totalExtensionSeconds,
+                                         Integer triggerSeconds, Integer extendSeconds) {
         return new AuctionRedisSeed(
-                ITEM_ID,
+                itemId,
                 ROOM_ID,
                 303L,
                 AuctionItemStatus.IN_PROGRESS,

@@ -23,7 +23,8 @@ public enum BidErrorType implements ErrorType {
     INVALID_BID_UNIT(HttpStatus.CONFLICT, 7005, "입찰 단위에 맞지 않는 금액입니다."),
     CONCURRENT_BID_CONFLICT(HttpStatus.CONFLICT, 7006, "다른 분이 먼저 입찰했습니다. 현재가를 확인해 주세요."),
     SELLER_CANNOT_BID(HttpStatus.FORBIDDEN, 7007, "판매자는 자신의 물품에 입찰할 수 없습니다."),
-    TERMS_NOT_AGREED(HttpStatus.FORBIDDEN, 7008, "경매방 입장 약관에 동의한 회원만 입찰할 수 있습니다.");
+    TERMS_NOT_AGREED(HttpStatus.FORBIDDEN, 7008, "경매방 입장 약관에 동의한 회원만 입찰할 수 있습니다."),
+    IDEMPOTENCY_KEY_CONFLICT(HttpStatus.CONFLICT, 7009, "이미 다른 입찰에 사용된 멱등 키입니다.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;

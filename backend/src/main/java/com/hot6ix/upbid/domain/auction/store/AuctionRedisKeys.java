@@ -14,8 +14,8 @@ public final class AuctionRedisKeys {
         return "auction:room:" + roomId + ":participants";
     }
 
-    public static String accepted(long itemId) {
-        return "auction:item:" + itemId + ":accepted";
+    public static String bidRequest(String requestId) {
+        return "auction:bid:request:" + requestId;
     }
 
     public static String stream() {

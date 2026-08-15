@@ -77,11 +77,11 @@ class BidServiceTest {
 
         RedisBidDecision.Accepted duplicate = new RedisBidDecision.Accepted(
                 REQUEST_ID, AMOUNT, ACCEPTED_AT, END_AT, 30, true);
-        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, 20_000L, ARRIVED_AT))
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
                 .thenReturn(duplicate);
 
         BidCreateResponseDto response = bidService.place(
-                ITEM_ID, BIDDER_ID, 20_000L, REQUEST_ID);
+                ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID);
 
         assertThat(response.requestId()).isEqualTo(REQUEST_ID);
         assertThat(response.amount()).isEqualTo(AMOUNT);
@@ -106,6 +106,21 @@ class BidServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(expectedErrorType);
+    }
+
+    @Test
+    @DisplayName("멱등 키가 다른 요청 내용에 재사용되면 충돌 오류로 변환한다")
+    void mapsIdempotencyKeyConflict() {
+
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
+                .thenReturn(new RedisBidDecision.Rejected(
+                        RedisBidDecision.Reason.IDEMPOTENCY_KEY_CONFLICT));
+
+        assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .extracting(Object::toString)
+                .isEqualTo("IDEMPOTENCY_KEY_CONFLICT");
     }
 
     private static Stream<Arguments> rejections() {
