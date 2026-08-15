@@ -977,8 +977,8 @@
     },
     {
       "type": "timeseries",
-      "title": "SSE heartbeat / broadcast (ms)",
-      "description": "broadcast 는 입찰을 처리한 스레드가 방 전원에게 쏘는 시간이라 그대로 입찰 응답에 얹힌다(#234).\nheartbeat 는 마감 예약과 스케줄러 풀을 같이 써서, 길어지면 마감이 밀린다.",
+      "title": "SSE heartbeat / fan-out enqueue (ms)",
+      "description": "broadcast는 현재 방의 emitter 큐에 작업을 배분하는 시간이다. 실제 emitter.send() 완료 시간은 아래 SSE 단계별 지연 패널의 send 지표로 본다.\nheartbeat가 길어지면 SSE 유지 작업이 밀리고 있다는 뜻이다.",
       "id": 11,
       "datasource": {
         "type": "prometheus",
@@ -1040,7 +1040,7 @@
           },
           "editorMode": "code",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_broadcast_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
-          "legendFormat": "broadcast p95",
+          "legendFormat": "fan-out enqueue p95 (legacy)",
           "range": true,
           "refId": "B"
         }
@@ -1484,6 +1484,189 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "row",
+      "title": "SSE 전달 상세",
+      "id": 24,
+      "collapsed": false,
+      "gridPos": { "x": 0, "y": 70, "w": 24, "h": 1 },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "SSE 연결 수립·종료율",
+      "description": "현재 연결 수와 초당 연결 수립·종료 수를 함께 본다. 종료는 reason별로 분리된다.",
+      "id": 25,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 0, "y": 71, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(upbid_sse_connections{run=~\"$run\"})", "legendFormat": "현재 연결", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(upbid_sse_connections_opened_total{run=~\"$run\"}[30s]))", "legendFormat": "수립/s", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum by (reason) (rate(upbid_sse_connections_closed_total{run=~\"$run\"}[30s]))", "legendFormat": "종료/s {{reason}}", "range": true, "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SSE 이벤트·전송률",
+      "description": "논리 이벤트 발행률과 각 구독자에 대한 send 시도·성공·실패율이다. 한 이벤트가 N명에게 전달되면 send 시도는 N배가 된다.",
+      "id": 26,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 12, "y": 71, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum by (event) (rate(upbid_sse_events_published_total{run=~\"$run\"}[30s]))", "legendFormat": "발행 {{event}}", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum by (event) (rate(upbid_sse_send_attempts_total{run=~\"$run\"}[30s]))", "legendFormat": "시도 {{event}}", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum by (event) (rate(upbid_sse_send_successes_total{run=~\"$run\"}[30s]))", "legendFormat": "성공 {{event}}", "range": true, "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum by (event, cause) (rate(upbid_sse_send_failures_total{run=~\"$run\"}[30s]))", "legendFormat": "실패 {{event}}/{{cause}}", "range": true, "refId": "D" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SSE 전송 실패율 (%)",
+      "description": "실제 emitter.send() 실패 수를 전송 시도 수로 나눈 값이다. 실패가 한 건도 없어 시계열이 없을 때는 0으로 표시한다.",
+      "id": 27,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 0, "y": 79, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "percent" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "(sum(rate(upbid_sse_send_failures_total{run=~\"$run\"}[30s])) or vector(0)) / clamp_min(sum(rate(upbid_sse_send_attempts_total{run=~\"$run\"}[30s])), 0.000000001) * 100", "legendFormat": "전체 실패율", "range": true, "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SSE 단계별 지연 p95 (ms)",
+      "description": "fan-out은 방 emitter 큐 배분, queue wait은 큐 체류, send는 실제 emitter.send() 호출 시간이다.",
+      "id": 28,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 12, "y": 79, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_fanout_seconds_bucket{run=~\"$run\"}[30s]))) * 1000", "legendFormat": "fan-out p95", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_queue_wait_seconds_bucket{run=~\"$run\"}[30s]))) * 1000", "legendFormat": "queue wait p95", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_send_seconds_bucket{run=~\"$run\"}[30s]))) * 1000", "legendFormat": "send p95", "range": true, "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SSE 큐·처리 중·거부",
+      "description": "큐 깊이가 계속 증가하면 생산 속도가 send 처리 속도보다 빠르다는 뜻이다. rejected는 큐 포화나 종료된 dispatcher로 전달하지 못한 수다.",
+      "id": 29,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 0, "y": 87, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(upbid_sse_queue_depth{run=~\"$run\"})", "legendFormat": "queue depth", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(upbid_sse_in_flight{run=~\"$run\"})", "legendFormat": "in flight", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum by (reason) (rate(upbid_sse_rejected_total{run=~\"$run\"}[30s]))", "legendFormat": "rejected/s {{reason}}", "range": true, "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "프로세스 FD 사용률 (%)",
+      "description": "열린 파일 디스크립터를 프로세스 한도로 나눈 값이다. SSE 연결 소켓 증가로 한도에 가까워지는지 확인한다.",
+      "id": 30,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 12, "y": 87, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "percent" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "process_files_open_files{run=~\"$run\"} / process_files_max_files{run=~\"$run\"} * 100", "legendFormat": "{{instance}}", "range": true, "refId": "A" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "입찰 API 응답 p95·p99 (ms)",
+      "description": "SSE 구독 요청을 제외하고 입찰 API만 분리한 서버 처리 시간이다. 동기·비동기·가상 스레드 구현 간 입찰 영향도를 비교한다.",
+      "id": 31,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 0, "y": 95, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri=\"/api/v1/auction-items/{auctionItemId}/bids\"}[30s]))) * 1000", "legendFormat": "p95", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{run=~\"$run\", uri=\"/api/v1/auction-items/{auctionItemId}/bids\"}[30s]))) * 1000", "legendFormat": "p99", "range": true, "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "프로세스 FD 개수·한도",
+      "description": "Micrometer의 process_files_open_files와 process_files_max_files 원본 값이다.",
+      "id": 32,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 12, "y": 95, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "process_files_open_files{run=~\"$run\"}", "legendFormat": "open {{instance}}", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "process_files_max_files{run=~\"$run\"}", "legendFormat": "max {{instance}}", "range": true, "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "실제 SSE 클라이언트 연결",
+      "description": "response body를 버리는 연결 수가 아니라 실제 SSE 프레임을 계속 파싱 중인 연결 수다. 측정 구간 내내 목표선에 붙어 있어야 한다.",
+      "id": 33,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 0, "y": 103, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["min", "max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(sse_client_connections{run=~\"$run\"})", "legendFormat": "실제 프레임 수신 연결", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(sse_client_target_connections{run=~\"$run\"})", "legendFormat": "목표 연결", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(sse_client_events_received_total{run=~\"$run\"}[30s]))", "legendFormat": "실제 이벤트 수신/s", "range": true, "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SSE 요청→수신 E2E 지연 (ms)",
+      "description": "k6가 입찰 POST를 시작한 시각부터 실제 audience 구독자가 BID_PLACED 프레임을 파싱한 시각까지다. 서버 send 시간과 네트워크·클라이언트 전달 시간을 모두 포함한다.",
+      "id": 34,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 12, "y": 103, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(sse_client_msg_latency_seconds_bucket{run=~\"$run\"}[30s]))) * 1000", "legendFormat": "sse_msg_latency p95", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.99, sum by (le) (rate(sse_client_msg_latency_seconds_bucket{run=~\"$run\"}[30s]))) * 1000", "legendFormat": "sse_msg_latency p99", "range": true, "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SSE 클라이언트 정확성 오류",
+      "description": "방별 순차 event ID를 기준으로 누락·중복·순서 역전을 구분한다. parse는 BID_PLACED JSON을 해석하지 못한 수, close/error는 예상하지 않은 연결 종료·수립 실패다. 모두 0이 정상이다.",
+      "id": 35,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 0, "y": 111, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(sse_client_missing_events_total{run=~\"$run\"}[30s])) or vector(0)", "legendFormat": "누락/s", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(sse_client_duplicate_events_total{run=~\"$run\"}[30s])) or vector(0)", "legendFormat": "중복/s", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(sse_client_out_of_order_events_total{run=~\"$run\"}[30s])) or vector(0)", "legendFormat": "순서 역전/s", "range": true, "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(sse_client_parse_errors_total{run=~\"$run\"}[30s])) or vector(0)", "legendFormat": "parse 실패/s", "range": true, "refId": "D" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(sse_client_unexpected_closes_total{run=~\"$run\"}[30s])) or vector(0)", "legendFormat": "예상 밖 종료/s", "range": true, "refId": "E" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(sse_client_connection_errors_total{run=~\"$run\"}[30s])) or vector(0)", "legendFormat": "연결 오류/s", "range": true, "refId": "F" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "BID_PLACED 실제 전달률 (%)",
+      "description": "실제 클라이언트가 파싱한 BID_PLACED 수를 서버의 BID_PLACED send 성공 수로 나눈 값이다. 끝 경계의 scrape 시각 차이로 짧게 흔들릴 수 있어 누락 ID와 함께 판정한다.",
+      "id": 36,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 12, "y": 111, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "percent" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["min", "max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(sse_client_events_received_total{run=~\"$run\", event=\"BID_PLACED\"}[30s])) / clamp_min(sum(rate(upbid_sse_send_successes_total{run=~\"$run\", event=\"BID_PLACED\"}[30s])), 0.000000001) * 100", "legendFormat": "delivery ratio", "range": true, "refId": "A" }
+      ]
     }
   ],
   "templating": {
@@ -1517,5 +1700,5 @@
       }
     ]
   },
-  "version": 7
+  "version": 9
 }

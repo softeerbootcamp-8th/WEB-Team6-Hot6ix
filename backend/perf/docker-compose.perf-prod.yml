@@ -63,5 +63,24 @@ services:
       # 사설 IP 로 때리면 프록시와 TLS 를 건너뛰어서, 사용자가 겪는 경로를 재는 게 아니게 된다.
       - BASE_URL=${BASE_URL:-https://api.upbid.store/api/v1}
 
+  # 측정 서버에서 실제 SSE 프레임을 읽는 전용 클라이언트. 앱 EC2의 자원에는 영향을 주지 않고,
+  # 같은 측정 서버의 k6와 시계를 공유하므로 입찰 요청 시작부터 수신까지의 지연을 계산할 수 있다.
+  sse-client:
+    image: node:24-alpine
+    profiles: ["tools"]
+    init: true
+    working_dir: /app
+    volumes:
+      - ./sse-client:/app:ro
+    command: ["node", "/app/client.mjs"]
+    environment:
+      - BASE_URL=${SSE_CLIENT_BASE_URL:-https://api.upbid.store/api/v1}
+      - RUN_ID=${SSE_CLIENT_RUN_ID:-standalone}
+      - SHARE_CODES=${SSE_CLIENT_SHARE_CODES:-}
+      - CONNECTIONS=${SSE_CLIENT_CONNECTIONS:-1}
+      - RAMP_UP_SECONDS=${SSE_CLIENT_RAMP_SECONDS:-120}
+      - METRICS_PORT=9091
+    stop_grace_period: 10s
+
 volumes:
   prometheus-data:

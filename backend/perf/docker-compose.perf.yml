@@ -183,5 +183,25 @@ services:
       - K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),max,avg
       - BASE_URL=http://nginx/api/v1
 
+  # k6의 일반 HTTP API는 스트리밍 응답 본문을 이벤트 단위로 넘겨주지 않는다. 이 프로세스가
+  # 실제 SSE 프레임을 끝까지 읽으면서 누락·중복·순서·E2E 지연을 계측한다. 서버 자원 제한에
+  # 포함시키면 부하 발생기가 앱과 CPU를 나눠 쓰게 되므로 cpus/mem_limit은 일부러 두지 않는다.
+  sse-client:
+    image: node:24-alpine
+    profiles: ["tools"]
+    init: true
+    working_dir: /app
+    volumes:
+      - ./sse-client:/app:ro
+    command: ["node", "/app/client.mjs"]
+    environment:
+      - BASE_URL=${SSE_CLIENT_BASE_URL:-http://nginx/api/v1}
+      - RUN_ID=${SSE_CLIENT_RUN_ID:-standalone}
+      - SHARE_CODES=${SSE_CLIENT_SHARE_CODES:-}
+      - CONNECTIONS=${SSE_CLIENT_CONNECTIONS:-1}
+      - RAMP_UP_SECONDS=${SSE_CLIENT_RAMP_SECONDS:-120}
+      - METRICS_PORT=9091
+    stop_grace_period: 10s
+
 volumes:
   prometheus-data:
