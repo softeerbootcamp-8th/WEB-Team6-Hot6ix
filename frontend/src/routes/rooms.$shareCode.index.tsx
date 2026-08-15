@@ -66,6 +66,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Modal } from '@/components/ui/modal'
 import { QuickBidOverlay } from '@/features/live/components/quick-bid-overlay'
 import { RouteError, RoutePending } from '@/components/route-states'
+import { SellerPanel } from '@/features/live/components/seller-panel'
 import { SharePanel } from '@/features/live/components/share-panel'
 import { cn } from '@/lib/utils'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
@@ -125,7 +126,7 @@ export const Route = createFileRoute('/rooms/$shareCode/')({
  * 입찰 확인은 여기 없다. 빠른 입찰 카드 안에서 끝나므로 패널을 옮기지 않는다
  * (`QuickBidOverlay` 주석 참고).
  */
-type RightPanel = 'leaderboard' | 'quickBid' | 'share'
+type RightPanel = 'leaderboard' | 'quickBid' | 'share' | 'seller'
 
 /**
  * 이벤트 피드 항목의 id 를 만든다. `Date.now()` 만 쓰면 같은 밀리초에 도착한 이벤트끼리
@@ -141,7 +142,20 @@ const PANEL_LABEL: Record<RightPanel, string> = {
   leaderboard: '리더보드 · 물품별',
   quickBid: '빠른 입찰',
   share: '경매방 공유',
+  seller: '판매자 정보',
 }
+
+/**
+ * 마감 시각이 지났는데 `ItemEnded` 가 안 왔을 때, 서버에 다시 물어보는 간격.
+ * 마지막 값을 계속 되풀이한다.
+ *
+ * **점점 뜸해지는 이유는 두 원인의 회복 속도가 달라서다.** 이벤트만 유실된
+ * 경우(끊긴 순간에 걸린 알림)는 서버가 이미 마감을 끝냈으므로 첫 조회에서
+ * 풀린다. 서버가 마감 처리 자체에 밀린 경우는 물어봐도 소용이 없고, 서버가
+ * 60초 주기로 스스로 복구할 때까지 기다려야 한다. 그때 보는 사람 전원이
+ * 매초 물어보면 바쁜 서버를 더 밀어붙이게 된다.
+ */
+const CLOSE_RESYNC_BACKOFF_MS = [1000, 2000, 4000, 8000, 15000]
 
 function LiveRoomPage() {
   const { shareCode } = Route.useParams()
@@ -150,8 +164,21 @@ function LiveRoomPage() {
   const isDesktop = useIsDesktop()
 
   const isGuest = user === null
-  /** 리더보드에서 내 줄을 찾는 기준. 서버가 `isMe` 를 안 줘서 닉네임으로 맞춘다. */
-  const myNickname = user?.nickname ?? null
+
+  /**
+   * 내가 접수시킨 입찰의 `물품id:금액`. 실시간 입찰 이벤트가 내 것인지 가린다.
+   *
+   * 이벤트에는 닉네임만 실려 있는데, 닉네임에는 unique 제약이 없어 동명이인이면
+   * 남의 입찰이 내 줄로 강조된다(#328). **한 물품에서 같은 금액은 한 번만 입찰될
+   * 수 있으므로**(`uk_bids_item_amount`) 금액이 곧 그 입찰의 신원이다.
+   *
+   * 서버 조회로 받은 리더보드는 서버가 판정한 `isMe` 를 그대로 쓴다. 이건 다음
+   * 응답이 오기 전까지 덧칠한 줄에만 쓰인다.
+   */
+  const myBidsRef = useRef<Set<string>>(new Set())
+  const rememberMyBid = (itemId: number, amount: number) => {
+    myBidsRef.current.add(`${itemId}:${amount}`)
+  }
 
   const [keyword, setKeyword] = useState('')
   const [panel, setPanel] = useState<RightPanel>('leaderboard')
@@ -166,8 +193,10 @@ function LiveRoomPage() {
   const [selectedForRemoval, setSelectedForRemoval] = useState<number[]>([])
   const [confirmingRemoval, setConfirmingRemoval] = useState(false)
   /**
-   * 화면에서만 바꾼 편성. 물품 추가·삭제·마감이 아직 목업이라 서버 목록 위에
-   * 덮어쓴다. 입찰이 성공하면 `null` 로 되돌려 서버 값이 다시 이기게 한다.
+   * SSE 로 덧칠한 물품 목록. 서버 목록 위에 덮어쓴다.
+   *
+   * **서버 응답이 새로 오면 버린다**(아래 재동기화 effect). 이게 없으면 이벤트를
+   * 한 번 놓치거나 중복으로 받았을 때 어긋난 리더보드가 마감까지 그대로 남는다.
    */
   const [items, setItems] = useState<AuctionItemDetail[] | null>(null)
   /** 실시간 연동 전까지 새 이벤트 애니메이션을 눈으로 보려고 쌓아 둔다. */
@@ -198,8 +227,8 @@ function LiveRoomPage() {
   const queryClient = useQueryClient()
   const summaries = useGetSummaries(shareCode)
   const serverItems = useMemo(
-    () => toAuctionItems(summaries.data?.data ?? [], myNickname),
-    [summaries.data, myNickname],
+    () => toAuctionItems(summaries.data?.data ?? []),
+    [summaries.data],
   )
 
   /*
@@ -211,6 +240,79 @@ function LiveRoomPage() {
    */
   // 편성을 바꾸기 전까지는 서버가 준 목록을 그대로 쓴다.
   const roomItems = items ?? serverItems
+
+  /*
+   * 서버 목록이 새로 도착하면 화면 덧칠을 버린다. **서버가 항상 이긴다.**
+   *
+   * SSE 덧칠은 다음 응답까지만 유효한 임시값이다. 예전에는 덧칠이 한 번 얹히면
+   * 재조회를 해도 화면이 안 바뀌어서, 이벤트를 놓치거나 중복으로 받은 차이가
+   * 새로고침 전까지 남았다(#328). 되돌릴 통로가 아예 없었다.
+   *
+   * `dataUpdatedAt` 은 조회가 성공할 때만 올라간다. 같은 값이 다시 와도 올라가므로
+   * "서버에 물어봤다" 자체를 신호로 쓸 수 있다.
+   */
+  useEffect(() => {
+    if (summaries.dataUpdatedAt === 0) return
+    setItems(null)
+  }, [summaries.dataUpdatedAt])
+
+  /*
+   * 진행 중인 물품의 마감 시각. 이 문자열이 그대로면 아래 폴백이 재시도를 이어간다.
+   *
+   * 배열이 아니라 문자열로 만드는 이유는 effect 의존성으로 쓰기 위해서다. 배열은
+   * 렌더마다 새 참조라 effect 가 매번 다시 돌고, 그러면 재시도 간격이 늘어나지
+   * 못한 채 첫 간격에서 계속 처음부터 다시 시작한다.
+   */
+  const activeDeadlines = roomItems
+    .filter((item) => item.status === 'ACTIVE' && item.endsAt !== null)
+    .map((item) => `${item.id}:${item.endsAt}`)
+    .join('|')
+
+  /*
+   * 마감 시각이 지났는데 마감 이벤트가 안 오면 서버에 다시 물어본다.
+   *
+   * 화면은 남은 시간이 0 이 되어도 마감으로 단정하지 않고 "마감 처리 중"으로
+   * 적어둔 채 `ItemEnded` 를 기다린다(`formatCountdown`). 그 이벤트를 놓치면
+   * 새로고침 전까지 거기서 못 빠져나왔다(#328). 서버에 물어볼 통로가 없었다.
+   *
+   * 정상이라면 이 폴백은 한 번도 돌지 않는다. 서버 마감 폴러가 100ms 주기라
+   * 마감 이벤트가 첫 재시도(1초)보다 먼저 도착한다.
+   */
+  useEffect(() => {
+    if (activeDeadlines === '') return
+
+    const earliest = Math.min(
+      ...activeDeadlines
+        .split('|')
+        .map((entry) =>
+          new Date(entry.slice(entry.indexOf(':') + 1)).getTime(),
+        ),
+    )
+    if (!Number.isFinite(earliest)) return
+
+    let attempt = 0
+    let timer = 0
+
+    const ask = () => {
+      const wait =
+        attempt === 0
+          ? Math.max(0, earliest - Date.now()) + CLOSE_RESYNC_BACKOFF_MS[0]
+          : CLOSE_RESYNC_BACKOFF_MS[
+              Math.min(attempt, CLOSE_RESYNC_BACKOFF_MS.length - 1)
+            ]
+
+      timer = window.setTimeout(() => {
+        attempt += 1
+        void queryClient.invalidateQueries({
+          queryKey: getGetSummariesQueryKey(shareCode),
+        })
+        ask()
+      }, wait)
+    }
+
+    ask()
+    return () => window.clearTimeout(timer)
+  }, [activeDeadlines, queryClient, shareCode])
 
   /*
    * 방 정보는 서버가 준다. 목록·상세와 달리 목업으로 되돌아가지 않는다 —
@@ -370,13 +472,14 @@ function LiveRoomPage() {
                     ...item,
                     currentPrice: payload.bidPrice,
                     topBidderNickname: payload.bidderNickname,
-                    bidCount: item.bidCount + 1,
                     leaderboard: [
                       {
                         rank: 1,
                         nickname: payload.bidderNickname,
                         amount: payload.bidPrice,
-                        isMe: payload.bidderNickname === myNickname,
+                        isMe: myBidsRef.current.has(
+                          `${payload.itemId}:${payload.bidPrice}`,
+                        ),
                       },
                       ...item.leaderboard.filter(
                         (entry) => entry.nickname !== payload.bidderNickname,
@@ -558,7 +661,7 @@ function LiveRoomPage() {
           break
       }
     },
-    [roomItems, myNickname, shareCode, queryClient],
+    [roomItems, shareCode, queryClient],
   )
 
   const { status } = useRealtimeStatus(shareCode, handleSseEvent)
@@ -1020,6 +1123,8 @@ function LiveRoomPage() {
       })
       bidRequestIds.complete(requestId)
 
+      rememberMyBid(detailItem.id, detailAmount)
+
       // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       setDetailFeedback({
         tone: 'success',
@@ -1199,6 +1304,8 @@ function LiveRoomPage() {
       })
       bidRequestIds.complete(requestId)
 
+      rememberMyBid(item.id, amount)
+
       // 서버가 확정해 준 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       toast.success('입찰이 등록됐어요', {
         description: `${item.name} · ${formatWon(amount)}`,
@@ -1343,6 +1450,7 @@ function LiveRoomPage() {
           liveItems={liveItems}
           rankedItems={rankedItems}
           onShare={() => setPanel('share')}
+          onOpenSeller={() => setPanel('seller')}
           onOpenSettings={openSettings}
           onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
           onBack={() => void navigate({ to: '/rooms' })}
@@ -1443,6 +1551,10 @@ function LiveRoomPage() {
               onClose={() => setPanel('leaderboard')}
             />
           )}
+
+          {panel === 'seller' && (
+            <SellerPanel room={room} onClose={() => setPanel('leaderboard')} />
+          )}
         </Modal>
 
         {closeRoomDialog}
@@ -1482,6 +1594,9 @@ function LiveRoomPage() {
         isGuest={isGuest}
         participantCount={participantCount}
         onShare={() => setPanel(panel === 'share' ? 'leaderboard' : 'share')}
+        onOpenSeller={() =>
+          setPanel(panel === 'seller' ? 'leaderboard' : 'seller')
+        }
         onOpenSettings={openSettings}
         onCloseRoom={isOwner ? () => setClosingRoom(true) : undefined}
         overlay={
@@ -1790,6 +1905,13 @@ function LiveRoomPage() {
                 onClose={() => setPanel('leaderboard')}
               />
             </RightSlot>
+
+            <RightSlot active={panel === 'seller'}>
+              <SellerPanel
+                room={room}
+                onClose={() => setPanel('leaderboard')}
+              />
+            </RightSlot>
           </div>
         }
       />
@@ -1886,7 +2008,7 @@ function ItemManagement({
  */
 function bumpTopBid(item: AuctionItemDetail): AuctionItemDetail {
   const amount = item.currentPrice + item.bidUnit
-  const nickname = `데모입찰러${item.bidCount + 1}`
+  const nickname = `데모입찰러${item.leaderboard.length + 1}`
 
   const leaderboard = [
     { rank: 1, nickname, amount, isMe: false },
@@ -1896,7 +2018,6 @@ function bumpTopBid(item: AuctionItemDetail): AuctionItemDetail {
   return {
     ...item,
     currentPrice: amount,
-    bidCount: item.bidCount + 1,
     topBidderNickname: nickname,
     leaderboard,
   }

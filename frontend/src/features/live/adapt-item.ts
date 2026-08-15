@@ -3,7 +3,6 @@ import type {
   AuctionItemSummaryResponseDto,
   LeaderboardEntryResponseDto,
 } from '@/api/generated/model'
-import { MOCK_ROOM_DETAIL } from '@/mocks/data'
 import type {
   AuctionItemDetail,
   ItemStatus,
@@ -13,18 +12,15 @@ import type {
 /**
  * 서버 물품 DTO 를 화면이 쓰는 `AuctionItemDetail` 로 바꾼다.
  *
- * 서버에는 아직 입찰 이력·입찰 수·카테고리가 없는데, 이 값들이 6개 컴포넌트에
- * 박혀 있다. 화면 타입을 서버에 맞추면 라이브 기능을 통째로 다시 써야 하므로,
- * 변환을 여기 한 곳에 몰아넣고 없는 값만 목업에서 빌려온다.
+ * **목업을 섞지 않는다.** 예전에는 서버에 없는 필드(입찰 수·입찰 이력·연장
+ * 여부·카테고리)를 목업 물품에서 빌려 같은 객체에 채웠는데, 그러면 화면에 보이는
+ * 물품 하나가 서버 값과 가짜 값이 섞인 덩어리가 되어 어느 숫자가 진짜인지
+ * 구분할 수 없었다. 그 필드들은 화면 어디에서도 그려지지 않고 있어서 통째로
+ * 걷어냈다.
  *
- * **리더보드·최고 입찰자·사진은 목업을 쓰지 않는다.** 실제 입찰과 무관한 순위가
- * 화면에 남는 문제(#136) 때문에 서버 값만 쓰고, 없으면 비워 둔다. 사진도 같은
- * 이유다 — 이름으로 고른 목업 사진이 뜨면 판매자가 올린 것과 다른 사진이
- * 경매 중에 보인다(#138).
- *
- * ponytail: 임시물이다. 남은 목업 필드가 실제 값으로 채워지면
- * (`history` 는 #134, `extended` 는 Soft Close 연장 로직) `fallback` 인자를
- * 지우고 순수 변환 함수로 줄인다.
+ * 값이 없을 때 목업으로 떨어지지 않는 규칙은 그대로다. 리더보드는 실제 입찰과
+ * 무관한 순위가 남는 문제(#136), 사진은 판매자가 올린 것과 다른 사진이 경매 중에
+ * 보이는 문제(#138) 때문이다.
  */
 
 /**
@@ -52,9 +48,9 @@ function toItemStatus(status: string | undefined): ItemStatus {
  * 목업 순위를 빌려 썼는데, 실제 입찰과 무관한 가짜 순위가 조용히 화면에 남아
  * 시연에서 입찰을 넣어도 순위가 그대로였다. 비어 보이는 게 틀린 값보다 낫다.
  *
- * `isMe` 는 서버가 내려주지 않아 세션 닉네임으로 비교한다. 닉네임에 unique
- * 제약이 없어서(카카오 이름을 그대로 쓴다) **동명이인이면 남의 줄이 내 순위로
- * 강조된다.** 정확히 하려면 응답에 `isMe` 가 필요하다.
+ * **`isMe` 는 서버가 판정해 준 값을 그대로 쓴다.** 예전에는 세션 닉네임과 비교했는데,
+ * 닉네임에 unique 제약이 없어서(카카오 이름을 그대로 쓴다) 동명이인이면 남의 줄이
+ * 내 순위로 강조됐다(#328).
  *
  * 닉네임 없는 줄은 그릴 수 없으니 버린다. springdoc 이 모든 필드를 optional 로
  * 내보내서 타입에만 나타나는 경우이고, 실제 응답에는 늘 채워져 있다. 버린 줄이
@@ -62,7 +58,6 @@ function toItemStatus(status: string | undefined): ItemStatus {
  */
 function toLeaderboard(
   entries: LeaderboardEntryResponseDto[] | undefined,
-  myNickname: string | null,
 ): LeaderboardEntry[] {
   const named = (entries ?? []).filter(
     (entry): entry is LeaderboardEntryResponseDto & { nickname: string } =>
@@ -73,40 +68,28 @@ function toLeaderboard(
     rank: entry.rank ?? index + 1,
     nickname: entry.nickname,
     amount: entry.amount ?? 0,
-    isMe: myNickname !== null && entry.nickname === myNickname,
+    isMe: entry.isMe ?? false,
   }))
-}
-
-/**
- * 서버에 없는 필드를 채울 목업을 순번으로 고른다.
- * 물품 수가 목업보다 많으면 앞에서부터 다시 쓴다.
- */
-export function fallbackItem(index: number): AuctionItemDetail {
-  const items = MOCK_ROOM_DETAIL.items
-  return items[index % items.length]
 }
 
 export function toAuctionItemDetail(
   dto: AuctionItemSummaryResponseDto | AuctionItemDetailResponseDto,
-  fallback: AuctionItemDetail,
-  myNickname: string | null = null,
 ): AuctionItemDetail {
-  // 상세 DTO 에만 있는 필드. 목록 응답이면 undefined 라 목업으로 떨어진다.
+  // 상세 DTO 에만 있는 필드. 목록 응답이면 undefined 다.
   const detail = dto as AuctionItemDetailResponseDto
   const status = toItemStatus(dto.status)
-  const leaderboard = toLeaderboard(dto.leaderboard, myNickname)
+  const leaderboard = toLeaderboard(dto.leaderboard)
 
   return {
-    ...fallback,
-    id: dto.auctionItemId ?? fallback.id,
-    roomId: detail.auctionRoomId ?? fallback.roomId,
-    name: dto.productName ?? fallback.name,
+    id: dto.auctionItemId ?? 0,
+    roomId: detail.auctionRoomId ?? 0,
+    name: dto.productName ?? '',
     /*
-     * 목업으로 떨어지지 않는다. 값이 없으면 `ProductThumbnail` 이 회색 아이콘을
-     * 그린다. 목록 응답과 상세 응답 둘 다 `imageUrl` 을 준다.
+     * 값이 없으면 `ProductThumbnail` 이 회색 아이콘을 그린다.
+     * 목록 응답과 상세 응답 둘 다 `imageUrl` 을 준다.
      */
     imageUrl: dto.imageUrl ?? null,
-    description: detail.description ?? fallback.description,
+    description: detail.description ?? '',
     /*
      * 목업으로 떨어지지 않는다. 목업 링크(`brand.com/…`)는 팀이 가진 도메인이
      * 아니라서, 누르면 관계없는 사이트가 새 창으로 열린다. 없으면 링크를
@@ -118,12 +101,11 @@ export function toAuctionItemDetail(
     status,
     /*
      * 목록 응답에는 시작가가 없다. 아직 입찰이 없으면 현재가가 곧 시작가이므로
-     * 그 값을 쓴다. 목업으로 두면 **판매자가 방금 입력한 시작가와 다른 숫자**가
-     * 카드에 뜬다(시작 전 카드는 이 값을 "시작가"로 그린다).
+     * 그 값을 쓴다(시작 전 카드는 이 값을 "시작가"로 그린다).
      */
-    startPrice: detail.startingPrice ?? dto.currentPrice ?? fallback.startPrice,
-    currentPrice: dto.currentPrice ?? fallback.currentPrice,
-    bidUnit: detail.bidIncrement ?? fallback.bidUnit,
+    startPrice: detail.startingPrice ?? dto.currentPrice ?? 0,
+    currentPrice: dto.currentPrice ?? 0,
+    bidUnit: detail.bidIncrement ?? 0,
     leaderboard,
     /*
      * 최고 입찰자는 리더보드 1등이다. 서버가 리더보드를 준 이상 별도 필드가
@@ -136,9 +118,9 @@ export function toAuctionItemDetail(
      * 다르면 카운트다운이 통째로 어긋난다. 지금은 둘 다 KST 라 맞지만,
      * 배포 서버가 UTC 로 돌면 여기서 티가 난다.
      *
-     * **목업으로 떨어지지 않는다.** 시작 전 물품은 서버가 `endAt` 을 주지 않는데,
-     * 예전에는 그때 목업의 마감 시각(`after(1800)`)이 들어와서 아직 시작하지도
-     * 않은 물품의 상세에 카운트다운이 흐르고 있었다(이슈 #214).
+     * **시작 전 물품은 `null` 이다.** 서버가 `endAt` 을 주지 않는데 예전에는 그때
+     * 목업의 마감 시각(`after(1800)`)이 들어와서, 아직 시작하지도 않은 물품의
+     * 상세에 카운트다운이 흐르고 있었다(이슈 #214).
      */
     endsAt: dto.endAt ?? null,
     /*
@@ -146,17 +128,51 @@ export function toAuctionItemDetail(
      * 낙찰"로 단정해, 입찰이 한 번도 없던 물품에 낙찰가가 붙는다.
      */
     sold: dto.status === 'SOLD',
+    // 다음 커밋에서 타입과 함께 지워지는 임시값. 화면은 이 넷을 읽지 않는다.
+    category: '',
+    bidCount: 0,
+    history: [],
+    extended: false,
+  }
+}
+
+/**
+ * 아직 아무 응답도 못 받았을 때 자리에 놓는 빈 물품.
+ *
+ * 훅 순서를 지키려면 렌더 도중에 빠져나갈 수 없어서 무언가는 있어야 하는데,
+ * **이게 화면에 보이는 일은 없다** — 부르는 쪽이 로딩·에러를 먼저 걸러낸다.
+ * 예전에는 이 자리에 목업 물품을 놓았고, 그래서 서버가 안 주는 필드가 가짜 값인
+ * 채로 화면까지 흘러갔다.
+ */
+export function emptyItem(id: number): AuctionItemDetail {
+  return {
+    id,
+    roomId: 0,
+    name: '',
+    imageUrl: null,
+    description: '',
+    productUrl: null,
+    status: 'READY',
+    sold: false,
+    startPrice: 0,
+    currentPrice: 0,
+    bidUnit: 0,
+    endsAt: null,
+    topBidderNickname: null,
+    leaderboard: [],
+    // 다음 커밋에서 타입과 함께 지워지는 임시값. 화면은 이 넷을 읽지 않는다.
+    category: '',
+    bidCount: 0,
+    history: [],
+    extended: false,
   }
 }
 
 /** 목록 응답을 화면 배열로 바꾼다. */
 export function toAuctionItems(
   dtos: AuctionItemSummaryResponseDto[],
-  myNickname: string | null = null,
 ): AuctionItemDetail[] {
-  return dtos.map((dto, index) =>
-    toAuctionItemDetail(dto, fallbackItem(index), myNickname),
-  )
+  return dtos.map((dto) => toAuctionItemDetail(dto))
 }
 
 /**
