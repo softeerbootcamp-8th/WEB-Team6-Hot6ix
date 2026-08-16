@@ -412,11 +412,12 @@ def _client():
     return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 
 
-def _post(opener, path, body=None, timeout=15):
+def _post(opener, path, body=None, timeout=15, headers=None):
     data = json.dumps(body).encode() if body is not None else None
+    merged = {"Content-Type": "application/json"} if data else {}
+    merged.update(headers or {})
     request = urllib.request.Request(
-        APP_BASE + path, data=data, method="POST",
-        headers={"Content-Type": "application/json"} if data else {})
+        APP_BASE + path, data=data, method="POST", headers=merged)
     try:
         with opener.open(request, timeout=timeout) as response:
             return response.status, json.loads(response.read() or b"{}")
@@ -479,7 +480,10 @@ def concurrent_bid(body):
     def fire(index, name, opener, amount):
         barrier.wait()                      # 전원이 모일 때까지 기다렸다 한꺼번에 나간다
         started = time.perf_counter()
-        status, payload = _post(opener, "/auction-items/%d/bids" % item_id, {"amount": amount})
+        # 멱등 키는 요청마다 유일해야 한다 (#337). 동시 발사라 시각이 겹치므로 사람 이름을 섞는다.
+        status, payload = _post(
+            opener, "/auction-items/%d/bids" % item_id, {"amount": amount},
+            headers={"Idempotency-Key": "console-%d-%s-%d" % (item_id, name, int(time.time() * 1000))})
         results[index] = {
             "who": name, "amount": amount, "status": status,
             "code": payload.get("code"), "message": payload.get("message"),
