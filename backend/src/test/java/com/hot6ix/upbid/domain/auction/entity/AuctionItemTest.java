@@ -276,6 +276,48 @@ class AuctionItemTest {
         }
     }
 
+    @Nested
+    @DisplayName("applyPersistedBid")
+    class ApplyPersistedBid {
+
+        @Test
+        @DisplayName("늦게 저장된 낮은 입찰은 현재가와 마감 상태를 되돌리지 않는다")
+        void doesNotRegressStateForOlderBid() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+            User highBidder = User.builder().email("high@hot6ix.com").nickname("고액 입찰자").build();
+            User lowBidder = User.builder().email("low@hot6ix.com").nickname("저액 입찰자").build();
+
+            auctionItem.applyPersistedBid(
+                    highBidder, 20_000L, END_AT.minusSeconds(5), END_AT.plusSeconds(60), 60);
+            boolean endAtAdvanced = auctionItem.applyPersistedBid(
+                    lowBidder, 10_000L, END_AT.minusSeconds(10), END_AT.plusSeconds(30), 30);
+
+            assertThat(auctionItem.getCurrentPrice()).isEqualTo(20_000L);
+            assertThat(auctionItem.getLeaderUser()).isSameAs(highBidder);
+            assertThat(auctionItem.getEndAt()).isEqualTo(END_AT.plusSeconds(60));
+            assertThat(auctionItem.getTotalExtensionSeconds()).isEqualTo(60);
+            assertThat(endAtAdvanced).isFalse();
+        }
+
+        @Test
+        @DisplayName("Redis가 확정한 더 높은 입찰과 연장 상태를 반영한다")
+        void advancesStateForNewerBid() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+            User bidder = User.builder().email("bidder@hot6ix.com").nickname("입찰자").build();
+
+            boolean endAtAdvanced = auctionItem.applyPersistedBid(
+                    bidder, 20_000L, END_AT.minusSeconds(5), END_AT.plusSeconds(60), 60);
+
+            assertThat(auctionItem.getCurrentPrice()).isEqualTo(20_000L);
+            assertThat(auctionItem.getLeaderUser()).isSameAs(bidder);
+            assertThat(auctionItem.getEndAt()).isEqualTo(END_AT.plusSeconds(60));
+            assertThat(auctionItem.getTotalExtensionSeconds()).isEqualTo(60);
+            assertThat(endAtAdvanced).isTrue();
+        }
+    }
+
     private static AuctionItem newItem(AuctionRoom auctionRoom, LocalDateTime endAt,
                                        int totalExtensionSeconds) {
         return AuctionItem.builder()

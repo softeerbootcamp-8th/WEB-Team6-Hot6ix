@@ -3,7 +3,7 @@ import { LiveItemCard } from '@/features/live/components/live-item-card'
 import { useListFlip } from '@/features/live/use-list-flip'
 import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
 import { cn } from '@/lib/utils'
-import type { AuctionItemDetail, ItemStatus } from '@/mocks/types'
+import type { AuctionItemDetail, ItemStatus } from '@/types/domain'
 
 /** 위에서부터 진행 중 → 시작 전 → 종료 순. 지금 볼 것이 위로 온다. */
 const GROUPS: { status: ItemStatus; label: string; dot: string }[] = [

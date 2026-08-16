@@ -103,7 +103,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("경매방 물품 목록을 조회하면 200과 물품 배열을 반환한다")
     void getSummaries() throws Exception {
 
-        when(auctionItemService.getSummaries(SHARE_CODE)).thenReturn(List.of(sampleSummary()));
+        when(auctionItemService.getSummaries(SHARE_CODE, LOGIN_USER_ID)).thenReturn(List.of(sampleSummary()));
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items", SHARE_CODE))
                 .andExpect(status().isOk())
@@ -121,7 +121,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("물품이 없는 경매방은 200과 빈 배열을 반환한다")
     void getSummariesReturnsEmptyArray() throws Exception {
 
-        when(auctionItemService.getSummaries(SHARE_CODE)).thenReturn(List.of());
+        when(auctionItemService.getSummaries(SHARE_CODE, LOGIN_USER_ID)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items", SHARE_CODE))
                 .andExpect(status().isOk())
@@ -134,7 +134,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("없는 공유 코드의 물품 목록을 조회하면 404와 4002를 반환한다")
     void getSummariesRoomNotFound() throws Exception {
 
-        when(auctionItemService.getSummaries("nope"))
+        when(auctionItemService.getSummaries("nope", LOGIN_USER_ID))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items", "nope"))
@@ -149,7 +149,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("물품 상세를 조회하면 200과 물품 정보를 반환한다")
     void getDetail() throws Exception {
 
-        when(auctionItemService.getDetail(SHARE_CODE, 1L)).thenReturn(sampleDetail());
+        when(auctionItemService.getDetail(SHARE_CODE, 1L, LOGIN_USER_ID)).thenReturn(sampleDetail());
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items/{itemId}",
                         SHARE_CODE, 1L))
@@ -168,7 +168,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     void getSummariesAllowsGuest() throws Exception {
 
         비로그인_상태로_바꾼다();
-        when(auctionItemService.getSummaries(SHARE_CODE)).thenReturn(List.of(sampleSummary()));
+        when(auctionItemService.getSummaries(SHARE_CODE, null)).thenReturn(List.of(sampleSummary()));
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items", SHARE_CODE))
                 .andExpect(status().isOk())
@@ -180,7 +180,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     void getDetailAllowsGuest() throws Exception {
 
         비로그인_상태로_바꾼다();
-        when(auctionItemService.getDetail(SHARE_CODE, 1L)).thenReturn(sampleDetail());
+        when(auctionItemService.getDetail(SHARE_CODE, 1L, null)).thenReturn(sampleDetail());
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items/{itemId}",
                         SHARE_CODE, 1L))
@@ -192,7 +192,7 @@ class AuctionItemControllerTest extends AbstractControllerTest {
     @DisplayName("없거나 그 방 소속이 아닌 물품을 상세 조회하면 404와 4001을 반환한다")
     void getDetailNotFound() throws Exception {
 
-        when(auctionItemService.getDetail(SHARE_CODE, 999L))
+        when(auctionItemService.getDetail(SHARE_CODE, 999L, LOGIN_USER_ID))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/auction-items/{itemId}",

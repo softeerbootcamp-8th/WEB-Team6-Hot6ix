@@ -110,6 +110,23 @@ export function prepareBid(itemIds = null) {
   return { itemId, currentPrice: item.currentPrice, bidIncrement: item.bidIncrement }
 }
 
+// ── 멱등 키 ──────────────────────────────────────────────────────
+// #337 이후 입찰 POST 는 Idempotency-Key 헤더가 없으면 400 으로 떨어진다. 그 400 은
+// 도메인 코드가 아니라 bid_rejected_other 로 세어져서, 표에는 "접수율 0%" 로만 보이고
+// 이유가 안 드러난다 (실측: 배포에서 6,463 건 전부 이걸로 거절).
+//
+// 실행 안에서만이 아니라 **실행 사이에도** 겹치면 안 된다. 배포 DB 는 measurement 사이에
+// 안 지워지므로, 겹치면 다음 실행이 통째로 7010(멱등 키 재사용)으로 거절된다. RUN_ID 의
+// 타임스탬프 앞부분을 접두사로 쓰는 이유고, 64자 제한이 있어 통째로는 못 쓴다.
+const KEY_PREFIX = (__ENV.RUN_ID || `local-${Date.now()}`).slice(0, 19)
+
+let keySeq = 0
+
+/** 이 VU 안에서 증가하는 번호. 모듈 스코프는 VU 마다 따로라 VU 번호와 합치면 유일하다. */
+function idempotencyKey() {
+  return `${KEY_PREFIX}-${__VU}-${keySeq++}`
+}
+
 /** 준비가 끝난 입찰 POST를 보내고 기존과 같은 결과 counter에 기록한다. */
 export function submitBid(itemId, amount) {
   // SSE payload에는 서버 발행 시각이 없다. 운영 계약을 바꾸지 않고 요청→수신 E2E 지연을
@@ -117,7 +134,10 @@ export function submitBid(itemId, amount) {
   // 입찰마다 유일하고 BID_PLACED payload에도 그대로 들어 있어 양쪽을 정확히 매칭할 수 있다.
   const sentAtMs = Date.now()
   const res = http.post(`${BASE}/auction-items/${itemId}/bids`, JSON.stringify({ amount }), {
-    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    headers: authHeaders({
+      'Content-Type': 'application/json',
+      'Idempotency-Key': idempotencyKey(),
+    }),
     // 전역 discardResponseBodies 를 여기서만 뒤집는다. code 를 읽어야 거절 종류를 가른다.
     responseType: 'text',
     tags: { name: 'bid' },

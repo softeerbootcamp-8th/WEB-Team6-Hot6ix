@@ -70,6 +70,14 @@ services:
       - PERF_RUN_ID=${PERF_RUN_ID:-unknown}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
       - SCHEDULER_POOL_SIZE=${SCHEDULER_POOL_SIZE:-4}
+      # Redis Stream → MySQL 단건 Consumer. 배포 부하에서 pending·lag·persist 시간을 보고 조정한다.
+      - BID_STREAM_POLL_DELAY=${BID_STREAM_POLL_DELAY:-100ms}
+      - BID_STREAM_BLOCK_TIMEOUT=${BID_STREAM_BLOCK_TIMEOUT:-50ms}
+      - BID_STREAM_LOCK_AT_MOST_FOR=${BID_STREAM_LOCK_AT_MOST_FOR:-60s}
+      - BID_STREAM_RETRY_DELAY=${BID_STREAM_RETRY_DELAY:-5s}
+      - BID_STREAM_MAX_FAST_ATTEMPTS=${BID_STREAM_MAX_FAST_ATTEMPTS:-5}
+      - BID_STREAM_HALTED_RETRY_DELAY=${BID_STREAM_HALTED_RETRY_DELAY:-60s}
+      - BID_STREAM_TRANSACTION_TIMEOUT_SECONDS=${BID_STREAM_TRANSACTION_TIMEOUT_SECONDS:-20}
       # 마감 예약을 Redis 에서 꺼내 실행하는 값들 (#289). 기본값은 application.yaml 과 같다.
       #
       # 여기와 CICD-BE.yml 의 .env 생성 블록 양쪽에 다 있어야 실제로 먹는다. compose 에만
@@ -79,7 +87,7 @@ services:
       - CLOSE_VISIBILITY_TIMEOUT=${CLOSE_VISIBILITY_TIMEOUT:-30s}
       - CLOSE_WORKER_POOL_SIZE=${CLOSE_WORKER_POOL_SIZE:-4}
       - CLOSE_QUEUE_CAPACITY=${CLOSE_QUEUE_CAPACITY:-50}
-      - CLOSE_RESYNC_INTERVAL_MS=${CLOSE_RESYNC_INTERVAL_MS:-60000}
+      - CLOSE_RESYNC_INTERVAL_MS=${CLOSE_RESYNC_INTERVAL_MS:-10000}
       # 마감 임박 알림 예약을 꺼내 실행하는 값들 (#290). 마감과 따로 두는 것은 알림 한 건이
       # 훨씬 가벼워서 같은 값으로 맞출 이유가 없고, 한쪽만 조여 볼 수 있게 하려는 것이다.
       - CLOSING_SOON_POLL_INTERVAL_MS=${CLOSING_SOON_POLL_INTERVAL_MS:-500}

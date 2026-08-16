@@ -77,18 +77,20 @@ public class AuctionItemService {
      * <p>리더보드는 쿼리 한 번으로 물품 전체를 가져와 ID로 묶는다. 물품마다 따로 조회하면
      * 물품 수만큼 쿼리가 늘어난다. 물품이 없으면 조회 자체를 건너뛴다.
      *
-     * @param shareCode 조회할 경매방의 공유 코드
+     * @param shareCode    조회할 경매방의 공유 코드
+     * @param viewerUserId 조회한 사람. 리더보드의 {@code isMe}를 가리는 데만 쓴다. 게스트면 {@code null}
      * @return 물품 요약 목록. 물품이 없으면 빈 목록
      * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    public List<AuctionItemSummaryResponseDto> getSummaries(String shareCode) {
+    public List<AuctionItemSummaryResponseDto> getSummaries(String shareCode, Long viewerUserId) {
         Long auctionRoomId = auctionRoomShareService.resolveRoomId(shareCode);
 
         List<AuctionItemSummaryResponseDto> summaries =
                 auctionItemRepository.findSummaries(auctionRoomId);
 
         Map<Long, List<LeaderboardEntryResponseDto>> leaderboards = findLeaderboards(
-                summaries.stream().map(AuctionItemSummaryResponseDto::auctionItemId).toList());
+                summaries.stream().map(AuctionItemSummaryResponseDto::auctionItemId).toList(),
+                viewerUserId);
 
         return summaries.stream()
                 .map(summary -> summary.withLeaderboard(
@@ -108,11 +110,12 @@ public class AuctionItemService {
      *
      * @param shareCode     물품이 속한 경매방의 공유 코드
      * @param auctionItemId 조회할 물품의 ID
+     * @param viewerUserId  조회한 사람. 리더보드의 {@code isMe}를 가리는 데만 쓴다. 게스트면 {@code null}
      * @return 물품 상세. 입찰이 없으면 리더보드는 빈 목록
      * @throws ApplicationException 해당 공유 코드의 경매방이 없을 때(AUCTION_ROOM_NOT_FOUND),
      *                               물품이 없거나 그 방 소속이 아닐 때(AUCTION_ITEM_NOT_FOUND)
      */
-    public AuctionItemDetailResponseDto getDetail(String shareCode, Long auctionItemId) {
+    public AuctionItemDetailResponseDto getDetail(String shareCode, Long auctionItemId, Long viewerUserId) {
         Long auctionRoomId = auctionRoomShareService.resolveRoomId(shareCode);
 
         AuctionItemDetailResponseDto detail = auctionItemRepository.findDetail(auctionItemId)
@@ -123,7 +126,7 @@ public class AuctionItemService {
         }
 
         return detail.withLeaderboard(
-                findLeaderboards(List.of(auctionItemId))
+                findLeaderboards(List.of(auctionItemId), viewerUserId)
                         .getOrDefault(auctionItemId, List.of()));
     }
 
@@ -131,13 +134,16 @@ public class AuctionItemService {
      * 물품들의 리더보드를 쿼리 한 번으로 가져와 물품 ID로 묶는다. 물품마다 따로 조회하면
      * 물품 수만큼 쿼리가 늘어난다.
      *
+     * @param viewerUserId 조회한 사람. 줄마다 {@code isMe}를 가리는 데만 쓴다. 게스트면 {@code null}
      * @return 물품 ID → 상위 {@link #LEADERBOARD_SIZE}명. 입찰이 없는 물품은 키가 없다
      */
-    private Map<Long, List<LeaderboardEntryResponseDto>> findLeaderboards(List<Long> auctionItemIds) {
+    private Map<Long, List<LeaderboardEntryResponseDto>> findLeaderboards(List<Long> auctionItemIds,
+                                                                          Long viewerUserId) {
         return bidRepository.findTopBidders(auctionItemIds, LEADERBOARD_SIZE).stream()
                 .collect(Collectors.groupingBy(
                         TopBidderProjection::getAuctionItemId,
-                        Collectors.mapping(LeaderboardEntryResponseDto::from, Collectors.toList())));
+                        Collectors.mapping(row -> LeaderboardEntryResponseDto.from(row, viewerUserId),
+                                Collectors.toList())));
     }
 
     /**

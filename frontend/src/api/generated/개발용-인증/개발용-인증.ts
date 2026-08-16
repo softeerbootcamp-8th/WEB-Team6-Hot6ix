@@ -20,7 +20,9 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
-  CommonResponseVoid
+  CommonResponseVoid,
+  DevLoginHeaders,
+  DevLoginParams
 } from '.././model';
 
 import { customInstance } from '../../mutator/custom-instance';
@@ -33,16 +35,27 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
  * 테스트 유저(provider=dev)로 세션을 발급합니다. 최초 호출 시 유저를 자동 생성합니다.
- * @summary [로컬 전용] 테스트 로그인
+
+key로 회원을 가릅니다. 같은 key는 같은 회원, 다른 key는 다른 회원입니다.
+부하 측정에서 가상 사용자 N명을 서로 다른 회원으로 만들 때 씁니다.
+key를 생략하면 예전과 같은 단일 테스트 유저가 나옵니다.
+
+로컬과 부하 측정 환경에서는 헤더 없이 부를 수 있습니다.
+운영에서 측정 창구에만 열어 둘 때는 X-Dev-Login-Token 헤더가 필요합니다.
+
+ * @summary [로컬·부하 측정 전용] 테스트 로그인
  */
 export const devLogin = (
-    
+    params?: DevLoginParams,
+    headers?: DevLoginHeaders,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
       
       return customInstance<CommonResponseVoid>(
-      {url: `/api/v1/auth/dev-login`, method: 'POST', signal
+      {url: `/api/v1/auth/dev-login`, method: 'POST',
+      headers,
+        params, signal
     },
       options);
     }
@@ -50,8 +63,8 @@ export const devLogin = (
 
 
 export const getDevLoginMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,void, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,{params?: DevLoginParams;headers?: DevLoginHeaders}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,{params?: DevLoginParams;headers?: DevLoginHeaders}, TContext> => {
 
 const mutationKey = ['devLogin'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -63,10 +76,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof devLogin>>, void> = () => {
-          
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof devLogin>>, {params?: DevLoginParams;headers?: DevLoginHeaders}> = (props) => {
+          const {params,headers} = props ?? {};
 
-          return  devLogin(requestOptions)
+          return  devLogin(params,headers,requestOptions)
         }
 
         
@@ -79,14 +92,14 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type DevLoginMutationError = ErrorType<unknown>
 
     /**
- * @summary [로컬 전용] 테스트 로그인
+ * @summary [로컬·부하 측정 전용] 테스트 로그인
  */
 export const useDevLogin = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,void, TContext>, request?: SecondParameter<typeof customInstance>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,{params?: DevLoginParams;headers?: DevLoginHeaders}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof devLogin>>,
         TError,
-        void,
+        {params?: DevLoginParams;headers?: DevLoginHeaders},
         TContext
       > => {
 

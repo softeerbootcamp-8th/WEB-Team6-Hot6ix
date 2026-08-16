@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { formatCountdown, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { cn } from '@/lib/utils'
-import type { AuctionItemDetail } from '@/mocks/types'
+import type { AuctionItemDetail } from '@/types/domain'
 
 /** Figma 옵션 칩: 입찰 단위의 1배 / 5배 / 직접 입력 */
 const PRESETS = [1, 5] as const
@@ -60,9 +60,19 @@ function QuickBidCard({
     if (!pending) setConfirming(false)
   }, [pending])
 
+  /**
+   * 마감 시각이 지났는데 서버 마감 이벤트가 아직 안 온 상태.
+   *
+   * 카드에는 "마감 처리 중"으로 적히는데(`formatCountdown`) 그 사이에도 입찰
+   * 버튼이 살아 있으면 이미 끝난 물품에 넣어보게 된다. 서버가 `7002` 로
+   * 거절하므로 결과는 같지만, 눌리지 않게 해서 헛수고를 만들지 않는다.
+   */
+  const settling = remaining <= 0
+
   const notOnUnit = (amount - item.currentPrice) % item.bidUnit !== 0
-  const error =
-    amount < minimum
+  const error = settling
+    ? '마감 처리 중이에요'
+    : amount < minimum
       ? `최소 ${formatWon(minimum)}부터`
       : notOnUnit
         ? `입찰 단위 ${formatWon(item.bidUnit)}에 맞춰주세요`
@@ -156,16 +166,21 @@ function QuickBidCard({
             >
               취소
             </button>
+            {/*
+             * 확인하는 사이에 마감 시각이 지나면 확정도 막는다. 남이 더 올린
+             * 경우(`outbid`)는 잠그지 않는데, 그건 다시 부를 수 있는 상황이라
+             * 고르게 두는 게 낫기 때문이다. 마감은 다시 부를 수 없다.
+             */}
             <button
               type="button"
-              disabled={pending}
+              disabled={pending || settling}
               onClick={() => onSubmit(item, amount)}
               className="ease-soft flex h-9 flex-[1.4] items-center justify-center gap-1.5 rounded-xl bg-brand-500 text-[13px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
             >
               {pending && (
                 <Loader2 aria-hidden className="size-3.5 animate-spin" />
               )}
-              {pending ? '처리 중…' : '입찰 확정'}
+              {pending ? '처리 중…' : settling ? '마감 처리 중' : '입찰 확정'}
             </button>
           </div>
         </div>
@@ -233,13 +248,18 @@ function QuickBidCard({
               </button>
             ))}
 
+            {/*
+             * "초기화" 가 아니라 "최소가" 다. 이 버튼은 칸을 비우는 게 아니라
+             * `현재가 + 입찰 단위` 를 넣는데, 초기화라고 적혀 있으면 쓰던 금액이
+             * 지워지는 줄 알고 눌렀다가 3,000원 같은 값이 들어온 것으로 본다(#328).
+             */}
             <button
               type="button"
               onClick={() => setAmount(minimum)}
               disabled={amount === minimum}
               className="ease-soft h-9 shrink-0 rounded-xl bg-fill px-3 text-[13px] font-bold text-neutral-tertiary transition-all duration-150 active:scale-95 disabled:opacity-40"
             >
-              초기화
+              최소가
             </button>
           </div>
 
@@ -252,11 +272,20 @@ function QuickBidCard({
             {formatWon(amount)} 입찰하기
           </button>
 
-          {error && (
-            <p className="mt-2 text-center text-[11px] font-medium text-live">
-              {error}
-            </p>
-          )}
+          {/*
+           * 자리를 항상 잡아 둔다. 남이 입찰할 때마다 최소가가 올라가 이 줄이
+           * 켜졌다 꺼지는데, 카드가 세로로 쌓여 있어서 한 줄이 생길 때마다
+           * 아래 카드들이 통째로 밀린다.
+           */}
+          <p
+            aria-hidden={error === null}
+            className={cn(
+              'mt-2 min-h-[15px] text-center text-[11px] font-medium text-live',
+              error === null ? 'invisible' : 'visible',
+            )}
+          >
+            {error ?? ''}
+          </p>
         </>
       )}
     </li>

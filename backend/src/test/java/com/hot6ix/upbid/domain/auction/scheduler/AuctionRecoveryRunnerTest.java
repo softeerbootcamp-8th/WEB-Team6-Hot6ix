@@ -51,8 +51,24 @@ class AuctionRecoveryRunnerTest {
 
         auctionRecoveryRunner.restoreCloseSchedules();
 
-        verify(auctionCloseScheduler).scheduleIfAbsent(30L, PAST_END_AT);
-        verify(auctionCloseScheduler).scheduleIfAbsent(31L, FUTURE_END_AT);
+        verify(auctionCloseScheduler).schedule(30L, PAST_END_AT);
+        verify(auctionCloseScheduler).schedule(31L, FUTURE_END_AT);
+    }
+
+    @Test
+    @DisplayName("이미 예약이 걸려 있어도 마감 시각을 DB 값으로 덮어쓴다")
+    void overwritesExistingCloseSchedule() {
+
+        // 앞당기기 재예약이 실패하면 큐에는 원래 마감이 남고 DB 에는 앞당긴 시각이 남는다.
+        // 없을 때만 넣으면 그 줄을 못 고쳐서 물품이 원래 마감까지 열려 있었다 (#327).
+        LocalDateTime advancedEndAt = PAST_END_AT.plusSeconds(TRIGGER_SECONDS);
+
+        givenTargets(new InProgressAuctionItemProjection(
+                30L, advancedEndAt, STARTED_AT, TRIGGER_SECONDS, PAST_END_AT));
+
+        auctionRecoveryRunner.restoreCloseSchedules();
+
+        verify(auctionCloseScheduler).schedule(30L, advancedEndAt);
     }
 
     @Test
@@ -64,7 +80,7 @@ class AuctionRecoveryRunnerTest {
         auctionRecoveryRunner.restoreCloseSchedules();
 
         // 여기서 유예를 두면 서버가 꺼져 있던 동안의 입찰이라는 있을 수 없는 상태를 다뤄야 한다.
-        verify(auctionCloseScheduler).scheduleIfAbsent(30L, PAST_END_AT);
+        verify(auctionCloseScheduler).schedule(30L, PAST_END_AT);
     }
 
     @Test
@@ -77,7 +93,7 @@ class AuctionRecoveryRunnerTest {
 
         // 대기 중인 물품에 예약을 걸면 시작하지도 않은 경매가 유찰로 닫힌다.
         verify(auctionItemRepository).findScheduleTargets(AuctionItemStatus.IN_PROGRESS);
-        verify(auctionCloseScheduler, never()).scheduleIfAbsent(any(), any());
+        verify(auctionCloseScheduler, never()).schedule(any(), any());
         verify(itemClosingSoonScheduler, never()).scheduleIfAbsent(any(), any());
     }
 
@@ -130,7 +146,7 @@ class AuctionRecoveryRunnerTest {
 
         // 넣으면 폴러가 집어서 DB 를 읽고 notified_at 에 막혀 버리는 한 바퀴가 주기마다 돈다.
         verify(itemClosingSoonScheduler, never()).scheduleIfAbsent(any(), any());
-        verify(auctionCloseScheduler).scheduleIfAbsent(30L, PAST_END_AT);
+        verify(auctionCloseScheduler).schedule(30L, PAST_END_AT);
     }
 
     @Test
@@ -159,7 +175,7 @@ class AuctionRecoveryRunnerTest {
 
         // 알림 시각을 계산할 기준이 없다. 마감은 트리거와 무관하므로 그대로 건다.
         verify(itemClosingSoonScheduler, never()).scheduleIfAbsent(any(), any());
-        verify(auctionCloseScheduler).scheduleIfAbsent(30L, FUTURE_END_AT);
+        verify(auctionCloseScheduler).schedule(30L, FUTURE_END_AT);
     }
 
     @Test
@@ -179,7 +195,7 @@ class AuctionRecoveryRunnerTest {
         // 되살리면 리스너가 ItemCloseAdvanced 에서 일부러 취소한 것이 무효가 되고, 트리거만큼
         // 남은 물품에 "마감 60초 전"이 뒤늦게 나간다. 마감 예약은 그대로 걸어야 한다.
         verify(itemClosingSoonScheduler, never()).scheduleIfAbsent(any(), any());
-        verify(auctionCloseScheduler).scheduleIfAbsent(30L, advancedEndAt);
+        verify(auctionCloseScheduler).schedule(30L, advancedEndAt);
     }
 
     @Test
@@ -215,7 +231,7 @@ class AuctionRecoveryRunnerTest {
 
         // 알리면 "마감 60분 전"이 나가는데 실제로는 10분도 안 남았다.
         verify(itemClosingSoonScheduler, never()).scheduleIfAbsent(any(), any());
-        verify(auctionCloseScheduler).scheduleIfAbsent(30L, endAt);
+        verify(auctionCloseScheduler).schedule(30L, endAt);
     }
 
     private InProgressAuctionItemProjection notNotified(Long itemId, LocalDateTime endAt) {
