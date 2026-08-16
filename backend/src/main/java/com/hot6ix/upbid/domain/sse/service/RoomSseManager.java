@@ -40,8 +40,8 @@ public class RoomSseManager {
     private final SseEventBuffer sseEventBuffer;
     /** 참여자 수 전역 합계 갱신+발행. 여기서 로컬 값만 쏘면 다른 인스턴스가 모른다. */
     private final ParticipantCountPublisher participantCountPublisher;
-    /** emitter 별 drain 을 실행하는 executor. 고정 스레드 풀을 전역 공유한다. */
-    private final Executor sseWorkerExecutor;
+    /** emitter 별 drain 을 실행하는 executor. 가상 스레드를 전역 공유한다. */
+    private final Executor sseVirtualThreadExecutor;
 
     @PostConstruct
     void bindMetrics() {
@@ -175,7 +175,7 @@ public class RoomSseManager {
                 .add(emitter);
 
         dispatchers.put(emitter, new EmitterDispatcher(
-                sseWorkerExecutor,
+                sseVirtualThreadExecutor,
                 sseProperties.emitterQueueCapacity(),
                 roomId,
                 emitter,

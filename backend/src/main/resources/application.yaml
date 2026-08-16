@@ -145,11 +145,6 @@ upbid:
     server-hostname: ${HOSTNAME:local}
     # emitter 별 이벤트 큐 크기. 포화 시 drop 하므로 heartbeat 주기 안에 처리 가능한 크기로 잡는다.
     emitter-queue-capacity: ${SSE_EMITTER_QUEUE_CAPACITY:128}
-    # emitter drain 전용 고정 스레드 풀 크기. 동시에 drain 가능한 emitter 수 상한이다.
-    worker-pool-size: ${SSE_WORKER_POOL_SIZE:4}
-    # 풀이 포화됐을 때 drain 태스크가 대기하는 큐. 활성 emitter 수(VUS)가 이 값을 넘으면
-    # RejectedExecutionException — 고정 풀이 VT와 갈리는 측정 지점이다.
-    worker-queue-capacity: ${SSE_WORKER_QUEUE_CAPACITY:512}
   bid-stream:
     key: auction:bid:stream
     group: bid-mysql-writers
@@ -166,6 +161,10 @@ upbid:
     transaction-timeout-seconds: ${BID_STREAM_TRANSACTION_TIMEOUT_SECONDS:20}
   auction:
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:3}
+    redis:
+      # 시작 커밋 뒤 Seed가 실패해도 진행 중 물품을 다시 준비하는 주기다 (#338).
+      # 요청 안에서 복구하지 않으므로 이 값이 입찰 가능 상태로 돌아오는 최악 지연이 된다.
+      seed-recovery-interval-ms: ${REDIS_SEED_RECOVERY_INTERVAL_MS:10000}
     close:
       # 마감 예약을 Redis 에서 꺼내 실행하는 값들. 배포에서 재보고 조정할 값이라 env 로 뺀다.
       #

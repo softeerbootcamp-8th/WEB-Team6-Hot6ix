@@ -34,7 +34,7 @@ class RoomSseManagerTest {
     private static final int QUEUE_CAPACITY = 128;
 
     private static final SseProperties PROPS =
-            new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50, "local", QUEUE_CAPACITY, 1, 1);
+            new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50, "local", QUEUE_CAPACITY);
 
     private final RoomSseManager roomSseManager = newRoomSseManager();
 

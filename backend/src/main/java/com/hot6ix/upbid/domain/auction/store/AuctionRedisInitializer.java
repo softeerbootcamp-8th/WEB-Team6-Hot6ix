@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.store;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
@@ -23,6 +24,10 @@ public class AuctionRedisInitializer {
 
         AuctionItem item = auctionItemRepository.findById(itemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+
+        if (item.getStatus() != AuctionItemStatus.IN_PROGRESS) {
+            return;
+        }
 
         Long sellerUserId = auctionItemRepository.findSellerUserId(itemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
