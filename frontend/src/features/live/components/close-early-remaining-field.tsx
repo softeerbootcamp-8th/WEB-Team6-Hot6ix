@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { formatClosingLead } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 /**
@@ -122,16 +123,12 @@ function digitsOnly(value: string, length: number) {
   return value.replace(/\D/g, '').slice(0, length)
 }
 
-/** 범위 안내 문구. 분이 0이면 초만 적어야 "0분 30초"처럼 읽히지 않는다. */
+/**
+ * 범위 안내 문구.
+ *
+ * 마감 문구와 같은 규칙(`formatClosingLead`)을 쓴다. 여기서 `5분 30초`로 고른 값이
+ * 이벤트 피드에는 다른 형식으로 나오면 같은 값인지 알아보기 어렵다.
+ */
 function formatRange(minSeconds: number, maxSeconds: number) {
-  return `${formatBound(minSeconds)}~${formatBound(maxSeconds)}`
-}
-
-function formatBound(totalSeconds: number) {
-  const { minutes, seconds } = toParts(totalSeconds)
-
-  if (minutes === '0') return `${seconds}초`
-  if (seconds === '0') return `${minutes}분`
-
-  return `${minutes}분 ${seconds}초`
+  return `${formatClosingLead(minSeconds)}~${formatClosingLead(maxSeconds)}`
 }
