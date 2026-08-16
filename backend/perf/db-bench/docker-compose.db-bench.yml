@@ -1,0 +1,42 @@
+# 쿼리 하나를 인덱스 전후로 재는 전용 MySQL 이다. (이슈 #335)
+#
+# k6 스택(docker-compose.perf.yml)과 프로젝트 이름이 달라서 컨테이너도 네트워크도 따로
+# 논다. 앱도 nginx 도 안 띄운다 - 마감 예약 재동기화 쿼리는 10초마다 도는 백그라운드
+# 작업이라 HTTP 부하와 무관하고, 재려면 DB 만 있으면 된다.
+#
+# 직접 부르지 말고 ./bench.sh 를 쓴다. 손으로 올리면 워밍업이나 시딩을 빠뜨리게 되고,
+# 그 한 번 때문에 인덱스 전후 비교가 깨진다.
+
+name: upbid-dbbench
+
+services:
+  mysql:
+    image: mysql:8.4.9
+    # 볼륨을 안 붙인다. 실행마다 빈 DB 로 시작해야 앞 실행에서 남은 행이 rows examined 에
+    # 섞이지 않는다. down 만으로 데이터가 사라지므로 `down -v` 를 쓸 일이 없다.
+    cpus: ${BENCH_CPUS:-2.0}
+    environment:
+      - TZ=Asia/Seoul
+      - MYSQL_ROOT_PASSWORD=1234
+      - MYSQL_DATABASE=upbid
+    ports:
+      # 개발 MySQL(3306)과 측정용 MySQL(perf 스택 내부)과 겹치지 않는 포트다.
+      - "${BENCH_MYSQL_PORT:-13307}:3306"
+    command:
+      # 실행 하나하나의 시간과 읽은 행 수를 서버 쪽에서 받아 오는 통로다. events_statements
+      # _history_long 은 MySQL 8 기본이 OFF 라 켜 줘야 하고, 이게 없으면 클라이언트에서
+      # 시간을 재게 되어 왕복 시간이 쿼리 시간에 섞인다.
+      - --performance-schema=ON
+      - --performance-schema-consumer-events-statements-history-long=ON
+      # 10,000 개까지 남는다. 한 라운드에서 재는 횟수보다 넉넉해야 오래된 것부터 밀려 나가지 않는다.
+      - --performance-schema-events-statements-history-long-size=20000
+      # 버퍼 풀을 명시한다. 노트북마다 기본값이 다르면 "인덱스 효과"와 "캐시 효과"가 섞인다.
+      # MySQL 기본값과 같은 128M 인데, 100만 행이면 표가 이 크기를 넘어서 디스크를 읽게 된다.
+      - --innodb-buffer-pool-size=${BENCH_BUFFER_POOL:-134217728}
+      # 100만 행짜리 재귀 CTE 를 만들 때 필요하다. 기본값은 1,000 이다.
+      - --cte-max-recursion-depth=10000000
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p1234"]
+      interval: 3s
+      timeout: 5s
+      retries: 30

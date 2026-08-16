@@ -212,6 +212,8 @@ gradle-app.setting
 # 폴더 자체는 남겨야 run.sh 가 여기에 쓴다.
 perf/results/*
 !perf/results/.gitkeep
+perf/db-bench/results/*
+!perf/db-bench/results/.gitkeep
 
 # 측정 실행 잠금 (run.sh 가 만들고 지운다)
 perf/.run.lock/
