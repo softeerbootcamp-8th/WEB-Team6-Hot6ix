@@ -13,6 +13,7 @@
 export * from './auctionItemAddRequestDto';
 export * from './auctionItemBulkAddRequestDto';
 export * from './auctionItemBulkAddResponseDto';
+export * from './auctionItemCloseEarlyRequestDto';
 export * from './auctionItemCloseEarlyResponseDto';
 export * from './auctionItemDealStatusResponseDto';
 export * from './auctionItemDealStatusResponseDtoDealStatus';

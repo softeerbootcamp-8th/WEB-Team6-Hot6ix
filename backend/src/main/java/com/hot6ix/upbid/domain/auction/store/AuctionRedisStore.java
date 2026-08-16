@@ -183,14 +183,28 @@ public class AuctionRedisStore {
         return executeClose(itemId, "NATURAL", String.valueOf(nowMillis));
     }
 
-    public RedisCloseDecision requestSellerAdvance(long itemId, long sellerUserId) {
-        return executeClose(itemId, "SELLER_ADVANCE", String.valueOf(sellerUserId));
+    /**
+     * 판매자 마감 앞당기기를 Lua 한 번으로 판정한다.
+     *
+     * @param remainingSeconds 마감까지 남길 초. <b>{@code null}이면 경매방의 연장 트리거 초</b>다.
+     *                         남길 시간을 Lua 에 넘겨 새 마감 시각을 Redis 시계로 계산하게 하는
+     *                         것은, 서버마다 다를 수 있는 시계를 판정에서 빼기 위해서다
+     */
+    public RedisCloseDecision requestSellerAdvance(
+            long itemId, long sellerUserId, Integer remainingSeconds) {
+
+        return executeClose(itemId, "SELLER_ADVANCE", String.valueOf(sellerUserId),
+                remainingSeconds == null ? "" : String.valueOf(remainingSeconds));
     }
 
-    private RedisCloseDecision executeClose(long itemId, String mode, String argument) {
+    private RedisCloseDecision executeClose(long itemId, String mode, String... arguments) {
+        Object[] args = new Object[arguments.length + 1];
+        args[0] = mode;
+        System.arraycopy(arguments, 0, args, 1, arguments.length);
+
         @SuppressWarnings("unchecked")
         List<String> result = redis.execute(closeScript,
-                List.of(AuctionRedisKeys.item(itemId), AuctionRedisKeys.stream()), mode, argument);
+                List.of(AuctionRedisKeys.item(itemId), AuctionRedisKeys.stream()), args);
 
         if (result == null || result.isEmpty()) {
             throw new IllegalStateException("close-auction.lua가 결과를 반환하지 않았다");

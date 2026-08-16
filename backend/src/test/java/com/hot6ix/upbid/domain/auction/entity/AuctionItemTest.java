@@ -143,138 +143,6 @@ class AuctionItemTest {
         }
     }
 
-    @Nested
-    @DisplayName("closeEarly")
-    class CloseEarly {
-
-        /** 아직 임박 구간에 들어오지 않은 시각. 여기서 눌러야 앞당길 자리가 있다. */
-        private static final LocalDateTime NOW = END_AT.minusMinutes(10);
-
-        @Test
-        @DisplayName("마감을 지금부터 트리거 초 뒤로 앞당긴다")
-        void advancesToTrigger() {
-
-            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
-
-            boolean advanced = auctionItem.closeEarly(NOW);
-
-            assertThat(advanced).isTrue();
-            assertThat(auctionItem.getEndAt()).isEqualTo(NOW.plusSeconds(TRIGGER_SECONDS));
-        }
-
-        @Test
-        @DisplayName("앞당기면 마감 임박 알림을 이미 알린 것으로 찍는다")
-        void marksNotifiedSoThatRecoveryDoesNotRevive() {
-
-            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
-
-            auctionItem.closeEarly(NOW);
-
-            // 앞당긴 뒤 알림 시각(end_at - 트리거)이 정확히 이 시각이라, 안 찍으면
-            // AuctionRecoveryRunner 가 "예약이 빠졌다"고 보고 되살려 알림이 뒤늦게 나간다.
-            assertThat(auctionItem.getNotifiedAt())
-                    .isEqualTo(NOW)
-                    .isEqualTo(auctionItem.getEndAt().minusSeconds(TRIGGER_SECONDS));
-        }
-
-        @Test
-        @DisplayName("앞당기지 못했으면 알림 시각도 건드리지 않는다")
-        void doesNotMarkNotifiedWhenRejected() {
-
-            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
-
-            boolean advanced = auctionItem.closeEarly(END_AT.minusSeconds(15));
-
-            assertThat(advanced).isFalse();
-            assertThat(auctionItem.getNotifiedAt())
-                    .as("거절된 요청이 알림을 막아버리면 정상 알림이 사라진다")
-                    .isNull();
-        }
-
-        @Test
-        @DisplayName("앞당겨도 원래 마감 시각과 누적 연장은 그대로 남는다")
-        void keepsOriginalEndAtAndExtensions() {
-
-            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 120);
-            ReflectionTestUtils.setField(auctionItem, "originalEndAt", END_AT);
-
-            auctionItem.closeEarly(NOW);
-
-            assertThat(auctionItem.getOriginalEndAt()).isEqualTo(END_AT);
-            assertThat(auctionItem.getTotalExtensionSeconds())
-                    .as("앞당기기는 연장이 아니라 누적에 더할 것이 없다")
-                    .isEqualTo(120);
-        }
-
-        @Test
-        @DisplayName("경매방에 트리거 설정이 없으면 60초 뒤로 앞당긴다")
-        void usesDefaultTriggerWithoutRoomSettings() {
-
-            AuctionItem auctionItem = newItem(newRoom(null, null), END_AT, 0);
-
-            boolean advanced = auctionItem.closeEarly(NOW);
-
-            assertThat(advanced).isTrue();
-            assertThat(auctionItem.getEndAt())
-                    .isEqualTo(NOW.plusSeconds(AuctionItem.DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS));
-        }
-
-        @Test
-        @DisplayName("이미 임박 구간 안이면 마감을 뒤로 밀지 않는다")
-        void doesNotPushBackWhenAlreadyClosingSoon() {
-
-            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
-
-            boolean advanced = auctionItem.closeEarly(END_AT.minusSeconds(15));
-
-            assertThat(advanced).isFalse();
-            assertThat(auctionItem.getEndAt())
-                    .as("앞당기기가 마감을 늘리는 경우가 있으면 안 된다")
-                    .isEqualTo(END_AT);
-        }
-
-        @Test
-        @DisplayName("앞당긴 시각이 지금 마감과 같으면 앞당기지 않는다")
-        void doesNotAdvanceToSameEndAt() {
-
-            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
-
-            boolean advanced = auctionItem.closeEarly(END_AT.minusSeconds(TRIGGER_SECONDS));
-
-            assertThat(advanced)
-                    .as("바뀌는 값이 없는데 이벤트와 재예약이 나가면 안 된다")
-                    .isFalse();
-            assertThat(auctionItem.getEndAt()).isEqualTo(END_AT);
-        }
-
-        @Test
-        @DisplayName("마감 시각이 없는 물품은 앞당기지 않는다")
-        void doesNotAdvanceWithoutEndAt() {
-
-            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), null, 0);
-
-            boolean advanced = auctionItem.closeEarly(NOW);
-
-            assertThat(advanced).isFalse();
-            assertThat(auctionItem.getEndAt()).isNull();
-        }
-
-        @Test
-        @DisplayName("앞당긴 뒤에 들어온 입찰은 Soft Close로 연장된다")
-        void softCloseStillAppliesAfterAdvancing() {
-
-            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
-            auctionItem.closeEarly(NOW);
-
-            boolean extended = auctionItem.extendIfClosingSoon(NOW.plusSeconds(5));
-
-            assertThat(extended)
-                    .as("앞당긴 순간부터가 연장 구간이라 그 뒤 입찰은 마감을 민다")
-                    .isTrue();
-            assertThat(auctionItem.getEndAt())
-                    .isEqualTo(NOW.plusSeconds(TRIGGER_SECONDS + EXTEND_SECONDS));
-        }
-    }
 
     @Nested
     @DisplayName("applyPersistedBid")
@@ -315,6 +183,130 @@ class AuctionItemTest {
             assertThat(auctionItem.getEndAt()).isEqualTo(END_AT.plusSeconds(60));
             assertThat(auctionItem.getTotalExtensionSeconds()).isEqualTo(60);
             assertThat(endAtAdvanced).isTrue();
+        }
+    }
+
+    /**
+     * 앞당김 판정 자체는 {@code close-auction.lua}가 한다. 여기서는 그 결과를 DB에 받아 적을 때의
+     * 두 가지, 곧 <b>재전달을 거르는 것</b>과 <b>알림 시각을 언제 찍는지</b>만 본다.
+     */
+    @Nested
+    @DisplayName("applyCloseAdvanced")
+    class ApplyCloseAdvanced {
+
+        private static final LocalDateTime ADVANCED_AT = END_AT.minusMinutes(10);
+
+        @Test
+        @DisplayName("앞당겨진 마감 시각을 반영한다")
+        void appliesAdvancedEndAt() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+            LocalDateTime advancedEndAt = ADVANCED_AT.plusSeconds(300);
+
+            boolean applied = auctionItem.applyCloseAdvanced(advancedEndAt, ADVANCED_AT, 300);
+
+            assertThat(applied).isTrue();
+            assertThat(auctionItem.getEndAt()).isEqualTo(advancedEndAt);
+        }
+
+        @Test
+        @DisplayName("트리거만큼만 남긴 앞당김은 알림을 이미 보낸 것으로 찍는다")
+        void marksNotifiedWhenRemainingEqualsTrigger() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+
+            auctionItem.applyCloseAdvanced(
+                    ADVANCED_AT.plusSeconds(TRIGGER_SECONDS), ADVANCED_AT, TRIGGER_SECONDS);
+
+            // 안 찍으면 AuctionRecoveryRunner 가 "예약이 빠졌다"고 보고 되살려 알림이 뒤늦게 나간다.
+            assertThat(auctionItem.getNotifiedAt()).isEqualTo(ADVANCED_AT);
+        }
+
+        @Test
+        @DisplayName("트리거보다 길게 남긴 앞당김은 알림 시각을 찍지 않는다")
+        void doesNotMarkNotifiedWhenRemainingIsLongerThanTrigger() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+
+            auctionItem.applyCloseAdvanced(ADVANCED_AT.plusSeconds(300), ADVANCED_AT, 300);
+
+            assertThat(auctionItem.getNotifiedAt())
+                    .as("알림 시각이 아직 미래인데 찍어버리면 마감 임박 알림이 통째로 사라진다")
+                    .isNull();
+        }
+
+        @Test
+        @DisplayName("경매방에 트리거 설정이 없으면 60초를 기준으로 알림 기록 여부를 가른다")
+        void usesDefaultTriggerWithoutRoomSettings() {
+
+            AuctionItem auctionItem = newItem(newRoom(null, null), END_AT, 0);
+            int defaultTrigger = AuctionItem.DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS;
+
+            auctionItem.applyCloseAdvanced(
+                    ADVANCED_AT.plusSeconds(defaultTrigger), ADVANCED_AT, defaultTrigger);
+
+            assertThat(auctionItem.getNotifiedAt()).isEqualTo(ADVANCED_AT);
+        }
+
+        @Test
+        @DisplayName("같은 이벤트가 다시 오면 반영하지 않는다")
+        void ignoresRedelivery() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+            LocalDateTime advancedEndAt = ADVANCED_AT.plusSeconds(300);
+            auctionItem.applyCloseAdvanced(advancedEndAt, ADVANCED_AT, 300);
+
+            boolean applied = auctionItem.applyCloseAdvanced(advancedEndAt, ADVANCED_AT, 300);
+
+            assertThat(applied)
+                    .as("다시 반영하면 앞당김 이벤트와 재예약이 한 번 더 나간다")
+                    .isFalse();
+            assertThat(auctionItem.getEndAt()).isEqualTo(advancedEndAt);
+        }
+
+        @Test
+        @DisplayName("더 나중 앞당김에 밀린 낡은 이벤트는 마감을 되돌리지 않는다")
+        void ignoresStaleEvent() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+            LocalDateTime later = ADVANCED_AT.plusSeconds(300);
+            LocalDateTime earlier = ADVANCED_AT.plusSeconds(120);
+            auctionItem.applyCloseAdvanced(earlier, ADVANCED_AT.plusSeconds(60), 60);
+
+            boolean applied = auctionItem.applyCloseAdvanced(later, ADVANCED_AT, 300);
+
+            assertThat(applied)
+                    .as("앞당기기는 마감을 앞으로만 옮긴다. 뒤로 가는 값은 낡은 것이다")
+                    .isFalse();
+            assertThat(auctionItem.getEndAt()).isEqualTo(earlier);
+        }
+
+        @Test
+        @DisplayName("거른 이벤트는 알림 시각도 건드리지 않는다")
+        void keepsNotifiedAtWhenIgnored() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), END_AT, 0);
+            LocalDateTime advancedEndAt = ADVANCED_AT.plusSeconds(300);
+            auctionItem.applyCloseAdvanced(advancedEndAt, ADVANCED_AT, 300);
+
+            auctionItem.applyCloseAdvanced(advancedEndAt, ADVANCED_AT, TRIGGER_SECONDS);
+
+            assertThat(auctionItem.getNotifiedAt())
+                    .as("재전달로 알림이 막히면 정상 알림이 사라진다")
+                    .isNull();
+        }
+
+        @Test
+        @DisplayName("마감 시각이 없는 물품은 반영하지 않는다")
+        void ignoresItemWithoutEndAt() {
+
+            AuctionItem auctionItem = newItem(newRoom(TRIGGER_SECONDS, EXTEND_SECONDS), null, 0);
+
+            boolean applied =
+                    auctionItem.applyCloseAdvanced(ADVANCED_AT.plusSeconds(300), ADVANCED_AT, 300);
+
+            assertThat(applied).isFalse();
+            assertThat(auctionItem.getEndAt()).isNull();
         }
     }
 

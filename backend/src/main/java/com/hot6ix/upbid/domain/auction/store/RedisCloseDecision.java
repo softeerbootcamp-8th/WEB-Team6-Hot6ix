@@ -18,6 +18,11 @@ public sealed interface RedisCloseDecision {
         ITEM_NOT_IN_PROGRESS,
         NOT_OWNER,
         NOT_DUE,
-        ALREADY_CLOSING_SOON
+        /** 트리거 초로도 마감이 뒤로 밀린다. 요청 값과 무관하게 앞당길 자리가 없다. */
+        ALREADY_CLOSING_SOON,
+        /** 요청한 남은 초가 경매방의 연장 트리거보다 짧다. */
+        REMAINING_TOO_SHORT,
+        /** 요청한 남은 초가 지금 마감까지 남은 시간 이상이다. */
+        REMAINING_TOO_LONG
     }
 }
