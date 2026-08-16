@@ -245,6 +245,11 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
             + "order by ai.endAt asc")
     List<InProgressAuctionItemProjection> findScheduleTargets(@Param("status") AuctionItemStatus status);
 
+    /** Redis 입찰 Seed 복구 대상 물품 ID를 상태로 좁혀 조회한다. */
+    @Query("select ai.auctionItemId from AuctionItem ai "
+            + "where ai.status = :status order by ai.auctionItemId asc")
+    List<Long> findIdsByStatus(@Param("status") AuctionItemStatus status);
+
     /** 물품 전체를 읽지 않고 상태만 본다. 마감됐는지 판정하는 데 쓴다. */
     @Query("select ai.status from AuctionItem ai where ai.auctionItemId = :auctionItemId")
     Optional<AuctionItemStatus> findStatus(@Param("auctionItemId") Long auctionItemId);
