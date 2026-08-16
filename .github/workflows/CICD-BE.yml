@@ -107,9 +107,13 @@ jobs:
           #      (따옴표를 빼면 `se$cret`이 `se`로 잘려 조용히 인증이 실패한다.)
           # 값 자체에 작은따옴표가 들어가면 이 방식이 깨지므로 그런 키는 쓰지 않는다.
           #
-          # SLACK_WEBHOOK_URL 아래는 부하 측정용 손잡이다 (이슈 #266). 여기에 적어 두는 이유는
+          # SLACK_WEBHOOK_URL 아래는 배포 후에 값만 바꿔 돌리는 손잡이들이다. 로그 수집
+          # 두 개(이슈 #332)와 부하 측정용(이슈 #266)이 있다. 여기에 적어 두는 이유는
           # 이 단계가 .env를 append가 아니라 `cat >`로 새로 쓰기 때문이다. 서버에서 손으로 넣으면
           # 다음 배포에 지워지고, 그러면 재는 도중에 조건이 조용히 바뀐다.
+          #
+          # LOKI_URL과 SPRING_PROFILES_ACTIVE는 둘 다 채워야 로그가 나간다. 그리고 측정 EC2에
+          # Loki를 먼저 띄운 뒤에 넣는다. 안 뜬 주소로 보내기 시작하면 앱이 기동에 실패할 수 있다.
           #
           # Repository variables라 값을 안 만들면 빈 문자열이 들어간다. compose가 전부
           # ${VAR:-기본값} 꼴이고 :-는 빈 값도 기본값으로 받으므로, 변수를 하나도 안 만든 지금은
@@ -136,6 +140,8 @@ jobs:
             NCP_SENDER_PHONE='${{ secrets.NCP_SENDER_PHONE }}'
             FRONTEND_URL='${{ secrets.FRONTEND_URL }}'
             SLACK_WEBHOOK_URL='${{ secrets.SLACK_WEBHOOK_URL }}'
+            LOKI_URL='${{ vars.LOKI_URL }}'
+            SPRING_PROFILES_ACTIVE='${{ vars.SPRING_PROFILES_ACTIVE }}'
             ACTUATOR_EXPOSURE='${{ vars.ACTUATOR_EXPOSURE }}'
             PERF_RUN_ID='${{ vars.PERF_RUN_ID }}'
             DB_POOL_SIZE='${{ vars.DB_POOL_SIZE }}'

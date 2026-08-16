@@ -51,23 +51,23 @@ services:
       - prometheus
 
   # 앱이 보낸 로그를 받는다 (이슈 #332). 앱 EC2 는 가용 메모리가 214MB 뿐이고 스왑을
-  # 404MB 쓰고 있어서 거기에 올릴 수 없다. 여기는 468MB 가 남는다.
+  # 404MB 쓰고 있어서 거기에 올릴 수 없다. 여기는 468MB 가 남는다 (2026-08-15 실측).
   #
   # profiles 를 걸어 평소엔 안 뜬다. run.sh 는 서비스를 이름으로 지정해 띄우므로 부하 측정에
   # 영향이 없고, 켤 때만 아래처럼 명시한다.
   #
   #   docker compose -f docker-compose.perf-prod.yml --profile logs up -d loki
   #
-  # 앱에서 보내려면 앱 서버 배포 설정에 이 둘이 필요하다.
+  # 앱에서 보내려면 앱 서버 배포 설정에 이 둘이 필요하다. GitHub Variables 에 넣는다.
   #   SPRING_PROFILES_ACTIVE=prod,loki
-  #   LOKI_URL=http://10.0.1.119:3100/loki/api/v1/push
+  #   LOKI_URL=http://{이 서버의 사설 IP}:3100/loki/api/v1/push
   loki:
     image: grafana/loki:3.5.0
     profiles: ["logs"]
     ports:
-      # 앱 EC2(10.0.1.88)가 VPC 안에서 밀어 넣어야 하므로 127.0.0.1 에 묶지 않는다.
-      # 대신 보안 그룹에서 앱 서버 주소만 3100 으로 열어 둔다. 인터넷에 열면 아무나
-      # 로그를 써넣거나 읽어 갈 수 있다.
+      # 앱 EC2 가 VPC 안에서 밀어 넣어야 하므로 127.0.0.1 에 묶지 않는다. 대신 보안
+      # 그룹 인바운드에서 앱 EC2 의 보안 그룹만 3100 으로 열어 둔다. auth_enabled 가
+      # false 라 인터넷에 열면 아무나 로그를 써넣거나 읽어 갈 수 있다.
       - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
     volumes:

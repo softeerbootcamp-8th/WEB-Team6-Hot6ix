@@ -32,7 +32,12 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:mysql://${RDS_ENDPOINT}:3306/upbid${DB_JDBC_EXTRA:-}
       - SPRING_DATASOURCE_USERNAME=${RDS_USERNAME}
       - SPRING_DATASOURCE_PASSWORD=${RDS_PASSWORD}
-      - SPRING_PROFILES_ACTIVE=prod
+      # 값을 안 주면 prod 다. 지금까지와 같다.
+      #
+      # 밖으로 뺀 이유는 로그 수집(이슈 #332)을 껐다 켜는 데 이 값이 필요해서다.
+      # `prod,loki` 로 두면 아래 LOKI_URL 로 로그를 보내기 시작한다. 하드코딩이면
+      # 켜고 끌 때마다 코드를 고쳐 PR 을 내야 한다.
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       # Redis (ElastiCache 등 외부 관리형). 연결만 깔아둔 상태였다가(#277) 지금은 실제로 쓴다.
       #
       #   - 분산 락 (ShedLock, #286)
@@ -98,9 +103,12 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
       # 로그를 측정 EC2 의 Loki 로 보낼 때만 채운다 (이슈 #332).
-      # 비워 두면 지금과 동작이 같다. 켜려면 값과 함께 위 SPRING_PROFILES_ACTIVE 를
-      # prod,loki 로 바꿔야 한다. 둘 중 하나만 바꾸면 안 켜진다.
-      #   LOKI_URL=http://10.0.1.119:3100/loki/api/v1/push
+      # 비워 두면 지금과 동작이 같다. GitHub Variables 에 아래 꼴로 넣는다.
+      #   LOKI_URL=http://{측정 EC2 사설 IP}:3100/loki/api/v1/push
+      #
+      # **위 SPRING_PROFILES_ACTIVE 도 같이 prod,loki 로 바꿔야 한다.** 둘 중 하나만
+      # 바꾸면 안 켜진다. 그리고 Loki 를 먼저 띄운 뒤에 이 둘을 넣는다. 순서를 뒤집어
+      # 안 뜬 Loki 로 보내기 시작하면 앱이 기동에 실패할 수 있다.
       - LOKI_URL=${LOKI_URL:-}
     restart: unless-stopped
     # 도커 기본 json-file 은 로테이션이 없어서 로그가 무한히 쌓인다. 지금까지는 앱이 로그를
