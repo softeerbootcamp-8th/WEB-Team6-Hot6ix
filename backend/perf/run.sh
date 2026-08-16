@@ -1892,6 +1892,8 @@ SELECT_PER_BID="$(awk -v before="$COM_SELECT_BEFORE" -v after="$COM_SELECT_AFTER
     "system_load_average_1m{$RUN}|system_load_average_1m" \
     "sum(jvm_memory_used_bytes{$RUN, area=\"heap\"})|heap_bytes" \
     "sum(jvm_memory_used_bytes{$OLD_GEN})|old_gen_bytes" \
+    "process_swap_bytes{$RUN}|swap_bytes" \
+    "process_rss_bytes{$RUN}|rss_bytes" \
     "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_wait_seconds_bucket{$RUN}[30s])))|lock_wait_p95_s" \
     "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_lock_hold_seconds_bucket{$RUN}[30s])))|lock_hold_p95_s" \
     "upbid_sse_connections{$RUN}|sse_connections" \

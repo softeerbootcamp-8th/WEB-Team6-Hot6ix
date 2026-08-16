@@ -494,6 +494,7 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `select_per_bid` | 입찰 한 건이 던진 SELECT 수 | 늘면 왕복이 늘어난 만큼 락을 오래 잡습니다 |
 | `isolation` | MySQL 격리 수준 (`RR`/`RC`) | `--isolation` 으로 정한 값 |
 | `gap_locks` | 갭까지 잠근 락을 표본에서 본 횟수 | 절대값이 아니라 RC 에서 0 이 되는지를 봅니다 |
+| `bid_rate_limit` | 입찰 rate limit 을 켜고 쟀는지 (`on`/`off`) | **`on` 인 줄은 서버 한계가 아닙니다.** 부하 스크립트가 쉬지 않고 때리면 몇 초 만에 토큰이 말라 그 뒤로 전부 429 라, 요청이 서버 로직까지 도달하지 않습니다. 입찰 시나리오는 `--bid-rate-limit` 기본값이 `off` 입니다 |
 | `bulk_items` | SQL 로 채워 넣은 닫힌 물품 수 | `--bulk-items` 로 정한 값 |
 | `sweep_index` | 마감 조회 인덱스를 켰는지 (`on`/`off`) | `--sweep-index` 로 정한 값 |
 | `close_delay_p95_ms` | 마감이 예정 시각보다 늦은 시간 p95 | 시나리오 4의 주인공 |
