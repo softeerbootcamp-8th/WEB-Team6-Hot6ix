@@ -1,6 +1,6 @@
 import { formatClosingLead, formatWon } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type { AuctionRoomDetail } from '@/mocks/types'
+import type { AuctionRoomDetail } from '@/types/domain'
 
 /**
  * 방의 입찰 규칙을 알약 두 개로 보여준다.

@@ -74,10 +74,14 @@ function validate(values: FormValues): FieldErrors {
     errors.snsUrl = 'instagram.com/아이디 처럼 사이트 주소를 입력해주세요.'
   }
 
-  if (
-    !/^01\d-?\d{3,4}-?\d{4}$/.test(values.storePhoneNumber.replace(/\s/g, ''))
-  ) {
-    errors.storePhoneNumber = '연락 가능한 휴대폰 번호를 입력해주세요.'
+  /*
+   * **서버와 같은 규칙을 쓴다** (`SellerProfileCreateRequestDto` 의
+   * `^[0-9-]{8,13}$`). 화면만 휴대폰(`01x`)으로 좁혀 두는 바람에, 서버는 받아주는
+   * 가게 유선번호(`02-1234-5678`)를 화면이 먼저 막고 있었다. 가게 연락처라
+   * 유선번호가 오히려 흔하다.
+   */
+  if (!/^[0-9-]{8,13}$/.test(values.storePhoneNumber.replace(/\s/g, ''))) {
+    errors.storePhoneNumber = '숫자와 - 로 8~13자까지 입력할 수 있어요.'
   }
 
   if (values.storeDescription.trim().length > DESCRIPTION_MAX) {
@@ -131,7 +135,7 @@ const FIELDS = [
   {
     key: 'storePhoneNumber' as const,
     label: '연락처',
-    placeholder: '010-1234-5678',
+    placeholder: '02-1234-5678',
     hint: '낙찰자에게만 공개됩니다.',
     type: 'tel',
     autoComplete: 'tel',

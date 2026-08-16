@@ -1,5 +1,5 @@
 import { AuctionCloseAnimation } from '@/components/AuctionCloseAnimation'
-import type { AuctionItemDetail } from '@/mocks/types'
+import type { AuctionItemDetail } from '@/types/domain'
 
 /**
  * 마감된 직후 카드를 덮는 연출. 물품 카드와 리더보드 카드가 같은 것을 쓴다.

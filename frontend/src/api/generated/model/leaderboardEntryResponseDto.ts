@@ -14,4 +14,5 @@ export interface LeaderboardEntryResponseDto {
   rank?: number;
   nickname?: string;
   amount?: number;
+  isMe?: boolean;
 }

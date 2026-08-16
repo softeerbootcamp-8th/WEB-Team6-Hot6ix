@@ -13,7 +13,7 @@ import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
 import { formatCountdown, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { cn } from '@/lib/utils'
-import type { AuctionItemDetail } from '@/mocks/types'
+import type { AuctionItemDetail } from '@/types/domain'
 
 /** Figma `c*_status` 표기 그대로 쓴다. */
 const STATUS_LABEL = {
