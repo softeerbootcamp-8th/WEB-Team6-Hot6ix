@@ -26,7 +26,8 @@ import type {
 
 import type {
   CommonResponseListRecentRoomEventDto,
-  SseEmitter
+  SseEmitter,
+  SubscribeHeaders
 } from '.././model';
 
 import { customInstance } from '../../mutator/custom-instance';
@@ -47,12 +48,14 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
  */
 export const subscribe = (
     shareCode: string,
+    headers?: SubscribeHeaders,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
       
       return customInstance<SseEmitter>(
-      {url: `/api/v1/auction-rooms/share/${shareCode}/subscribe`, method: 'GET', signal
+      {url: `/api/v1/auction-rooms/share/${shareCode}/subscribe`, method: 'GET',
+      headers, signal
     },
       options);
     }
@@ -67,7 +70,8 @@ export const getSubscribeQueryKey = (shareCode?: string,) => {
     }
 
     
-export const getSubscribeQueryOptions = <TData = Awaited<ReturnType<typeof subscribe>>, TError = ErrorType<SseEmitter>>(shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+export const getSubscribeQueryOptions = <TData = Awaited<ReturnType<typeof subscribe>>, TError = ErrorType<SseEmitter>>(shareCode: string,
+    headers?: SubscribeHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -76,7 +80,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof subscribe>>> = ({ signal }) => subscribe(shareCode, requestOptions, signal);
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof subscribe>>> = ({ signal }) => subscribe(shareCode,headers, requestOptions, signal);
 
       
 
@@ -90,7 +94,8 @@ export type SubscribeQueryError = ErrorType<SseEmitter>
 
 
 export function useSubscribe<TData = Awaited<ReturnType<typeof subscribe>>, TError = ErrorType<SseEmitter>>(
- shareCode: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>> & Pick<
+ shareCode: string,
+    headers: undefined |  SubscribeHeaders, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof subscribe>>,
           TError,
@@ -100,7 +105,8 @@ export function useSubscribe<TData = Awaited<ReturnType<typeof subscribe>>, TErr
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useSubscribe<TData = Awaited<ReturnType<typeof subscribe>>, TError = ErrorType<SseEmitter>>(
- shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>> & Pick<
+ shareCode: string,
+    headers?: SubscribeHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof subscribe>>,
           TError,
@@ -110,7 +116,8 @@ export function useSubscribe<TData = Awaited<ReturnType<typeof subscribe>>, TErr
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useSubscribe<TData = Awaited<ReturnType<typeof subscribe>>, TError = ErrorType<SseEmitter>>(
- shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ shareCode: string,
+    headers?: SubscribeHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -118,11 +125,12 @@ export function useSubscribe<TData = Awaited<ReturnType<typeof subscribe>>, TErr
  */
 
 export function useSubscribe<TData = Awaited<ReturnType<typeof subscribe>>, TError = ErrorType<SseEmitter>>(
- shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ shareCode: string,
+    headers?: SubscribeHeaders, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof subscribe>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient 
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getSubscribeQueryOptions(shareCode,options)
+  const queryOptions = getSubscribeQueryOptions(shareCode,headers,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

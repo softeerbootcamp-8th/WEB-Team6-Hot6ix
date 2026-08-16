@@ -212,8 +212,14 @@ class AuctionItemServiceTest {
     }
 
     private TopBidderProjection row(Long itemId, int rankNo, String nickname, Long amount) {
+        return row(itemId, 900L + rankNo, rankNo, nickname, amount);
+    }
+
+    private TopBidderProjection row(Long itemId, Long bidderUserId, int rankNo,
+                                    String nickname, Long amount) {
         return new TopBidderProjection() {
             @Override public Long getAuctionItemId() { return itemId; }
+            @Override public Long getBidderUserId() { return bidderUserId; }
             @Override public Integer getRankNo() { return rankNo; }
             @Override public String getNickname() { return nickname; }
             @Override public Long getAmount() { return amount; }
@@ -267,7 +273,7 @@ class AuctionItemServiceTest {
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
         when(auctionItemRepository.findSummaries(ROOM_ID)).thenReturn(List.of());
 
-        List<AuctionItemSummaryResponseDto> result = auctionItemService.getSummaries(SHARE_CODE);
+        List<AuctionItemSummaryResponseDto> result = auctionItemService.getSummaries(SHARE_CODE, null);
 
         assertThat(result).isEmpty();
     }
@@ -289,12 +295,56 @@ class AuctionItemServiceTest {
                 row(1L, 1, "스니커홀릭", 50_000L),
                 row(1L, 2, "조던매니아", 48_000L)));
 
-        List<AuctionItemSummaryResponseDto> result = auctionItemService.getSummaries(SHARE_CODE);
+        List<AuctionItemSummaryResponseDto> result = auctionItemService.getSummaries(SHARE_CODE, null);
 
         assertThat(result.get(0).leaderboard())
                 .extracting(LeaderboardEntryResponseDto::nickname)
                 .containsExactly("스니커홀릭", "조던매니아");
         assertThat(result.get(1).leaderboard()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("리더보드의 isMe는 닉네임이 아니라 입찰자 ID로 판정한다")
+    void getSummariesMarksOwnLeaderboardRowByUserId() {
+
+        AuctionItemSummaryResponseDto summary = new AuctionItemSummaryResponseDto(
+                1L, "한정판 피규어", "https://cdn.hot6ix.com/1.png",
+                50_000L, AuctionItemStatus.IN_PROGRESS, LocalDateTime.of(2026, 7, 29, 21, 0));
+
+        when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
+        when(auctionItemRepository.findSummaries(ROOM_ID)).thenReturn(List.of(summary));
+        // 닉네임이 같은 두 사람. 닉네임에는 unique 제약이 없다
+        when(bidRepository.findTopBidders(List.of(1L), 3)).thenReturn(List.of(
+                row(1L, 700L, 1, "승민", 50_000L),
+                row(1L, USER_ID, 2, "승민", 48_000L)));
+
+        List<AuctionItemSummaryResponseDto> result =
+                auctionItemService.getSummaries(SHARE_CODE, USER_ID);
+
+        assertThat(result.get(0).leaderboard())
+                .extracting(LeaderboardEntryResponseDto::isMe)
+                .containsExactly(false, true);
+    }
+
+    @Test
+    @DisplayName("비로그인 조회는 리더보드의 isMe가 전부 false다")
+    void getSummariesMarksNoRowForGuest() {
+
+        AuctionItemSummaryResponseDto summary = new AuctionItemSummaryResponseDto(
+                1L, "한정판 피규어", "https://cdn.hot6ix.com/1.png",
+                50_000L, AuctionItemStatus.IN_PROGRESS, LocalDateTime.of(2026, 7, 29, 21, 0));
+
+        when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
+        when(auctionItemRepository.findSummaries(ROOM_ID)).thenReturn(List.of(summary));
+        when(bidRepository.findTopBidders(List.of(1L), 3)).thenReturn(List.of(
+                row(1L, USER_ID, 1, "승민", 50_000L)));
+
+        List<AuctionItemSummaryResponseDto> result =
+                auctionItemService.getSummaries(SHARE_CODE, null);
+
+        assertThat(result.get(0).leaderboard())
+                .extracting(LeaderboardEntryResponseDto::isMe)
+                .containsExactly(false);
     }
 
     @Test
@@ -304,7 +354,7 @@ class AuctionItemServiceTest {
         when(auctionRoomShareService.resolveRoomId("nope"))
                 .thenThrow(new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
 
-        assertThatThrownBy(() -> auctionItemService.getSummaries("nope"))
+        assertThatThrownBy(() -> auctionItemService.getSummaries("nope", null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
@@ -317,7 +367,7 @@ class AuctionItemServiceTest {
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
         when(auctionItemRepository.findDetail(999L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> auctionItemService.getDetail(SHARE_CODE, 999L))
+        assertThatThrownBy(() -> auctionItemService.getDetail(SHARE_CODE, 999L, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
@@ -340,7 +390,7 @@ class AuctionItemServiceTest {
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
         when(auctionItemRepository.findDetail(ITEM_ID)).thenReturn(Optional.of(otherRoomItem));
 
-        assertThatThrownBy(() -> auctionItemService.getDetail(SHARE_CODE, ITEM_ID))
+        assertThatThrownBy(() -> auctionItemService.getDetail(SHARE_CODE, ITEM_ID, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
@@ -366,7 +416,7 @@ class AuctionItemServiceTest {
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
         when(auctionItemRepository.findDetail(ITEM_ID)).thenReturn(Optional.of(sold));
 
-        AuctionItemDetailResponseDto result = auctionItemService.getDetail(SHARE_CODE, ITEM_ID);
+        AuctionItemDetailResponseDto result = auctionItemService.getDetail(SHARE_CODE, ITEM_ID, null);
 
         assertThat(result.status()).isEqualTo(AuctionItemStatus.SOLD);
     }
@@ -388,7 +438,7 @@ class AuctionItemServiceTest {
                 row(ITEM_ID, 2, "조던매니아", 48_000L),
                 row(ITEM_ID, 3, "슈즈러버", 46_000L)));
 
-        AuctionItemDetailResponseDto result = auctionItemService.getDetail(SHARE_CODE, ITEM_ID);
+        AuctionItemDetailResponseDto result = auctionItemService.getDetail(SHARE_CODE, ITEM_ID, null);
 
         assertThat(result.leaderboard())
                 .extracting(LeaderboardEntryResponseDto::rank)
@@ -413,7 +463,7 @@ class AuctionItemServiceTest {
         when(auctionItemRepository.findDetail(ITEM_ID)).thenReturn(Optional.of(found));
         when(bidRepository.findTopBidders(List.of(ITEM_ID), 3)).thenReturn(List.of());
 
-        AuctionItemDetailResponseDto result = auctionItemService.getDetail(SHARE_CODE, ITEM_ID);
+        AuctionItemDetailResponseDto result = auctionItemService.getDetail(SHARE_CODE, ITEM_ID, null);
 
         assertThat(result.leaderboard()).isEmpty();
     }

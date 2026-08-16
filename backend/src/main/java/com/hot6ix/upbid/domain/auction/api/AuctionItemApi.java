@@ -33,6 +33,10 @@ public interface AuctionItemApi {
                     + "한 사람이 여러 번 입찰해도 그 사람의 최고가로 한 줄만 나오고, "
                     + "탈퇴한 회원은 순위에서 빠진다. 입찰이 없으면 빈 배열이다. "
                     + "비로그인으로 조회할 수 있다.\n\n"
+                    + "리더보드의 `isMe`는 그 줄이 조회한 본인인지를 서버가 판정해 담은 값이다. "
+                    + "입찰자의 회원 ID를 응답에 싣지 않으려는 것이고, 닉네임에 unique 제약이 없어 "
+                    + "화면이 닉네임으로 비교하면 동명이인이 본인으로 강조되기 때문이다. "
+                    + "비로그인 조회에서는 모든 줄이 `false`다.\n\n"
                     + "인증이 필요 없는 공개 경로라 경매방을 숫자 ID가 아닌 공유 코드로 지목한다."
     )
     @ApiResponses({
@@ -41,7 +45,8 @@ public interface AuctionItemApi {
     })
     ResponseEntity<CommonResponse<List<AuctionItemSummaryResponseDto>>> getSummaries(
             @Parameter(description = "조회할 경매방의 공유 코드", required = true)
-            @PathVariable String shareCode);
+            @PathVariable String shareCode,
+            @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
             summary = "경매 물품 상세 조회",
@@ -62,7 +67,8 @@ public interface AuctionItemApi {
             @Parameter(description = "물품이 속한 경매방의 공유 코드", required = true)
             @PathVariable String shareCode,
             @Parameter(description = "조회할 물품 ID", required = true)
-            @PathVariable Long auctionItemId);
+            @PathVariable Long auctionItemId,
+            @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
             summary = "경매방 물품 추가",
@@ -175,10 +181,13 @@ public interface AuctionItemApi {
                     + "싶을 때 쓴다.\n\n"
                     + "**바디는 선택이다.** 안 보내거나 remainingSeconds를 비우면 경매방의 "
                     + "softCloseTriggerSeconds 만큼 남긴다(이 API의 기존 동작). 절대 시각이 아니라 남은 초로 "
-                    + "받는 것은 서버가 자기 시계로 계산하게 해서 브라우저와의 시차를 끌어오지 않기 위해서다.\n\n"
+                    + "받는 것은 새 마감 시각을 Redis 시계로 계산하게 해서 서버·브라우저의 시차를 판정에서 "
+                    + "빼기 위해서다.\n\n"
                     + "**여기서 물품이 닫히지는 않는다.** 즉시 마감하지 않고 최소 트리거만큼은 남겨두는 것은 "
                     + "구매자에게 얼마나 남았는지 알리기 위해서이며, 앞당긴 뒤에도 Soft Close는 그대로 적용돼 "
-                    + "연장 구간에 입찰이 들어오면 마감이 다시 밀린다. 실제 마감은 새 마감 시각에 스케줄러가 한다.\n\n"
+                    + "연장 구간에 입찰이 들어오면 마감이 다시 밀린다. 소유권·상태·시각 판정과 Stream 기록은 "
+                    + "Redis Lua에서 원자적으로 수행하고, DB와 실시간 이벤트는 Consumer가 반영한다. "
+                    + "실제 마감은 새 마감 시각에 스케줄러가 한다.\n\n"
                     + "**마감을 뒤로 밀지는 않는다.** 거절이 셋이고 화면 안내가 다르다. "
                     + "트리거 초로도 마감이 밀리는 상태면 요청 값과 무관하게 4011, "
                     + "요청한 시간이 트리거보다 짧으면 4013, 지금 마감까지 남은 시간 이상이면 4014다. "
@@ -191,8 +200,7 @@ public interface AuctionItemApi {
             @ApiResponse(responseCode = "200", description = "앞당기기 성공"),
             @ApiResponse(responseCode = "400", description = "remainingSeconds가 0 이하 (code 2002)"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
-            @ApiResponse(responseCode = "404", description = "판매자 프로필이 없음 (code 3002), "
-                    + "물품이 없거나 본인 소유가 아님 (code 4001)"),
+            @ApiResponse(responseCode = "404", description = "물품이 없거나 본인 소유가 아님 (code 4001)"),
             @ApiResponse(responseCode = "409", description = "진행 중인 물품이 아님 (code 4010), "
                     + "이미 마감이 임박함 (code 4011), "
                     + "남길 시간이 트리거보다 짧음 (code 4013), "

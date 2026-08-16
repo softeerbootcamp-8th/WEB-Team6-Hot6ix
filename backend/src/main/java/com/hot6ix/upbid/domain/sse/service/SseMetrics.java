@@ -49,7 +49,12 @@ public class SseMetrics {
     /** 발행이 실패해 사라진 이벤트 수. */
     private final Counter publishFailures;
 
-    /** emitter별 큐가 포화되어 연결을 끊은 횟수. 동기 구현에서는 항상 0이다. */
+    /**
+     * emitter 별 큐가 포화되어 연결을 끊은 횟수.
+     *
+     * <p>값이 0이 아니면 느린 구독자(TCP 버퍼 포화 또는 네트워크 지연)가 있다는 뜻이다.
+     * 끊긴 쪽은 {@code EventSource}가 재연결하고 {@code Last-Event-ID}로 빠진 이벤트를 받는다.
+     */
     private final Counter queueSaturated;
 
     /** 연결이 실제 등록된 횟수. 현재 연결 수 gauge와 달리 짧게 붙었다 끊긴 연결도 놓치지 않는다. */
@@ -58,6 +63,17 @@ public class SseMetrics {
     /** emitter.send() 안에 들어가 아직 반환하지 않은 전송 수. */
     private final AtomicInteger sendsInFlight = new AtomicInteger();
 
+    /**
+     * 방 전원의 emitter별 큐에 전송 작업을 배분하는 시간.
+     *
+     * <p><b>이벤트 이름으로 갈라 둔다.</b> 합쳐 놓으면 방 전원에게 쏘는 비용이 얼마인지는 알아도
+     * 그게 어느 경로의 것인지 모른다. 실제 {@code emitter.send()} 시간은 {@code upbid.sse.send},
+     * 큐에 머문 시간은 {@code upbid.sse.queue.wait}에서 별도로 잰다.
+     *
+     * <p>태그값마다 미리 만드는 이유는 {@code AuctionCloseMetrics}와 같다. 첫 이벤트 전까지
+     * 시계열이 없으면 측정 구간의 증가분을 구할 수 없다. {@code EventType}에 없는 이름은
+     * 참여자 수 알림 하나뿐이라 그것만 따로 넣는다.
+     */
     private final Map<String, Timer> broadcasts;
     private final Map<String, Timer> fanouts;
     private final Map<String, Counter> eventsPublished;
@@ -91,10 +107,6 @@ public class SseMetrics {
         Gauge.builder("upbid.sse.in.flight", sendsInFlight, AtomicInteger::get)
                 .description("현재 emitter.send 안에서 완료를 기다리는 전송 수")
                 .register(registry);
-
-        Gauge.builder("upbid.sse.queue.depth", () -> 0.0)
-                .description("동기 SSE 구현에는 대기 큐가 없어 항상 0")
-                .register(registry);
     }
 
     private static Map<String, Timer> eventTimers(
@@ -110,7 +122,7 @@ public class SseMetrics {
                     registry.timer(metricName, "event", RoomSseManager.PARTICIPANT_COUNT_EVENT));
         }
 
-        // histogram bucket 존재 여부를 사전 검사할 수 있도록 대표 시계열 하나만 미리 만든다.
+        // preflight에서 histogram bucket 존재를 확인할 수 있게 대표 시계열 하나만 미리 만든다.
         timers.put(HEARTBEAT_EVENT, registry.timer(metricName, "event", HEARTBEAT_EVENT));
 
         return timers;
@@ -178,6 +190,16 @@ public class SseMetrics {
                 .register(registry);
     }
 
+    /** emitter별 bounded queue의 추정 대기 작업 수를 모두 더한다. */
+    public void bindDispatchers(Map<SseEmitter, EmitterDispatcher> dispatchers) {
+        Gauge.builder("upbid.sse.queue.depth", dispatchers,
+                        map -> map.values().stream()
+                                .mapToLong(EmitterDispatcher::estimatedQueueDepth)
+                                .sum())
+                .description("모든 emitter dispatcher 큐에 대기 중인 추정 작업 수")
+                .register(registry);
+    }
+
     public void recordHeartbeat(Runnable sweep) {
         heartbeat.record(sweep);
     }
@@ -216,7 +238,6 @@ public class SseMetrics {
                 .increment();
     }
 
-    /** 비동기 구현의 큐 대기 시간과 같은 이름·범위를 유지하기 위한 공통 계측 API다. */
     public void recordQueueWait(String eventName, long enqueuedAtNanos) {
         long waitNanos = Math.max(0L, System.nanoTime() - enqueuedAtNanos);
         eventTimer(queueWaits, QUEUE_WAIT, eventName).record(waitNanos, TimeUnit.NANOSECONDS);
@@ -265,6 +286,8 @@ public class SseMetrics {
         } finally {
             long elapsed = System.nanoTime() - startedAt;
             eventTimer(broadcasts, BROADCAST, eventName).record(elapsed, TimeUnit.NANOSECONDS);
+            // 현재 구조의 fan-out은 emitter별 큐에 배분하는 단계다. 실제 send 비용은
+            // upbid.sse.send가 별도로 기록한다.
             eventTimer(fanouts, FANOUT, eventName).record(elapsed, TimeUnit.NANOSECONDS);
         }
     }

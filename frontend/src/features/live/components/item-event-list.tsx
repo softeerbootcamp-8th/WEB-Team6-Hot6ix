@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useEventEntrance } from '@/features/live/use-event-entrance'
 import { formatTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import type { RoomEvent } from '@/mocks/types'
+import type { RoomEvent } from '@/types/domain'
 
 /**
  * 물품 상세의 `이 물품의 경매방 이벤트` 카드 (Figma 476×260).

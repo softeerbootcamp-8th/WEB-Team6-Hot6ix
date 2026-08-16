@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +26,10 @@ class AuctionParticipantServiceTest {
 
     @Mock
     private AuctionRoomRepository auctionRoomRepository;
+
+    /** 동의한 회원을 Redis 참여자 SET에도 넣는다(이슈 #246의 비교군 C). */
+    @Mock
+    private AuctionRedisStore auctionRedisStore;
 
     @InjectMocks
     private AuctionParticipantService auctionParticipantService;

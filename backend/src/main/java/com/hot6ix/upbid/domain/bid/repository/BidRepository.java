@@ -2,11 +2,15 @@ package com.hot6ix.upbid.domain.bid.repository;
 
 import com.hot6ix.upbid.domain.bid.entity.Bid;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface BidRepository extends JpaRepository<Bid, Long> {
+
+    /** Redis Stream 이벤트를 MySQL에 중복 반영하지 않도록 승인 요청을 조회한다. */
+    Optional<Bid> findByRequestId(String requestId);
 
     /**
      * 물품들의 상위 입찰자를 물품당 {@code limit}명까지 조회한다. 입찰자 한 명이 한 줄이고
@@ -32,9 +36,10 @@ public interface BidRepository extends JpaRepository<Bid, Long> {
 
     @Query(value = """
             SELECT * FROM (
-                SELECT b.auction_item_id AS auctionItemId,
-                       u.nickname        AS nickname,
-                       MAX(b.amount)     AS amount,
+                SELECT b.auction_item_id  AS auctionItemId,
+                       b.bidder_user_id   AS bidderUserId,
+                       u.nickname         AS nickname,
+                       MAX(b.amount)      AS amount,
                        ROW_NUMBER() OVER (
                            PARTITION BY b.auction_item_id
                            ORDER BY MAX(b.amount) DESC, b.bidder_user_id ASC) AS rankNo

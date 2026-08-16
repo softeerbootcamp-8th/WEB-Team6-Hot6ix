@@ -39,10 +39,13 @@ public class AuctionItem extends BaseTimeEntity {
     public static final int MAX_TOTAL_EXTENSION_SECONDS = 3600;
 
     /**
-     * 경매방에 Soft Close 트리거가 없을 때 {@link #closeEarly}가 대신 쓰는 값. 경매방 생성
-     * 요청에서 트리거는 필수이고 최소 60초라 정상 경로로는 비어 있을 수 없지만, 컬럼이
+     * 경매방에 Soft Close 트리거가 없을 때 {@link #applyCloseAdvanced}가 대신 쓰는 값. 경매방
+     * 생성 요청에서 트리거는 필수이고 최소 60초라 정상 경로로는 비어 있을 수 없지만, 컬럼이
      * nullable이라 방어값이 필요하다. 생성 API가 허용하는 최소값과 같은 값을 쓴다 — 다른
      * 값을 두면 화면이 만들 수 없는 마감 시각이 이 경로에서만 생긴다.
+     *
+     * <p><b>{@code close-auction.lua}에도 같은 값이 박혀 있다.</b> 앞당기기 판정은 거기서 하고
+     * 여기서는 그 결과를 받아 적으므로, 한쪽만 바꾸면 알림 기록 여부가 어긋난다.
      */
     public static final int DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS = 60;
 
@@ -95,8 +98,8 @@ public class AuctionItem extends BaseTimeEntity {
      * {@code AuctionItemRepository.markNotified}가 조건부 UPDATE 한 문장으로 고친다. 엔티티를
      * 읽어 고치면 읽기와 쓰기 사이가 벌어져 두 서버가 같이 통과하기 때문이다.
      *
-     * <p>{@link #closeEarly}만 예외다. 그쪽은 <b>물품 행 락을 잡은 채</b> 불리므로 그 틈이
-     * 없다.
+     * <p>{@link #applyCloseAdvanced}만 예외다. 그쪽은 Redis가 이미 확정한 앞당김을 <b>물품 행
+     * 락을 잡은 채</b> 받아 적는 자리라 그 틈이 없다.
      */
     @Column(name = "notified_at")
     private LocalDateTime notifiedAt;
@@ -165,83 +168,6 @@ public class AuctionItem extends BaseTimeEntity {
     }
 
     /**
-     * 마감을 <b>지금부터 {@code remainingSeconds}만큼 뒤</b>로 앞당긴다. 판매자가 물품을 빨리
-     * 넘기고 싶을 때 쓰며, 상태·소유자 검증은 Service가 마치고 호출한다.
-     *
-     * <p>남길 시간을 절대 시각이 아니라 <b>남은 초로</b> 받는 것은 서버가 자기 시계로 계산하게
-     * 해서 브라우저와의 시차를 끌어오지 않으려는 것이다(#182, #183).
-     *
-     * <p>지금 바로 닫지 않고 최소 트리거만큼은 남겨두는 것은 <b>구매자에게 얼마나 남았는지 알릴
-     * 수 있게</b> 하려는 것이다. 앞당긴 뒤에도 {@link #extendIfClosingSoon}은 그대로 살아 있어,
-     * 연장 구간에 입찰이 들어오면 지금까지처럼 마감이 밀린다.
-     *
-     * <p>거절이 셋이고 이유가 다르다.
-     *
-     * <ul>
-     *   <li>{@code ALREADY_CLOSING_SOON} — 가장 짧게 남길 수 있는 트리거 초로도 마감이 뒤로
-     *       밀린다. 요청 값과 무관하게 앞당길 자리 자체가 없는 경우다.
-     *   <li>{@code REMAINING_TOO_SHORT} — 트리거보다 짧게 남기려 한다. 받아주면 앞당기는 즉시
-     *       연장 구간 안이라 알릴 순간이 없다.
-     *   <li>{@code REMAINING_TOO_LONG} — 지금 마감보다 뒤다. <b>막지 않으면 앞당기기가 마감을
-     *       미루는 셈이 된다.</b>
-     * </ul>
-     *
-     * <p>{@code originalEndAt}과 {@code totalExtensionSeconds}는 건드리지 않는다. 앞은 원래
-     * 마감이 언제였는지를 남기는 값이라 앞당겼다고 달라지지 않고, 뒤는 연장 누적이라 앞당기기가
-     * 더할 것이 없다.
-     *
-     * <p><b>{@code notifiedAt}은 딱 트리거만큼 남길 때만 지금으로 찍는다.</b> 그때만 앞당긴 뒤의
-     * 알림 시각({@code endAt - 트리거})이 정확히 지금이라 이미 지난 시각이고, 남은 초는 앞당김
-     * 이벤트가 화면에 직접 알리므로 알림이 따로 나갈 이유가 없다. 안 찍으면
-     * {@code AuctionRecoveryRunner}가 "알림 예약이 빠졌다"고 보고 되살려서, <b>트리거만큼 남은
-     * 물품에 "마감 N초 전"이 뒤늦게 나간다</b>(#290). 반대로 그보다 길게 남기면 알림 시각이
-     * 아직 미래라 <b>알림이 나가야 하므로 찍으면 안 된다</b>.
-     *
-     * <p>그러고도 <b>연장 재발송은 그대로 산다.</b> 앞당긴 뒤 입찰이 들어와 마감이 밀리면 알림
-     * 시각도 함께 밀려서 여기 찍은 값보다 뒤가 되고, 그러면 다시 알린다.
-     *
-     * <p>연장이 {@code endAt}을 바꾸는 다른 경로와 마찬가지로 <b>물품 행 락을 잡은 채</b>
-     * 불러야 하고, 호출한 쪽은 걸어둔 마감 예약과 알림 예약을 새 시각으로 갈아 끼워야 한다.
-     *
-     * @param now              새 마감 시각의 기준. 같은 트랜잭션의 다른 검증과 <b>같은 값</b>을
-     *                         받아야 한다
-     * @param remainingSeconds 마감까지 남길 초. <b>{@code null}이면 트리거 초</b>다
-     * @return 앞당겼으면 {@code ADVANCED}. 나머지는 거절이며 아무 값도 바뀌지 않았다
-     */
-    public CloseEarlyResult closeEarly(LocalDateTime now, Integer remainingSeconds) {
-
-        if (endAt == null) {
-            return CloseEarlyResult.ALREADY_CLOSING_SOON;
-        }
-
-        int triggerSeconds = resolveSoftCloseTriggerSeconds();
-
-        if (!now.plusSeconds(triggerSeconds).isBefore(endAt)) {
-            return CloseEarlyResult.ALREADY_CLOSING_SOON;
-        }
-
-        int seconds = remainingSeconds != null ? remainingSeconds : triggerSeconds;
-
-        if (seconds < triggerSeconds) {
-            return CloseEarlyResult.REMAINING_TOO_SHORT;
-        }
-
-        LocalDateTime advancedEndAt = now.plusSeconds(seconds);
-
-        if (!advancedEndAt.isBefore(endAt)) {
-            return CloseEarlyResult.REMAINING_TOO_LONG;
-        }
-
-        this.endAt = advancedEndAt;
-
-        if (seconds == triggerSeconds) {
-            this.notifiedAt = now;
-        }
-
-        return CloseEarlyResult.ADVANCED;
-    }
-
-    /**
      * 이 물품이 속한 경매방의 Soft Close 트리거 초. 값이 없으면
      * {@link #DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS}다.
      *
@@ -263,6 +189,91 @@ public class AuctionItem extends BaseTimeEntity {
     public void applyBid(User bidder, Long amount) {
         this.leaderUser = bidder;
         this.currentPrice = amount;
+    }
+
+    /**
+     * Redis에서 이미 승인된 입찰을 MySQL의 조회용 상태에 반영한다.
+     *
+     * <p>Stream의 순서와 MySQL 트랜잭션 커밋 순서는 같다는 보장이 없다. 따라서 더 낮은
+     * 금액, 더 이른 마감 시각, 더 작은 누적 연장값은 기존 상태를 덮지 않는다. 판매자가
+     * 마감을 앞당긴 뒤 그보다 전에 승인된 입찰 이벤트가 늦게 도착한 경우에는 과거
+     * {@code endAt}으로 앞당김을 취소하지 않는다. 누적 연장값은 과거에 실제로 일어난
+     * 연장 횟수이므로 이 경우에도 큰 값이면 보존한다.
+     *
+     * @return 이 이벤트로 {@code endAt}이 실제로 뒤로 이동했으면 {@code true}
+     */
+    public boolean applyPersistedBid(User bidder, Long amount, LocalDateTime acceptedAt,
+                                     LocalDateTime persistedEndAt,
+                                     int persistedTotalExtensionSeconds) {
+
+        if (leaderUser == null || amount > currentPrice) {
+            applyBid(bidder, amount);
+        }
+
+        boolean acceptedAfterCloseAdvanced =
+                notifiedAt == null || acceptedAt.isAfter(notifiedAt);
+        boolean endAtAdvanced = acceptedAfterCloseAdvanced
+                && (endAt == null || persistedEndAt.isAfter(endAt));
+        if (endAtAdvanced) {
+            endAt = persistedEndAt;
+        }
+
+        if (persistedTotalExtensionSeconds > totalExtensionSeconds) {
+            totalExtensionSeconds = persistedTotalExtensionSeconds;
+        }
+
+        return endAtAdvanced;
+    }
+
+    /**
+     * 같은 Stream에서 앞선 입찰을 모두 반영한 뒤 도착한 마감 스냅샷으로 최종 상태를 맞춘다.
+     * Redis가 경매 중 판정 원본이므로 마감 순간의 최고가·최고 입찰자를 그대로 사용한다.
+     */
+    public void closeFromRedis(User leader, Long finalPrice, LocalDateTime finalEndAt,
+                               int finalTotalExtensionSeconds) {
+        this.leaderUser = leader;
+        this.currentPrice = finalPrice;
+        this.endAt = finalEndAt;
+        this.totalExtensionSeconds = finalTotalExtensionSeconds;
+        close();
+    }
+
+    /**
+     * Redis에서 원자적으로 확정한 판매자 마감 앞당기기를 DB에 한 번만 반영한다.
+     *
+     * <p><b>재전달 판정을 {@code end_at} 비교로 한다.</b> 앞당기기는 마감을 <b>앞으로만</b>
+     * 옮기는 유일한 경로라, 들어온 시각이 지금 값보다 앞이 아니면 같은 이벤트가 다시 왔거나
+     * 더 나중 앞당김에 이미 밀린 낡은 이벤트다. 둘 다 반영하면 안 된다.
+     *
+     * <p>예전에는 이 판정을 {@code notifiedAt}으로 했는데, 아래에서 그 값을 <b>조건부로</b>
+     * 찍게 되면서 겸용할 수 없게 됐다. 알림을 안 찍는 경우에도 재전달은 걸러야 한다.
+     *
+     * <p><b>{@code notifiedAt}은 딱 트리거만큼 남길 때만 찍는다.</b> 그때만 앞당긴 뒤의 알림
+     * 시각({@code endAt - 트리거})이 정확히 지금이라 이미 지난 시각이고, 남은 초는 앞당김
+     * 이벤트가 화면에 직접 알리므로 알림이 따로 나갈 이유가 없다. 안 찍으면
+     * {@code AuctionRecoveryRunner}가 "알림 예약이 빠졌다"고 보고 되살려서, 트리거만큼 남은
+     * 물품에 "마감 N초 전"이 뒤늦게 나간다(#290). 반대로 그보다 길게 남기면 알림 시각이 아직
+     * 미래라 <b>알림이 나가야 하므로 찍으면 안 된다</b>(#336).
+     *
+     * @param advancedEndAt    앞당겨진 마감 시각
+     * @param advancedAt       Redis가 앞당김을 확정한 시각
+     * @param remainingSeconds 그 시각까지 남긴 초. 트리거와 같은지로 알림 기록 여부가 갈린다
+     * @return 처음 반영했으면 {@code true}, 재전달이거나 낡은 이벤트면 {@code false}
+     */
+    public boolean applyCloseAdvanced(
+            LocalDateTime advancedEndAt, LocalDateTime advancedAt, int remainingSeconds) {
+
+        if (endAt == null || !advancedEndAt.isBefore(endAt)) {
+            return false;
+        }
+
+        this.endAt = advancedEndAt;
+
+        if (remainingSeconds == resolveSoftCloseTriggerSeconds()) {
+            this.notifiedAt = advancedAt;
+        }
+
+        return true;
     }
 
     /**

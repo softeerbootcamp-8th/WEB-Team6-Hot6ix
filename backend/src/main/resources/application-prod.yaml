@@ -49,6 +49,27 @@ management:
       percentiles:
         http.server.requests: 0.5, 0.95, 0.99
 
+# Redis Lua·Stream 파이프라인 지표도 위의 upbid histogram 설정과 Prometheus exporter를
+# 그대로 사용한다. ACTUATOR_EXPOSURE에 prometheus가 없으면 수집 서버가 scrape할 수 없다.
+# 운영 측정 창에서는 ACTUATOR_EXPOSURE=health,prometheus로 열고 nginx allowlist를 함께 둔다.
+#
+# Redis의 appendonly/appendfsync/maxmemory-policy와 AOF 저장 경로는 EC2 Redis 프로세스
+# 설정이다. Spring profile로 바뀌지 않으므로 배포 체크리스트에서 redis-cli와 mount로 검증한다.
+# 주요 시계열:
+# upbid_bid_stream_processed_total, upbid_bid_stream_pending,
+# upbid_bid_stream_lag_milliseconds, upbid_bid_stream_persist_seconds,
+# upbid_bid_stream_ack_failures_total, upbid_bid_lua_decisions_total,
+# upbid_auction_redis_seed_failures_total, upbid_bid_stream_retries_total,
+# upbid_bid_stream_quarantined_total,
+# upbid_bid_stream_quarantine_write_failures_total,
+# upbid_bid_stream_oldest_pending_age_seconds, upbid_bid_stream_halted
+
+# 입찰 Stream Consumer 값은 application.yaml의 환경변수 기본값을 사용한다. 운영에서는 아래
+# 변수만 바꿔 재빌드 없이 poll 주기와 단건 처리 락 상한을 조정한다.
+# BID_STREAM_POLL_DELAY, BID_STREAM_BLOCK_TIMEOUT, BID_STREAM_LOCK_AT_MOST_FOR,
+# BID_STREAM_RETRY_DELAY, BID_STREAM_MAX_FAST_ATTEMPTS,
+# BID_STREAM_HALTED_RETRY_DELAY, BID_STREAM_TRANSACTION_TIMEOUT_SECONDS
+
 server:
   tomcat:
     mbeanregistry:

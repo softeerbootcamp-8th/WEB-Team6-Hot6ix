@@ -21,6 +21,7 @@ import type {
 
 import type {
   CommonResponseVoid,
+  DevLoginHeaders,
   DevLoginParams
 } from '.././model';
 
@@ -46,12 +47,14 @@ key를 생략하면 예전과 같은 단일 테스트 유저가 나옵니다.
  */
 export const devLogin = (
     params?: DevLoginParams,
+    headers?: DevLoginHeaders,
  options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
 ) => {
       
       
       return customInstance<CommonResponseVoid>(
       {url: `/api/v1/auth/dev-login`, method: 'POST',
+      headers,
         params, signal
     },
       options);
@@ -60,8 +63,8 @@ export const devLogin = (
 
 
 export const getDevLoginMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,{params?: DevLoginParams}, TContext>, request?: SecondParameter<typeof customInstance>}
-): UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,{params?: DevLoginParams}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,{params?: DevLoginParams;headers?: DevLoginHeaders}, TContext>, request?: SecondParameter<typeof customInstance>}
+): UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,{params?: DevLoginParams;headers?: DevLoginHeaders}, TContext> => {
 
 const mutationKey = ['devLogin'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -73,10 +76,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof devLogin>>, {params?: DevLoginParams}> = (props) => {
-          const {params} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof devLogin>>, {params?: DevLoginParams;headers?: DevLoginHeaders}> = (props) => {
+          const {params,headers} = props ?? {};
 
-          return  devLogin(params,requestOptions)
+          return  devLogin(params,headers,requestOptions)
         }
 
         
@@ -92,11 +95,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary [로컬·부하 측정 전용] 테스트 로그인
  */
 export const useDevLogin = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,{params?: DevLoginParams}, TContext>, request?: SecondParameter<typeof customInstance>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof devLogin>>, TError,{params?: DevLoginParams;headers?: DevLoginHeaders}, TContext>, request?: SecondParameter<typeof customInstance>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof devLogin>>,
         TError,
-        {params?: DevLoginParams},
+        {params?: DevLoginParams;headers?: DevLoginHeaders},
         TContext
       > => {
 

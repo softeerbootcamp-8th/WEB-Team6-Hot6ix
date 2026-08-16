@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
-import type { LeaderboardEntry } from '@/mocks/types'
+import type { LeaderboardEntry } from '@/types/domain'
 
 /** 방금 무슨 일이 있었는지. 배지로 잠깐 보여준다. */
 type Movement = { kind: 'up' | 'down' | 'new'; delta: number }
@@ -73,7 +73,14 @@ export function LeaderboardRows({
     ranks.current = new Map(top3.map((entry) => [entry.nickname, entry.rank]))
 
     rows.current.forEach((element, nickname) => {
-      const next = element.getBoundingClientRect().top
+      /*
+       * **뷰포트가 아니라 `offsetTop` 으로 잰다.** 예전에는
+       * `getBoundingClientRect().top` 을 기억했는데, 그 값은 스크롤 위치가 섞인
+       * 좌표라 목록이 스크롤되거나 위쪽 레이아웃이 밀리면 이전 값과 기준이
+       * 달라진다. 한 칸 움직였을 뿐인데 수백 px 을 이동한 것으로 계산돼서, 줄이
+       * 카드 밖 제목·현재가 자리까지 솟아올랐다.
+       */
+      const next = element.offsetTop
       const previous = positions.current.get(nickname)
       positions.current.set(nickname, next)
       if (reduced || first) return
@@ -98,6 +105,24 @@ export function LeaderboardRows({
 
       const delta = previous - next
       if (delta === 0) return
+
+      /*
+       * 줄 높이(30px)와 간격을 감안하면 세 줄짜리 목록에서 나올 수 있는 이동은
+       * 100px 을 넘지 않는다. 그보다 크면 위치를 잘못 잰 것이므로 그냥 새 자리에
+       * 둔다. 틀린 거리로 날아가는 것보다 안 움직이는 편이 낫다.
+       */
+      if (Math.abs(delta) > 100) return
+
+      /*
+       * 먼저 돌던 애니메이션을 걷어낸다. 입찰이 몰리면 이전 것이 끝나기 전에
+       * 다음 것이 걸리는데, 밀려난 줄은 `fill: backwards` 로 시작 위치에
+       * 붙들려 있어서 그대로 어긋난 자리에 멈춰 있었다.
+       *
+       * **자리를 옮기는 줄만 걷어낸다.** 안 움직이는 줄까지 걷어내면 직전에
+       * 켜진 강조 배경(`flash`, 1.2초)이 다음 입찰에서 잘려서, 입찰이 몰릴수록
+       * 강조가 거의 안 보인다.
+       */
+      element.getAnimations().forEach((animation) => animation.cancel())
 
       if (delta > 0) {
         /*

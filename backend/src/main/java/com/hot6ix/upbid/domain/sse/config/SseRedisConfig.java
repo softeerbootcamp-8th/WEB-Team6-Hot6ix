@@ -2,6 +2,8 @@ package com.hot6ix.upbid.domain.sse.config;
 
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import com.hot6ix.upbid.domain.sse.event.SseEventSubscriber;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -40,7 +42,13 @@ public class SseRedisConfig {
         return RedisScript.of(new ClassPathResource("redis/sse-publish.lua"), Long.class);
     }
 
-    // TODO: 트래픽 증가 시 방 단위 파티셔닝으로 전환 (방별 순서 보장 + 방 간 병렬 처리)
+    /**
+     * Redis 채널 구독 메시지를 받아 {@code deliverLocal()} 로 enqueue 하는 스레드.
+     *
+     * <p>실제 전송은 {@link #sseVirtualThreadExecutor}의 VT 가 담당하므로 이 스레드는
+     * enqueue 만 하고 즉시 반환된다. 단일 스레드로도 충분하나, 방 단위 파티셔닝이 필요해지면
+     * core/max 를 늘리고 {@code roomId % poolSize} 로 dispatch 한다.
+     */
     @Bean
     public ThreadPoolTaskExecutor sseEventDispatchExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -50,5 +58,16 @@ public class SseRedisConfig {
         executor.setThreadNamePrefix("sse-dispatch-");
 
         return executor;
+    }
+
+    /**
+     * emitter 별 drain 을 실행하는 executor. {@link EmitterDispatcher}가 공유한다.
+     *
+     * <p>가상 스레드를 사용한다. emitter 수만큼 생성해도 캐리어 스레드 고갈이 없고,
+     * 실제 네트워크 지연이 있는 운영 환경에서 I/O 블로킹 시 캐리어 스레드를 반납해 CPU를 낭비하지 않는다.
+     */
+    @Bean(destroyMethod = "close")
+    public Executor sseVirtualThreadExecutor() {
+        return Executors.newVirtualThreadPerTaskExecutor();
     }
 }
