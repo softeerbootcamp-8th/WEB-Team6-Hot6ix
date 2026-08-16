@@ -17,6 +17,7 @@ import {
   toAuctionItems,
 } from '@/features/live/adapt-item'
 import { toBidErrorMessage } from '@/features/live/bid-error'
+import { createBidRequestIdTracker } from '@/features/live/bid-request-id'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import { useGetRoomByShareCode } from '@/api/generated/경매방/경매방'
 import { MobileItemDetailView } from '@/features/live/components/mobile-item-detail-view'
@@ -61,6 +62,7 @@ function AuctionItemPage() {
     query: { enabled: Number.isInteger(auctionItemId) },
   })
   const placeBid = usePlace()
+  const bidRequestIds = useRef(createBidRequestIdTracker()).current
 
   /** 리더보드에서 내 줄을 찾는 기준. 서버가 `isMe` 를 안 줘서 닉네임으로 맞춘다. */
   const myNickname = user?.nickname ?? null
@@ -352,10 +354,13 @@ function AuctionItemPage() {
     setFeedback(null)
 
     try {
+      const requestId = bidRequestIds.acquire(item.id, amount)
       await placeBid.mutateAsync({
         auctionItemId: item.id,
         data: { amount },
+        headers: { 'Idempotency-Key': requestId },
       })
+      bidRequestIds.complete(requestId)
 
       // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       setFeedback({

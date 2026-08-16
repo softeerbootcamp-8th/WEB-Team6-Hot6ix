@@ -1,0 +1,94 @@
+package com.hot6ix.upbid.domain.auction.store;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
+import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
+import com.hot6ix.upbid.global.support.AbstractRedisContainerTest;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import com.hot6ix.upbid.domain.bid.stream.BidStreamMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+
+class AuctionRedisInitializerTest extends AbstractRedisContainerTest {
+
+    private static final long ITEM_ID = 101L;
+    private static final long ROOM_ID = 202L;
+    private static final LocalDateTime END_AT = LocalDateTime.of(2026, 8, 13, 21, 0);
+
+    private static LettuceConnectionFactory connectionFactory;
+    private static StringRedisTemplate redis;
+
+    private AuctionItemRepository auctionItemRepository;
+    private AuctionParticipantRepository auctionParticipantRepository;
+    private AuctionRedisInitializer initializer;
+
+    @BeforeAll
+    static void setUpRedis() {
+        connectionFactory = redisConnectionFactory();
+        redis = new StringRedisTemplate(connectionFactory);
+    }
+
+    @AfterAll
+    static void tearDownRedis() {
+        connectionFactory.destroy();
+    }
+
+    @BeforeEach
+    void setUp() {
+        redis.delete(List.of(AuctionRedisKeys.item(ITEM_ID), AuctionRedisKeys.participants(ROOM_ID)));
+        auctionItemRepository = mock(AuctionItemRepository.class);
+        auctionParticipantRepository = mock(AuctionParticipantRepository.class);
+        initializer = new AuctionRedisInitializer(
+                auctionItemRepository,
+                auctionParticipantRepository,
+                new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry())));
+    }
+
+    @Test
+    @DisplayName("시작된 물품과 동의 참여자를 DB에서 읽어 Redis 입찰 상태로 준비한다")
+    void initializesStartedItemFromDatabaseSnapshot() {
+
+        AuctionRoom room = mock(AuctionRoom.class);
+        when(room.getAuctionRoomId()).thenReturn(ROOM_ID);
+        when(room.getSoftCloseTriggerSeconds()).thenReturn(60);
+        when(room.getSoftCloseExtendSeconds()).thenReturn(90);
+
+        AuctionItem item = mock(AuctionItem.class);
+        when(item.getAuctionItemId()).thenReturn(ITEM_ID);
+        when(item.getAuctionRoom()).thenReturn(room);
+        when(item.getStatus()).thenReturn(AuctionItemStatus.IN_PROGRESS);
+        when(item.getStartingPrice()).thenReturn(10_000L);
+        when(item.getCurrentPrice()).thenReturn(10_000L);
+        when(item.getBidIncrement()).thenReturn(1_000L);
+        when(item.getEndAt()).thenReturn(END_AT);
+        when(item.getTotalExtensionSeconds()).thenReturn(0);
+
+        when(auctionItemRepository.findById(ITEM_ID)).thenReturn(Optional.of(item));
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(303L));
+        when(auctionParticipantRepository.findAgreedUserIds(ROOM_ID)).thenReturn(List.of(11L, 12L));
+
+        initializer.initialize(ITEM_ID);
+
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "status"))
+                .isEqualTo("IN_PROGRESS");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "endAt"))
+                .isEqualTo(String.valueOf(END_AT.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()));
+        assertThat(redis.opsForSet().members(AuctionRedisKeys.participants(ROOM_ID)))
+                .containsExactlyInAnyOrder("11", "12");
+    }
+}

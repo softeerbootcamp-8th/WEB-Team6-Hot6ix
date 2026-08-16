@@ -1182,7 +1182,8 @@ CPU_LOG="$RESULT_DIR/container_cpu.txt"
           tolower($1) ~ /k6/ { print "k6", $2; next }
           tolower($1) ~ /sse-client/ { print "sse-client", $2; next }
           $1 ~ /^upbid-perf-app-/   { print "app", $2; next }
-          $1 ~ /^upbid-perf-mysql-/ { print "mysql", $2; next }' \
+          $1 ~ /^upbid-perf-mysql-/ { print "mysql", $2; next }
+          $1 ~ /^upbid-perf-redis-/ { print "redis", $2; next }' \
       >>"$CPU_LOG" || true
     sleep 5
   done
@@ -1621,6 +1622,9 @@ cpu_stat() {
 }
 read -r APP_CPU_AVG APP_CPU_MAX <<<"$(cpu_stat app "$CPUS")"
 read -r MYSQL_CPU_AVG MYSQL_CPU_MAX <<<"$(cpu_stat mysql "$CPUS")"
+# Redis 를 안 띄운 실행에서는 NaN 이 들어간다. 0 으로 안 바꾼다 —
+# "안 재진 값"과 "0이었던 값"이 구분되지 않는다.
+read -r REDIS_CPU_AVG REDIS_CPU_MAX <<<"$(cpu_stat redis "$CPUS")"
 read -r _ K6_CPU_MAX <<<"$(cpu_stat k6 1)"
 read -r _ SSE_CLIENT_CPU_MAX <<<"$(cpu_stat sse-client 1)"
 
@@ -1713,6 +1717,8 @@ APP_CPU_AVG="$(round "$APP_CPU_AVG" 1)"
 APP_CPU_MAX="$(round "$APP_CPU_MAX" 1)"
 MYSQL_CPU_AVG="$(round "$MYSQL_CPU_AVG" 1)"
 MYSQL_CPU_MAX="$(round "$MYSQL_CPU_MAX" 1)"
+REDIS_CPU_AVG="$(round "$REDIS_CPU_AVG" 1)"
+REDIS_CPU_MAX="$(round "$REDIS_CPU_MAX" 1)"
 K6_P95_MS="$(round "$K6_P95_MS" 0)"
 K6_P99_MS="$(round "$K6_P99_MS" 0)"
 PROCESS_CPU_AVG="$(round "$PROCESS_CPU_AVG" 1)"
@@ -1970,7 +1976,7 @@ jq -n \
     sse_client:{target_reached:($sse_client_reached=="1")},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,bid_api_p95_ms,bid_api_p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_broadcast_p99_ms,sse_conn_max,sse_connections_opened,sse_connections_closed,sse_events_published,sse_send_attempts,sse_send_successes,sse_send_failures,sse_send_failure_rate,sse_fanout_p95_ms,sse_send_p95_ms,sse_send_p99_ms,sse_queue_depth_max,sse_queue_wait_p95_ms,sse_in_flight_max,sse_rejected,sse_client_conn_min,sse_client_conn_max,sse_client_scrape_up_min,sse_client_connections_opened,sse_client_unexpected_closes,sse_client_connection_errors,sse_client_events_received,sse_client_bid_events_received,sse_client_delivery_ratio,sse_msg_latency_p95_ms,sse_msg_latency_p99_ms,sse_msg_latency_samples,sse_client_latency_pending,sse_client_missing,sse_client_duplicate,sse_client_out_of_order,sse_client_parse_errors,sse_correlation_failed,sse_client_cpu_max,jvm_threads_live_max,sse_queue_saturated,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,process_open_fds_max,process_max_fds,process_fd_usage_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,sse_vt,sse_dispatch_pool,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,bid_api_p95_ms,bid_api_p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_broadcast_p99_ms,sse_conn_max,sse_connections_opened,sse_connections_closed,sse_events_published,sse_send_attempts,sse_send_successes,sse_send_failures,sse_send_failure_rate,sse_fanout_p95_ms,sse_send_p95_ms,sse_send_p99_ms,sse_queue_depth_max,sse_queue_wait_p95_ms,sse_in_flight_max,sse_rejected,sse_client_conn_min,sse_client_conn_max,sse_client_scrape_up_min,sse_client_connections_opened,sse_client_unexpected_closes,sse_client_connection_errors,sse_client_events_received,sse_client_bid_events_received,sse_client_delivery_ratio,sse_msg_latency_p95_ms,sse_msg_latency_p99_ms,sse_msg_latency_samples,sse_client_latency_pending,sse_client_missing,sse_client_duplicate,sse_client_out_of_order,sse_client_parse_errors,sse_correlation_failed,sse_client_cpu_max,jvm_threads_live_max,sse_queue_saturated,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,process_open_fds_max,process_max_fds,process_fd_usage_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,redis_cpu_avg,redis_cpu_max,virtual_threads,sse_vt,sse_dispatch_pool,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -2031,7 +2037,8 @@ VALUES=( \
   "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" \
   "$PROCESS_CPU_AVG" "$PROCESS_CPU_MAX" "$SYSTEM_CPU_AVG" "$SYSTEM_CPU_MAX" "$SYSTEM_LOAD_AVG" "$SYSTEM_LOAD_MAX" \
   "$PROCESS_OPEN_FDS_MAX" "$PROCESS_MAX_FDS" "$PROCESS_FD_USAGE_MAX" \
-  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$SSE_VT" "$SSE_POOL" "$BULK_ITEMS" "$SWEEP_INDEX" \
+  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$REDIS_CPU_AVG" "$REDIS_CPU_MAX" \
+  "$VIRTUAL_THREADS" "$SSE_VT" "$SSE_POOL" "$BULK_ITEMS" "$SWEEP_INDEX" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" "$DROPPED_ITERATIONS" "" "" \
 )
 (IFS=,; echo "${VALUES[*]}") >>"$INDEX"

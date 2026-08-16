@@ -3,6 +3,8 @@ package com.hot6ix.upbid.domain.auction.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -14,19 +16,17 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
-import com.hot6ix.upbid.domain.auction.scheduler.AuctionCloseMetrics;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisInitializer;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
+import com.hot6ix.upbid.domain.auction.store.RedisCloseDecision;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
-import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
-import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
 import com.hot6ix.upbid.global.event.DomainEvent;
-import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -35,7 +35,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -52,106 +51,33 @@ class AuctionItemCloseServiceTest {
     private AuctionItemRepository auctionItemRepository;
 
     @Mock
-    private SellerProfileRepository sellerProfileRepository;
-
-    @Mock
     private DomainEventPublisher domainEventPublisher;
 
-    /** 계측은 목이 아니라 진짜를 쓴다. 목이면 넘긴 조회를 실행하지 않아 락 조회 자체가 안 일어난다. */
-    @Spy
-    private AuctionCloseMetrics auctionCloseMetrics = new AuctionCloseMetrics(new SimpleMeterRegistry());
+    /** 조기 마감이 앞당긴 endAt을 Redis에도 쓴다(이슈 #246의 비교군 C). 여기서는 호출만 받는다. */
+    @Mock
+    private AuctionRedisStore auctionRedisStore;
+
+    @Mock
+    private AuctionRedisInitializer auctionRedisInitializer;
 
     @InjectMocks
     private AuctionItemCloseService auctionItemCloseService;
 
     @Test
-    @DisplayName("입찰이 있던 물품은 낙찰로 마감되고 ItemEnded가 발행된다")
-    void closeSoldItem() {
-
-        AuctionItem auctionItem =
-                givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().minusSeconds(1));
-        auctionItem.applyBid(user("한기"), 12_000L);
-
-        auctionItemCloseService.closeIfDue(ITEM_ID);
-
-        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.SOLD);
-        assertThat(publishedEvent()).isInstanceOfSatisfying(ItemEnded.class, event -> {
-            assertThat(event.roomId()).isEqualTo(ROOM_ID);
-            assertThat(event.itemId()).isEqualTo(ITEM_ID);
-            assertThat(event.itemName()).isEqualTo("한정판 피규어");
-            assertThat(event.finalPrice()).isEqualTo(12_000L);
-            assertThat(event.winnerNickname()).isEqualTo("한기");
-        });
-    }
-
-    @Test
-    @DisplayName("입찰이 없던 물품은 유찰로 마감되고 ItemPassed가 발행된다")
-    void closePassedItem() {
-
-        AuctionItem auctionItem =
-                givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().minusSeconds(1));
-
-        auctionItemCloseService.closeIfDue(ITEM_ID);
-
-        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.FAILED);
-        assertThat(publishedEvent()).isInstanceOfSatisfying(ItemPassed.class, event -> {
-            assertThat(event.roomId()).isEqualTo(ROOM_ID);
-            assertThat(event.itemId()).isEqualTo(ITEM_ID);
-            assertThat(event.itemName()).isEqualTo("한정판 피규어");
-        });
-    }
-
-    @Test
-    @DisplayName("이미 마감된 물품은 다시 마감되지 않는다")
-    void ignoresAlreadyClosedItem() {
-
-        AuctionItem auctionItem = givenLockedItem(AuctionItemStatus.SOLD);
-        auctionItem.applyBid(user("한기"), 12_000L);
-
-        auctionItemCloseService.closeIfDue(ITEM_ID);
-
-        assertThat(auctionItem.getStatus())
-                .as("낙찰자가 정해진 뒤 다시 닫히면 거래 상태가 뒤집힌다")
-                .isEqualTo(AuctionItemStatus.SOLD);
-        verify(domainEventPublisher, never()).publish(any());
-    }
-
-    @Test
-    @DisplayName("아직 시작하지 않은 물품은 마감되지 않는다")
-    void ignoresReadyItem() {
-
-        AuctionItem auctionItem = givenLockedItem(AuctionItemStatus.READY);
-
-        auctionItemCloseService.closeIfDue(ITEM_ID);
-
-        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.READY);
-        verify(domainEventPublisher, never()).publish(any());
-    }
-
-    @Test
-    @DisplayName("예약된 사이에 제외된 물품은 예외 없이 넘어간다")
-    void ignoresMissingItem() {
-
-        when(auctionItemRepository.findByIdForUpdate(ITEM_ID)).thenReturn(Optional.empty());
-
-        auctionItemCloseService.closeIfDue(ITEM_ID);
-
-        verify(domainEventPublisher, never()).publish(any());
-    }
-
-    @Test
     @DisplayName("마감 시각이 아직 남았으면 닫지 않고 그 시각을 돌려준다")
     void deferWhenNotDueYet() {
 
-        LocalDateTime endAt = LocalDateTime.now().plusSeconds(30);
-        AuctionItem auctionItem = givenLockedItem(AuctionItemStatus.IN_PROGRESS, endAt);
+        LocalDateTime endAt = millisPrecision(LocalDateTime.now().plusSeconds(30));
+        when(auctionRedisStore.requestNaturalClose(eq(ITEM_ID), anyLong()))
+                .thenReturn(new RedisCloseDecision.Rejected(
+                        RedisCloseDecision.Reason.NOT_DUE, epochMillis(endAt)));
 
         Optional<LocalDateTime> rescheduleAt = auctionItemCloseService.closeIfDue(ITEM_ID);
 
         assertThat(rescheduleAt)
                 .as("락을 기다리는 사이 Soft Close 연장이 커밋된 경우다. 여기서 닫으면 연장이 무시된다")
                 .contains(endAt);
-        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
+        verify(auctionItemRepository, never()).findByIdForUpdate(anyLong());
         verify(domainEventPublisher, never()).publish(any());
     }
 
@@ -159,50 +85,42 @@ class AuctionItemCloseServiceTest {
     @DisplayName("마감 시각이 지났으면 닫고 다시 예약할 시각을 남기지 않는다")
     void closeWhenDue() {
 
-        AuctionItem auctionItem =
-                givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().minusSeconds(1));
+        when(auctionRedisStore.requestNaturalClose(eq(ITEM_ID), anyLong()))
+                .thenReturn(new RedisCloseDecision.Closing(System.currentTimeMillis()));
 
         Optional<LocalDateTime> rescheduleAt = auctionItemCloseService.closeIfDue(ITEM_ID);
 
         assertThat(rescheduleAt).isEmpty();
-        assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.FAILED);
-        assertThat(publishedEvent()).isInstanceOf(ItemPassed.class);
+        verify(auctionItemRepository, never()).findByIdForUpdate(anyLong());
+        verify(domainEventPublisher, never()).publish(any());
     }
 
     @Test
-    @DisplayName("마감을 앞당기면 지금부터 트리거 초 뒤로 밀리고 ItemCloseAdvanced가 발행된다")
+    @DisplayName("Redis가 확정한 앞당김 시각을 즉시 응답하고 DB 반영은 Consumer에 맡긴다")
     void closeEarlyAdvancesEndAt() {
 
-        LocalDateTime before = LocalDateTime.now();
-        AuctionItem auctionItem =
-                givenOwnedItem(AuctionItemStatus.IN_PROGRESS, before.plusMinutes(10));
+        LocalDateTime advancedAt = millisPrecision(LocalDateTime.now());
+        LocalDateTime endAt = advancedAt.plusSeconds(60);
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+                .thenReturn(new RedisCloseDecision.Advanced(
+                        epochMillis(endAt), 60, epochMillis(advancedAt)));
 
         AuctionItemCloseEarlyResponseDto response =
                 auctionItemCloseService.closeEarly(USER_ID, ITEM_ID);
 
-        int trigger = AuctionItem.DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS;
-        assertThat(response.remainingSeconds()).isEqualTo(trigger);
-        assertThat(response.endAt())
-                .isEqualTo(auctionItem.getEndAt())
-                .isBetween(before.plusSeconds(trigger), LocalDateTime.now().plusSeconds(trigger));
-        assertThat(auctionItem.getStatus())
-                .as("앞당기기는 마감 시각만 옮긴다. 닫는 것은 새 시각에 깨어난 예약이다")
-                .isEqualTo(AuctionItemStatus.IN_PROGRESS);
-        assertThat(publishedEvent()).isInstanceOfSatisfying(ItemCloseAdvanced.class, event -> {
-            assertThat(event.roomId()).isEqualTo(ROOM_ID);
-            assertThat(event.itemId()).isEqualTo(ITEM_ID);
-            assertThat(event.itemName()).isEqualTo("한정판 피규어");
-            assertThat(event.remainingSeconds()).isEqualTo(trigger);
-            assertThat(event.endAt()).isEqualTo(response.endAt());
-        });
+        assertThat(response.remainingSeconds()).isEqualTo(60);
+        assertThat(response.endAt()).isEqualTo(endAt);
+        verify(auctionItemRepository, never()).findByIdForUpdate(anyLong());
+        verify(domainEventPublisher, never()).publish(any());
     }
 
     @Test
     @DisplayName("남의 방 물품은 마감을 앞당길 수 없고 물품이 없을 때와 같은 응답을 준다")
     void closeEarlyRejectsOtherSellersItem() {
 
-        givenLockedItem(AuctionItemStatus.IN_PROGRESS, LocalDateTime.now().plusMinutes(10));
-        givenSellerProfile(SELLER_PROFILE_ID + 1);
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+                .thenReturn(new RedisCloseDecision.Rejected(
+                        RedisCloseDecision.Reason.NOT_OWNER, null));
 
         assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
                 .isInstanceOf(ApplicationException.class)
@@ -215,7 +133,9 @@ class AuctionItemCloseServiceTest {
     @DisplayName("진행 중이 아닌 물품은 마감을 앞당길 수 없다")
     void closeEarlyRejectsNotInProgressItem() {
 
-        givenOwnedItem(AuctionItemStatus.READY, null);
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+                .thenReturn(new RedisCloseDecision.Rejected(
+                        RedisCloseDecision.Reason.ITEM_NOT_IN_PROGRESS, null));
 
         assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
                 .isInstanceOf(ApplicationException.class)
@@ -229,43 +149,40 @@ class AuctionItemCloseServiceTest {
     void closeEarlyRejectsAlreadyClosingSoonItem() {
 
         LocalDateTime endAt = LocalDateTime.now().plusSeconds(10);
-        AuctionItem auctionItem = givenOwnedItem(AuctionItemStatus.IN_PROGRESS, endAt);
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+                .thenReturn(new RedisCloseDecision.Rejected(
+                        RedisCloseDecision.Reason.ALREADY_CLOSING_SOON, epochMillis(endAt)));
 
         assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_ALREADY_CLOSING_SOON);
-        assertThat(auctionItem.getEndAt())
-                .as("받아주면 앞당기기가 오히려 마감을 뒤로 민다")
-                .isEqualTo(endAt);
         verify(domainEventPublisher, never()).publish(any());
     }
 
     @Test
-    @DisplayName("판매자 프로필이 없으면 마감을 앞당길 수 없다")
-    void closeEarlyRequiresSellerProfile() {
+    @DisplayName("Redis Hash가 없으면 DB 스냅샷으로 초기화한 뒤 앞당기기를 다시 시도한다")
+    void closeEarlySeedsMissingRedisState() {
+        LocalDateTime endAt = millisPrecision(LocalDateTime.now().plusSeconds(60));
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+                .thenReturn(
+                        new RedisCloseDecision.Rejected(RedisCloseDecision.Reason.KEY_MISSING, null),
+                        new RedisCloseDecision.Advanced(
+                                epochMillis(endAt), 60, epochMillis(endAt.minusSeconds(60))));
 
-        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
-                .thenReturn(Optional.empty());
+        AuctionItemCloseEarlyResponseDto response =
+                auctionItemCloseService.closeEarly(USER_ID, ITEM_ID);
 
-        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
-                .isInstanceOf(ApplicationException.class)
-                .extracting("errorType")
-                .isEqualTo(SellerProfileErrorType.SELLER_PROFILE_NOT_FOUND);
+        verify(auctionRedisInitializer).initialize(ITEM_ID);
+        assertThat(response.endAt()).isEqualTo(endAt);
     }
 
-    /** 앞당기기는 요청자를 보므로 물품 락과 판매자 프로필 조회를 함께 준비한다. */
-    private AuctionItem givenOwnedItem(AuctionItemStatus status, LocalDateTime endAt) {
-        AuctionItem auctionItem = givenLockedItem(status, endAt);
-        givenSellerProfile(SELLER_PROFILE_ID);
-        return auctionItem;
+    private static long epochMillis(LocalDateTime value) {
+        return value.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
-    private void givenSellerProfile(Long sellerProfileId) {
-        SellerProfile sellerProfile = newSellerProfile();
-        ReflectionTestUtils.setField(sellerProfile, "sellerProfileId", sellerProfileId);
-        when(sellerProfileRepository.findByUser_UserIdAndDeletedAtIsNull(USER_ID))
-                .thenReturn(Optional.of(sellerProfile));
+    private static LocalDateTime millisPrecision(LocalDateTime value) {
+        return value.withNano(value.getNano() / 1_000_000 * 1_000_000);
     }
 
     private DomainEvent publishedEvent() {

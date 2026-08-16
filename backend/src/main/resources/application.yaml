@@ -140,6 +140,16 @@ upbid:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
     buffer-size: ${SSE_BUFFER_SIZE:50}
+  bid-stream:
+    key: auction:bid:stream
+    group: bid-mysql-writers
+    # 컨테이너마다 HOSTNAME이 달라 재시작 전 Consumer의 pending도 구별된다. 처리기는 그룹
+    # 전체 PEL에서 먼저 claim하므로 이름이 바뀌어도 이벤트가 고립되지 않는다.
+    consumer: ${HOSTNAME:local}-bid-writer
+    poll-delay: ${BID_STREAM_POLL_DELAY:100ms}
+    block-timeout: ${BID_STREAM_BLOCK_TIMEOUT:50ms}
+    # Stream 단건 DB 트랜잭션의 최대 처리시간보다 길어야 한다. 운영 실측 뒤 조정한다.
+    lock-at-most-for: ${BID_STREAM_LOCK_AT_MOST_FOR:5s}
   auction:
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:3}
     close:
@@ -226,4 +236,3 @@ aws:
   s3:
     bucket: upbid-bucket
     public-base-url: https://upbid-bucket.s3.ap-northeast-2.amazonaws.com
-
