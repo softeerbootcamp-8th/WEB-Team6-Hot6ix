@@ -40,6 +40,15 @@ public class SseRedisConfig {
         return RedisScript.of(new ClassPathResource("redis/sse-publish.lua"), Long.class);
     }
 
+    /**
+     * 참여자 수 서버별 몫 갱신 → HEXPIRE → 합산 → 발행을 원자적으로 실행하는 스크립트.
+     * {@code sse-publish.lua}와 달리 순차 ID를 발급하지 않고 replay 버퍼에도 안 쌓는다.
+     */
+    @Bean
+    public RedisScript<Long> participantCountPublishScript() {
+        return RedisScript.of(new ClassPathResource("redis/participant-count-publish.lua"), Long.class);
+    }
+
     // TODO: 트래픽 증가 시 방 단위 파티셔닝으로 전환 (방별 순서 보장 + 방 간 병렬 처리)
     @Bean
     public ThreadPoolTaskExecutor sseEventDispatchExecutor() {
