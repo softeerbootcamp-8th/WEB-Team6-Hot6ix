@@ -5,8 +5,10 @@ import com.hot6ix.upbid.domain.sse.event.SseEventSubscriber;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +19,7 @@ import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+@Slf4j
 @Configuration
 public class SseRedisConfig {
 
@@ -74,14 +77,28 @@ public class SseRedisConfig {
      *   <li>가상 스레드: emitter 수만큼 생성해도 캐리어 스레드 고갈이 없다.</li>
      *   <li>플랫폼 스레드: send() 블록 시 OS 스레드를 점유하며 연결 수만큼 스레드가 늘어난다.</li>
      * </ul>
+     *
+     * <p>플랫폼 스레드 경로는 {@link java.util.concurrent.Executors#newFixedThreadPool} 대신
+     * {@link ThreadPoolExecutor}를 직접 생성한다. {@code newFixedThreadPool}은 내부적으로
+     * 무제한 {@link java.util.concurrent.LinkedBlockingQueue}를 사용해 큐 포화를 감지할 수
+     * 없다. {@link EmitterDispatcher}의 {@link java.util.concurrent.SubmissionPublisher}가
+     * emitter 당 drain 태스크를 최대 1개로 제한하므로 실제로는 emitter 수가 상한이 되지만,
+     * 이 보장을 executor 설정에 명시하지 않으면 설계 변경 시 조용히 깨진다.
+     * bounded 큐와 명시적 rejection handler 로 의도를 드러낸다.
      */
     @Bean(destroyMethod = "close")
     public Executor sseVirtualThreadExecutor(
             @Value("${upbid.sse.use-virtual-threads:true}") boolean useVirtualThreads,
-            @Value("${upbid.sse.dispatch-pool-size:4}") int dispatchPoolSize) {
-        return useVirtualThreads
-                ? Executors.newVirtualThreadPerTaskExecutor()
-                : Executors.newFixedThreadPool(dispatchPoolSize);
+            @Value("${upbid.sse.dispatch-pool-size:4}") int dispatchPoolSize,
+            @Value("${upbid.sse.drain-executor-queue-capacity:2000}") int drainQueueCapacity) {
+        if (useVirtualThreads) {
+            return Executors.newVirtualThreadPerTaskExecutor();
+        }
+        return new ThreadPoolExecutor(
+                dispatchPoolSize, dispatchPoolSize,
+                0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(drainQueueCapacity),
+                (task, executor) -> log.warn("sse drain executor 포화 — drain 태스크 drop. 활성 emitter 수가 drain-executor-queue-capacity({})를 초과했다.", drainQueueCapacity));
     }
 
     /**
