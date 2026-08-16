@@ -1,9 +1,7 @@
 package com.hot6ix.upbid.global.exception;
 
-import com.hot6ix.upbid.global.alert.SlackAlertService;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,17 +31,24 @@ import java.util.stream.Stream;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    private final SlackAlertService slackAlertService;
-
     @ExceptionHandler(ApplicationException.class)
     public ResponseEntity<CommonResponse<Void>> handleApplicationException(
             ApplicationException e, HttpServletRequest request, HttpServletResponse response) {
 
         ErrorType errorType = e.getErrorType();
 
-        log.warn("애플리케이션 예외 발생 - [{}] {} {} ({})",
-                request.getMethod(), request.getRequestURI(),
-                errorType.getErrorCode(), errorType.getMessage());
+        // 5xx 는 우리 잘못이거나 연동 대상이 죽은 것이라 알림까지 나가야 한다. 카카오 인증
+        // 실패(1001, 1002)와 SMS 발송 실패(8001)가 여기 걸리는데, warn 으로만 남기면
+        // 로그인이 통째로 죽어도 아무도 모른다. ERROR 로 남기면 SlackAppender 가 집어간다.
+        if (errorType.getHttpStatus().is5xxServerError()) {
+            log.error("애플리케이션 예외 발생 - [{}] {} {} ({})",
+                    request.getMethod(), request.getRequestURI(),
+                    errorType.getErrorCode(), errorType.getMessage(), e);
+        } else {
+            log.warn("애플리케이션 예외 발생 - [{}] {} {} ({})",
+                    request.getMethod(), request.getRequestURI(),
+                    errorType.getErrorCode(), errorType.getMessage());
+        }
 
         if (isEventStreamRequest(request)) {
             return statusOnly(response, errorType);
@@ -139,7 +144,6 @@ public class GlobalExceptionHandler {
             Exception e, HttpServletRequest request, HttpServletResponse response) {
 
         log.error("예상치 못한 예외 발생 - [{}] {} ({})", request.getMethod(), request.getRequestURI(), e.getMessage(), e);
-        slackAlertService.send(request, e);
 
         if (isEventStreamRequest(request)) {
             return statusOnly(response, CommonErrorType.INTERNAL_SERVER_ERROR);

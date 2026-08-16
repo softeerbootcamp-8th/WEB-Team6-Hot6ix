@@ -229,6 +229,10 @@ app:
     slack:
       webhook-url: ${SLACK_WEBHOOK_URL:}
       cooldown-seconds: ${SLACK_ALERT_COOLDOWN_SECONDS:60}
+  logging:
+    loki:
+      # loki 프로파일을 켤 때만 쓴다. logback-spring.xml 이 springProperty 로 읽어 간다.
+      url: ${LOKI_URL:}
 
 ncp:
   sms:
