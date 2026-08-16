@@ -44,6 +44,7 @@ class ParticipantCountPublisherTest extends AbstractRedisContainerTest {
     private static RedisMessageListenerContainer listenerContainer;
     private static ThreadPoolTaskExecutor dispatchExecutor;
     private static RedisScript<Long> script;
+    private static RedisScript<Long> incrementScript;
 
     private final List<String> received = new CopyOnWriteArrayList<>();
     private MessageListener listener;
@@ -53,6 +54,7 @@ class ParticipantCountPublisherTest extends AbstractRedisContainerTest {
         connectionFactory = redisConnectionFactory();
         redisTemplate = new StringRedisTemplate(connectionFactory);
         script = RedisScript.of(new ClassPathResource("redis/participant-count-publish.lua"), Long.class);
+        incrementScript = RedisScript.of(new ClassPathResource("redis/participant-count-increment.lua"), Long.class);
 
         dispatchExecutor = new ThreadPoolTaskExecutor();
         dispatchExecutor.setCorePoolSize(1);
@@ -161,7 +163,7 @@ class ParticipantCountPublisherTest extends AbstractRedisContainerTest {
         when(identifier.id()).thenReturn(serverId);
 
         return new ParticipantCountPublisher(
-                redisTemplate, script, identifier, new SseMetrics(new SimpleMeterRegistry()));
+                redisTemplate, script, incrementScript, identifier, new SseMetrics(new SimpleMeterRegistry()));
     }
 
     private static ChannelTopic topic() {

@@ -30,6 +30,9 @@ public class RoomSseManager {
      */
     public static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
 
+    private static final int PARTICIPANT_JOINED = 1;
+    private static final int PARTICIPANT_LEFT = -1;
+
     private final Map<Long, Set<SseEmitter>> roomEmitters = new ConcurrentHashMap<>();
 
     private final SseProperties sseProperties;
@@ -75,7 +78,7 @@ public class RoomSseManager {
             }
         }
 
-        broadcastParticipantCount(roomId);
+        incrementParticipantCount(roomId, PARTICIPANT_JOINED);
 
         log.info("sse 연결 완료: roomId={}, lastEventId={}", roomId, lastEventId);
 
@@ -191,7 +194,7 @@ public class RoomSseManager {
         if (unregister(roomId, emitter)) {
             sseMetrics.recordConnectionClosed(reason);
             log.info("sse 연결 종료: roomId={}, reason={}", roomId, reason);
-            broadcastParticipantCount(roomId);
+            incrementParticipantCount(roomId, PARTICIPANT_LEFT);
         }
     }
 
@@ -231,8 +234,18 @@ public class RoomSseManager {
     }
 
     /**
-     * 이 인스턴스가 아는 로컬 참여자 수를 Redis에 갱신하고, 전역 합계를 발행한다.
-     * 서버별 몫 갱신·합산·발행이 Lua 스크립트 하나로 원자적으로 처리된다(#311).
+     * 연결/해제 한 건에 대해 참여자 수를 증감으로 반영한다. 절대값을 읽어서 보내면
+     * 같은 서버에서 거의 동시에 일어난 두 연결 변화의 도착 순서가 뒤바뀔 때 최신 값이
+     * 오래된 값에 덮어써질 수 있는데, 증감은 그 레이스가 없다(#311).
+     */
+    private void incrementParticipantCount(Long roomId, int delta) {
+        participantCountPublisher.increment(roomId, delta);
+    }
+
+    /**
+     * 이 인스턴스가 아는 로컬 참여자 수(절대값)를 Redis에 다시 쓰고, 전역 합계를 발행한다.
+     * heartbeat가 방마다 주기적으로 불러 TTL을 갱신하고 드리프트를 바로잡는 용도로만 쓴다
+     * (#311) — 연결/해제 한 건 한 건은 {@link #incrementParticipantCount}를 쓴다.
      */
     private void broadcastParticipantCount(Long roomId) {
         participantCountPublisher.publish(roomId, getParticipantCount(roomId));
@@ -243,10 +256,15 @@ public class RoomSseManager {
      * 주기적으로 ping을 보내 끊긴 연결을 걷어내고
      * 동시에 프록시, 로드밸런서의 idle timeout(통상 60초)에 연결이 끊기는 것을 방지한다.
      *
-     * <p>ping이 실패해 걷어낸 연결의 참여자 수 갱신은 이제 {@code disconnect()}가 직접
-     * 맡는다(#311) — 예전에는 여기서 방 단위로 모아 한 번씩 재발행했지만, 그러면 heartbeat가
+     * <p>ping이 실패해 걷어낸 연결의 참여자 수 갱신은 {@code disconnect()}가 직접 맡는다
+     * (#311) — 예전에는 여기서 방 단위로 모아 한 번씩 재발행했지만, 그러면 heartbeat가
      * 아닌 다른 경로(도메인 이벤트 send 실패 등)로 먼저 걷힌 연결은 다음 heartbeat도 못
      * 잡아서 무기한 stale할 수 있었다.
+     *
+     * <p>ping과 별개로, 방마다 <b>연결 변화가 없어도</b> 절대값을 다시 발행한다(#311). 그
+     * 방에 한동안 입장·퇴장이 없으면 이 방에 대한 이 서버의 필드가 {@code FIELD_TTL}로
+     * 만료돼서, 다른 서버가 나중에 합계를 낼 때 이 서버 몫이 통째로 빠질 수 있었다 — 실제로
+     * 수동 테스트에서 재현됐다(서버 두 대 중 한쪽이 조용하면 합계가 그쪽 몫만큼 낮게 나옴).
      *
      * <p>이 작업은 물품 마감 예약과 {@code spring.task.scheduling.pool}을 같이 쓴다. 접속이
      * 많아 한 바퀴가 길어지면 마감이 밀릴 수 있어서, 한 바퀴에 걸린 시간을
@@ -259,6 +277,7 @@ public class RoomSseManager {
                     for (SseEmitter emitter : emitters) {
                         ping(roomId, emitter);
                     }
+                    broadcastParticipantCount(roomId);
                 }));
     }
 

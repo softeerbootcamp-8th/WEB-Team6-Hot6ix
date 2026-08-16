@@ -46,12 +46,24 @@ public class SseRedisConfig {
     }
 
     /**
-     * 참여자 수 서버별 몫 갱신 → HEXPIRE → 합산 → 발행을 원자적으로 실행하는 스크립트.
+     * 참여자 수 서버별 몫을 <b>절대값</b>으로 갱신 → HEXPIRE → 합산 → 발행하는 스크립트.
+     * heartbeat가 방마다 주기적으로 호출해 TTL을 갱신하고 드리프트를 보정한다(#311).
      * {@code sse-publish.lua}와 달리 순차 ID를 발급하지 않고 replay 버퍼에도 안 쌓는다.
      */
     @Bean
     public RedisScript<Long> participantCountPublishScript() {
         return RedisScript.of(new ClassPathResource("redis/participant-count-publish.lua"), Long.class);
+    }
+
+    /**
+     * 참여자 수 서버별 몫을 <b>증감</b>으로 반영하는 스크립트. {@code subscribe()}/
+     * {@code disconnect()}가 쓴다 — 절대값을 읽어서 보내면 같은 서버의 두 호출이 순서가
+     * 뒤바뀌어 도착했을 때 최신 값이 오래된 값에 덮어써질 수 있는데, 증감은 교환법칙이
+     * 성립해 그 레이스가 없다(#311).
+     */
+    @Bean
+    public RedisScript<Long> participantCountIncrementScript() {
+        return RedisScript.of(new ClassPathResource("redis/participant-count-increment.lua"), Long.class);
     }
 
     // TODO: 트래픽 증가 시 방 단위 파티셔닝으로 전환 (방별 순서 보장 + 방 간 병렬 처리)

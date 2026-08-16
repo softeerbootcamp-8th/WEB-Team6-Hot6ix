@@ -35,11 +35,14 @@ public class ParticipantCountPublisher {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final RedisScript<Long> participantCountPublishScript;
+    private final RedisScript<Long> participantCountIncrementScript;
     private final SseServerIdentifier serverIdentifier;
     private final SseMetrics sseMetrics;
 
     /**
-     * 이 서버의 로컬 참여자 수를 갱신하고, 전역 합계를 발행한다.
+     * 이 서버의 로컬 참여자 수(절대값)를 다시 쓰고, 전역 합계를 발행한다. heartbeat가
+     * 방마다 주기적으로 불러 TTL을 갱신하고, {@link #increment}가 놓쳤을 수도 있는
+     * 드리프트를 절대값으로 바로잡는다.
      *
      * <p>발행이 실패하면 그 갱신은 사라진다. 다음 heartbeat나 다른 연결/해제가 다시
      * 갱신을 트리거하므로 값은 결국 맞아지지만, 조용히 사라지면 아무도 모르니 지표·로그로 남긴다.
@@ -61,6 +64,34 @@ public class ParticipantCountPublisher {
         } catch (RuntimeException e) {
             sseMetrics.recordPublishFailure(RoomSseManager.PARTICIPANT_COUNT_EVENT, e);
             log.error("참여자 수 발행 실패: roomId={}", roomId, e);
+        }
+    }
+
+    /**
+     * 이 서버의 로컬 참여자 수를 {@code delta}(+1 또는 -1)만큼 증감하고, 전역 합계를
+     * 발행한다. {@code subscribe()}/{@code disconnect()}가 쓴다.
+     *
+     * <p>절대값을 읽어서 보내면(예: {@link #publish}) 같은 서버에서 거의 동시에 일어난
+     * 두 연결 변화가 순서가 뒤바뀌어 Redis에 도착했을 때 최신 값이 오래된 값에 덮어써질
+     * 수 있다. 증감은 교환법칙이 성립해 도착 순서와 무관하게 최종 합이 항상 정확하다.
+     */
+    public void increment(Long roomId, int delta) {
+        try {
+            stringRedisTemplate.execute(
+                    participantCountIncrementScript,
+                    List.of(SseRedisKeys.counts(roomId)),
+                    serverIdentifier.id(),
+                    String.valueOf(delta),
+                    String.valueOf(FIELD_TTL.toSeconds()),
+                    PARTICIPANT_COUNT_CHANNEL,
+                    String.valueOf(KEY_TTL.toSeconds()),
+                    String.valueOf(roomId));
+
+            sseMetrics.recordEventPublished(RoomSseManager.PARTICIPANT_COUNT_EVENT);
+
+        } catch (RuntimeException e) {
+            sseMetrics.recordPublishFailure(RoomSseManager.PARTICIPANT_COUNT_EVENT, e);
+            log.error("참여자 수 증감 실패: roomId={}, delta={}", roomId, delta, e);
         }
     }
 
