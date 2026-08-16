@@ -142,6 +142,11 @@ upbid:
     buffer-size: ${SSE_BUFFER_SIZE:50}
     # emitter 별 이벤트 큐 크기. 포화 시 drop 하므로 heartbeat 주기 안에 처리 가능한 크기로 잡는다.
     emitter-queue-capacity: ${SSE_EMITTER_QUEUE_CAPACITY:128}
+    # emitter drain 전용 고정 스레드 풀 크기. 동시에 drain 가능한 emitter 수 상한이다.
+    worker-pool-size: ${SSE_WORKER_POOL_SIZE:4}
+    # 풀이 포화됐을 때 drain 태스크가 대기하는 큐. 활성 emitter 수(VUS)가 이 값을 넘으면
+    # RejectedExecutionException — 고정 풀이 VT와 갈리는 측정 지점이다.
+    worker-queue-capacity: ${SSE_WORKER_QUEUE_CAPACITY:512}
   bid-stream:
     key: auction:bid:stream
     group: bid-mysql-writers
