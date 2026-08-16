@@ -29,10 +29,13 @@ public class AuctionRedisInitializer {
             return;
         }
 
+        Long roomId = item.getAuctionRoom().getAuctionRoomId();
+        if (auctionRedisStore.isSeedReady(itemId, roomId)) {
+            return;
+        }
+
         Long sellerUserId = auctionItemRepository.findSellerUserId(itemId)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
-
-        Long roomId = item.getAuctionRoom().getAuctionRoomId();
 
         auctionRedisStore.seed(
                 item,
