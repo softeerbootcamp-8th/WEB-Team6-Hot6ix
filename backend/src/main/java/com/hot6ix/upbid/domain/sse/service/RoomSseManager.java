@@ -2,7 +2,7 @@ package com.hot6ix.upbid.domain.sse.service;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
-import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
+import com.hot6ix.upbid.domain.sse.event.ParticipantCountPublisher;
 import io.micrometer.core.instrument.Timer;
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
@@ -33,8 +33,8 @@ public class RoomSseManager {
     /** 계측은 이 객체가 안다. 이 클래스는 Micrometer 를 모른다. */
     private final SseMetrics sseMetrics;
     private final SseEventBuffer sseEventBuffer;
-    /** 참여자 수도 다른 이벤트와 같은 경로로 나간다. 여기서 직접 쏘면 다른 인스턴스가 모른다. */
-    private final SseEventPublisher sseEventPublisher;
+    /** 참여자 수 전역 합계 갱신+발행. 여기서 로컬 값만 쏘면 다른 인스턴스가 모른다. */
+    private final ParticipantCountPublisher participantCountPublisher;
 
     /**
      * 지금 열려 있는 연결 수를 지표로 내보낸다. 게이지는 스크랩할 때 위 Map 을 읽어 가는
@@ -52,9 +52,9 @@ public class RoomSseManager {
     /**
      * SSE 구독을 등록한다. 구독 시점의 현재 상태는 물품 조회 API가 내려주므로 초기 이벤트는 없다.
      *
-     * <p>재연결({@code lastEventId != null})이면 버퍼에서 그 ID 이후 이벤트를 replay한다. 최초
-     * 연결이면 아래 참여자 수 브로드캐스트가 이 연결의 첫 이벤트가 되고, 클라이언트는 그 ID를
-     * {@code Last-Event-ID}의 시작점으로 잡는다.
+     * <p>재연결({@code lastEventId != null})이면 버퍼에서 그 ID 이후 이벤트를 replay한다. 아래
+     * 참여자 수 브로드캐스트는 id 없이 나가므로(#311) {@code Last-Event-ID}에는 영향을 주지
+     * 않는다 — 최초 연결이든 재연결이든 이 값이 {@code Last-Event-ID}의 시작점이 되지 않는다.
      */
     public SseEmitter subscribe(Long roomId, Long lastEventId) {
         SseEmitter emitter = new SseEmitter(sseProperties.emitterTimeoutMs());
@@ -178,10 +178,17 @@ public class RoomSseManager {
         return e.getClass().getSimpleName() + ": " + e.getMessage();
     }
 
+    /**
+     * <b>{@code unregister}가 이 사이클에서 실제로 뭔가를 지웠을 때만</b> 안쪽을 탄다. 같은
+     * emitter에 대해 {@code onError}·{@code onCompletion}이 겹쳐 불려도(#250 참고)
+     * {@code compute}가 두 번째 호출부터는 항상 {@code false}를 주므로, 참여자 수 갱신도
+     * 정확히 한 번만 나간다.
+     */
     private void disconnect(Long roomId, SseEmitter emitter, String reason) {
         if (unregister(roomId, emitter)) {
             sseMetrics.recordConnectionClosed(reason);
             log.info("sse 연결 종료: roomId={}, reason={}", roomId, reason);
+            broadcastParticipantCount(roomId);
         }
     }
 
@@ -221,13 +228,11 @@ public class RoomSseManager {
     }
 
     /**
-     * <b>여기서 세는 수는 이 인스턴스에 붙은 연결 수다.</b> 서버가 여러 대면 실제 참여자보다
-     * 작게 나오고, 인스턴스마다 자기 값을 발행하므로 화면 숫자가 그 값들 사이로 움직인다.
-     * 전역 집계는 후속 작업으로 남긴다. 서버가 한 대인 동안은 지금까지와 같은 값이다.
+     * 이 인스턴스가 아는 로컬 참여자 수를 Redis에 갱신하고, 전역 합계를 발행한다.
+     * 서버별 몫 갱신·합산·발행이 Lua 스크립트 하나로 원자적으로 처리된다(#311).
      */
     private void broadcastParticipantCount(Long roomId) {
-        sseEventPublisher.publish(
-                PARTICIPANT_COUNT_EVENT, roomId, new ParticipantCountDto(getParticipantCount(roomId)));
+        participantCountPublisher.publish(roomId, getParticipantCount(roomId));
     }
 
     /**
@@ -235,26 +240,23 @@ public class RoomSseManager {
      * 주기적으로 ping을 보내 끊긴 연결을 걷어내고
      * 동시에 프록시, 로드밸런서의 idle timeout(통상 60초)에 연결이 끊기는 것을 방지한다.
      *
+     * <p>ping이 실패해 걷어낸 연결의 참여자 수 갱신은 이제 {@code disconnect()}가 직접
+     * 맡는다(#311) — 예전에는 여기서 방 단위로 모아 한 번씩 재발행했지만, 그러면 heartbeat가
+     * 아닌 다른 경로(도메인 이벤트 send 실패 등)로 먼저 걷힌 연결은 다음 heartbeat도 못
+     * 잡아서 무기한 stale할 수 있었다.
+     *
      * <p>이 작업은 물품 마감 예약과 {@code spring.task.scheduling.pool}을 같이 쓴다. 접속이
      * 많아 한 바퀴가 길어지면 마감이 밀릴 수 있어서, 한 바퀴에 걸린 시간을
      * {@code upbid.sse.heartbeat}로 잰다.
      */
     @Scheduled(fixedRateString = "${upbid.sse.heartbeat-interval-ms}")
     public void sendHeartbeat() {
-        sseMetrics.recordHeartbeat(() -> {
-            Set<Long> sweptRooms = ConcurrentHashMap.newKeySet();
-
-            roomEmitters.forEach((roomId, emitters) -> {
-                for (SseEmitter emitter : emitters) {
-                    if (!ping(roomId, emitter)) {
-                        sweptRooms.add(roomId);
+        sseMetrics.recordHeartbeat(() ->
+                roomEmitters.forEach((roomId, emitters) -> {
+                    for (SseEmitter emitter : emitters) {
+                        ping(roomId, emitter);
                     }
-                }
-            });
-
-            // 방마다 새롭게 업데이트 된 사용자 수를 알린다.
-            sweptRooms.forEach(this::broadcastParticipantCount);
-        });
+                }));
     }
 
     /**
