@@ -96,7 +96,7 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
         long endAt = System.currentTimeMillis() + 600_000L;
         seed(endAt);
 
-        RedisCloseDecision decision = store.requestSellerAdvance(ITEM_ID, SELLER_ID + 1);
+        RedisCloseDecision decision = store.requestSellerAdvance(ITEM_ID, SELLER_ID + 1, null);
 
         assertThat(decision).isEqualTo(new RedisCloseDecision.Rejected(
                 RedisCloseDecision.Reason.NOT_OWNER, endAt));
@@ -110,7 +110,7 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
     void advancesEndAtWithoutClosing() {
         seed(System.currentTimeMillis() + 600_000L);
 
-        RedisCloseDecision decision = store.requestSellerAdvance(ITEM_ID, SELLER_ID);
+        RedisCloseDecision decision = store.requestSellerAdvance(ITEM_ID, SELLER_ID, null);
 
         assertThat(decision).isInstanceOfSatisfying(RedisCloseDecision.Advanced.class, advanced -> {
             assertThat(advanced.remainingSeconds()).isEqualTo(60);
@@ -120,6 +120,68 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
                 .isEqualTo("IN_PROGRESS");
         assertThat(streamRecords()).singleElement().satisfies(record ->
                 assertThat(record.getValue().get("type")).isEqualTo("ITEM_CLOSE_ADVANCED"));
+    }
+
+    @Test
+    @DisplayName("남길 초를 주면 그만큼 뒤로 앞당기고 Stream에도 그 값을 싣는다")
+    void advancesToRequestedRemainingSeconds() {
+        seed(System.currentTimeMillis() + 3_600_000L);
+
+        RedisCloseDecision decision = store.requestSellerAdvance(ITEM_ID, SELLER_ID, 600);
+
+        assertThat(decision).isInstanceOfSatisfying(RedisCloseDecision.Advanced.class, advanced -> {
+            assertThat(advanced.remainingSeconds()).isEqualTo(600);
+            assertThat(advanced.endAtMillis() - advanced.advancedAtMillis()).isEqualTo(600_000L);
+        });
+        assertThat(streamRecords()).singleElement().satisfies(record ->
+                assertThat(record.getValue()).containsAllEntriesOf(Map.of(
+                        "type", "ITEM_CLOSE_ADVANCED",
+                        "remainingSeconds", "600")));
+    }
+
+    @Test
+    @DisplayName("트리거보다 짧게 남기려 하면 거절하고 Hash와 Stream을 바꾸지 않는다")
+    void rejectsRemainingShorterThanTrigger() {
+        long endAt = System.currentTimeMillis() + 3_600_000L;
+        seed(endAt);
+
+        RedisCloseDecision decision = store.requestSellerAdvance(ITEM_ID, SELLER_ID, 30);
+
+        assertThat(decision).isEqualTo(new RedisCloseDecision.Rejected(
+                RedisCloseDecision.Reason.REMAINING_TOO_SHORT, endAt));
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "endAt"))
+                .isEqualTo(String.valueOf(endAt));
+        assertThat(streamRecords()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("지금 마감보다 뒤로 남기려 하면 거절한다")
+    void rejectsRemainingBeyondCurrentEndAt() {
+        long endAt = System.currentTimeMillis() + 600_000L;
+        seed(endAt);
+
+        RedisCloseDecision decision = store.requestSellerAdvance(ITEM_ID, SELLER_ID, 3_600);
+
+        assertThat(decision)
+                .as("막지 않으면 앞당기기가 마감을 미루는 셈이 된다")
+                .isEqualTo(new RedisCloseDecision.Rejected(
+                        RedisCloseDecision.Reason.REMAINING_TOO_LONG, endAt));
+        assertThat(streamRecords()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("이미 연장 구간 안이면 요청 값과 무관하게 임박으로 거절한다")
+    void rejectsAsClosingSoonRegardlessOfRequestedRemaining() {
+        long endAt = System.currentTimeMillis() + 10_000L;
+        seed(endAt);
+
+        RedisCloseDecision decision = store.requestSellerAdvance(ITEM_ID, SELLER_ID, 600);
+
+        assertThat(decision)
+                .as("앞당길 자리가 없는 것은 요청이 아니라 물품 상태의 문제다")
+                .isEqualTo(new RedisCloseDecision.Rejected(
+                        RedisCloseDecision.Reason.ALREADY_CLOSING_SOON, endAt));
+        assertThat(streamRecords()).isEmpty();
     }
 
     @Test

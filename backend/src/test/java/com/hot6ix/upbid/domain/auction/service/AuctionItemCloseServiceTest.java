@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemCloseEarlyRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
@@ -101,12 +102,12 @@ class AuctionItemCloseServiceTest {
 
         LocalDateTime advancedAt = millisPrecision(LocalDateTime.now());
         LocalDateTime endAt = advancedAt.plusSeconds(60);
-        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, null))
                 .thenReturn(new RedisCloseDecision.Advanced(
                         epochMillis(endAt), 60, epochMillis(advancedAt)));
 
         AuctionItemCloseEarlyResponseDto response =
-                auctionItemCloseService.closeEarly(USER_ID, ITEM_ID);
+                auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null);
 
         assertThat(response.remainingSeconds()).isEqualTo(60);
         assertThat(response.endAt()).isEqualTo(endAt);
@@ -118,11 +119,11 @@ class AuctionItemCloseServiceTest {
     @DisplayName("남의 방 물품은 마감을 앞당길 수 없고 물품이 없을 때와 같은 응답을 준다")
     void closeEarlyRejectsOtherSellersItem() {
 
-        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, null))
                 .thenReturn(new RedisCloseDecision.Rejected(
                         RedisCloseDecision.Reason.NOT_OWNER, null));
 
-        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
@@ -133,11 +134,11 @@ class AuctionItemCloseServiceTest {
     @DisplayName("진행 중이 아닌 물품은 마감을 앞당길 수 없다")
     void closeEarlyRejectsNotInProgressItem() {
 
-        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, null))
                 .thenReturn(new RedisCloseDecision.Rejected(
                         RedisCloseDecision.Reason.ITEM_NOT_IN_PROGRESS, null));
 
-        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_NOT_IN_PROGRESS);
@@ -149,11 +150,11 @@ class AuctionItemCloseServiceTest {
     void closeEarlyRejectsAlreadyClosingSoonItem() {
 
         LocalDateTime endAt = LocalDateTime.now().plusSeconds(10);
-        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, null))
                 .thenReturn(new RedisCloseDecision.Rejected(
                         RedisCloseDecision.Reason.ALREADY_CLOSING_SOON, epochMillis(endAt)));
 
-        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID))
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null))
                 .isInstanceOf(ApplicationException.class)
                 .extracting("errorType")
                 .isEqualTo(AuctionErrorType.AUCTION_ITEM_ALREADY_CLOSING_SOON);
@@ -164,17 +165,66 @@ class AuctionItemCloseServiceTest {
     @DisplayName("Redis Hash가 없으면 DB 스냅샷으로 초기화한 뒤 앞당기기를 다시 시도한다")
     void closeEarlySeedsMissingRedisState() {
         LocalDateTime endAt = millisPrecision(LocalDateTime.now().plusSeconds(60));
-        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID))
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, null))
                 .thenReturn(
                         new RedisCloseDecision.Rejected(RedisCloseDecision.Reason.KEY_MISSING, null),
                         new RedisCloseDecision.Advanced(
                                 epochMillis(endAt), 60, epochMillis(endAt.minusSeconds(60))));
 
         AuctionItemCloseEarlyResponseDto response =
-                auctionItemCloseService.closeEarly(USER_ID, ITEM_ID);
+                auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null);
 
         verify(auctionRedisInitializer).initialize(ITEM_ID);
         assertThat(response.endAt()).isEqualTo(endAt);
+    }
+
+    @Test
+    @DisplayName("요청한 남은 초를 그대로 Lua에 넘기고 그 값이 응답에 실린다")
+    void closeEarlyPassesRequestedRemainingSeconds() {
+
+        LocalDateTime advancedAt = millisPrecision(LocalDateTime.now());
+        LocalDateTime endAt = advancedAt.plusSeconds(600);
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, 600))
+                .thenReturn(new RedisCloseDecision.Advanced(
+                        epochMillis(endAt), 600, epochMillis(advancedAt)));
+
+        AuctionItemCloseEarlyResponseDto response = auctionItemCloseService.closeEarly(
+                USER_ID, ITEM_ID, new AuctionItemCloseEarlyRequestDto(600));
+
+        assertThat(response.remainingSeconds()).isEqualTo(600);
+        assertThat(response.endAt()).isEqualTo(endAt);
+    }
+
+    @Test
+    @DisplayName("트리거보다 짧게 남기려 하면 임박 거절과 다른 에러로 옮긴다")
+    void closeEarlyRejectsRemainingTooShort() {
+
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, 30))
+                .thenReturn(new RedisCloseDecision.Rejected(
+                        RedisCloseDecision.Reason.REMAINING_TOO_SHORT, null));
+
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(
+                USER_ID, ITEM_ID, new AuctionItemCloseEarlyRequestDto(30)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_CLOSE_EARLY_REMAINING_TOO_SHORT);
+        verify(domainEventPublisher, never()).publish(any());
+    }
+
+    @Test
+    @DisplayName("지금 마감보다 뒤로 남기려 하면 거절한다")
+    void closeEarlyRejectsRemainingTooLong() {
+
+        when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, 99999))
+                .thenReturn(new RedisCloseDecision.Rejected(
+                        RedisCloseDecision.Reason.REMAINING_TOO_LONG, null));
+
+        assertThatThrownBy(() -> auctionItemCloseService.closeEarly(
+                USER_ID, ITEM_ID, new AuctionItemCloseEarlyRequestDto(99999)))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(AuctionErrorType.AUCTION_ITEM_CLOSE_EARLY_REMAINING_TOO_LONG);
+        verify(domainEventPublisher, never()).publish(any());
     }
 
     private static long epochMillis(LocalDateTime value) {

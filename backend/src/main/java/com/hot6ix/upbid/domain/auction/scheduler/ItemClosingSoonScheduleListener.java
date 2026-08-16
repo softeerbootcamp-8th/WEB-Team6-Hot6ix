@@ -57,19 +57,22 @@ public class ItemClosingSoonScheduleListener {
     }
 
     /**
-     * 판매자가 마감을 앞당기면 알림 예약을 <b>취소한다.</b> 다시 걸지 않는다.
+     * 판매자가 마감을 앞당기면 알림 예약을 <b>새 마감 기준으로 다시 건다.</b> 판매자가 트리거보다
+     * 길게 남길 수 있게 되면서(#336) 앞당겼는데도 알릴 순간이 남아 있는 경우가 생겼다 — 트리거
+     * 60초인 방에서 10분을 남기면 알림 시각은 9분 뒤라 아직 미래다.
      *
-     * <p>앞당겨진 마감 시각이 곧 연장 구간이 열리는 순간이라 새 알림 시각은 정확히 지금이고,
-     * 이미 지난 시각으로는 알릴 사건이 없다. 그 사실은 앞당김 이벤트가 남은 초와 함께 화면에
+     * <p>딱 트리거만큼 남긴 경우에는 새 알림 시각이 정확히 지금이라 이미 지난 시각이고,
+     * {@link #rescheduleOrCancel}이 그 갈래에서 예약을 지운다. 남은 초는 앞당김 이벤트가 화면에
      * 직접 알리므로 알림이 따로 나갈 이유도 없다.
      *
-     * <p>취소하지 않으면 <b>이전 마감 기준으로 걸려 있던 예약이 살아남는다.</b> 예를 들어 90초
-     * 남은 물품을 트리거 60초인 방에서 앞당기면 알림 예약은 30초 뒤에 걸려 있는데, 그때 물품은
-     * 아직 진행 중이라 걸러지지도 않아서 실제로는 30초 남은 물품에 "마감 60초 전"이 나간다.
+     * <p><b>어느 쪽이든 이전 마감 기준으로 걸려 있던 예약은 반드시 걷어내야 한다.</b> 예를 들어
+     * 90초 남은 물품을 트리거 60초인 방에서 앞당기면 알림 예약은 30초 뒤에 걸려 있는데, 그때
+     * 물품은 아직 진행 중이라 걸러지지도 않아서 실제로는 30초 남은 물품에 "마감 60초 전"이
+     * 나간다.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(ItemCloseAdvanced event) {
-        cancel(event.itemId());
+        rescheduleOrCancel(event.itemId());
     }
 
     /** 낙찰로 마감된 물품의 남은 알림 예약을 정리한다. */
@@ -100,6 +103,23 @@ public class ItemClosingSoonScheduleListener {
         } catch (Exception e) {
             log.error("마감 임박 알림 예약 실패: itemId={}", auctionItemId, e);
         }
+    }
+
+    /**
+     * {@link #reschedule}과 같되 <b>계산한 시각이 이미 지났으면 예약을 지운다.</b> 마감이
+     * 앞당겨지는 경우에만 쓴다.
+     *
+     * <p>앞당기기는 {@code end_at}을 <b>앞으로</b> 옮기는 유일한 경로라, 이전 마감 기준으로 걸어둔
+     * 알림 예약이 새 알림 시각보다 뒤에 남는다. 시작·연장은 예약을 뒤로만 밀어서 새로 걸면 같은
+     * 키를 덮어쓰지만, 여기서는 새로 걸 것이 없는 갈래가 있어 덮어쓰기로는 못 지운다.
+     *
+     * <p>지우고 나서 다시 거는 순서인 것은 그 반대로 하면 방금 건 예약을 지우기 때문이다.
+     * 사이에 폴러가 집어가도 {@code ItemClosingSoonService}가 DB 를 다시 읽어 판단하므로 낡은
+     * 기준으로 알림이 나가지는 않는다.
+     */
+    private void rescheduleOrCancel(Long auctionItemId) {
+        cancel(auctionItemId);
+        reschedule(auctionItemId);
     }
 
     /**

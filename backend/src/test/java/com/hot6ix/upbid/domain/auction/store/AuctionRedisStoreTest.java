@@ -83,6 +83,24 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
         assertThat(redis.opsForHash().get(ITEM_KEY, "leaderUserId")).isEqualTo("11");
     }
 
+    @Test
+    @DisplayName("물품 Hash가 이미 있어도 누락된 참여자 Set은 DB 스냅샷으로 다시 채운다")
+    void seedRestoresMissingParticipantsWithoutOverwritingBidState() {
+
+        assertThat(store.seed(seed(List.of(11L, 12L)))).isTrue();
+        redis.opsForHash().put(ITEM_KEY, "currentPrice", "15000");
+        redis.opsForHash().put(ITEM_KEY, "leaderUserId", "11");
+        redis.delete(PARTICIPANTS_KEY);
+
+        boolean createdAgain = store.seed(seed(List.of(11L, 12L)));
+
+        assertThat(createdAgain).isFalse();
+        assertThat(redis.opsForSet().members(PARTICIPANTS_KEY))
+                .containsExactlyInAnyOrder("11", "12");
+        assertThat(redis.opsForHash().get(ITEM_KEY, "currentPrice")).isEqualTo("15000");
+        assertThat(redis.opsForHash().get(ITEM_KEY, "leaderUserId")).isEqualTo("11");
+    }
+
     private static AuctionRedisSeed seed(List<Long> participantUserIds) {
         return new AuctionRedisSeed(
                 ITEM_ID,

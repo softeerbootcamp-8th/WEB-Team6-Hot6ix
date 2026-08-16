@@ -142,7 +142,7 @@ public class BidStreamPersistenceService {
         LocalDateTime endAt = toLocalDateTime(event.endAtMillis());
         LocalDateTime advancedAt = toLocalDateTime(event.advancedAtMillis());
 
-        if (!item.applyCloseAdvanced(endAt, advancedAt)) {
+        if (!item.applyCloseAdvanced(endAt, advancedAt, event.remainingSeconds())) {
             return;
         }
 
