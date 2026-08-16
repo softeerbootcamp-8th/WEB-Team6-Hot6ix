@@ -1,5 +1,7 @@
 package com.hot6ix.upbid.domain.sse.config;
 
+import com.hot6ix.upbid.domain.sse.event.ParticipantCountPublisher;
+import com.hot6ix.upbid.domain.sse.event.ParticipantCountSubscriber;
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import com.hot6ix.upbid.domain.sse.event.SseEventSubscriber;
 import org.springframework.context.annotation.Bean;
@@ -18,6 +20,7 @@ public class SseRedisConfig {
     public RedisMessageListenerContainer sseRedisMessageListenerContainer(
             RedisConnectionFactory redisConnectionFactory,
             SseEventSubscriber sseEventSubscriber,
+            ParticipantCountSubscriber participantCountSubscriber,
             ThreadPoolTaskExecutor sseEventDispatchExecutor) {
 
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
@@ -25,6 +28,8 @@ public class SseRedisConfig {
         container.setConnectionFactory(redisConnectionFactory);
         container.setTaskExecutor(sseEventDispatchExecutor);
         container.addMessageListener(sseEventSubscriber, new ChannelTopic(SseEventPublisher.EVENT_CHANNEL));
+        container.addMessageListener(participantCountSubscriber,
+                new ChannelTopic(ParticipantCountPublisher.PARTICIPANT_COUNT_CHANNEL));
 
         return container;
     }

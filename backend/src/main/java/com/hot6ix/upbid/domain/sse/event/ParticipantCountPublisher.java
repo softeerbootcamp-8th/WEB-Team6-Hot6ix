@@ -50,7 +50,8 @@ public class ParticipantCountPublisher {
                     String.valueOf(localCount),
                     String.valueOf(FIELD_TTL.toSeconds()),
                     PARTICIPANT_COUNT_CHANNEL,
-                    String.valueOf(KEY_TTL.toSeconds()));
+                    String.valueOf(KEY_TTL.toSeconds()),
+                    String.valueOf(roomId));
 
         } catch (RuntimeException e) {
             log.error("참여자 수 발행 실패: roomId={}", roomId, e);
