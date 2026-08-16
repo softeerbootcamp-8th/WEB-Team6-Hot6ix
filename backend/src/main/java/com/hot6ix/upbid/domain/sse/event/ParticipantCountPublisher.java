@@ -57,4 +57,18 @@ public class ParticipantCountPublisher {
             log.error("참여자 수 발행 실패: roomId={}", roomId, e);
         }
     }
+
+    /**
+     * 방이 종료될 때 그 방의 집계 키를 지운다. 종료된 방은 재구독 자체가 막히므로
+     * 남은 필드가 새로 합산될 일은 없지만, KEY_TTL(2일)까지 기다리지 않고 바로 치운다.
+     */
+    public void clear(Long roomId) {
+        try {
+            stringRedisTemplate.delete(SseRedisKeys.counts(roomId));
+            log.debug("참여자 수 집계 키 삭제: roomId={}", roomId);
+
+        } catch (RuntimeException e) {
+            log.warn("참여자 수 집계 키 삭제 실패: roomId={}", roomId, e);
+        }
+    }
 }
