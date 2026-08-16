@@ -80,9 +80,6 @@ VIRTUAL_THREADS=false
 SSE_VT=true
 # --no-sse-vt 일 때 drain 스레드 풀 크기. 기본 4 = t4g.micro(2 vCPU) × 2.
 SSE_POOL=4
-# emitter 별 bounded 큐 사용 여부. true(기본)=큐 있음(순서 보장·포화 제어).
-# --no-sse-queue 로 끄면 executor 에 직접 제출해 큐 없이 전송한다(배포 비교용).
-SSE_QUEUE=true
 BID_ITEMS=0
 
 # 시나리오 5 전용. 방을 만들 때 주는 마감 임박 설정과, 마감 대상 물품에 입찰을 언제까지
@@ -142,8 +139,6 @@ usage() {
   --sse-vt           SSE emitter drain 을 가상 스레드로 한다 (기본 on)
   --no-sse-vt        SSE emitter drain 을 bounded 스레드 풀로 한다 (시나리오 10 비교용)
   --sse-pool N       --no-sse-vt 일 때 drain 스레드 풀 크기 (기본 4)
-  --sse-queue        emitter 별 bounded 큐를 쓴다 (기본 on)
-  --no-sse-queue     큐 없이 executor 에 직접 제출한다 (순서 미보장. 배포 비교용)
   --bid-items N      시나리오 5 에서 입찰을 넣을 물품 수. 나머지는 마감 대상이 된다
   --bid-start T      입찰 VU 가 뛰기까지 기다릴 시간 (기본 10s). 물품을 다 시작하기 전에
                      입찰이 들어가면 전부 4xx 로 거절되므로, --items 를 올리면 같이 올린다
@@ -219,8 +214,6 @@ while [ $# -gt 0 ]; do
     --sse-vt) SSE_VT=true; shift ;;
     --no-sse-vt) SSE_VT=false; shift ;;
     --sse-pool) SSE_POOL="$2"; shift 2 ;;
-    --sse-queue) SSE_QUEUE=true; shift ;;
-    --no-sse-queue) SSE_QUEUE=false; shift ;;
     --bid-items) BID_ITEMS="$2"; shift 2 ;;
     --cpus) CPUS="$2"; shift 2 ;;
     --soft-close-trigger) SOFT_CLOSE_TRIGGER="$2"; shift 2 ;;
@@ -525,9 +518,6 @@ if [ "$SCENARIO" = "10" ]; then
   else
     SSE_VT_SUFFIX="_ssevtfalse_p${SSE_POOL}"
   fi
-  if [ "$SSE_QUEUE" = "false" ]; then
-    SSE_VT_SUFFIX="${SSE_VT_SUFFIX}_noqueue"
-  fi
 fi
 RUN_ID="${STAMP}_s${SCENARIO}_vus${VUS}_pool${POOL}_items${ITEMS}_sse${SSE}${SSE_VT_SUFFIX}"
 RESULT_DIR="$PERF_DIR/results/$RUN_ID"
@@ -589,7 +579,6 @@ fi
 
 export APP_JAVA_OPTS="$JAVA_OPTS"
 export VIRTUAL_THREADS
-export SSE_USE_QUEUE="$SSE_QUEUE"
 export SSE_USE_VIRTUAL_THREADS="$SSE_VT"
 export SSE_DISPATCH_POOL_SIZE="$SSE_POOL"
 export PERF_CPUS="$CPUS"
@@ -1968,7 +1957,7 @@ jq -n \
     sse_client:{target_reached:($sse_client_reached=="1")},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,bid_api_p95_ms,bid_api_p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_broadcast_p99_ms,sse_conn_max,sse_connections_opened,sse_connections_closed,sse_events_published,sse_send_attempts,sse_send_successes,sse_send_failures,sse_send_failure_rate,sse_fanout_p95_ms,sse_send_p95_ms,sse_send_p99_ms,sse_queue_depth_max,sse_queue_wait_p95_ms,sse_in_flight_max,sse_rejected,sse_client_conn_min,sse_client_conn_max,sse_client_scrape_up_min,sse_client_connections_opened,sse_client_unexpected_closes,sse_client_connection_errors,sse_client_events_received,sse_client_bid_events_received,sse_client_delivery_ratio,sse_msg_latency_p95_ms,sse_msg_latency_p99_ms,sse_msg_latency_samples,sse_client_latency_pending,sse_client_missing,sse_client_duplicate,sse_client_out_of_order,sse_client_parse_errors,sse_correlation_failed,sse_client_cpu_max,jvm_threads_live_max,sse_queue_saturated,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,process_open_fds_max,process_max_fds,process_fd_usage_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,sse_vt,sse_dispatch_pool,sse_queue,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,bid_api_p95_ms,bid_api_p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_broadcast_p99_ms,sse_conn_max,sse_connections_opened,sse_connections_closed,sse_events_published,sse_send_attempts,sse_send_successes,sse_send_failures,sse_send_failure_rate,sse_fanout_p95_ms,sse_send_p95_ms,sse_send_p99_ms,sse_queue_depth_max,sse_queue_wait_p95_ms,sse_in_flight_max,sse_rejected,sse_client_conn_min,sse_client_conn_max,sse_client_scrape_up_min,sse_client_connections_opened,sse_client_unexpected_closes,sse_client_connection_errors,sse_client_events_received,sse_client_bid_events_received,sse_client_delivery_ratio,sse_msg_latency_p95_ms,sse_msg_latency_p99_ms,sse_msg_latency_samples,sse_client_latency_pending,sse_client_missing,sse_client_duplicate,sse_client_out_of_order,sse_client_parse_errors,sse_correlation_failed,sse_client_cpu_max,jvm_threads_live_max,sse_queue_saturated,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,process_open_fds_max,process_max_fds,process_fd_usage_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,sse_vt,sse_dispatch_pool,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -2029,7 +2018,7 @@ VALUES=( \
   "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" \
   "$PROCESS_CPU_AVG" "$PROCESS_CPU_MAX" "$SYSTEM_CPU_AVG" "$SYSTEM_CPU_MAX" "$SYSTEM_LOAD_AVG" "$SYSTEM_LOAD_MAX" \
   "$PROCESS_OPEN_FDS_MAX" "$PROCESS_MAX_FDS" "$PROCESS_FD_USAGE_MAX" \
-  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$SSE_VT" "$SSE_POOL" "$SSE_QUEUE" "$BULK_ITEMS" "$SWEEP_INDEX" \
+  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$SSE_VT" "$SSE_POOL" "$BULK_ITEMS" "$SWEEP_INDEX" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" "$DROPPED_ITERATIONS" "" "" \
 )
 (IFS=,; echo "${VALUES[*]}") >>"$INDEX"
