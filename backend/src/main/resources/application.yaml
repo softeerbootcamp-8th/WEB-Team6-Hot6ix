@@ -148,6 +148,7 @@ upbid:
     # 컨테이너마다 HOSTNAME이 달라 재시작 전 Consumer의 pending도 구별된다. 처리기는 그룹
     # 전체 PEL에서 먼저 claim하므로 이름이 바뀌어도 이벤트가 고립되지 않는다.
     consumer: ${HOSTNAME:local}-bid-writer
+    consumer-enabled: ${BID_STREAM_CONSUMER_ENABLED:true}
     poll-delay: ${BID_STREAM_POLL_DELAY:100ms}
     block-timeout: ${BID_STREAM_BLOCK_TIMEOUT:50ms}
     # Stream 단건 DB 트랜잭션의 최대 처리시간보다 길어야 한다. 운영 실측 뒤 조정한다.
@@ -156,6 +157,8 @@ upbid:
     max-fast-attempts: ${BID_STREAM_MAX_FAST_ATTEMPTS:5}
     halted-retry-delay: ${BID_STREAM_HALTED_RETRY_DELAY:60s}
     transaction-timeout-seconds: ${BID_STREAM_TRANSACTION_TIMEOUT_SECONDS:20}
+    max-records-per-poll: ${BID_STREAM_MAX_RECORDS_PER_POLL:50}
+    max-drain-duration: ${BID_STREAM_MAX_DRAIN_DURATION:1s}
   auction:
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:3}
     redis:

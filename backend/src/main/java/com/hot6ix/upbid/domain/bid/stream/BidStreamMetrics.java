@@ -1,9 +1,11 @@
 package com.hot6ix.upbid.domain.bid.stream;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +18,10 @@ public class BidStreamMetrics {
     private final Counter quarantineWriteFailures;
     private final Counter seedFailures;
     private final Timer persistence;
+    private final DistributionSummary drainRecords;
+    private final Timer drainDuration;
+    private final DistributionSummary deliveryLag;
+    private final AtomicLong backlog = new AtomicLong();
     private final AtomicLong pending = new AtomicLong();
     private final AtomicLong lagMillis = new AtomicLong();
     private final AtomicLong oldestPendingAgeSeconds = new AtomicLong();
@@ -28,6 +34,19 @@ public class BidStreamMetrics {
                 "upbid.bid.stream.quarantine.write.failures");
         this.seedFailures = registry.counter("upbid.auction.redis.seed.failures");
         this.persistence = registry.timer("upbid.bid.stream.persist");
+        this.drainRecords = DistributionSummary.builder("upbid.bid.stream.drain.records")
+                .baseUnit("records")
+                .publishPercentileHistogram()
+                .register(registry);
+        this.drainDuration = Timer.builder("upbid.bid.stream.drain.duration")
+                .publishPercentileHistogram()
+                .register(registry);
+        this.deliveryLag = DistributionSummary.builder("upbid.bid.stream.delivery.lag")
+                .baseUnit("milliseconds")
+                .publishPercentileHistogram()
+                .register(registry);
+        Gauge.builder("upbid.bid.stream.backlog", backlog, AtomicLong::get)
+                .register(registry);
         Gauge.builder("upbid.bid.stream.pending", pending, AtomicLong::get)
                 .register(registry);
         Gauge.builder("upbid.bid.stream.lag", lagMillis, AtomicLong::get)
@@ -57,8 +76,31 @@ public class BidStreamMetrics {
         pending.set(count);
     }
 
+    public void recordBacklog(long count) {
+        backlog.set(Math.max(count, 0));
+    }
+
+    public void recordDrain(int records, Duration duration, DrainLimit limit) {
+        drainRecords.record(Math.max(records, 0));
+        drainDuration.record(duration.isNegative() ? Duration.ZERO : duration);
+
+        switch (limit) {
+            case NONE -> {
+                // Stream이 비어서 자연스럽게 끝난 tick은 상한 도달이 아니다.
+            }
+            case RECORDS -> drainLimited("records").increment();
+            case DURATION -> drainLimited("duration").increment();
+        }
+    }
+
     public void recordLagMillis(long value) {
-        lagMillis.set(Math.max(value, 0));
+        long nonNegative = Math.max(value, 0);
+        lagMillis.set(nonNegative);
+        deliveryLag.record(nonNegative);
+    }
+
+    public void recordIdleLag() {
+        lagMillis.set(0);
     }
 
     public void recordAcknowledgeFailure() {
@@ -106,7 +148,17 @@ public class BidStreamMetrics {
                 "result", result);
     }
 
+    private Counter drainLimited(String reason) {
+        return registry.counter("upbid.bid.stream.drain.limited", "reason", reason);
+    }
+
     private static String normalize(String value) {
         return value == null || value.isBlank() ? "UNKNOWN" : value;
+    }
+
+    public enum DrainLimit {
+        NONE,
+        RECORDS,
+        DURATION
     }
 }

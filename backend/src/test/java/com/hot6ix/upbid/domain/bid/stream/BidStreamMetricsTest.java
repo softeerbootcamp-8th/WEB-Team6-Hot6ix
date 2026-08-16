@@ -3,6 +3,9 @@ package com.hot6ix.upbid.domain.bid.stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -90,5 +93,64 @@ class BidStreamMetricsTest {
                 .gauge().value()).isZero();
         assertThat(registry.get("upbid.bid.stream.halted")
                 .gauge().value()).isZero();
+    }
+
+    @Test
+    @DisplayName("Stream backlog는 음수가 되지 않는 Gauge 최신값으로 기록한다")
+    void recordsNonNegativeBacklog() {
+        metrics.recordBacklog(17);
+
+        assertThat(registry.get("upbid.bid.stream.backlog").gauge().value()).isEqualTo(17);
+
+        metrics.recordBacklog(-1);
+
+        assertThat(registry.get("upbid.bid.stream.backlog").gauge().value()).isZero();
+    }
+
+    @Test
+    @DisplayName("한 drain tick의 성공 건수와 실행시간을 분포로 기록한다")
+    void recordsDrainSizeAndDuration() {
+        metrics.recordDrain(12, Duration.ofMillis(420), BidStreamMetrics.DrainLimit.NONE);
+        metrics.recordDrain(50, Duration.ofMillis(900), BidStreamMetrics.DrainLimit.RECORDS);
+
+        assertThat(registry.get("upbid.bid.stream.drain.records").summary().count())
+                .isEqualTo(2);
+        assertThat(registry.get("upbid.bid.stream.drain.records").summary().totalAmount())
+                .isEqualTo(62);
+        assertThat(registry.get("upbid.bid.stream.drain.duration").timer().count())
+                .isEqualTo(2);
+        assertThat(registry.get("upbid.bid.stream.drain.duration").timer().totalTime(
+                java.util.concurrent.TimeUnit.MILLISECONDS)).isEqualTo(1_320);
+    }
+
+    @Test
+    @DisplayName("drain 상한에 도달한 경우에만 건수와 시간 이유를 Counter로 기록한다")
+    void recordsDrainLimitReason() {
+        metrics.recordDrain(1, Duration.ofMillis(10), BidStreamMetrics.DrainLimit.NONE);
+        metrics.recordDrain(50, Duration.ofMillis(500), BidStreamMetrics.DrainLimit.RECORDS);
+        metrics.recordDrain(20, Duration.ofSeconds(1), BidStreamMetrics.DrainLimit.DURATION);
+
+        assertThat(registry.get("upbid.bid.stream.drain.limited")
+                .tag("reason", "records").counter().count()).isEqualTo(1);
+        assertThat(registry.get("upbid.bid.stream.drain.limited")
+                .tag("reason", "duration").counter().count()).isEqualTo(1);
+        assertThat(registry.find("upbid.bid.stream.drain.limited")
+                .tag("reason", "none").counter()).isNull();
+    }
+
+    @Test
+    @DisplayName("Prometheus에 drain 건수와 실행시간 histogram bucket을 노출한다")
+    void exposesDrainHistogramBucketsToPrometheus() {
+        PrometheusMeterRegistry prometheus = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        BidStreamMetrics prometheusMetrics = new BidStreamMetrics(prometheus);
+
+        prometheusMetrics.recordDrain(
+                12, Duration.ofMillis(420), BidStreamMetrics.DrainLimit.NONE);
+        prometheusMetrics.recordLagMillis(250);
+
+        assertThat(prometheus.scrape())
+                .contains("upbid_bid_stream_drain_records_bucket")
+                .contains("upbid_bid_stream_drain_duration_seconds_bucket")
+                .contains("upbid_bid_stream_delivery_lag_milliseconds_bucket");
     }
 }

@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,6 +58,8 @@ class BidStreamConsumerTest {
     private BidStreamQuarantineStore quarantineStore;
 
     private BidStreamConsumer consumer;
+    private BidStreamMetrics metrics;
+    private SimpleMeterRegistry registry;
 
     @BeforeEach
     void setUp() {
@@ -67,14 +71,10 @@ class BidStreamConsumerTest {
                         any(BidStreamFailure.class), anyLong(), any(String.class),
                         anyLong(), any(Throwable.class)))
                 .thenReturn(new BidStreamQuarantineStore.QuarantineResult("1-0", true));
-        BidStreamProperties properties = new BidStreamProperties(
-                STREAM, GROUP, CONSUMER, Duration.ofMillis(100), Duration.ofMillis(50),
-                Duration.ofSeconds(60), Duration.ofSeconds(5), 5,
-                Duration.ofSeconds(60), 20);
-        consumer = new BidStreamConsumer(
-                redis, persistenceService, properties,
-                new BidStreamMetrics(new SimpleMeterRegistry()),
-                new BidStreamFailureClassifier(), quarantineStore,
+        registry = new SimpleMeterRegistry();
+        metrics = new BidStreamMetrics(registry);
+        consumer = consumer(
+                50, Duration.ofSeconds(1),
                 Clock.fixed(Instant.ofEpochMilli(1_786_636_900_000L), ZoneOffset.UTC));
     }
 
@@ -86,7 +86,7 @@ class BidStreamConsumerTest {
         givenNoPending();
         when(streamOperations.read(
                 any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets()))
-                .thenReturn(List.of(record));
+                .thenReturn(List.of(record), List.of());
         when(streamOperations.acknowledge(STREAM, GROUP, record.getId())).thenReturn(1L);
 
         consumer.poll();
@@ -163,8 +163,6 @@ class BidStreamConsumerTest {
         RecordId pendingId = RecordId.of("1786636800000-0");
         PendingMessage pendingMessage = new PendingMessage(
                 pendingId, Consumer.from(GROUP, "dead-consumer"), Duration.ofSeconds(10), 1L);
-        when(streamOperations.pending(eq(STREAM), eq(GROUP), any(Range.class), anyLong()))
-                .thenReturn(new PendingMessages(GROUP, List.of(pendingMessage)));
         when(streamOperations.pending(STREAM, GROUP))
                 .thenReturn(new PendingMessagesSummary(
                         GROUP, 1, Range.closed(pendingId.getValue(), pendingId.getValue()),
@@ -174,14 +172,22 @@ class BidStreamConsumerTest {
                 STREAM, GROUP, CONSUMER, Duration.ofSeconds(5), pendingId))
                 .thenReturn(List.of(pendingRecord));
         when(streamOperations.acknowledge(STREAM, GROUP, pendingId)).thenReturn(1L);
+        when(streamOperations.pending(eq(STREAM), eq(GROUP), any(Range.class), anyLong()))
+                .thenReturn(
+                        new PendingMessages(GROUP, List.of(pendingMessage)),
+                        new PendingMessages(GROUP, List.of()));
+        when(streamOperations.read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets()))
+                .thenReturn(List.of());
 
         consumer.poll();
 
-        verify(streamOperations).claim(
+        InOrder order = inOrder(streamOperations, persistenceService);
+        order.verify(streamOperations).claim(
                 STREAM, GROUP, CONSUMER, Duration.ofSeconds(5), pendingId);
-        verify(streamOperations, never()).read(
+        order.verify(persistenceService).persist(any(BidStreamEvent.BidAccepted.class));
+        order.verify(streamOperations).read(
                 any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets());
-        verify(persistenceService).persist(any(BidStreamEvent.BidAccepted.class));
     }
 
     @Test
@@ -274,6 +280,96 @@ class BidStreamConsumerTest {
         verifyNoPersistence();
     }
 
+    @Test
+    @DisplayName("한 poll은 설정한 최대 건수까지만 순차 처리한다")
+    void drainsUpToMaximumRecords() {
+        givenNoPending();
+        AtomicInteger sequence = new AtomicInteger();
+        when(streamOperations.read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets()))
+                .thenAnswer(invocation -> List.of(record(
+                        "1786636800000-" + sequence.getAndIncrement())));
+        when(streamOperations.acknowledge(eq(STREAM), eq(GROUP), any(RecordId.class)))
+                .thenReturn(1L);
+
+        consumer.poll();
+
+        verify(persistenceService, times(50)).persist(any(BidStreamEvent.BidAccepted.class));
+        verify(streamOperations, times(50)).read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets());
+    }
+
+    @Test
+    @DisplayName("한 poll은 drain 시간 상한에 도달하면 다음 레코드를 읽지 않는다")
+    void stopsAtDrainDuration() {
+        MutableClock clock = new MutableClock(1_786_636_900_000L);
+        consumer = consumer(50, Duration.ofSeconds(1), clock);
+        givenNoPending();
+        AtomicInteger sequence = new AtomicInteger();
+        when(streamOperations.read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets()))
+                .thenAnswer(invocation -> List.of(record(
+                        "1786636800000-" + sequence.getAndIncrement())));
+        when(streamOperations.acknowledge(eq(STREAM), eq(GROUP), any(RecordId.class)))
+                .thenReturn(1L);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            clock.advance(Duration.ofMillis(600));
+            return null;
+        }).when(persistenceService).persist(any(BidStreamEvent.BidAccepted.class));
+
+        consumer.poll();
+
+        verify(persistenceService, times(2)).persist(any(BidStreamEvent.BidAccepted.class));
+        verify(streamOperations, times(2)).read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets());
+    }
+
+    @Test
+    @DisplayName("두 번째 레코드가 실패하면 세 번째 레코드를 읽지 않는다")
+    void stopsImmediatelyWhenRecordFails() {
+        RuntimeException failure = new RuntimeException("DB unavailable");
+        givenNoPending();
+        AtomicInteger sequence = new AtomicInteger();
+        when(streamOperations.read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets()))
+                .thenAnswer(invocation -> List.of(record(
+                        "1786636800000-" + sequence.getAndIncrement())));
+        when(streamOperations.acknowledge(eq(STREAM), eq(GROUP), any(RecordId.class)))
+                .thenReturn(1L);
+        org.mockito.Mockito.doNothing()
+                .doThrow(failure)
+                .when(persistenceService).persist(any(BidStreamEvent.BidAccepted.class));
+
+        assertThatThrownBy(consumer::poll).isSameAs(failure);
+
+        verify(persistenceService, times(2)).persist(any(BidStreamEvent.BidAccepted.class));
+        verify(streamOperations, times(2)).read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets());
+        verify(streamOperations, times(1)).acknowledge(
+                eq(STREAM), eq(GROUP), any(RecordId.class));
+    }
+
+    @Test
+    @DisplayName("읽을 레코드가 없으면 영속화를 시도하지 않는다")
+    void stopsWhenStreamHasNoRecord() {
+        givenNoPending();
+        when(streamOperations.read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets()))
+                .thenReturn(List.of());
+
+        consumer.poll();
+
+        verifyNoPersistence();
+        verify(streamOperations, never()).acknowledge(
+                eq(STREAM), eq(GROUP), any(RecordId.class));
+        org.assertj.core.api.Assertions.assertThat(
+                registry.get("upbid.bid.stream.drain.records").summary().count())
+                .isZero();
+        org.assertj.core.api.Assertions.assertThat(
+                registry.get("upbid.bid.stream.delivery.lag").summary().count())
+                .isZero();
+    }
+
     private void givenNoPending() {
         when(streamOperations.pending(eq(STREAM), eq(GROUP), any(Range.class), anyLong()))
                 .thenReturn(new PendingMessages(GROUP, List.of()));
@@ -295,6 +391,17 @@ class BidStreamConsumerTest {
         verify(persistenceService, never()).persist(any(BidStreamEvent.class));
     }
 
+    private BidStreamConsumer consumer(
+            int maxRecordsPerPoll, Duration maxDrainDuration, Clock clock) {
+        BidStreamProperties properties = new BidStreamProperties(
+                STREAM, GROUP, CONSUMER, Duration.ofMillis(100), Duration.ofMillis(50),
+                Duration.ofSeconds(60), Duration.ofSeconds(5), 5,
+                Duration.ofSeconds(60), 20, true, maxRecordsPerPoll, maxDrainDuration);
+        return new BidStreamConsumer(
+                redis, persistenceService, properties, metrics,
+                new BidStreamFailureClassifier(), quarantineStore, clock);
+    }
+
     private static MapRecord<String, Object, Object> record(String id) {
         return StreamRecords.<String, Object, Object>mapBacked(Map.of(
                         "type", "BID_ACCEPTED",
@@ -314,5 +421,38 @@ class BidStreamConsumerTest {
     @SuppressWarnings("unchecked")
     private static StreamOffset<String>[] anyStreamOffsets() {
         return any(StreamOffset[].class);
+    }
+
+    private static final class MutableClock extends Clock {
+
+        private long millis;
+
+        private MutableClock(long millis) {
+            this.millis = millis;
+        }
+
+        private void advance(Duration duration) {
+            millis += duration.toMillis();
+        }
+
+        @Override
+        public java.time.ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(java.time.ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return Instant.ofEpochMilli(millis);
+        }
+
+        @Override
+        public long millis() {
+            return millis;
+        }
     }
 }
