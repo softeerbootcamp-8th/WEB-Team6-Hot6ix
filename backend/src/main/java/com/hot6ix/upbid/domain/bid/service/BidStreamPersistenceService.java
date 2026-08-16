@@ -2,11 +2,12 @@ package com.hot6ix.upbid.domain.bid.service;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
-import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.bid.entity.Bid;
 import com.hot6ix.upbid.domain.bid.repository.BidRepository;
 import com.hot6ix.upbid.domain.bid.stream.BidStreamEvent;
+import com.hot6ix.upbid.domain.bid.stream.BidStreamFailureCode;
+import com.hot6ix.upbid.domain.bid.stream.BidStreamPermanentException;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
@@ -15,8 +16,6 @@ import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
-import com.hot6ix.upbid.global.exception.ApplicationException;
-import com.hot6ix.upbid.global.exception.CommonErrorType;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -47,7 +46,7 @@ public class BidStreamPersistenceService {
      * 커밋과 판매자 마감 앞당기기가 같은 행을 동시에 덮지 않도록 비동기 반영 구간만
      * 직렬화한다. API 응답은 Lua 완료 직후 반환되므로 이 잠금을 기다리지 않는다.
      */
-    @Transactional
+    @Transactional(timeoutString = "${upbid.bid-stream.transaction-timeout-seconds:20}")
     public void persist(BidStreamEvent event) {
 
         switch (event) {
@@ -66,12 +65,13 @@ public class BidStreamPersistenceService {
         }
 
         User bidder = userRepository.findById(event.bidderUserId())
-                .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
+                .orElseThrow(() -> missingResource("입찰자를 찾을 수 없다: " + event.bidderUserId()));
         AuctionItem item = auctionItemRepository.findByIdForUpdate(event.itemId())
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+                .orElseThrow(() -> missingResource("물품을 찾을 수 없다: " + event.itemId()));
 
         if (!item.getAuctionRoom().getAuctionRoomId().equals(event.roomId())) {
-            throw new IllegalArgumentException("Stream의 roomId가 물품의 경매방과 다르다");
+            throw permanent(BidStreamFailureCode.ROOM_MISMATCH,
+                    "Stream의 roomId가 물품의 경매방과 다르다");
         }
 
         LocalDateTime acceptedAt = toLocalDateTime(event.acceptedAtMillis());
@@ -104,7 +104,7 @@ public class BidStreamPersistenceService {
         boolean sameBidder = existing.getBidder().getUserId().equals(event.bidderUserId());
         boolean sameAmount = existing.getAmount().equals(event.amount());
         if (!sameItem || !sameBidder || !sameAmount) {
-            throw new IllegalStateException(
+            throw permanent(BidStreamFailureCode.IDEMPOTENCY_CONFLICT,
                     "같은 requestId의 Stream 내용이 이미 저장된 입찰과 다르다: " + event.requestId());
         }
     }
@@ -117,7 +117,7 @@ public class BidStreamPersistenceService {
         }
 
         User leader = event.leaderUserId() == null ? null : userRepository.findById(event.leaderUserId())
-                .orElseThrow(() -> new ApplicationException(CommonErrorType.RESOURCE_NOT_FOUND));
+                .orElseThrow(() -> missingResource("최고 입찰자를 찾을 수 없다: " + event.leaderUserId()));
         LocalDateTime endAt = toLocalDateTime(event.endAtMillis());
         LocalDateTime closedAt = toLocalDateTime(event.closedAtMillis());
 
@@ -153,14 +153,24 @@ public class BidStreamPersistenceService {
 
     private AuctionItem lockedItem(long itemId, long roomId) {
         AuctionItem item = auctionItemRepository.findByIdForUpdate(itemId)
-                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
+                .orElseThrow(() -> missingResource("물품을 찾을 수 없다: " + itemId));
         if (!item.getAuctionRoom().getAuctionRoomId().equals(roomId)) {
-            throw new IllegalArgumentException("Stream의 roomId가 물품의 경매방과 다르다");
+            throw permanent(BidStreamFailureCode.ROOM_MISMATCH,
+                    "Stream의 roomId가 물품의 경매방과 다르다");
         }
         return item;
     }
 
     private LocalDateTime toLocalDateTime(long epochMillis) {
         return LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), clock.getZone());
+    }
+
+    private static BidStreamPermanentException missingResource(String message) {
+        return permanent(BidStreamFailureCode.REFERENCED_RESOURCE_MISSING, message);
+    }
+
+    private static BidStreamPermanentException permanent(
+            BidStreamFailureCode code, String message) {
+        return new BidStreamPermanentException(code, message);
     }
 }

@@ -28,6 +28,7 @@ import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -51,6 +52,7 @@ import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.core.RedisCallback;
@@ -69,6 +71,8 @@ import org.testcontainers.utility.DockerImageName;
 class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
 
     private static final String STREAM = "auction:bid:stream";
+    private static final String QUARANTINE_STREAM = STREAM + ":quarantine";
+    private static final String QUARANTINE_INDEX = QUARANTINE_STREAM + ":index";
     private static final String GROUP = "bid-mysql-writers-integration";
     private static final String CONSUMER = "integration-writer";
 
@@ -124,7 +128,7 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
         redis.getConnectionFactory().getConnection().serverCommands().flushAll();
         properties = new BidStreamProperties(
                 STREAM, GROUP, CONSUMER, Duration.ofMillis(10), Duration.ofMillis(1),
-                Duration.ofSeconds(5));
+                Duration.ofSeconds(60), Duration.ZERO, 5, Duration.ZERO, 20);
         redis.execute((RedisCallback<String>) connection ->
                 connection.streamCommands().xGroupCreate(
                         STREAM.getBytes(StandardCharsets.UTF_8), GROUP,
@@ -283,20 +287,29 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
                 "requestId", "malformed-with-missing-fields")).withStreamKey(STREAM));
         Fixture fixture = fixture();
         seed(fixture);
-        store.evaluateBid(fixture.item().getAuctionItemId(), "pipeline-after-malformed",
+        RedisBidDecision.Accepted accepted = (RedisBidDecision.Accepted) store.evaluateBid(
+                fixture.item().getAuctionItemId(), "pipeline-after-malformed",
                 fixture.bidder().getUserId(), 10_000L, System.currentTimeMillis());
+        store.requestNaturalClose(fixture.item().getAuctionItemId(), accepted.endAtMillis());
 
         assertThatThrownBy(() -> consumer().poll()).isInstanceOf(RuntimeException.class);
         assertThatThrownBy(() -> consumer().poll()).isInstanceOf(RuntimeException.class);
 
         assertThat(bidRepository.findByRequestId("pipeline-after-malformed")).isEmpty();
-        assertThat(redis.opsForStream().size(STREAM)).isEqualTo(2L);
+        assertThat(auctionItemRepository.findById(fixture.item().getAuctionItemId()).orElseThrow()
+                .getStatus()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
+        assertThat(redis.opsForStream().size(STREAM)).isEqualTo(3L);
         assertThat(redis.opsForStream().pending(STREAM, GROUP).getTotalPendingMessages()).isEqualTo(1L);
+        assertThat(redis.opsForStream().size(QUARANTINE_STREAM)).isEqualTo(1L);
+        assertThat(redis.opsForHash().size(QUARANTINE_INDEX)).isEqualTo(1L);
     }
 
     private BidStreamConsumer consumer() {
         return new BidStreamConsumer(redis, persistenceService, properties,
-                new BidStreamMetrics(new SimpleMeterRegistry()));
+                new BidStreamMetrics(new SimpleMeterRegistry()),
+                new BidStreamFailureClassifier(),
+                new BidStreamQuarantineStore(redis, new ObjectMapper()),
+                Clock.systemDefaultZone());
     }
 
     private void seed(Fixture fixture) {
