@@ -12,6 +12,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemService;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisKeys;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
@@ -23,6 +24,7 @@ import com.hot6ix.upbid.global.support.AbstractMySqlContainerTest;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -33,6 +35,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -117,6 +120,9 @@ class AuctionCloseRecoveryIntegrationTest extends AbstractMySqlContainerTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
     private SellerProfile sellerProfile;
     private AuctionRoom auctionRoom;
 
@@ -138,6 +144,7 @@ class AuctionCloseRecoveryIntegrationTest extends AbstractMySqlContainerTest {
 
         createdItemIds.forEach(itemId -> {
             closeDelayQueue.cancel(itemId);
+            redisTemplate.delete(AuctionRedisKeys.item(itemId));
             jdbcTemplate.update("delete from auction_items where auction_item_id = ?", itemId);
         });
 
@@ -204,15 +211,29 @@ class AuctionCloseRecoveryIntegrationTest extends AbstractMySqlContainerTest {
     }
 
     /**
-     * 마감 시각만 과거로 옮긴다. <b>큐는 건드리지 않는다.</b> 그래야 DB 와 예약이 어긋난
+     * 마감 시각만 과거로 옮긴다. <b>큐는 건드리지 않는다.</b> 그래야 마감 시각과 예약이 어긋난
      * 상태, 곧 앞당기기 재예약이 실패했을 때와 같은 상태가 된다.
      *
-     * <p>엔티티에 {@code end_at} 을 임의로 바꾸는 길이 없어 SQL 로 직접 고친다. 시각이
-     * 지나기를 기다리는 것과 같은 상태를 만들면서 테스트가 10분을 쓰지 않게 하려는 것이다.
+     * <p><b>MySQL 과 Redis Hash 를 함께 고친다.</b> 마감할 때가 됐는지는 Lua 가 Hash 의
+     * {@code endAt} 으로 판정하고(#337), 재동기화가 예약을 걸 시각은 MySQL 의 {@code end_at}
+     * 에서 읽는다. 한쪽만 옮기면 실제로는 생기지 않는 어긋난 상태가 된다.
+     *
+     * <p>시각이 지나기를 기다리는 대신 값을 옮기는 것은 테스트가 10분을 쓰지 않게 하려는
+     * 것이다. 엔티티에 {@code end_at} 을 임의로 바꾸는 길이 없어 SQL 로 직접 고친다.
      */
     private void expireEndAt(Long auctionItemId) {
+
+        LocalDateTime expired = LocalDateTime.now().minusSeconds(1);
+
         jdbcTemplate.update("update auction_items set end_at = ? where auction_item_id = ?",
-                Timestamp.valueOf(LocalDateTime.now().minusSeconds(1)), auctionItemId);
+                Timestamp.valueOf(expired), auctionItemId);
+
+        redisTemplate.opsForHash().put(
+                AuctionRedisKeys.item(auctionItemId), "endAt", String.valueOf(toMillis(expired)));
+    }
+
+    private long toMillis(LocalDateTime time) {
+        return time.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
     /** 마감은 실행 풀에서 도므로 상태가 바뀔 때까지 기다린다. */
