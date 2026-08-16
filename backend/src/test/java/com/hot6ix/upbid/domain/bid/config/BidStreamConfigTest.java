@@ -41,7 +41,8 @@ class BidStreamConfigTest extends AbstractRedisContainerTest {
 
         BidStreamProperties properties = new BidStreamProperties(
                 STREAM, GROUP, "test-consumer", Duration.ofMillis(100),
-                Duration.ofMillis(50), Duration.ofSeconds(5));
+                Duration.ofMillis(50), Duration.ofSeconds(60), Duration.ofSeconds(5),
+                5, Duration.ofSeconds(60), 20);
         ApplicationRunner initializer =
                 new BidStreamConfig().bidStreamGroupInitializer(redis, properties);
         DefaultApplicationArguments arguments = new DefaultApplicationArguments(new String[0]);
