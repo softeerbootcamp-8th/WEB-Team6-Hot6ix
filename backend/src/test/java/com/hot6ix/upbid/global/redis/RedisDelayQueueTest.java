@@ -157,6 +157,21 @@ class RedisDelayQueueTest extends AbstractRedisContainerTest {
     }
 
     @Test
+    @DisplayName("다시 예약하면 시각이 앞으로도 당겨진다")
+    void schedulingSameIdPullsTheEntryForward() {
+
+        // 마감 앞당기기 재예약이 유실되면 큐에는 원래 마감이 남는다. 재동기화가 DB 시각으로
+        // 덮어써 앞으로 당기는 것이 물품을 제시간에 닫는 유일한 경로다 (#327).
+        delayQueue.schedule(1L, NOW.plusSeconds(600));
+
+        delayQueue.schedule(1L, NOW.minusSeconds(1));
+
+        assertThat(delayQueue.claimDue(NOW, LIMIT, VISIBILITY))
+                .extracting(DueEntry::id)
+                .containsExactly(1L);
+    }
+
+    @Test
     @DisplayName("이미 있는 예약은 scheduleIfAbsent가 덮어쓰지 않는다")
     void scheduleIfAbsentKeepsExistingEntry() {
         delayQueue.schedule(1L, NOW.plusSeconds(10));

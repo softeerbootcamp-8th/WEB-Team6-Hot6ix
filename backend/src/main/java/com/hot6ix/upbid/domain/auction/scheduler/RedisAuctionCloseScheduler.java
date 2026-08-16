@@ -26,11 +26,6 @@ public class RedisAuctionCloseScheduler implements AuctionCloseScheduler {
     }
 
     @Override
-    public void scheduleIfAbsent(Long auctionItemId, LocalDateTime endAt) {
-        closeDelayQueue.scheduleIfAbsent(auctionItemId, endAt);
-    }
-
-    @Override
     public void cancel(Long auctionItemId) {
         closeDelayQueue.cancel(auctionItemId);
     }
