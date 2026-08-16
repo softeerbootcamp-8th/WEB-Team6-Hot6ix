@@ -35,6 +35,8 @@ upbid:
   sse:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
+    worker-pool-size: ${SSE_WORKER_POOL_SIZE:4}
+    worker-queue-capacity: ${SSE_WORKER_QUEUE_CAPACITY:512}
   auction:
     # 시나리오 2(물품 분산)는 한 방에서 물품 20개를 동시에 진행해야 하는데 서비스 규칙이 3이다.
     # 여기서만 올린다. 이 프로파일로 잰 숫자는 "제한을 푼 상태"라는 걸 note.md 에 적는다.
