@@ -75,8 +75,8 @@ services:
       # 대조 실험 대상이 아니라서 --result-cache-ttl 같은 인자를 따로 두지 않았다.
       - RESULT_CACHE_ENABLED=${RESULT_CACHE_ENABLED:-true}
       - RESULT_CACHE_TTL=${RESULT_CACHE_TTL:-60s}
-      - SSE_USE_VIRTUAL_THREADS=${SSE_USE_VIRTUAL_THREADS:-true}
-      - SSE_DISPATCH_POOL_SIZE=${SSE_DISPATCH_POOL_SIZE:-4}
+      - SSE_WORKER_POOL_SIZE=${SSE_WORKER_POOL_SIZE:-4}
+      - SSE_WORKER_QUEUE_CAPACITY=${SSE_WORKER_QUEUE_CAPACITY:-512}
       - MAX_IN_PROGRESS_PER_ROOM=${MAX_IN_PROGRESS_PER_ROOM:-50}
       # 전역 스위치다. 스케줄러뿐 아니라 톰캣도 함께 가상 스레드로 바뀐다.
       - VIRTUAL_THREADS=${VIRTUAL_THREADS:-false}
