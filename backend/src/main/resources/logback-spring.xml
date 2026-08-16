@@ -59,6 +59,13 @@
                   기본값(수십 MB)보다 훨씬 작게 잡고, 넘치면 버린다. 버려도 콘솔에는 남는다.
                 -->
                 <sendQueueMaxBytes>8388608</sendQueueMaxBytes>
+                <!--
+                  loki4j 는 sendQueueMaxBytes 가 maxBytes 의 5배보다 작으면 경고를 낸다.
+                  경고를 없애는 방법이 둘인데, 큐를 20MB 로 키우는 쪽은 위에 적은 이유로
+                  못 쓴다. 그래서 배치 상한을 기본값 4MB 에서 1MB 로 내렸다.
+                  접근 로그 한 줄이 150B 남짓이라 아래 maxItems 가 거의 항상 먼저 걸린다.
+                -->
+                <maxBytes>1048576</maxBytes>
                 <maxItems>1000</maxItems>
                 <timeoutMs>10000</timeoutMs>
             </batch>
@@ -84,14 +91,27 @@ level=%level
         </appender>
     </springProfile>
 
+    <!--
+      **<root> 안에 <springProfile> 을 넣지 않는다.** 동작은 하지만 Boot 가 기동할 때마다
+      "지원하지 않는 중첩" 경고를 낸다(SpringProfileIfNestedWithinSecondPhaseElementSanityChecker).
+      지금은 맞게 붙어도 Boot 를 올리다 조용히 안 붙는 날이 오면, 하필 그게 "알림이 안 온다"라
+      아무도 모른다. 대신 <root> 를 프로파일별로 하나씩 더 쓴다. logback 은 <root> 를 여러 번
+      만나면 appender 를 덮어쓰지 않고 더한다.
+    -->
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
-        <springProfile name="prod">
-            <appender-ref ref="SLACK"/>
-        </springProfile>
-        <springProfile name="loki">
-            <appender-ref ref="LOKI"/>
-        </springProfile>
     </root>
+
+    <springProfile name="prod">
+        <root>
+            <appender-ref ref="SLACK"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="loki">
+        <root>
+            <appender-ref ref="LOKI"/>
+        </root>
+    </springProfile>
 
 </configuration>
