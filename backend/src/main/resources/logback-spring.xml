@@ -19,6 +19,7 @@
                     source="app.alert.slack.webhook-url"/>
     <springProperty scope="context" name="SLACK_COOLDOWN_SECONDS"
                     source="app.alert.slack.cooldown-seconds" defaultValue="60"/>
+    <springProperty scope="context" name="LOKI_URL" source="app.logging.loki.url"/>
 
     <springProfile name="prod">
         <!--
@@ -36,10 +37,60 @@
         </appender>
     </springProfile>
 
+    <springProfile name="loki">
+        <!--
+          로그를 측정 EC2 의 Loki 로 보낸다 (이슈 #332).
+
+          프로파일을 따로 둔 이유는 껐다 켜는 스위치가 필요해서다. Loki 가 아직 안 떴는데
+          켜져 있으면 전송 실패 로그만 쌓인다. 배포에서 SPRING_PROFILES_ACTIVE 를
+          prod 에서 prod,loki 로 바꾸면 켜지고, 되돌리면 지금과 동작이 같다.
+        -->
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>${LOKI_URL}</url>
+                <connectionTimeoutMs>5000</connectionTimeoutMs>
+                <requestTimeoutMs>10000</requestTimeoutMs>
+            </http>
+            <batch>
+                <!--
+                  **여기가 앱을 지키는 자리다.** Loki 가 죽거나 느려지면 못 보낸 로그가 앱 힙에
+                  쌓이는데, 배포 서버는 힙이 490MB 인 데다 이미 스왑을 404MB 쓰고 있어서
+                  여기서 메모리를 더 먹으면 바로 Full GC 멈춤으로 이어진다.
+                  기본값(수십 MB)보다 훨씬 작게 잡고, 넘치면 버린다. 버려도 콘솔에는 남는다.
+                -->
+                <sendQueueMaxBytes>8388608</sendQueueMaxBytes>
+                <maxItems>1000</maxItems>
+                <timeoutMs>10000</timeoutMs>
+            </batch>
+            <!--
+              라벨은 카디널리티가 낮은 것만 넣는다. traceId 나 itemId 를 라벨로 넣으면 값마다
+              시계열이 새로 생겨서 Loki 가 감당하지 못한다.
+
+              **줄바꿈으로 나눈다. 쉼표가 아니다.** loki4j 2.0 의 기본 pairSeparator 가
+              `regex:\n|\r` 라, 한 줄에 쉼표로 이어 쓰면 기동할 때 예외가 나고 앱이 안 뜬다.
+              들여쓰기도 키에 섞이므로 왼쪽에 붙여 쓴다.
+
+              traceId 는 여기 넣지 않아도 된다. 기본 structuredMetadata 가 `*=%mdc` 라
+              MDC 값이 통째로 실려 나간다.
+            -->
+<labels>
+app=upbid
+host=${HOSTNAME}
+level=%level
+</labels>
+            <message>
+                <pattern>[%thread] %-5level %logger{36} [%mdc{traceId:-}] - %msg%n%ex</pattern>
+            </message>
+        </appender>
+    </springProfile>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <springProfile name="prod">
             <appender-ref ref="SLACK"/>
+        </springProfile>
+        <springProfile name="loki">
+            <appender-ref ref="LOKI"/>
         </springProfile>
     </root>
 

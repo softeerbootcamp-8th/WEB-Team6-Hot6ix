@@ -69,6 +69,14 @@ class SlackAppenderWiringTest extends AbstractMySqlContainerTest {
         assertThat(rootLogger().getAppender("CONSOLE")).isNotNull();
     }
 
+    @Test
+    @DisplayName("loki 프로파일을 안 켜면 Loki appender 가 붙지 않는다")
+    void doesNotAttachLokiWithoutProfile() {
+        // 기본값이 꺼짐이라는 것이 이 설계의 전제다. prod 만으로 배포했을 때 없던 전송이
+        // 생기면 안 되고, Loki 가 아직 안 떴는데 켜져 있으면 전송 실패 로그만 쌓인다.
+        assertThat(rootLogger().getAppender("LOKI")).isNull();
+    }
+
     private Logger rootLogger() {
         LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
         return context.getLogger(Logger.ROOT_LOGGER_NAME);

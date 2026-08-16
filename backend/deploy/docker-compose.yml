@@ -97,6 +97,11 @@ services:
       # 로그인 후 돌아갈 프론트 주소 (application.yaml 의 app.frontend-url)
       - FRONTEND_URL=${FRONTEND_URL}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      # 로그를 측정 EC2 의 Loki 로 보낼 때만 채운다 (이슈 #332).
+      # 비워 두면 지금과 동작이 같다. 켜려면 값과 함께 위 SPRING_PROFILES_ACTIVE 를
+      # prod,loki 로 바꿔야 한다. 둘 중 하나만 바꾸면 안 켜진다.
+      #   LOKI_URL=http://10.0.1.119:3100/loki/api/v1/push
+      - LOKI_URL=${LOKI_URL:-}
     restart: unless-stopped
     # 도커 기본 json-file 은 로테이션이 없어서 로그가 무한히 쌓인다. 지금까지는 앱이 로그를
     # 거의 안 남겨서(22시간에 32KB) 문제가 안 됐는데, 요청마다 한 줄을 남기는 접근 로그가
