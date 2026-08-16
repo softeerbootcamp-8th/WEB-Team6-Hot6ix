@@ -152,9 +152,12 @@ export class SseClientMetrics {
   receive(listener, event, receivedAtMs = Date.now()) {
     counter(this.eventsReceived, event.name)
 
+    // 참여자 수 이벤트처럼 id: 필드 없이 나가는 이벤트는 event.id가 ''다. Number('')는
+    // 0이라 이 검사를 건너뛰지 않으면, 진행 중이던 순차 ID(예: 7)보다 작은 값(0)으로
+    // 오인돼 out-of-order로 잘못 집계된다 — id가 실제로 있을 때만 순서를 검사한다.
     const id = Number(event.id)
     let uniqueInOrder = true
-    if (Number.isSafeInteger(id)) {
+    if (event.id !== '' && Number.isSafeInteger(id)) {
       if (listener.lastEventId !== null) {
         if (id === listener.lastEventId) {
           this.duplicateEvents += 1
