@@ -1,5 +1,7 @@
 package com.hot6ix.upbid.domain.sse.event;
 
+import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.domain.sse.service.SseMetrics;
 import com.hot6ix.upbid.domain.sse.service.SseServerIdentifier;
 import java.time.Duration;
 import java.util.List;
@@ -34,12 +36,13 @@ public class ParticipantCountPublisher {
     private final StringRedisTemplate stringRedisTemplate;
     private final RedisScript<Long> participantCountPublishScript;
     private final SseServerIdentifier serverIdentifier;
+    private final SseMetrics sseMetrics;
 
     /**
      * 이 서버의 로컬 참여자 수를 갱신하고, 전역 합계를 발행한다.
      *
      * <p>발행이 실패하면 그 갱신은 사라진다. 다음 heartbeat나 다른 연결/해제가 다시
-     * 갱신을 트리거하므로 값은 결국 맞아지지만, 조용히 사라지면 아무도 모르니 로그로 남긴다.
+     * 갱신을 트리거하므로 값은 결국 맞아지지만, 조용히 사라지면 아무도 모르니 지표·로그로 남긴다.
      */
     public void publish(Long roomId, int localCount) {
         try {
@@ -53,7 +56,10 @@ public class ParticipantCountPublisher {
                     String.valueOf(KEY_TTL.toSeconds()),
                     String.valueOf(roomId));
 
+            sseMetrics.recordEventPublished(RoomSseManager.PARTICIPANT_COUNT_EVENT);
+
         } catch (RuntimeException e) {
+            sseMetrics.recordPublishFailure(RoomSseManager.PARTICIPANT_COUNT_EVENT, e);
             log.error("참여자 수 발행 실패: roomId={}", roomId, e);
         }
     }

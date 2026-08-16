@@ -24,8 +24,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @EnableConfigurationProperties(SseProperties.class)
 public class RoomSseManager {
 
-    /** {@code EventType}에 없는 유일한 이벤트 이름이라 {@code SseMetrics}가 태그값으로 가져간다. */
-    static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
+    /**
+     * {@code EventType}에 없는 유일한 이벤트 이름이라 {@code SseMetrics}가 태그값으로 가져간다.
+     * {@code ParticipantCountPublisher}(다른 패키지)도 발행 지표 태그로 같은 값을 쓴다.
+     */
+    public static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
 
     private final Map<Long, Set<SseEmitter>> roomEmitters = new ConcurrentHashMap<>();
 
