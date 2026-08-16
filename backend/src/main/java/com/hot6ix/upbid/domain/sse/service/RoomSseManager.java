@@ -110,6 +110,26 @@ public class RoomSseManager {
         });
     }
 
+    /**
+     * 참여자 수를 이 인스턴스에 붙은 연결에만 전달한다. {@code deliverLocal}과 달리 id가
+     * 없다 — 재연결 replay 버퍼에 안 쌓이는 이벤트라 순차 번호 자체가 없기 때문이다.
+     *
+     * <p>{@code ParticipantCountSubscriber}가 부르는 것이 유일한 경로다.
+     */
+    public void deliverParticipantCountLocal(Long roomId, int count) {
+        Set<SseEmitter> emitters = roomEmitters.get(roomId);
+
+        if (emitters == null || emitters.isEmpty()) {
+            return;
+        }
+
+        sseMetrics.recordBroadcast(PARTICIPANT_COUNT_EVENT, () -> {
+            for (SseEmitter emitter : emitters) {
+                send(roomId, emitter, PARTICIPANT_COUNT_EVENT, null, new ParticipantCountDto(count));
+            }
+        });
+    }
+
     public int getParticipantCount(Long roomId) {
         Set<SseEmitter> emitters = roomEmitters.get(roomId);
         return emitters == null ? 0 : emitters.size();
@@ -117,17 +137,20 @@ public class RoomSseManager {
 
     /**
      * @param id 버퍼에 저장된 순차 ID. 클라이언트는 이 값을 {@code Last-Event-ID}로 저장해
-     *           재연결 시 서버에 보낸다. 초기 이벤트가 없어진 뒤로 ID 없이 나가는 이벤트는 없다.
+     *           재연결 시 서버에 보낸다. {@code null}이면 SSE 프레임에 {@code id:} 필드
+     *           자체를 안 실어서 브라우저의 {@code Last-Event-ID}를 건드리지 않는다
+     *           ({@code deliverParticipantCountLocal}이 이 경로를 쓴다).
      */
-    private void send(Long roomId, SseEmitter emitter, String name, long id, Object data) {
+    private void send(Long roomId, SseEmitter emitter, String name, Long id, Object data) {
         sseMetrics.recordSendAttempt(name);
         Timer.Sample sample = sseMetrics.startSend();
 
         try {
-            emitter.send(SseEmitter.event()
-                    .id(String.valueOf(id))
-                    .name(name)
-                    .data(data));
+            SseEmitter.SseEventBuilder event = SseEmitter.event().name(name).data(data);
+            if (id != null) {
+                event.id(String.valueOf(id));
+            }
+            emitter.send(event);
 
             sseMetrics.recordSendSuccess(name);
         } catch (IOException | IllegalStateException e) {
