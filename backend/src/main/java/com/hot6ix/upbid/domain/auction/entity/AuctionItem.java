@@ -238,6 +238,67 @@ public class AuctionItem extends BaseTimeEntity {
     }
 
     /**
+     * Redis에서 이미 승인된 입찰을 MySQL의 조회용 상태에 반영한다.
+     *
+     * <p>Stream의 순서와 MySQL 트랜잭션 커밋 순서는 같다는 보장이 없다. 따라서 더 낮은
+     * 금액, 더 이른 마감 시각, 더 작은 누적 연장값은 기존 상태를 덮지 않는다. 판매자가
+     * 마감을 앞당긴 뒤 그보다 전에 승인된 입찰 이벤트가 늦게 도착한 경우에는 과거
+     * {@code endAt}으로 앞당김을 취소하지 않는다. 누적 연장값은 과거에 실제로 일어난
+     * 연장 횟수이므로 이 경우에도 큰 값이면 보존한다.
+     *
+     * @return 이 이벤트로 {@code endAt}이 실제로 뒤로 이동했으면 {@code true}
+     */
+    public boolean applyPersistedBid(User bidder, Long amount, LocalDateTime acceptedAt,
+                                     LocalDateTime persistedEndAt,
+                                     int persistedTotalExtensionSeconds) {
+
+        if (leaderUser == null || amount > currentPrice) {
+            applyBid(bidder, amount);
+        }
+
+        boolean acceptedAfterCloseAdvanced =
+                notifiedAt == null || acceptedAt.isAfter(notifiedAt);
+        boolean endAtAdvanced = acceptedAfterCloseAdvanced
+                && (endAt == null || persistedEndAt.isAfter(endAt));
+        if (endAtAdvanced) {
+            endAt = persistedEndAt;
+        }
+
+        if (persistedTotalExtensionSeconds > totalExtensionSeconds) {
+            totalExtensionSeconds = persistedTotalExtensionSeconds;
+        }
+
+        return endAtAdvanced;
+    }
+
+    /**
+     * 같은 Stream에서 앞선 입찰을 모두 반영한 뒤 도착한 마감 스냅샷으로 최종 상태를 맞춘다.
+     * Redis가 경매 중 판정 원본이므로 마감 순간의 최고가·최고 입찰자를 그대로 사용한다.
+     */
+    public void closeFromRedis(User leader, Long finalPrice, LocalDateTime finalEndAt,
+                               int finalTotalExtensionSeconds) {
+        this.leaderUser = leader;
+        this.currentPrice = finalPrice;
+        this.endAt = finalEndAt;
+        this.totalExtensionSeconds = finalTotalExtensionSeconds;
+        close();
+    }
+
+    /**
+     * Redis에서 원자적으로 확정한 판매자 마감 앞당기기를 DB에 한 번만 반영한다.
+     *
+     * @return 처음 반영했으면 {@code true}, 같은 이벤트 재전달이면 {@code false}
+     */
+    public boolean applyCloseAdvanced(LocalDateTime advancedEndAt, LocalDateTime advancedAt) {
+        if (notifiedAt != null && !advancedAt.isAfter(notifiedAt)) {
+            return false;
+        }
+        this.endAt = advancedEndAt;
+        this.notifiedAt = advancedAt;
+        return true;
+    }
+
+    /**
      * 마감이 임박한 상태였으면 Soft Close로 마감을 뒤로 밀고 누적 연장에 더한다. 연장 폭과
      * 임박 판정 기준은 이 물품이 속한 <b>경매방의 설정</b>이다.
      *
@@ -254,23 +315,17 @@ public class AuctionItem extends BaseTimeEntity {
      * 않는 것은 연장 폭이 언제나 방 설정값과 같아야 화면에 알리는 "몇 초 연장"과 실제 마감
      * 시각이 어긋나지 않기 때문이다.
      *
-     * <p><b>방 설정을 파라미터로 받는다.</b> {@code auctionRoom}에서 직접 꺼내면 경매방이 LAZY라
-     * 여기서 SELECT가 나가는데, 이 메서드는 물품 행 락을 쥔 채로 도는 자리다. 연장하지 않는
-     * 경우에도 판정하려고 먼저 읽어야 해서 <b>접수된 입찰마다</b> 그 쿼리가 나갔다. 부르는 쪽이
-     * 락을 잡기 전에 읽어서 넘긴다.
-     *
-     * @param now     판정 기준 시각. 같은 트랜잭션의 다른 검증과 <b>같은 값</b>을 받아야 한다
-     * @param setting 이 물품이 속한 경매방의 Soft Close 설정
+     * @param now 판정 기준 시각. 같은 트랜잭션의 다른 검증과 <b>같은 값</b>을 받아야 한다
      * @return 연장했으면 {@code true}. {@code false}면 아무 값도 바뀌지 않았다
      */
-    public boolean extendIfClosingSoon(LocalDateTime now, SoftCloseSetting setting) {
+    public boolean extendIfClosingSoon(LocalDateTime now) {
 
-        if (endAt == null || !setting.isConfigured()) {
+        Integer triggerSeconds = auctionRoom.getSoftCloseTriggerSeconds();
+        Integer extendSeconds = auctionRoom.getSoftCloseExtendSeconds();
+
+        if (endAt == null || triggerSeconds == null || extendSeconds == null) {
             return false;
         }
-
-        int triggerSeconds = setting.triggerSeconds();
-        int extendSeconds = setting.extendSeconds();
 
         if (now.isBefore(endAt.minusSeconds(triggerSeconds))) {
             return false;

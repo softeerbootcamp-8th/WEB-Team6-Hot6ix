@@ -263,27 +263,6 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
     Optional<Long> findSellerUserId(@Param("auctionItemId") Long auctionItemId);
 
     /**
-     * 입찰이 물품 행 락을 잡기 전에 필요한 값을 한 번에 읽는다.
-     *
-     * <p><b>{@link #findSellerUserId}를 넓힌 것이라 입찰당 SELECT 수는 늘지 않는다.</b> 경매방은
-     * 판매자를 찾느라 이미 조인하고 있어서 연장 설정은 그대로 딸려 오고, 상품 조인 하나만 늘었다.
-     * 그 대신 {@code BidPlaced}와 {@code SoftCloseExtended}를 만들며 락 안에서 나가던 지연 로딩
-     * 두 번이 없어진다. 락은 줄을 세우는 장치라 한 건이 오래 잡으면 뒤에 선 입찰 전부가 밀린다.
-     *
-     * <p>판매자 검사만 필요한 다른 경로는 {@link #findSellerUserId}를 그대로 쓴다.
-     *
-     * @return 물품이 없거나 경매방에 판매자가 없으면 빈 값. {@link #findSellerUserId}와 같다
-     */
-    @Query("select new com.hot6ix.upbid.domain.auction.repository.BidContextProjection("
-            + "  sp.user.userId, p.name, ar.softCloseTriggerSeconds, ar.softCloseExtendSeconds) "
-            + "from AuctionItem ai "
-            + "join ai.auctionRoom ar "
-            + "join ar.sellerProfile sp "
-            + "join ai.product p "
-            + "where ai.auctionItemId = :auctionItemId")
-    Optional<BidContextProjection> findBidContext(@Param("auctionItemId") Long auctionItemId);
-
-    /**
      * 이 물품이 속한 경매방에 입찰자의 참여 행이 있는지 확인한다. 입찰을 받을지 판정하는 데 쓴다.
      *
      * <p>{@code agreed_at}이 채워진 행만 참여로 본다. 그 행은 공유 코드를 알고 로그인한

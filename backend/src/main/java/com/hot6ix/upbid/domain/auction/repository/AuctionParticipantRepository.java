@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.repository;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionParticipant;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -35,4 +36,13 @@ public interface AuctionParticipantRepository extends JpaRepository<AuctionParti
             """, nativeQuery = true)
     int recordAgreement(@Param("roomId") Long roomId, @Param("userId") Long userId,
                         @Param("termsVersion") String termsVersion);
+
+    /**
+     * 방에서 약관에 동의한 회원 ID를 모두 읽는다. 입찰 판정용 Redis 참여자 SET을 채울 때만
+     * 쓴다(이슈 #246의 비교군 C). 물품에 첫 입찰이 올 때 한 번 돌고, 그 뒤로는 동의 API가
+     * 한 명씩 더한다.
+     */
+    @Query("select ap.user.userId from AuctionParticipant ap "
+            + "where ap.auctionRoom.auctionRoomId = :roomId and ap.agreedAt is not null")
+    List<Long> findAgreedUserIds(@Param("roomId") Long roomId);
 }

@@ -44,6 +44,7 @@ import {
   type SoftCloseFlash,
 } from '@/features/live/soft-close-flash'
 import { toBidErrorMessage } from '@/features/live/bid-error'
+import { createBidRequestIdTracker } from '@/features/live/bid-request-id'
 import {
   sellerActionMessageByCode,
   toSellerActionErrorMessage,
@@ -754,6 +755,7 @@ function LiveRoomPage() {
   }, [detailMinimum, detailConfirming])
 
   const placeBid = usePlace()
+  const bidRequestIds = useRef(createBidRequestIdTracker()).current
   const startItem = useStart()
   const closeEarlyItem = useCloseEarly()
   const addItems = useAddAll()
@@ -1010,10 +1012,13 @@ function LiveRoomPage() {
     setDetailFeedback(null)
 
     try {
+      const requestId = bidRequestIds.acquire(detailItem.id, detailAmount)
       await placeBid.mutateAsync({
         auctionItemId: detailItem.id,
         data: { amount: detailAmount },
+        headers: { 'Idempotency-Key': requestId },
       })
+      bidRequestIds.complete(requestId)
 
       // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       setDetailFeedback({
@@ -1186,10 +1191,13 @@ function LiveRoomPage() {
     setBiddingItemId(item.id)
 
     try {
+      const requestId = bidRequestIds.acquire(item.id, amount)
       await placeBid.mutateAsync({
         auctionItemId: item.id,
         data: { amount },
+        headers: { 'Idempotency-Key': requestId },
       })
+      bidRequestIds.complete(requestId)
 
       // 서버가 확정해 준 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       toast.success('입찰이 등록됐어요', {

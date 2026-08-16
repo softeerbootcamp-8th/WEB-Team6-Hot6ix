@@ -13,16 +13,9 @@ spring:
     password: ${DB_PASSWORD:1234}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      # 20은 배포 실측으로 정했다(#252). 참여자 40명에 물품 수를 바꿔가며 재니 입찰 성공 건수가
-      # 풀 10보다 일관되게 늘었고(물품 20개에서 21,287 → 23,956), 30과 40은 처리량이 20과 같은데
-      # 입찰 성공만 9% 적어서 20 위로는 얻는 게 없었다.
-      #
-      # 공짜는 아니다. 동시에 도는 트랜잭션이 늘면 같은 물품 행을 두고 다투는 것도 늘어서 입찰이
-      # 락을 쥐는 시간이 18ms 에서 27ms 로 길어진다. 그걸 감수할 만큼 접수가 늘어서 고른 값이다.
-      #
-      # 밖으로 뺀 이유는 부하 측정에서 이 값 하나만 바꿔 재야 하는데, 고정돼 있으면 대조 실험을
-      # 하려고 재배포를 해야 하기 때문이다.
-      maximum-pool-size: ${DB_POOL_SIZE:20}
+      # 10은 HikariCP 기본값이라 지금 동작과 같다. 밖으로 뺀 이유는 부하 측정에서 이 값 하나만
+      # 바꿔 재야 하는데, 고정돼 있으면 대조 실험을 하려고 재배포를 해야 하기 때문이다.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
 
   # 실제로 이 연결을 쓰는 것 — ShedLock 분산 락(#286)과 물품 마감 예약(#289).
   # 마감 예약은 Redis 에만 있어서, 이 연결이 죽으면 마감 시각이 지난 물품이 안 닫힌다.
@@ -147,6 +140,16 @@ upbid:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
     buffer-size: ${SSE_BUFFER_SIZE:50}
+  bid-stream:
+    key: auction:bid:stream
+    group: bid-mysql-writers
+    # 컨테이너마다 HOSTNAME이 달라 재시작 전 Consumer의 pending도 구별된다. 처리기는 그룹
+    # 전체 PEL에서 먼저 claim하므로 이름이 바뀌어도 이벤트가 고립되지 않는다.
+    consumer: ${HOSTNAME:local}-bid-writer
+    poll-delay: ${BID_STREAM_POLL_DELAY:100ms}
+    block-timeout: ${BID_STREAM_BLOCK_TIMEOUT:50ms}
+    # Stream 단건 DB 트랜잭션의 최대 처리시간보다 길어야 한다. 운영 실측 뒤 조정한다.
+    lock-at-most-for: ${BID_STREAM_LOCK_AT_MOST_FOR:5s}
   auction:
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:3}
     close:
@@ -170,9 +173,13 @@ upbid:
       # 돌아서(8/12) 늘릴 이유가 없고, 이번 변경으로 스레드 조건이 달라지지 않게 맞춘다.
       worker-pool-size: ${CLOSE_WORKER_POOL_SIZE:4}
       # 예약이 Redis 에만 있어서, Redis 가 비면 진행중 물품이 영영 안 닫힌다. 그때 DB 를 보고
-      # 다시 채우는 안전망이다. 이 주기마다 진행중 물품을 전부 읽으므로 짧게 잡지 않는다.
-      # 이 한 번의 조회로 마감 예약과 알림 예약을 함께 채운다 (#290).
-      resync-interval-ms: ${CLOSE_RESYNC_INTERVAL_MS:60000}
+      # 다시 채우는 안전망이다. 이 한 번의 조회로 마감 예약과 알림 예약을 함께 채운다 (#290).
+      #
+      # 이 값이 곧 마감이 늦어질 수 있는 최악이다. 예약이 유실되거나 낡은 시각으로 남으면
+      # 다음 재동기화까지 그대로 있기 때문이다 (#327). 60s 는 "Redis 가 통째로 비었을 때
+      # 채운다"는 원래 용도만 보고 잡은 값이라, 마감 시각을 지키는 쪽으로 당긴다. 조회가
+      # auction_items 전체 스캔이라(status 인덱스 없음) 표가 커지면 다시 볼 값이다.
+      resync-interval-ms: ${CLOSE_RESYNC_INTERVAL_MS:10000}
     closing-soon:
       # 마감 임박 알림 예약을 Redis 에서 꺼내 실행하는 값들. 마감과 따로 두는 것은 알림 한
       # 건이 훨씬 가볍기 때문이고, 한쪽만 조여 볼 수 있게 하려는 것이다 (#290).
@@ -233,4 +240,3 @@ aws:
   s3:
     bucket: upbid-bucket
     public-base-url: https://upbid-bucket.s3.ap-northeast-2.amazonaws.com
-

@@ -11,8 +11,10 @@
  */
 
 export interface BidCreateResponseDto {
-  bidId?: number;
+  requestId?: string;
   auctionItemId?: number;
   amount?: number;
   acceptedAt?: string;
+  endAt?: string;
+  extendedSeconds?: number;
 }
