@@ -23,12 +23,13 @@ export const Route = createFileRoute('/rooms/')({
   component: MyRoomsPage,
 })
 
-type StatusFilter = 'ALL' | 'LIVE' | 'CLOSED'
+type StatusFilter = 'ALL' | 'LIVE' | 'READY' | 'CLOSED'
 
 /** 화면 상태 탭 ↔ 서버 `AuctionRoomStatus`. 전체는 파라미터를 안 보낸다. */
 const STATUS_PARAM: Record<StatusFilter, GetMyRoomsStatus | undefined> = {
   ALL: undefined,
   LIVE: 'OPEN',
+  READY: 'BEFORE',
   CLOSED: 'CLOSED',
 }
 
@@ -42,7 +43,7 @@ const CARD_STATUS: Record<string, RoomStatus> = {
 function MyRoomsPage() {
   const [filter, setFilter] = useState<StatusFilter>('ALL')
   const [keyword, setKeyword] = useState('')
-  // 상태(전체/LIVE/종료)와 직교하는 축이라 탭이 아니라 별도 토글이다.
+  // 상태 탭과 직교하는 축이라 탭이 아니라 별도 토글이다.
   // 같은 줄에 4번째 탭으로 넣으면 "내가 만든 방 중 LIVE"를 고를 수 없다.
   const [mineOnly, setMineOnly] = useState(false)
   const [joiningByLink, setJoiningByLink] = useState(false)
@@ -89,6 +90,8 @@ function MyRoomsPage() {
   const FILTERS: { key: StatusFilter; label: string; count: number }[] = [
     { key: 'ALL', label: '전체', count: total },
     { key: 'LIVE', label: 'LIVE', count: open },
+    // 시작 전인 방은 판매자가 물품을 채우러 다시 들어오는 곳이라 따로 고를 수 있어야 한다.
+    { key: 'READY', label: '준비 중', count: before },
     { key: 'CLOSED', label: '종료', count: closed },
   ]
 
