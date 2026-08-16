@@ -28,7 +28,13 @@ public interface ItemClosingSoonScheduler {
 
     /**
      * <b>예약이 없을 때만</b> 건다. DB 를 보고 예약을 다시 채우는 {@link AuctionRecoveryRunner}가
-     * 쓴다. 덮어쓰면 안 되는 이유는 {@link AuctionCloseScheduler#scheduleIfAbsent}와 같다.
+     * 쓴다. 이미 있는 줄에는 연장이 반영돼 있거나 지금 어느 서버가 집어서 처리 중이라는 표시가
+     * 들어 있는데, DB 의 시각으로 덮으면 그 둘을 되돌린다.
+     *
+     * <p>마감 예약은 같은 러너가 덮어쓰는데 알림만 안 덮는 것은, <b>알림 시각이 앞으로 당겨져야
+     * 하는 경우가 없기 때문</b>이다(#327). 앞당기기는 {@code notified_at} 을 찍어 알림을 아예
+     * 끄고, 연장은 시각을 뒤로만 민다. 뒤로 밀린 예약은 일찍 깨어나도 {@code notifyIfDue}가
+     * 다시 재워 준다.
      *
      * @param auctionItemId 알림을 낼 물품의 ID
      * @param notifyAt      알림 시각. 절대값

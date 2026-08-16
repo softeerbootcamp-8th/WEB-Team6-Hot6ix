@@ -34,9 +34,9 @@ public class AuctionItemController implements AuctionItemApi {
     @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<List<AuctionItemSummaryResponseDto>>> getSummaries(
-            String shareCode) {
+            String shareCode, Long userId) {
 
-        List<AuctionItemSummaryResponseDto> response = auctionItemService.getSummaries(shareCode);
+        List<AuctionItemSummaryResponseDto> response = auctionItemService.getSummaries(shareCode, userId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매 물품 목록 조회에 성공했습니다."));
     }
@@ -45,9 +45,10 @@ public class AuctionItemController implements AuctionItemApi {
     @GuestAllowed
     @Override
     public ResponseEntity<CommonResponse<AuctionItemDetailResponseDto>> getDetail(
-            String shareCode, Long auctionItemId) {
+            String shareCode, Long auctionItemId, Long userId) {
 
-        AuctionItemDetailResponseDto response = auctionItemService.getDetail(shareCode, auctionItemId);
+        AuctionItemDetailResponseDto response =
+                auctionItemService.getDetail(shareCode, auctionItemId, userId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매 물품 상세 조회에 성공했습니다."));
     }

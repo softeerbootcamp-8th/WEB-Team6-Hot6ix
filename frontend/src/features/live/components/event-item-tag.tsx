@@ -1,4 +1,4 @@
-import type { RoomEvent } from '@/mocks/types'
+import type { RoomEvent } from '@/types/domain'
 
 /**
  * 이벤트 줄 위에 붙는 물품 이름표.

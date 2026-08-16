@@ -11,7 +11,7 @@ import type { SoftCloseFlash } from '@/features/live/soft-close-flash'
 import { formatCountdown, formatWon } from '@/lib/format'
 import { isClosingSoon, useCountdown } from '@/hooks/use-countdown'
 import { cn } from '@/lib/utils'
-import type { AuctionItemDetail } from '@/mocks/types'
+import type { AuctionItemDetail } from '@/types/domain'
 
 /**
  * 물품별 리더보드 카드 (Figma `lb*_card_bg`, 높이 184).

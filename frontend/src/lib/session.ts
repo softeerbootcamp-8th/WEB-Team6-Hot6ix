@@ -33,15 +33,6 @@ const STORAGE_KEY = 'upbid.mock-session'
 
 const GUEST: Session = { status: 'guest' }
 
-/** 개발 중 로그인 상태를 확인할 때 쓰는 기본 회원. */
-export const MOCK_MEMBER: SessionUser = {
-  id: 1,
-  nickname: '기승민',
-  kakaoEmail: 'seungmin@kakao.com',
-  phone: '010-1234-5678',
-  profileImageUrl: null,
-}
-
 function read(): Session {
   if (typeof window === 'undefined') return GUEST
   try {
@@ -77,7 +68,7 @@ export const sessionStore = {
     emit()
   },
 
-  signIn(user: SessionUser = MOCK_MEMBER) {
+  signIn(user: SessionUser) {
     sessionStore.set({ status: 'member', user })
   },
 

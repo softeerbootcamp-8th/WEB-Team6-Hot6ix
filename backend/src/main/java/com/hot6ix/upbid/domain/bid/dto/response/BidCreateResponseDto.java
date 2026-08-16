@@ -1,24 +1,31 @@
 package com.hot6ix.upbid.domain.bid.dto.response;
 
-import com.hot6ix.upbid.domain.bid.entity.Bid;
+import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
+/** Redis가 승인한 입찰 결과. MySQL 비동기 저장 완료 여부와는 무관하다. */
 public record BidCreateResponseDto(
-        Long bidId,
+        String requestId,
         Long auctionItemId,
         Long amount,
-        LocalDateTime acceptedAt
+        LocalDateTime acceptedAt,
+        LocalDateTime endAt,
+        Integer extendedSeconds
 ) {
 
-    /**
-     * 저장된 입찰을 응답으로 변환한다.
-     * {@code auctionItem}은 지연 로딩 프록시여도 식별자만 꺼내므로 추가 조회가 없다.
-     */
-    public static BidCreateResponseDto from(Bid bid) {
+    public static BidCreateResponseDto from(
+            Long auctionItemId,
+            RedisBidDecision.Accepted accepted,
+            ZoneId zoneId) {
+
         return new BidCreateResponseDto(
-                bid.getBidId(),
-                bid.getAuctionItem().getAuctionItemId(),
-                bid.getAmount(),
-                bid.getAcceptedAt());
+                accepted.requestId(),
+                auctionItemId,
+                accepted.amount(),
+                LocalDateTime.ofInstant(Instant.ofEpochMilli(accepted.acceptedAtMillis()), zoneId),
+                LocalDateTime.ofInstant(Instant.ofEpochMilli(accepted.endAtMillis()), zoneId),
+                accepted.extendedSeconds());
     }
 }

@@ -10,6 +10,7 @@
  * OpenAPI spec version: v1
  */
 import type { GetListStatus } from './getListStatus';
+import type { GetListSort } from './getListSort';
 
 export type GetListParams = {
 /**
@@ -20,6 +21,10 @@ keyword?: string;
  * 파생 상태 필터 — 연결된 AuctionItem이 없거나, 유찰(FAILED)이거나, 낙찰(SOLD) 후 거래 후보가 전원 실패했으면 UNREGISTERED(다시 등록할 수 있다). 그 밖에는 READY/IN_PROGRESS/ENDED(낙찰 후 거래가 살아 있음)
  */
 status?: GetListStatus;
+/**
+ * 정렬 기준 — LATEST(최근 등록순), OLDEST(오래된 등록순). 기본값 LATEST
+ */
+sort?: GetListSort;
 /**
  * 0부터 세는 페이지 번호, 기본값 0
  * @minimum 0

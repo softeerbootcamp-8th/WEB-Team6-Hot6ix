@@ -23,7 +23,7 @@ import { useLogout } from '@/api/generated/인증/인증'
  *
  * - 세션: 게스트 / 회원 / 판매자 전환 (라우트 가드 재실행까지). 셋 다 로컬 전용
  *   `POST /auth/dev-login` 으로 실제 세션 쿠키를 발급받는다 — 화면만 회원처럼
- *   보이고 서버는 여전히 비로그인인 상태(과거 `MOCK_MEMBER`)를 만들지 않는다.
+ *   보이고 서버는 여전히 비로그인인 상태를 만들지 않는다.
  *   판매자 프로필이 실제로 있는지는 서버가 `GET /seller-profiles/me` 로 정하므로
  *   흉내 내지 않는다. 여기서 하는 건 **어느 회원으로 붙을지** 고르는 것뿐이다.
  * - 응답 지연: 모든 API 요청에 지연을 걸어 로딩 UI 확인
@@ -97,7 +97,7 @@ export function DevPanel() {
         sessionStore.signOut()
       } else {
         // key 를 생략하면 기본 회원, 주면 그 key 로 회원이 갈린다.
-        await devLogin(key === 'seller' ? { params: { key: SELLER_KEY } } : {})
+        await devLogin(key === 'seller' ? { key: SELLER_KEY } : {})
         await hydrateSession()
       }
       // 앱 초기화 때 채운 캐시가 남아있으면 다음 진입에서 재요청을 안 하므로 지운다.

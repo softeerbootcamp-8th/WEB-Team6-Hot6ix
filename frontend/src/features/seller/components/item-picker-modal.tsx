@@ -286,7 +286,9 @@ export function ItemPickerModal({
                     </>
                   )}
                 </p>
-              ) : (
+              ) : null}
+
+              {visible.length === 0 || isPending || isError ? null : (
                 <ul className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
                   {visible.map((product) => {
                     const productId = product.productId as number
@@ -393,6 +395,20 @@ export function ItemPickerModal({
                     </li>
                   )}
                 </ul>
+              )}
+
+              {/*
+               * 왜 안 보이는지를 적어 둔다.
+               *
+               * 다른 방에 담아둔 상품은 서버가 추가를 거절하므로(4005) 목록에서
+               * 빼는 게 맞는데, 그 이유가 화면 어디에도 없어서 판매자는 분명히
+               * 등록해둔 상품이 그냥 사라진 것으로 본다(#328).
+               */}
+              {!isPending && !isError && !debouncedKeyword && (
+                <p className="mt-3 shrink-0 text-center text-[12px] font-medium text-neutral-muted">
+                  다른 경매방에 올려둔 상품은 여기 보이지 않아요. 그 방에서 빼면
+                  다시 고를 수 있어요.
+                </p>
               )}
             </div>
 

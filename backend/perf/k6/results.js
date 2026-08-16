@@ -1,7 +1,7 @@
-// 10번 — 종료된 경매방 결과 조회. AuctionResultCache 전후 비교용 (#329).
+// 11번 — 종료된 경매방 결과 조회. AuctionResultCache 전후 비교용 (#329).
 //
-// 시나리오 9(enter.js)가 이미 있어서 9가 아니라 10을 쓴다. 재는 대상도 다르다 —
-// 9는 방 공개 조회 둘(입장 폭주), 이건 종료된 방의 결과 조회 하나다.
+// 시나리오 9(enter.js)와 10(scenario10.js, SSE dispatch 부하)이 이미 있어서 11을 쓴다.
+// 재는 대상도 다르다 — 9는 방 공개 조회 둘(입장 폭주), 이건 종료된 방의 결과 조회 하나다.
 //
 //   GET /auction-rooms/share/{shareCode}/results
 //
@@ -10,8 +10,8 @@
 // 히트하면 DB를 아예 안 본다. 하나로 섞어 재면 "히트해도 여전히 쿼리가 남는다"는 사실이
 // 평균 뒤에 숨는다.
 //
-//   ./perf/run.sh --scenario 10 --results-auth guest  --rate 200 --vus 200
-//   ./perf/run.sh --scenario 10 --results-auth member --rate 200 --vus 200
+//   ./perf/run.sh --scenario 11 --results-auth guest  --rate 200 --vus 200
+//   ./perf/run.sh --scenario 11 --results-auth member --rate 200 --vus 200
 //
 // 볼 것: p95, throughput_req_per_s, select_per_result(=Com_select 증가량/요청수).
 // --result-cache 가 구현된 뒤에는 off/on 한 값만 바꿔 이 값들이 어떻게 바뀌는지 본다.

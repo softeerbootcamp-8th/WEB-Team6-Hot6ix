@@ -238,6 +238,67 @@ public class AuctionItem extends BaseTimeEntity {
     }
 
     /**
+     * Redis에서 이미 승인된 입찰을 MySQL의 조회용 상태에 반영한다.
+     *
+     * <p>Stream의 순서와 MySQL 트랜잭션 커밋 순서는 같다는 보장이 없다. 따라서 더 낮은
+     * 금액, 더 이른 마감 시각, 더 작은 누적 연장값은 기존 상태를 덮지 않는다. 판매자가
+     * 마감을 앞당긴 뒤 그보다 전에 승인된 입찰 이벤트가 늦게 도착한 경우에는 과거
+     * {@code endAt}으로 앞당김을 취소하지 않는다. 누적 연장값은 과거에 실제로 일어난
+     * 연장 횟수이므로 이 경우에도 큰 값이면 보존한다.
+     *
+     * @return 이 이벤트로 {@code endAt}이 실제로 뒤로 이동했으면 {@code true}
+     */
+    public boolean applyPersistedBid(User bidder, Long amount, LocalDateTime acceptedAt,
+                                     LocalDateTime persistedEndAt,
+                                     int persistedTotalExtensionSeconds) {
+
+        if (leaderUser == null || amount > currentPrice) {
+            applyBid(bidder, amount);
+        }
+
+        boolean acceptedAfterCloseAdvanced =
+                notifiedAt == null || acceptedAt.isAfter(notifiedAt);
+        boolean endAtAdvanced = acceptedAfterCloseAdvanced
+                && (endAt == null || persistedEndAt.isAfter(endAt));
+        if (endAtAdvanced) {
+            endAt = persistedEndAt;
+        }
+
+        if (persistedTotalExtensionSeconds > totalExtensionSeconds) {
+            totalExtensionSeconds = persistedTotalExtensionSeconds;
+        }
+
+        return endAtAdvanced;
+    }
+
+    /**
+     * 같은 Stream에서 앞선 입찰을 모두 반영한 뒤 도착한 마감 스냅샷으로 최종 상태를 맞춘다.
+     * Redis가 경매 중 판정 원본이므로 마감 순간의 최고가·최고 입찰자를 그대로 사용한다.
+     */
+    public void closeFromRedis(User leader, Long finalPrice, LocalDateTime finalEndAt,
+                               int finalTotalExtensionSeconds) {
+        this.leaderUser = leader;
+        this.currentPrice = finalPrice;
+        this.endAt = finalEndAt;
+        this.totalExtensionSeconds = finalTotalExtensionSeconds;
+        close();
+    }
+
+    /**
+     * Redis에서 원자적으로 확정한 판매자 마감 앞당기기를 DB에 한 번만 반영한다.
+     *
+     * @return 처음 반영했으면 {@code true}, 같은 이벤트 재전달이면 {@code false}
+     */
+    public boolean applyCloseAdvanced(LocalDateTime advancedEndAt, LocalDateTime advancedAt) {
+        if (notifiedAt != null && !advancedAt.isAfter(notifiedAt)) {
+            return false;
+        }
+        this.endAt = advancedEndAt;
+        this.notifiedAt = advancedAt;
+        return true;
+    }
+
+    /**
      * 마감이 임박한 상태였으면 Soft Close로 마감을 뒤로 밀고 누적 연장에 더한다. 연장 폭과
      * 임박 판정 기준은 이 물품이 속한 <b>경매방의 설정</b>이다.
      *

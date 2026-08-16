@@ -4,6 +4,9 @@ public interface TopBidderProjection {
 
     Long getAuctionItemId();
 
+    // 보는 사람 본인인지 가리는 데만 쓴다. 응답에 그대로 싣지 않는다
+    Long getBidderUserId();
+
     // 물품 안에서의 순위
     Integer getRankNo();
 

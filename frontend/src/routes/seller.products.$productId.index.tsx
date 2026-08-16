@@ -6,9 +6,10 @@ import { AppShell } from '@/components/layout/page-shell'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { EmptyState, PageHeader } from '@/components/page-header'
-import { MOCK_TRADES } from '@/mocks/data'
 import { ProductThumbnail } from '@/components/product-thumbnail'
 import { RouteError, RoutePending } from '@/components/route-states'
+import { toDeals } from '@/features/trades/adapt-deal'
+import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
 import {
   PRODUCT_STATUS,
   canDeleteProduct,
@@ -48,6 +49,13 @@ function SellerProductDetailPage() {
   const { data, isPending, isError, error, refetch } = useGetDetail(
     Number(productId),
   )
+  /*
+   * 이 상품의 경매 결과. 거래 목록에서 `productId` 로 찾는다.
+   *
+   * 실패해도 화면을 막지 않는다. 거래는 아래 한 섹션일 뿐이라, 못 받으면 아직
+   * 경매를 안 거친 상품과 같은 안내가 나간다. 상품 정보 자체는 위 조회가 원본이다.
+   */
+  const dealsQuery = useGetDeals()
   const deleteProduct = useDelete1()
 
   if (isPending) return <RoutePending />
@@ -82,9 +90,13 @@ function SellerProductDetailPage() {
   const status = PRODUCT_STATUS[product.status ?? 'UNREGISTERED']
   const editable = canEditProduct(product.status)
   const deletable = canDeleteProduct(product.status)
-  // 경매를 거친 상품은 거래가 남는다. `productId` 로 정확히 잇는다.
-  // TODO: 거래 화면 연동 때 목업을 걷어낸다 (이번 PR 범위 밖).
-  const trade = MOCK_TRADES.find(
+  /*
+   * 경매를 거친 상품은 거래가 남는다. `productId` 로 정확히 잇는다.
+   *
+   * 재등록을 지원해서 한 상품이 여러 거래를 가질 수 있다. 서버가 최근 마감 순으로
+   * 주므로 먼저 걸리는 것이 가장 최근 거래다.
+   */
+  const trade = toDeals(dealsQuery.data?.data).find(
     (candidate) => candidate.productId === product.productId,
   )
 
@@ -172,7 +184,7 @@ function SellerProductDetailPage() {
                       경매방
                     </dt>
                     <dd className="mt-1 truncate text-[14px] font-bold text-foreground">
-                      {trade.roomTitle}
+                      {trade.auctionRoomName}
                     </dd>
                   </div>
                   <div className="rounded-2xl bg-surface-subtle px-4 py-3.5">
@@ -180,7 +192,8 @@ function SellerProductDetailPage() {
                       낙찰가
                     </dt>
                     <dd className="mt-1 text-[14px] font-extrabold tabular-nums text-brand-500">
-                      {formatWon(trade.amount)}
+                      {/* 유찰이면 낙찰가가 없다. */}
+                      {trade.amount === null ? '유찰' : formatWon(trade.amount)}
                     </dd>
                   </div>
                   <div className="rounded-2xl bg-surface-subtle px-4 py-3.5">
@@ -188,7 +201,7 @@ function SellerProductDetailPage() {
                       마감일
                     </dt>
                     <dd className="mt-1 text-[14px] font-bold tabular-nums text-foreground">
-                      {formatDate(trade.closedAt)}
+                      {trade.closedAt ? formatDate(trade.closedAt) : '-'}
                     </dd>
                   </div>
                 </dl>

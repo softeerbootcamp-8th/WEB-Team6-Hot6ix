@@ -17,6 +17,7 @@ export default defineConfig({
       schemas: 'src/api/generated/model',
       client: 'react-query',
       httpClient: 'axios',
+      headers: true,
       clean: true,
       prettier: true,
       override: {
