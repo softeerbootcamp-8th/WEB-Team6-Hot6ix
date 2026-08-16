@@ -229,7 +229,7 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
                 redisTemplate,
                 RedisScript.of(new ClassPathResource("redis/sse-publish.lua"), Long.class),
                 objectMapper,
-                new SseProperties(0L, 0L, BUFFER_SIZE),
+                new SseProperties(0L, 0L, BUFFER_SIZE, "local"),
                 new SseMetrics(new SimpleMeterRegistry()),
                 CLOCK);
     }
