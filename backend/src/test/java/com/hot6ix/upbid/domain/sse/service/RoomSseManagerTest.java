@@ -155,7 +155,7 @@ class RoomSseManagerTest {
     }
 
     @Test
-    @DisplayName("구독하면 참여자 수를 즉시 발행한다")
+    @DisplayName("구독하면 참여자 수를 즉시 증가시켜 발행한다")
     void publishesParticipantCountOnSubscribe() {
 
         ParticipantCountPublisher publisher = mock(ParticipantCountPublisher.class);
@@ -163,11 +163,11 @@ class RoomSseManagerTest {
 
         manager.subscribe(ROOM_ID, null);
 
-        verify(publisher).publish(ROOM_ID, 1);
+        verify(publisher).increment(ROOM_ID, 1);
     }
 
     @Test
-    @DisplayName("연결이 끊기면 heartbeat 를 기다리지 않고 즉시 참여자 수를 발행한다")
+    @DisplayName("연결이 끊기면 heartbeat 를 기다리지 않고 즉시 참여자 수를 감소시켜 발행한다")
     void publishesParticipantCountImmediatelyOnDisconnect() {
 
         ParticipantCountPublisher publisher = mock(ParticipantCountPublisher.class);
@@ -180,7 +180,7 @@ class RoomSseManagerTest {
         // 끊긴 연결은 write 를 시도할 때만 드러난다 — 실제로 보내봐야 disconnect() 가 불린다.
         manager.deliverLocal(ROOM_ID, EVENT_NAME, 1L, "payload");
 
-        verify(publisher, times(1)).publish(ROOM_ID, 0);
+        verify(publisher, times(1)).increment(ROOM_ID, -1);
     }
 
     @Test
@@ -204,7 +204,7 @@ class RoomSseManagerTest {
     }
 
     @Test
-    @DisplayName("heartbeat 로 구독을 걷어내면 남은 구독에 참여자 수를 다시 알린다")
+    @DisplayName("heartbeat 로 구독을 걷어내면 disconnect() 가 즉시 증감을 발행한다")
     void broadcastsCountAfterHeartbeatSweep() {
 
         ParticipantCountPublisher publisher = mock(ParticipantCountPublisher.class);
@@ -218,14 +218,13 @@ class RoomSseManagerTest {
 
         manager.sendHeartbeat();
 
-        // heartbeat 자체는 더 이상 발행하지 않는다 — ping 실패가 disconnect()를 부르고,
-        // disconnect()가 발행한다. 결과는 같지만 경로가 바뀌었다(#311).
-        verify(publisher).publish(eq(ROOM_ID), anyInt());
+        // ping 실패로 걷어낸 연결은 disconnect() 가 즉시 increment(-1) 로 반영한다(#311).
+        verify(publisher).increment(ROOM_ID, -1);
     }
 
     @Test
-    @DisplayName("걷어낼 구독이 없으면 참여자 수를 다시 알리지 않는다")
-    void doesNotBroadcastCountWhenNothingSwept() {
+    @DisplayName("걷어낼 구독이 없어도 heartbeat 마다 절대값을 다시 발행해 TTL 을 갱신한다")
+    void broadcastsAbsoluteCountOnEveryHeartbeatEvenWhenNothingSwept() {
 
         ParticipantCountPublisher publisher = mock(ParticipantCountPublisher.class);
         RoomSseManager manager = newRoomSseManager(mock(SseEventBuffer.class), publisher);
@@ -236,7 +235,9 @@ class RoomSseManagerTest {
 
         manager.sendHeartbeat();
 
-        verify(publisher, never()).publish(eq(ROOM_ID), anyInt());
+        // 연결 변화가 없어도 heartbeat 마다 방 단위로 절대값을 재발행한다 — 그러지 않으면
+        // 조용한 방의 Redis 필드 TTL 이 만료돼 다른 서버 집계에서 이 서버 몫이 빠진다(#311).
+        verify(publisher, times(1)).publish(eq(ROOM_ID), anyInt());
     }
 
     @Test
