@@ -22,10 +22,11 @@ import org.springframework.stereotype.Component;
  * {@code lua/bid.lua}가 하고 이 클래스는 스크립트 호출과 반환 타입 변환만 담당한다.
  *
  * <pre>
- *   auction:item:{id}               HASH  status endAt currentPrice leaderUserId
+ *   auction:item:{id}               HASH  status endAt currentPrice leaderUserId itemName
  *                                         startingPrice bidIncrement sellerUserId
  *                                         Soft Close 설정과 누적 연장 시간
  *   auction:room:{id}:participants  SET   약관 동의를 마친 userId
+ *   auction:room:{id}:participant-nicknames HASH userId -> 화면 표시 nickname
  *   auction:bid:request:{requestId} HASH  전역 requestId별 fingerprint와 첫 승인 결과
  *   auction:bid:stream              STREAM MySQL에 반영할 승인 이벤트
  * </pre>
@@ -43,6 +44,7 @@ public class AuctionRedisStore {
     @SuppressWarnings("rawtypes")
     private final RedisScript<List> bidScript;
     private final RedisScript<Long> seedScript;
+    private final RedisScript<Long> addParticipantScript;
     @SuppressWarnings("rawtypes")
     private final RedisScript<List> closeScript;
 
@@ -53,6 +55,8 @@ public class AuctionRedisStore {
         // NOSCRIPT 가 오면 알아서 EVAL 로 한 번 더 보낸다.
         this.bidScript = new DefaultRedisScript<>(readScript("lua/bid.lua"), List.class);
         this.seedScript = new DefaultRedisScript<>(readScript("lua/seed-auction.lua"), Long.class);
+        this.addParticipantScript = new DefaultRedisScript<>(
+                readScript("lua/add-auction-participant.lua"), Long.class);
         this.closeScript = new DefaultRedisScript<>(readScript("lua/close-auction.lua"), List.class);
     }
 
@@ -101,23 +105,28 @@ public class AuctionRedisStore {
         if ("REJECTED".equals(result.get(0))) {
             return new RedisBidDecision.Rejected(RedisBidDecision.Reason.valueOf(result.get(1)));
         }
-        if (!"ACCEPTED".equals(result.get(0)) || result.size() != 7) {
+        if (!"ACCEPTED".equals(result.get(0)) || result.size() != 11) {
             throw new IllegalStateException("bid.lua가 모르는 결과를 반환했다: " + result);
         }
         return new RedisBidDecision.Accepted(
                 result.get(1),
                 Long.parseLong(result.get(2)),
-                Long.parseLong(result.get(3)),
+                result.get(3),
                 Long.parseLong(result.get(4)),
-                Integer.parseInt(result.get(5)),
-                "1".equals(result.get(6)));
+                result.get(5),
+                Long.parseLong(result.get(6)),
+                Long.parseLong(result.get(7)),
+                Long.parseLong(result.get(8)),
+                Integer.parseInt(result.get(9)),
+                "1".equals(result.get(10)));
     }
 
     /**
      * 엔티티를 불변 seed 스냅샷으로 바꾼 뒤 {@link #seed(AuctionRedisSeed)}에 위임한다.
      * 이미 공개된 Hash는 과거 DB 스냅샷으로 덮어쓰지 않는다.
      */
-    public void seed(AuctionItem item, long roomId, long sellerUserId, Collection<Long> participantUserIds) {
+    public void seed(AuctionItem item, long roomId, long sellerUserId,
+                     Collection<AuctionRedisParticipant> participants) {
         User leader = item.getLeaderUser();
         seed(new AuctionRedisSeed(
                 item.getAuctionItemId(),
@@ -133,7 +142,8 @@ public class AuctionRedisStore {
                 item.getAuctionRoom().getSoftCloseExtendSeconds(),
                 item.getTotalExtensionSeconds(),
                 AuctionItem.MAX_TOTAL_EXTENSION_SECONDS,
-                List.copyOf(participantUserIds)));
+                item.getProduct().getName(),
+                List.copyOf(participants)));
     }
 
     /**
@@ -158,13 +168,20 @@ public class AuctionRedisStore {
         args.add(String.valueOf(seed.totalExtensionSeconds()));
         args.add(String.valueOf(seed.maxTotalExtensionSeconds()));
         args.add(nullableNumber(seed.leaderUserId()));
-        seed.participantUserIds().stream().map(String::valueOf).forEach(args::add);
+        args.add(seed.itemName());
+        for (AuctionRedisParticipant participant : seed.participants()) {
+            args.add(String.valueOf(participant.userId()));
+            args.add(participant.nickname());
+        }
 
         Long result;
         try {
             result = redis.execute(
                     seedScript,
-                    List.of(AuctionRedisKeys.item(seed.itemId()), AuctionRedisKeys.participants(seed.roomId())),
+                    List.of(
+                            AuctionRedisKeys.item(seed.itemId()),
+                            AuctionRedisKeys.participants(seed.roomId()),
+                            AuctionRedisKeys.participantNicknames(seed.roomId())),
                     args.toArray());
         } catch (RuntimeException e) {
             metrics.recordSeedFailure();
@@ -174,9 +191,15 @@ public class AuctionRedisStore {
         return Long.valueOf(1L).equals(result);
     }
 
-    /** 약관 동의를 마친 회원을 방 참여자 SET 에 더한다. */
-    public void addParticipant(long roomId, long userId) {
-        redis.opsForSet().add(AuctionRedisKeys.participants(roomId), String.valueOf(userId));
+    /** 약관 동의를 마친 회원의 판정용 ID와 표시용 nickname을 한 Lua 실행으로 더한다. */
+    public void addParticipant(long roomId, long userId, String nickname) {
+        redis.execute(
+                addParticipantScript,
+                List.of(
+                        AuctionRedisKeys.participants(roomId),
+                        AuctionRedisKeys.participantNicknames(roomId)),
+                String.valueOf(userId),
+                nickname);
     }
 
     public RedisCloseDecision requestNaturalClose(long itemId, long nowMillis) {
@@ -210,10 +233,27 @@ public class AuctionRedisStore {
             throw new IllegalStateException("close-auction.lua가 결과를 반환하지 않았다");
         }
         return switch (result.getFirst()) {
-            case "CLOSING" -> new RedisCloseDecision.Closing(Long.parseLong(result.get(1)));
+            case "CLOSING" -> {
+                if (result.size() != 9) {
+                    throw new IllegalStateException("close-auction.lua CLOSING 결과가 잘못됐다: " + result);
+                }
+                yield new RedisCloseDecision.Closing(
+                        Long.parseLong(result.get(1)),
+                        Long.parseLong(result.get(2)),
+                        result.get(3),
+                        Long.parseLong(result.get(4)),
+                        result.get(5).isBlank() ? null : Long.parseLong(result.get(5)),
+                        result.get(6).isBlank() ? null : result.get(6),
+                        Long.parseLong(result.get(7)),
+                        Long.parseLong(result.get(8)));
+            }
             case "ADVANCED" -> new RedisCloseDecision.Advanced(
-                    Long.parseLong(result.get(1)), Integer.parseInt(result.get(2)),
-                    Long.parseLong(result.get(3)));
+                    Long.parseLong(result.get(1)),
+                    Long.parseLong(result.get(2)),
+                    result.get(3),
+                    Long.parseLong(result.get(4)),
+                    Integer.parseInt(result.get(5)),
+                    Long.parseLong(result.get(6)));
             case "REJECTED" -> new RedisCloseDecision.Rejected(
                     RedisCloseDecision.Reason.valueOf(result.get(1)),
                     result.size() < 3 || result.get(2).isBlank() ? null : Long.parseLong(result.get(2)));

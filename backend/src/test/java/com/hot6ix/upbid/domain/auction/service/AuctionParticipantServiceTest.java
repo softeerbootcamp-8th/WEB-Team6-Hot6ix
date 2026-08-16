@@ -9,6 +9,8 @@ import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
+import com.hot6ix.upbid.domain.user.entity.User;
+import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class AuctionParticipantServiceTest {
@@ -31,6 +34,9 @@ class AuctionParticipantServiceTest {
     @Mock
     private AuctionRedisStore auctionRedisStore;
 
+    @Mock
+    private UserRepository userRepository;
+
     @InjectMocks
     private AuctionParticipantService auctionParticipantService;
 
@@ -39,11 +45,15 @@ class AuctionParticipantServiceTest {
     void agree_recordsAgreement() {
 
         when(auctionRoomRepository.findIdByShareCode("SHARE01")).thenReturn(Optional.of(7L));
+        User user = User.builder().nickname("한기").build();
+        ReflectionTestUtils.setField(user, "userId", 3L);
+        when(userRepository.findByUserIdAndDeletedAtIsNull(3L)).thenReturn(Optional.of(user));
 
         auctionParticipantService.agree("SHARE01", 3L);
 
         verify(auctionParticipantRepository)
                 .recordAgreement(7L, 3L, AuctionParticipantService.CURRENT_TERMS_VERSION);
+        verify(auctionRedisStore).addParticipant(7L, 3L, "한기");
     }
 
     @Test

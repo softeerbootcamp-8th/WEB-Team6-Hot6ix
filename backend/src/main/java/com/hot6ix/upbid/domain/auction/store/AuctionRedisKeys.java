@@ -14,6 +14,10 @@ public final class AuctionRedisKeys {
         return "auction:room:" + roomId + ":participants";
     }
 
+    public static String participantNicknames(long roomId) {
+        return "auction:room:" + roomId + ":participant-nicknames";
+    }
+
     public static String bidRequest(String requestId) {
         return "auction:bid:request:" + requestId;
     }

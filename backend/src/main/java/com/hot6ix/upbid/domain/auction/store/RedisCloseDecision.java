@@ -3,10 +3,20 @@ package com.hot6ix.upbid.domain.auction.store;
 /** Redis Lua가 결정한 자연 마감 또는 판매자 마감 앞당기기 결과. */
 public sealed interface RedisCloseDecision {
 
-    record Closing(long closedAtMillis) implements RedisCloseDecision {
+    record Closing(
+            long roomId,
+            long itemId,
+            String itemName,
+            long currentPrice,
+            Long leaderUserId,
+            String winnerNickname,
+            long endAtMillis,
+            long closedAtMillis
+    ) implements RedisCloseDecision {
     }
 
-    record Advanced(long endAtMillis, int remainingSeconds,
+    record Advanced(long roomId, long itemId, String itemName,
+                    long endAtMillis, int remainingSeconds,
                     long advancedAtMillis) implements RedisCloseDecision {
     }
 

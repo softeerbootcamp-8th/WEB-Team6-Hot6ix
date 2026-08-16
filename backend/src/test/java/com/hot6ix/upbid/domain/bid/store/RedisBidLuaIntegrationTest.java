@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisKeys;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisParticipant;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisSeed;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.global.support.AbstractRedisContainerTest;
@@ -52,6 +53,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 AuctionRedisKeys.item(ITEM_ID),
                 AuctionRedisKeys.item(OTHER_ITEM_ID),
                 AuctionRedisKeys.participants(ROOM_ID),
+                AuctionRedisKeys.participantNicknames(ROOM_ID),
                 AuctionRedisKeys.bidRequest("request-1"),
                 AuctionRedisKeys.stream()));
         meterRegistry = new SimpleMeterRegistry();
@@ -72,6 +74,10 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         long after = redisTimeMillis();
         assertThat(decision).isInstanceOfSatisfying(RedisBidDecision.Accepted.class, accepted -> {
             assertThat(accepted.requestId()).isEqualTo("request-1");
+            assertThat(accepted.roomId()).isEqualTo(ROOM_ID);
+            assertThat(accepted.itemName()).isEqualTo("한정판 피규어");
+            assertThat(accepted.bidderUserId()).isEqualTo(BIDDER_ID);
+            assertThat(accepted.bidderNickname()).isEqualTo("한기");
             assertThat(accepted.acceptedAtMillis()).isBetween(before, after);
             assertThat(accepted.endAtMillis()).isEqualTo(endAt);
             assertThat(accepted.extendedSeconds()).isZero();
@@ -117,6 +123,10 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         RedisBidDecision.Accepted firstAccepted = (RedisBidDecision.Accepted) first;
         assertThat(retried).isEqualTo(new RedisBidDecision.Accepted(
                 firstAccepted.requestId(),
+                ROOM_ID,
+                "한정판 피규어",
+                BIDDER_ID,
+                "한기",
                 10_000L,
                 firstAccepted.acceptedAtMillis(),
                 firstAccepted.endAtMillis(),
@@ -392,7 +402,8 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 extendSeconds,
                 totalExtensionSeconds,
                 3_600,
-                List.of(BIDDER_ID));
+                "한정판 피규어",
+                List.of(new AuctionRedisParticipant(BIDDER_ID, "한기")));
     }
 
     private static long redisTimeMillis() {

@@ -2,17 +2,11 @@ package com.hot6ix.upbid.domain.auction.service;
 
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemCloseEarlyRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
-import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
-import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
-import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisInitializer;
 import com.hot6ix.upbid.domain.auction.store.RedisCloseDecision;
-import com.hot6ix.upbid.global.event.DomainEvent;
-import com.hot6ix.upbid.global.event.payload.ItemEnded;
-import com.hot6ix.upbid.global.event.payload.ItemPassed;
-import com.hot6ix.upbid.global.event.publisher.DomainEventPublisher;
+import com.hot6ix.upbid.domain.auction.realtime.AuctionRealtimeSsePublisher;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import java.time.LocalDateTime;
 import java.time.Instant;
@@ -29,10 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class AuctionItemCloseService {
 
-    private final AuctionItemRepository auctionItemRepository;
-    private final DomainEventPublisher domainEventPublisher;
     private final AuctionRedisStore auctionRedisStore;
     private final AuctionRedisInitializer auctionRedisInitializer;
+    private final AuctionRealtimeSsePublisher auctionRealtimeSsePublisher;
 
     /**
      * 마감 시각이 지났으면 물품을 마감하고, <b>아직 안 지났으면 닫지 않고 그 시각을 돌려준다.</b>
@@ -52,7 +45,10 @@ public class AuctionItemCloseService {
     public Optional<LocalDateTime> closeIfDue(Long auctionItemId) {
         RedisCloseDecision decision = requestNaturalCloseWithSeed(auctionItemId);
         return switch (decision) {
-            case RedisCloseDecision.Closing ignored -> Optional.empty();
+            case RedisCloseDecision.Closing closing -> {
+                publishClosingBestEffort(closing);
+                yield Optional.empty();
+            }
             case RedisCloseDecision.Rejected rejected
                     when rejected.reason() == RedisCloseDecision.Reason.NOT_DUE ->
                     Optional.of(toLocalDateTime(rejected.endAtMillis()));
@@ -80,8 +76,8 @@ public class AuctionItemCloseService {
      * 마감이 다시 밀린다. 곧 이 API는 마감을 <b>확정</b>하지 않고 앞당기기만 한다.
      *
      * <p>소유권·상태·시각 검증과 Hash 갱신, Stream 기록은 Redis Lua 한 번으로 수행한다.
-     * 요청 경로는 MySQL 물품 행을 잠그거나 이벤트를 직접 발행하지 않는다. Consumer가 Stream
-     * 순서대로 DB를 반영하고 커밋 후 {@code ItemCloseAdvanced}를 발행한다.
+     * 요청 경로는 MySQL 물품 행을 잠그지 않는다. 화면 SSE는 Redis 결정 직후 best-effort로
+     * 발행하고, Consumer가 Stream 순서대로 DB와 내부 {@code ItemCloseAdvanced}를 반영한다.
      *
      * <p>거절이 셋이고 화면에서 안내가 다르다. 판정은 {@code close-auction.lua}가 하고 여기서는
      * 에러로만 옮긴다. <b>남길 시간을 Lua 에 넘기는 것이 중요하다</b> — 새 마감 시각을 Redis
@@ -107,8 +103,13 @@ public class AuctionItemCloseService {
                 requestSellerAdvanceWithSeed(auctionItemId, userId, remainingSecondsOf(request));
 
         return switch (decision) {
-            case RedisCloseDecision.Advanced advanced -> new AuctionItemCloseEarlyResponseDto(
-                    auctionItemId, toLocalDateTime(advanced.endAtMillis()), advanced.remainingSeconds());
+            case RedisCloseDecision.Advanced advanced -> {
+                publishAdvancedBestEffort(advanced);
+                yield new AuctionItemCloseEarlyResponseDto(
+                        auctionItemId,
+                        toLocalDateTime(advanced.endAtMillis()),
+                        advanced.remainingSeconds());
+            }
             case RedisCloseDecision.Rejected rejected
                     when rejected.reason() == RedisCloseDecision.Reason.NOT_OWNER ->
                     throw new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND);
@@ -147,6 +148,22 @@ public class AuctionItemCloseService {
         return decision;
     }
 
+    private void publishClosingBestEffort(RedisCloseDecision.Closing closing) {
+        try {
+            auctionRealtimeSsePublisher.publishClosing(closing);
+        } catch (RuntimeException e) {
+            log.error("Redis 자연 마감 뒤 실시간 SSE 발행 실패: itemId={}", closing.itemId(), e);
+        }
+    }
+
+    private void publishAdvancedBestEffort(RedisCloseDecision.Advanced advanced) {
+        try {
+            auctionRealtimeSsePublisher.publishAdvanced(advanced);
+        } catch (RuntimeException e) {
+            log.error("Redis 마감 앞당기기 뒤 실시간 SSE 발행 실패: itemId={}", advanced.itemId(), e);
+        }
+    }
+
     private RedisCloseDecision requestSellerAdvanceWithSeed(
             Long itemId, Long userId, Integer remainingSeconds) {
 
@@ -164,49 +181,4 @@ public class AuctionItemCloseService {
         return LocalDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), ZoneId.systemDefault());
     }
 
-    /**
-     * 마감 대상인 물품을 행 락을 걸고 읽는다. 없거나 진행 중이 아니면 {@code null}이다.
-     * 예약이 아니라 DB가 판단 기준이라, 이미 지난 예약이 중복으로 실행돼도 여기서 걸린다.
-     */
-    private AuctionItem lockClosableItem(Long auctionItemId) {
-
-        AuctionItem auctionItem = auctionItemRepository.findByIdForUpdate(auctionItemId)
-                .orElse(null);
-
-        if (auctionItem == null || auctionItem.getStatus() != AuctionItemStatus.IN_PROGRESS) {
-            log.info("마감할 물품이 아니어서 건너뛴다: itemId={}", auctionItemId);
-            return null;
-        }
-
-        return auctionItem;
-    }
-
-    /** 락을 잡고 마감 대상임을 확인한 물품을 실제로 닫는다. */
-    private void closeLocked(AuctionItem auctionItem, LocalDateTime occurredAt) {
-
-        auctionItem.close();
-
-        domainEventPublisher.publish(toEvent(auctionItem, occurredAt));
-    }
-
-    /**
-     * 리스너가 커밋 후에만 받으므로(DomainEventSseListener) 마감이 롤백되면 이벤트도 나가지 않는다.
-     * 낙찰 이벤트에는 D(낙찰 후보 생성)가 걸려 있다.
-     *
-     * <p><b>두 이벤트 모두 아직 화면까지 가지 않는다.</b> {@code DomainEventSseListener}가 SSE로
-     * 내보낼 DTO를 만드는 자리에 이 둘의 분기가 없어 로그만 남는다. 실시간 채널은 B·E 담당이라
-     * 여기서 함께 고치지 않는다.
-     */
-    private DomainEvent toEvent(AuctionItem auctionItem, LocalDateTime occurredAt) {
-
-        Long roomId = auctionItem.getAuctionRoom().getAuctionRoomId();
-        Long itemId = auctionItem.getAuctionItemId();
-        String itemName = auctionItem.getProduct().getName();
-
-        if (auctionItem.getStatus() == AuctionItemStatus.SOLD) {
-            return ItemEnded.of(roomId, itemId, itemName, auctionItem.getCurrentPrice(),
-                    auctionItem.getLeaderUser().getNickname(), occurredAt);
-        }
-        return ItemPassed.of(roomId, itemId, itemName, occurredAt);
-    }
 }

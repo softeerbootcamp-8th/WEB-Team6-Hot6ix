@@ -9,6 +9,13 @@ import org.springframework.data.repository.query.Param;
 
 public interface AuctionParticipantRepository extends JpaRepository<AuctionParticipant, Long> {
 
+    interface AgreedParticipant {
+
+        Long getUserId();
+
+        String getNickname();
+    }
+
     /**
      * 해당 방에서 유저가 약관에 동의한 기록이 있는지 확인한다.
      * {@code agreed_at}이 존재해야 동의한 것으로 본다.
@@ -42,7 +49,7 @@ public interface AuctionParticipantRepository extends JpaRepository<AuctionParti
      * 쓴다(이슈 #246의 비교군 C). 물품에 첫 입찰이 올 때 한 번 돌고, 그 뒤로는 동의 API가
      * 한 명씩 더한다.
      */
-    @Query("select ap.user.userId from AuctionParticipant ap "
+    @Query("select ap.user.userId as userId, ap.user.nickname as nickname from AuctionParticipant ap "
             + "where ap.auctionRoom.auctionRoomId = :roomId and ap.agreedAt is not null")
-    List<Long> findAgreedUserIds(@Param("roomId") Long roomId);
+    List<AgreedParticipant> findAgreedParticipants(@Param("roomId") Long roomId);
 }

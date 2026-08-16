@@ -6,6 +6,7 @@ import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,11 +34,17 @@ public class AuctionRedisInitializer {
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ITEM_NOT_FOUND));
 
         Long roomId = item.getAuctionRoom().getAuctionRoomId();
+        List<AuctionRedisParticipant> participants = auctionParticipantRepository
+                .findAgreedParticipants(roomId)
+                .stream()
+                .map(participant -> new AuctionRedisParticipant(
+                        participant.getUserId(), participant.getNickname()))
+                .toList();
 
         auctionRedisStore.seed(
                 item,
                 roomId,
                 sellerUserId,
-                auctionParticipantRepository.findAgreedUserIds(roomId));
+                participants);
     }
 }

@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisSeed;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisParticipant;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.bid.config.BidStreamProperties;
 import com.hot6ix.upbid.domain.bid.repository.BidRepository;
@@ -318,7 +319,9 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
                 fixture.seller().getUserId(), AuctionItemStatus.IN_PROGRESS,
                 10_000L, 10_000L, null, 1_000L, toMillis(fixture.item().getEndAt()),
                 60, 60, 0, AuctionItem.MAX_TOTAL_EXTENSION_SECONDS,
-                List.of(fixture.bidder().getUserId())));
+                fixture.item().getProduct().getName(),
+                List.of(new AuctionRedisParticipant(
+                        fixture.bidder().getUserId(), fixture.bidder().getNickname()))));
     }
 
     private static BidStreamEvent.BidAccepted acceptedEvent(

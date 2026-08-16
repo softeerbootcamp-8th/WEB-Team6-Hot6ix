@@ -1,10 +1,12 @@
 package com.hot6ix.upbid.domain.sse.test;
 
-import com.hot6ix.upbid.global.event.payload.BidPlaced;
+import com.hot6ix.upbid.domain.sse.dto.BidPlacedDto;
+import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
+import com.hot6ix.upbid.domain.sse.dto.SoftCloseExtendedDto;
+import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
+import com.hot6ix.upbid.global.event.EventType;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
-import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemStarted;
-import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -25,6 +27,7 @@ import java.time.LocalDateTime;
 public class TestEventController {
 
     private final ApplicationEventPublisher eventPublisher;
+    private final SseEventPublisher sseEventPublisher;
 
     @PostMapping("/item-started")
     public void fireItemStarted(
@@ -59,9 +62,10 @@ public class TestEventController {
             @RequestParam(defaultValue = "테스터") String bidderNickname,
             @RequestParam(defaultValue = "10000") Long bidPrice
     ) {
-        eventPublisher.publishEvent(
-                BidPlaced.of(roomId, itemId, itemName, bidderNickname, bidPrice, LocalDateTime.now())
-        );
+        sseEventPublisher.publish(
+                EventType.BID_PLACED.name(),
+                roomId,
+                new BidPlacedDto(itemId, itemName, bidPrice, bidderNickname));
     }
 
     @PostMapping("/item-ended")
@@ -72,9 +76,10 @@ public class TestEventController {
             @RequestParam(defaultValue = "85000") Long finalPrice,
             @RequestParam(defaultValue = "테스터") String winnerNickname
     ) {
-        eventPublisher.publishEvent(
-                ItemEnded.of(roomId, itemId, itemName, finalPrice, winnerNickname, LocalDateTime.now())
-        );
+        sseEventPublisher.publish(
+                EventType.ITEM_ENDED.name(),
+                roomId,
+                new ItemEndedDto(itemId, itemName, finalPrice, winnerNickname));
     }
 
     @PostMapping("/soft-close-extended")
@@ -86,7 +91,10 @@ public class TestEventController {
     ) {
         LocalDateTime now = LocalDateTime.now();
 
-        eventPublisher.publishEvent(SoftCloseExtended.of(
-                roomId, itemId, itemName, extendSeconds, now.plusSeconds(extendSeconds), now));
+        sseEventPublisher.publish(
+                EventType.SOFT_CLOSE_EXTENDED.name(),
+                roomId,
+                new SoftCloseExtendedDto(itemId, itemName, extendSeconds,
+                        now.plusSeconds(extendSeconds)));
     }
 }

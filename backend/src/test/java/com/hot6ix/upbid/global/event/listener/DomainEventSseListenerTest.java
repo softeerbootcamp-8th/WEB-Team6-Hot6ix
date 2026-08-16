@@ -7,11 +7,13 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import com.hot6ix.upbid.domain.sse.dto.ItemClosingSoonDto;
-import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
 import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import com.hot6ix.upbid.global.event.payload.DealRightAssigned;
 import com.hot6ix.upbid.global.event.payload.ItemClosingSoon;
+import com.hot6ix.upbid.global.event.payload.BidPlaced;
+import com.hot6ix.upbid.global.event.payload.SoftCloseExtended;
+import com.hot6ix.upbid.global.event.payload.ItemCloseAdvanced;
 import com.hot6ix.upbid.global.event.payload.ItemEnded;
 import com.hot6ix.upbid.global.event.payload.ItemPassed;
 import com.hot6ix.upbid.global.event.payload.RoomClosed;
@@ -42,26 +44,24 @@ class DomainEventSseListenerTest {
     private DomainEventSseListener domainEventSseListener;
 
     @Test
-    @DisplayName("낙찰은 ITEM_ENDED로 낙찰가와 낙찰자를 함께 내보낸다")
-    void sendsItemEnded() {
+    @DisplayName("Redis가 이미 알린 입찰·연장·앞당기기·마감 이벤트는 DB 커밋 뒤 다시 내보내지 않는다")
+    void skipsRedisFirstEventsAfterMysqlCommit() {
 
         domainEventSseListener.on(
+                BidPlaced.of(ROOM_ID, ITEM_ID, "한정판 피규어", "한기", 12_000L, OCCURRED_AT));
+        domainEventSseListener.on(
+                SoftCloseExtended.of(
+                        ROOM_ID, ITEM_ID, "한정판 피규어", 30,
+                        OCCURRED_AT.plusSeconds(30), OCCURRED_AT));
+        domainEventSseListener.on(
+                ItemCloseAdvanced.of(
+                        ROOM_ID, ITEM_ID, "한정판 피규어", 60,
+                        OCCURRED_AT.plusSeconds(60), OCCURRED_AT));
+        domainEventSseListener.on(
                 ItemEnded.of(ROOM_ID, ITEM_ID, "한정판 피규어", 12_000L, "한기", OCCURRED_AT));
-
-        assertThat(sentDto("ITEM_ENDED")).isEqualTo(
-                new ItemEndedDto(ITEM_ID, "한정판 피규어", 12_000L, "한기"));
-    }
-
-    @Test
-    @DisplayName("유찰도 ITEM_ENDED로 내보내며 낙찰가와 낙찰자는 비운다")
-    void sendsItemPassedAsItemEnded() {
-
         domainEventSseListener.on(ItemPassed.of(ROOM_ID, ITEM_ID, "한정판 피규어", OCCURRED_AT));
 
-        assertThat(sentDto("ITEM_ENDED"))
-                .as("화면에서 낙찰과 유찰은 '물품이 닫혔다'는 같은 사건이고, "
-                        + "구분은 winnerNickname으로 한다. ITEM_PASSED로 내보내면 화면이 듣지 않는다")
-                .isEqualTo(new ItemEndedDto(ITEM_ID, "한정판 피규어", null, null));
+        verify(sseEventPublisher, never()).publish(any(), any(), any());
     }
 
     @Test

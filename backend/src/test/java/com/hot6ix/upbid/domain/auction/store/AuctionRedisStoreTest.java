@@ -22,6 +22,8 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
     private static final long ROOM_ID = 202L;
     private static final String ITEM_KEY = "auction:item:101";
     private static final String PARTICIPANTS_KEY = "auction:room:202:participants";
+    private static final String PARTICIPANT_NICKNAMES_KEY =
+            "auction:room:202:participant-nicknames";
 
     private static LettuceConnectionFactory connectionFactory;
     private static StringRedisTemplate redis;
@@ -41,7 +43,7 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
 
     @BeforeEach
     void clearKeys() {
-        redis.delete(List.of(ITEM_KEY, PARTICIPANTS_KEY));
+        redis.delete(List.of(ITEM_KEY, PARTICIPANTS_KEY, PARTICIPANT_NICKNAMES_KEY));
         store = new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry()));
     }
 
@@ -75,12 +77,19 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
         assertThat(store.seed(seed(List.of(11L)))).isTrue();
         redis.opsForHash().put(ITEM_KEY, "currentPrice", "15000");
         redis.opsForHash().put(ITEM_KEY, "leaderUserId", "11");
+        redis.opsForHash().delete(ITEM_KEY, "itemName");
+        redis.delete(PARTICIPANT_NICKNAMES_KEY);
 
         boolean createdAgain = store.seed(seed(List.of(11L, 12L)));
 
         assertThat(createdAgain).isFalse();
         assertThat(redis.opsForHash().get(ITEM_KEY, "currentPrice")).isEqualTo("15000");
         assertThat(redis.opsForHash().get(ITEM_KEY, "leaderUserId")).isEqualTo("11");
+        assertThat(redis.opsForHash().get(ITEM_KEY, "itemName")).isEqualTo("한정판 피규어");
+        assertThat(redis.opsForSet().members(PARTICIPANTS_KEY))
+                .containsExactlyInAnyOrder("11", "12");
+        assertThat(redis.opsForHash().entries(PARTICIPANT_NICKNAMES_KEY))
+                .containsExactlyInAnyOrderEntriesOf(Map.of("11", "user-11", "12", "user-12"));
     }
 
     @Test
@@ -116,6 +125,9 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
                 60,
                 0,
                 3_600,
-                participantUserIds);
+                "한정판 피규어",
+                participantUserIds.stream()
+                        .map(userId -> new AuctionRedisParticipant(userId, "user-" + userId))
+                        .toList());
     }
 }
