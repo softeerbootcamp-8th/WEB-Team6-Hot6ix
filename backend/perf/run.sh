@@ -1452,6 +1452,16 @@ OLD_GEN_MB_MAX="$(promq "max(max_over_time(sum(jvm_memory_used_bytes{$OLD_GEN})[
 # 구간 안에 Full GC 가 없으면(3분 줄이 대개 그렇다) 이 값은 "치운 뒤 바닥"이 아니라 그냥
 # 구간 시작값이다. 바닥으로 읽으려면 full_gc_count 가 1 이상인 줄이어야 한다.
 OLD_GEN_MB_MIN="$(promq "min(min_over_time(sum(jvm_memory_used_bytes{$OLD_GEN})[$W:5s])) / 1024 / 1024")"
+
+# JVM 이 디스크로 내려간 양. **Full GC 정지 시간을 설명하는 값이다.**
+#
+# Full GC 는 오래 사는 영역 전체를 훑는데 그중 스왑된 페이지는 디스크에서 끌어와야 한다.
+# 힙이 차서 느려진 것인지 스왑에서 끌어오느라 느려진 것인지는 이 값을 같은 구간에 나란히
+# 놓아야 갈린다 (실측: t4g.micro 에서 메모리 384MB 에 스왑 429MB).
+#
+# 리눅스가 아니면 앱이 지표 자체를 안 만든다. 그때는 NaN 이고 0 으로 안 바꾼다.
+SWAP_MB_MAX="$(promq "max(max_over_time(process_swap_bytes{$RUN}[$W])) / 1024 / 1024")"
+RSS_MB_MAX="$(promq "max(max_over_time(process_rss_bytes{$RUN}[$W])) / 1024 / 1024")"
 # Full GC 가 한 번도 없으면 시계열이 아예 없다. 그대로 두면 NaN 이라 "0 번"과 구분이 안 된다.
 FULL_GC="$RUN, action=\"end of major GC\""
 FULL_GC_COUNT="$(promq "sum($(delta "jvm_gc_pause_seconds_count{$FULL_GC}")) or vector(0)")"
@@ -1698,6 +1708,8 @@ HIKARI_PENDING_MAX="$(round "$HIKARI_PENDING_MAX" 0)"
 HEAP_MB_MAX="$(round "$HEAP_MB_MAX" 0)"
 OLD_GEN_MB_MAX="$(round "$OLD_GEN_MB_MAX" 0)"
 OLD_GEN_MB_MIN="$(round "$OLD_GEN_MB_MIN" 0)"
+SWAP_MB_MAX="$(round "$SWAP_MB_MAX" 0)"
+RSS_MB_MAX="$(round "$RSS_MB_MAX" 0)"
 FULL_GC_COUNT="$(round "$FULL_GC_COUNT" 0)"
 FULL_GC_PAUSE_MAX_MS="$(round "$FULL_GC_PAUSE_MAX_MS" 0)"
 
@@ -2044,7 +2056,7 @@ jq -n \
     sse_client:{target_reached:($sse_client_reached=="1")},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,bid_api_p95_ms,bid_api_p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,old_gen_mb_max,old_gen_mb_min,full_gc_count,full_gc_pause_max_ms,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,bid_rate_limit,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_broadcast_p99_ms,sse_conn_max,sse_connections_opened,sse_connections_closed,sse_events_published,sse_send_attempts,sse_send_successes,sse_send_failures,sse_send_failure_rate,sse_fanout_p95_ms,sse_send_p95_ms,sse_send_p99_ms,sse_queue_depth_max,sse_queue_wait_p95_ms,sse_in_flight_max,sse_rejected,sse_client_conn_min,sse_client_conn_max,sse_client_scrape_up_min,sse_client_connections_opened,sse_client_unexpected_closes,sse_client_connection_errors,sse_client_events_received,sse_client_bid_events_received,sse_client_delivery_ratio,sse_msg_latency_p95_ms,sse_msg_latency_p99_ms,sse_msg_latency_samples,sse_client_latency_pending,sse_client_missing,sse_client_duplicate,sse_client_out_of_order,sse_client_parse_errors,sse_correlation_failed,sse_client_cpu_max,jvm_threads_live_max,sse_queue_saturated,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,process_open_fds_max,process_max_fds,process_fd_usage_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,redis_cpu_avg,redis_cpu_max,virtual_threads,sse_vt,sse_dispatch_pool,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,bid_api_p95_ms,bid_api_p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,swap_mb_max,rss_mb_max,old_gen_mb_max,old_gen_mb_min,full_gc_count,full_gc_pause_max_ms,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,bid_rate_limit,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_broadcast_p99_ms,sse_conn_max,sse_connections_opened,sse_connections_closed,sse_events_published,sse_send_attempts,sse_send_successes,sse_send_failures,sse_send_failure_rate,sse_fanout_p95_ms,sse_send_p95_ms,sse_send_p99_ms,sse_queue_depth_max,sse_queue_wait_p95_ms,sse_in_flight_max,sse_rejected,sse_client_conn_min,sse_client_conn_max,sse_client_scrape_up_min,sse_client_connections_opened,sse_client_unexpected_closes,sse_client_connection_errors,sse_client_events_received,sse_client_bid_events_received,sse_client_delivery_ratio,sse_msg_latency_p95_ms,sse_msg_latency_p99_ms,sse_msg_latency_samples,sse_client_latency_pending,sse_client_missing,sse_client_duplicate,sse_client_out_of_order,sse_client_parse_errors,sse_correlation_failed,sse_client_cpu_max,jvm_threads_live_max,sse_queue_saturated,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,process_open_fds_max,process_max_fds,process_fd_usage_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,redis_cpu_avg,redis_cpu_max,virtual_threads,sse_vt,sse_dispatch_pool,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -2081,6 +2093,7 @@ VALUES=( \
   "$ROOM_READ_P95_MS" "$ITEMS_READ_P95_MS" \
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" \
   "$CONN_ACQUIRE_P95_MS" "$CONN_ACQUIRE_P99_MS" "$CONN_USAGE_P95_MS" "$CONN_USAGE_P99_MS" "$CONN_TIMEOUT_COUNT" "$HEAP_MB_MAX" \
+  "$SWAP_MB_MAX" "$RSS_MB_MAX" \
   "$OLD_GEN_MB_MAX" "$OLD_GEN_MB_MIN" "$FULL_GC_COUNT" "$FULL_GC_PAUSE_MAX_MS" \
   "$BEFORE_LOCK_P95_MS" "$LOCK_WAIT_P95_MS" "$LOCK_HOLD_P95_MS" \
   "$LOCK_HOLD_ACC_P95_MS" "$LOCK_HOLD_REJ_P95_MS" "$COMMIT_P95_MS" \
@@ -2191,6 +2204,7 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | 커넥션 사용 p95 / p99 | ${CONN_USAGE_P95_MS} / ${CONN_USAGE_P99_MS} ms |
 | 커넥션 timeout | ${CONN_TIMEOUT_COUNT} 회 |
 | 힙 max | ${HEAP_MB_MAX} MB |
+| **스왑 / 실제 메모리** max | **${SWAP_MB_MAX} / ${RSS_MB_MAX} MB** ← 스왑이 크면 Full GC 가 디스크를 읽는다 |
 | &nbsp;&nbsp;└ 오래 사는 영역 max / 바닥 | ${OLD_GEN_MB_MAX} / ${OLD_GEN_MB_MIN} MB ← 바닥이 실행마다 오르면 누수다 |
 | **Full GC** 횟수 / 제일 오래 멈춘 시간 | **${FULL_GC_COUNT} 회 / ${FULL_GC_PAUSE_MAX_MS} ms** ← 이 시간은 앱이 통째로 멈춘다 |
 | **T2** 락 앞 (커넥션 획득 + SELECT 3개) p95 | ${BEFORE_LOCK_P95_MS} ms |
@@ -2302,6 +2316,7 @@ printf '스레드 %s   커넥션 %s active / %s pending (획득 p95 %s ms)   힙
   "$TOMCAT_BUSY_MAX" "$HIKARI_ACTIVE_MAX" "$HIKARI_PENDING_MAX" "$CONN_ACQUIRE_P95_MS" "$HEAP_MB_MAX" "$K6_CPU_MAX"
 printf '오래 사는 영역 %s MB (바닥 %s)   Full GC %s 회 (제일 오래 멈춘 %s ms)\n' \
   "$OLD_GEN_MB_MAX" "$OLD_GEN_MB_MIN" "$FULL_GC_COUNT" "$FULL_GC_PAUSE_MAX_MS"
+printf '스왑 %s MB   실제 메모리 %s MB\n' "$SWAP_MB_MAX" "$RSS_MB_MAX"
 printf 'CPU %s 코어   앱 평균 %s%% 최대 %s%%   MySQL 평균 %s%% 최대 %s%%\n' \
   "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX"
 printf 'SSE 접속 max %s   마감 지연 p95 %s ms\n' "$SSE_CONN_MAX" "$CLOSE_DELAY_P95_MS"
