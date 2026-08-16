@@ -12,7 +12,7 @@ import {
   formatWon,
   toHref,
 } from '@/lib/format'
-import type { AuctionItemDetail, RoomEvent } from '@/mocks/types'
+import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
 
 /**
  * 모바일 물품 상세 (Figma `MOB-05 · 구매자 · 물품 상세 (LIVE)`, 713:4920).
@@ -94,8 +94,18 @@ export function MobileItemDetailView({
    */
   const outbid = priceAtConfirm !== null && item.currentPrice > priceAtConfirm
 
+  /**
+   * 마감 시각이 지났는데 서버 마감 이벤트가 아직 안 온 상태.
+   *
+   * "마감 처리 중"으로 적어 두는 동안에도 입찰 바가 살아 있으면 이미 끝난
+   * 물품에 넣어보게 된다. 서버가 `7002` 로 거절하므로 결과는 같지만, 눌리지
+   * 않게 해서 헛수고를 만들지 않는다.
+   */
+  const settling = !closed && !ready && remaining <= 0
+
   /** 지금 금액을 조절할 수 있는 상태인지 */
-  const biddable = !closed && !ready && onAmountChange !== undefined
+  const biddable =
+    !closed && !ready && !settling && onAmountChange !== undefined
   const belowMinimum = amount < minimum
 
   return (
@@ -148,7 +158,7 @@ export function MobileItemDetailView({
             {item.name}
           </h2>
           <p className="mt-2 text-[12px] font-medium text-neutral-tertiary">
-            {sellerName} · {item.category}
+            {sellerName}
           </p>
 
           {/* 현재 최고가 알약 — 브랜드색으로 강조한다. */}
@@ -382,21 +392,31 @@ export function MobileItemDetailView({
                     +{(item.bidUnit * multiplier).toLocaleString('ko-KR')}
                   </button>
                 ))}
+                {/* 칸을 비우는 게 아니라 최소 입찰가를 넣는다. `quick-bid-overlay.tsx` 참고. */}
                 <button
                   type="button"
                   onClick={() => onAmountChange?.(minimum)}
                   disabled={amount === minimum}
                   className="ease-soft h-10 shrink-0 rounded-xl bg-fill px-3 text-[13px] font-bold text-neutral-tertiary transition-all duration-150 active:scale-95 disabled:opacity-40"
                 >
-                  초기화
+                  최소가
                 </button>
               </div>
 
-              {belowMinimum && (
-                <p className="mt-2.5 text-center text-[11px] font-semibold text-live">
-                  최소 {formatWon(minimum)}부터 입찰할 수 있어요
-                </p>
-              )}
+              {/*
+               * 자리를 항상 잡아 둔다. 남이 입찰하면 최소가가 올라가 이 경고가
+               * 켜졌다가 자동 상향으로 곧 꺼지는데, 조건부로 그리면 그때마다
+               * 하단 입찰 바가 튀어서 누르려던 곳을 못 누른다.
+               */}
+              <p
+                aria-hidden={!belowMinimum}
+                className={cn(
+                  'mt-2.5 min-h-[16px] text-center text-[11px] font-semibold text-live',
+                  belowMinimum ? 'visible' : 'invisible',
+                )}
+              >
+                최소 {formatWon(minimum)}부터 입찰할 수 있어요
+              </p>
             </>
           ) : null}
 
@@ -475,14 +495,16 @@ export function MobileItemDetailView({
                     }
                   : undefined
               }
-              disabled={bidBlocked || pending}
+              disabled={bidBlocked || settling || pending}
               className="ease-soft mt-3 flex h-13 w-full items-center justify-center gap-2 rounded-[14px] bg-brand-500 text-[16px] font-bold text-white transition-all duration-150 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-border-strong disabled:opacity-100 disabled:active:scale-100"
             >
               {closed
                 ? '마감된 물품이에요'
                 : ready
                   ? '아직 시작 전이에요'
-                  : `${formatWon(amount)} 입찰하기`}
+                  : settling
+                    ? '마감 처리 중이에요'
+                    : `${formatWon(amount)} 입찰하기`}
             </button>
           )}
         </div>

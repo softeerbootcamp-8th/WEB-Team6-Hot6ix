@@ -1,12 +1,13 @@
 import { isAxiosError } from 'axios'
 
-import type { CommonResponseBidCreateResponseDto } from '@/api/generated/model'
+import { readValidationMessage } from '@/lib/validation-message'
 
 /**
  * 입찰 실패 응답을 사용자에게 보여줄 문구로 바꾼다.
  *
  * 서버가 보낸 `message` 를 그대로 띄우지 않는다. 서버 문구는 개발자 기준이라
- * "그래서 뭘 하면 되는지"가 없다 (`API-INTEGRATION.md` 3장).
+ * "그래서 뭘 하면 되는지"가 없다 (`API-INTEGRATION.md` 3장). 예외는 검증 실패의
+ * `errors[]` 하나다 (`readValidationMessage`).
  */
 
 export interface BidErrorMessage {
@@ -16,14 +17,6 @@ export interface BidErrorMessage {
   description: string
   /** 같은 금액으로 다시 눌러볼 만한 실패인지. false 면 재시도를 권하지 않는다. */
   retryable: boolean
-}
-
-const BID_AMOUNT_LIMIT_MESSAGE = '입찰 가능한 금액 범위를 초과했어요'
-
-const BID_AMOUNT_LIMIT_ERROR: BidErrorMessage = {
-  title: BID_AMOUNT_LIMIT_MESSAGE,
-  description: '금액을 낮춰 다시 입력해 주세요.',
-  retryable: true,
 }
 
 /**
@@ -93,6 +86,16 @@ const BY_CODE: Record<number, BidErrorMessage> = {
     description: '공유받은 링크로 입장해 약관에 동의해 주세요.',
     retryable: false,
   },
+  /*
+   * 입찰 Rate Limiter 가 거절했다(429). 표에 없어서 "입찰하지 못했어요. 잠시 뒤에
+   * 다시 시도해 주세요" 로 떨어지고 있었는데, 그러면 너무 빨리 눌렀다는 사실이
+   * 안 드러나 사용자가 같은 속도로 계속 누른다.
+   */
+  7009: {
+    title: '너무 빨리 입찰했어요',
+    description: '잠시 뒤에 다시 눌러 주세요.',
+    retryable: true,
+  },
 }
 
 const UNKNOWN: BidErrorMessage = {
@@ -113,23 +116,22 @@ export function toBidErrorMessage(error: unknown): BidErrorMessage {
     }
   }
 
-  const data = error.response.data as
-    CommonResponseBidCreateResponseDto | undefined
-  const amountError = data?.errors?.find(({ field }) => field === 'amount')
-
-  if (
-    data?.code === 2002 &&
-    amountError?.message === BID_AMOUNT_LIMIT_MESSAGE
-  ) {
-    return BID_AMOUNT_LIMIT_ERROR
-  }
-
-  const code = data?.code
+  const code = (error.response.data as { code?: number } | undefined)?.code
   const known = code === undefined ? undefined : BY_CODE[code]
 
   if (import.meta.env.DEV && !known) {
     console.error('처리하지 않은 입찰 에러', error.response.status, code, error)
   }
 
-  return known ?? UNKNOWN
+  /*
+   * 어느 칸이 왜 걸렸는지는 서버가 알려준 문구가 표보다 정확하다.
+   *
+   * 예전에는 금액 상한 문구 하나만 하드코딩으로 골라내 제목까지 바꿨는데, 그
+   * 문구를 서버에서 한 글자만 고쳐도 조용히 안 걸리게 되는 구조였다. 이제
+   * 검증 실패는 전부 서버 문구를 설명 줄에 그대로 싣는다.
+   */
+  const detail = readValidationMessage(error)
+  const message = known ?? UNKNOWN
+
+  return detail === null ? message : { ...message, description: detail }
 }

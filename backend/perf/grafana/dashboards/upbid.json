@@ -1667,6 +1667,35 @@
       "targets": [
         { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(sse_client_events_received_total{run=~\"$run\", event=\"BID_PLACED\"}[30s])) / clamp_min(sum(rate(upbid_sse_send_successes_total{run=~\"$run\", event=\"BID_PLACED\"}[30s])), 0.000000001) * 100", "legendFormat": "delivery ratio", "range": true, "refId": "A" }
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "메모리와 스왑 (MB)",
+      "description": "스왑이 크면 Full GC 가 오래 사는 영역을 훑을 때 디스크를 읽는다. 정지가 길어지는 구간에서 스왑도 같이 오르는지를 본다.\n오래 사는 영역의 바닥이 실행마다 올라가면 누수다. 꼭대기는 GC 직전 값이라 새든 안 새든 차오른다.",
+      "id": 37,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 0, "y": 119, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "decmbytes" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "process_swap_bytes{run=~\"$run\"} / 1024 / 1024", "legendFormat": "swap (MB)", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "process_rss_bytes{run=~\"$run\"} / 1024 / 1024", "legendFormat": "RSS (MB)", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(jvm_memory_used_bytes{run=~\"$run\", area=\"heap\", id=~\".*(Old Gen|Tenured Gen).*\"}) / 1024 / 1024", "legendFormat": "old gen (MB)", "range": true, "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Full GC 정지 (ms)",
+      "description": "이 시간 동안 앱이 통째로 멈춘다. 누적 횟수가 안 늘면 그 구간에 Full GC 가 없었다는 뜻이라 3분 줄에서는 평평한 것이 정상이다.\n주기가 20분이라 표본을 보려면 소크로 잰다.",
+      "id": 38,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 12, "y": 119, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "jvm_gc_pause_seconds_max{run=~\"$run\", action=\"end of major GC\"} * 1000", "legendFormat": "Full GC 최대 정지 (ms)", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "jvm_gc_pause_seconds_count{run=~\"$run\", action=\"end of major GC\"}", "legendFormat": "Full GC 누적 횟수", "range": true, "refId": "B" }
+      ]
     }
   ],
   "templating": {

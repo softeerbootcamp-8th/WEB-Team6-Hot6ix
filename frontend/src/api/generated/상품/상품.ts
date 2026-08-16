@@ -266,7 +266,7 @@ export const useDelete1 = <TError = ErrorType<CommonResponseVoid>,
       return useMutation(mutationOptions, queryClient);
     }
     /**
- * 로그인한 판매자 본인의 상품 목록을 productId 최신순으로 조회한다. 정렬 키를 항상 불변인 productId로 고정해 커서 페이지네이션이 안정적으로 동작하며, 상태(등록 여부·경매 진행 상태)는 정렬이 아니라 필터로만 사용한다.
+ * 로그인한 판매자 본인의 상품 목록을 한 페이지 조회한다. 정렬 키를 항상 불변인 productId로 고정하고 sort로 방향만 고르며(기본 최신순), 상태(등록 여부·경매 진행 상태)는 정렬이 아니라 필터로만 사용한다. 화면이 페이지 번호로 임의 페이지에 바로 가고 전체 개수를 표시하므로 커서가 아니라 offset 페이지네이션이다 — 응답의 totalElements·totalPages가 그 값이다. 전체 페이지 수를 넘는 page는 오류가 아니라 빈 목록으로 응답한다.
  * @summary 내 상품 목록 조회
  */
 export const getList = (

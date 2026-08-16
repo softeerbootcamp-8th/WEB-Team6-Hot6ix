@@ -134,19 +134,18 @@ function ShareQr({
     <div className="mt-3 flex min-h-0 flex-1 flex-col items-center justify-center rounded-2xl bg-surface-subtle p-4">
       {/*
        * 자리에 맞춰 늘어난다. 모바일 모달은 높이가 680px 로 고정(퀵입찰 목록
-       * 때문)이라 QR 이 180px 이면 위아래가 휑했다. QR 은 클수록 스캔이 잘 되므로
-       * 남는 폭을 먹게 두고, 데스크톱 오른쪽 열에서는 열 너비가 상한이 된다.
+       * 때문)이라 QR 이 180px 이면 위아래가 휑했다. 남는 폭을 먹게 두고,
+       * 데스크톱 오른쪽 열에서는 열 너비가 상한이 된다.
+       *
+       * 상한은 카드 폭의 80%(최대 224px)다. 꽉 채우면 카드 안이 QR 하나로
+       * 가득 차 보인다. 이 정도면 화면으로 스캔하는 데 지장이 없다.
        */}
-      <QrCode value={shareUrl} className="max-h-full max-w-[min(100%,280px)]" />
-
-      <p className="mt-3 text-center text-[12px] font-medium text-neutral-tertiary">
-        QR 코드 · 오프라인에서 바로 공유
-      </p>
+      <QrCode value={shareUrl} className="max-h-full max-w-[min(80%,224px)]" />
 
       <button
         type="button"
         onClick={save}
-        className="ease-soft mt-3 flex h-10 items-center gap-1.5 rounded-xl border bg-card px-4 text-[12px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-50 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+        className="ease-soft mt-3 flex h-10 items-center gap-1.5 rounded-xl px-4 text-[12px] font-bold text-brand-500 transition-all duration-150 hover:bg-brand-50 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
       >
         <Download aria-hidden className="size-3.5" />
         이미지 저장

@@ -22,9 +22,10 @@ public class BidController implements BidApi {
     @PostMapping
     @Override
     public ResponseEntity<CommonResponse<BidCreateResponseDto>> place(
-            Long auctionItemId, Long userId, BidCreateRequestDto request) {
+            Long auctionItemId, Long userId, String requestId, BidCreateRequestDto request) {
 
-        BidCreateResponseDto response = bidService.place(auctionItemId, userId, request.amount());
+        BidCreateResponseDto response = bidService.place(
+                auctionItemId, userId, request.amount(), requestId);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(CommonResponse.ok(response, "입찰이 접수되었습니다."));

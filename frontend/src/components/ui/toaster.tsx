@@ -1,5 +1,5 @@
 import { AlertCircle, Check, Info, X } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { BidAcceptedMotion } from '@/components/BidAcceptedMotion'
 import { cn } from '@/lib/utils'
@@ -38,15 +38,55 @@ const TONE: Record<
 
 export function Toaster() {
   const toasts = useToasts()
+  const ref = useRef<HTMLDivElement>(null)
+  const ids = toasts.map(({ id }) => id).join(',')
+
+  /*
+   * **팝오버로 띄운다. `z-index` 로는 모달을 못 이긴다.**
+   *
+   * `Modal` 은 `showModal()` 로 열려 top layer 에 올라가고, 그 위에는 일반 DOM 이
+   * 어떤 `z-index` 를 줘도 올라갈 수 없다. backdrop 도 그 위를 덮는다. 그래서
+   * 모바일에서 입찰이 거절되면 경고가 다이얼로그 뒤에 깔려, 모달을 닫아야만
+   * 보였다(#328). 팝오버도 top layer 라 같은 층에서 겨루게 된다.
+   *
+   * **알림이 바뀔 때마다 다시 띄운다.** top layer 는 나중에 올라온 것이 위에
+   * 오므로, 토스트가 떠 있는 사이에 모달이 열리면 순서가 뒤집힌다. 다시 띄우면
+   * 그때마다 맨 위로 올라간다. 이미 떠 있는 팝오버에 `showPopover()` 를 다시
+   * 부르면 예외가 나므로 먼저 내린다.
+   *
+   * `manual` 이라 다른 팝오버가 열려도 닫히지 않고, ESC 로도 안 닫힌다 —
+   * 자동 닫기와 닫기 버튼이 수명을 관리한다.
+   */
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+
+    try {
+      // 이미 떠 있는데 `showPopover()` 를 부르면 예외가 난다.
+      if (node.matches(':popover-open')) node.hidePopover()
+      node.showPopover()
+    } catch {
+      // 팝오버를 모르는 브라우저. 일반 DOM 그대로 뜬다(모달 뒤에 깔릴 뿐이다).
+    }
+  }, [ids])
 
   if (toasts.length === 0) return null
 
   return (
     <div
+      ref={ref}
+      popover="manual"
       role="status"
       aria-live="polite"
-      // 모바일은 앱바(56~64) 아래로 내려야 제목과 겹치지 않는다.
-      className="pointer-events-none fixed inset-x-0 top-[76px] z-50 flex flex-col items-end gap-2 px-4 md:top-6 md:px-6"
+      className={cn(
+        /*
+         * 팝오버 기본 스타일(테두리·배경·padding·`inset: 0` 로 가운데 정렬)을
+         * 전부 되돌린다. 이걸 안 지우면 알림 뒤에 흰 상자가 화면 가운데 뜬다.
+         */
+        'm-0 h-auto max-h-none w-auto max-w-none overflow-visible border-0 bg-transparent p-0',
+        // 모바일은 앱바(56~64) 아래로 내려야 제목과 겹치지 않는다.
+        'pointer-events-none fixed inset-x-0 top-[76px] bottom-auto z-50 flex flex-col items-end gap-2 px-4 md:top-6 md:px-6',
+      )}
     >
       {toasts.map((item) => (
         <ToastRow key={item.id} toast={item} />

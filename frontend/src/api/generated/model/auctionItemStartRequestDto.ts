@@ -13,7 +13,7 @@
 export interface AuctionItemStartRequestDto {
   /**
    * @minimum 1
-   * @maximum 43200
+   * @maximum 720
    */
   durationMinutes: number;
 }

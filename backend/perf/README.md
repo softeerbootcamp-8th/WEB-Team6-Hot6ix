@@ -354,17 +354,13 @@ O(N²) 전송 폭주가 생기기 때문입니다. 연결 폭주 자체를 재�
 관측하여 emitter queue나 TCP에 남아 있던 마지막 이벤트까지 latency·누락 판정에 포함합니다.
 
 ```bash
-# 동기 SSE 구현
 ./perf/run.sh --scenario 10 --vus 200 --rate 30
 
 # 연결 폭주를 별도 실험으로 재는 경우
 ./perf/run.sh --scenario 3 --vus 200 --sse-ramp-seconds 0 --sse-stabilize-seconds 0
 ```
 
-동기 브랜치에는 emitter별 queue나 dispatch worker가 없습니다. 따라서 `sse_vt=false`,
-`sse_dispatch_pool=0`, `sse_queue_depth=0`으로 기록되며 `sse_queue_wait`는 NaN이 정상입니다.
-비동기·가상 스레드 브랜치에서도 같은 VU·rate·duration으로 실행하고 commit과 실행 폴더를
-함께 기록해야 공정하게 비교할 수 있습니다.
+
 
 `sse_msg_latency`는 운영 SSE payload에 테스트 필드를 추가하지 않습니다. 입찰 k6가 테스트
 네트워크 안의 구독자에게 `itemId + amount + 입찰 요청 시작 시각`을 보내고, 구독자가 실제
@@ -379,6 +375,13 @@ SSE emitter 정리 누락, 세션 누적, GC 후에도 안 내려가는 힙은 *
 ```bash
 ./perf/run.sh --scenario 1 --rate 10 --vus 50 --sse 200 --duration 60m
 ```
+
+**`--sse` 로 붙이는 배경 접속은 `--duration` 을 따라갑니다** (워밍업과 여유 2분을 더한 길이).
+예전에는 30분으로 고정돼 있어서 60분짜리를 돌리면 후반 30분이 통째로 "접속 없는 상태"였고,
+로그에도 결과 표에도 그 사실이 안 남았습니다.
+
+**Full GC 는 소크로만 보입니다.** 주기가 20분이라 3분 줄에서는 `full_gc_count` 가 0으로 나오는
+게 정상이고, `--duration 60m` 으로 재야 `full_gc_pause_max_ms` 에 표본이 생깁니다.
 
 **배포에서는 계단을 다 재고 마지막에 돌립니다.** 앱과 배스천이 T 계열이라 소크가 CPU 크레딧을
 계속 갉아서, 창구 내내 백그라운드로 돌리면 후반부 계단이 통째로 스로틀 상태에서 측정됩니다.
@@ -472,6 +475,12 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `conn_usage_p95_ms`, `conn_usage_p99_ms` | 커넥션을 빌린 뒤 반환할 때까지 걸린 시간 | 락 대기가 커넥션 점유를 늘렸는지 봅니다 |
 | `conn_timeout_count` | 측정 구간의 Hikari connection timeout 수 | 0보다 크면 성공 요청의 p95만으로 판정하지 않습니다 |
 | `heap_mb_max` | 힙 사용량(최대, MB) | GC 뒤에도 안 내려가면 메모리 |
+| `swap_mb_max` | **JVM 이 디스크로 내려간 양**(최대, MB) | **Full GC 정지 시간을 설명하는 값입니다.** Full GC 는 오래 사는 영역 전체를 훑는데 스왑된 페이지는 디스크에서 끌어와야 해서, 힙이 차서 느린 것인지 스왑 때문인지가 이 값으로 갈립니다. 실측(t4g.micro)에서 메모리 384MB 에 스왑 429MB 였습니다. 리눅스가 아니면 앱이 지표를 안 만들어 `NaN` 입니다 |
+| `rss_mb_max` | 실제 메모리에 올라가 있는 양(최대, MB) | `swap_mb_max` 와 짝입니다. 둘의 비율로 얼마나 밀려났는지 봅니다 |
+| `old_gen_mb_max` | 그중 오래 사는 영역(최대, MB) | 힙 전체 max 는 새 객체 쪽이 오르내리는 것에 가려서 이걸 못 봅니다 |
+| `old_gen_mb_min` | 그 영역의 **바닥**(최소, MB) | **누수는 꼭대기가 아니라 바닥으로 봅니다.** 꼭대기는 GC 직전 값이라 새든 안 새든 차오르고, 치운 뒤에도 안 내려가는지가 바닥에 나옵니다. 실행을 여러 번 놓고 **바닥이 계단처럼 오르면 누수**입니다. 꼭대기와의 간격은 GC 주기 하나가 만드는 쓰레기 양입니다. `full_gc_count` 가 0인 줄에서는 "치운 뒤 바닥"이 아니라 구간 시작값이라 이 용도로 못 씁니다 |
+| `full_gc_count` | 측정 구간의 Full GC 횟수 | 3분 줄에서는 0이 흔합니다. Full GC 주기가 20분이라 **소크(`--duration 60m`)로 재야 표본이 생깁니다** |
+| `full_gc_pause_max_ms` | 그중 **제일 오래 멈춘** 한 번. `full_gc_count` 가 0이면 비웁니다 | 이 시간 동안 앱이 통째로 멈춥니다. 평균이 아니라 최대로 보는 이유는 기동 직후의 짧은 것(229ms)이 부하 중의 값(2,454ms)을 희석시키기 때문입니다. 원본 지표가 롤링 윈도우라 그냥 두면 **측정 구간 밖의 Full GC 가 새어 들어옵니다** |
 | `before_lock_p95_ms` | `place()` 에 들어와서 락을 잡으러 가기까지 p95. 락 없이 되는 SELECT 3개(회원·판매자·참여 여부)입니다 | **커넥션 획득은 안 들어갑니다.** 실측으로 이 값(평균 1.7ms)이 `conn_acquire`(평균 22.2ms)보다 작습니다. `@Transactional` 프록시가 메서드 본문 전에 트랜잭션을 열면서 커넥션을 먼저 잡기 때문입니다 |
 | `lock_wait_p95_ms` | 입찰이 물품 행 락을 기다린 시간 p95 | 커지면 입찰이 한 줄로 선 것 |
 | `lock_hold_p95_ms` | 락을 잡고 있던 시간 p95 (커밋까지). 접수와 거절을 합친 값 | 대기와 짝으로 봅니다. 아래 설명 |
@@ -481,29 +490,30 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `select_per_bid` | 입찰 한 건이 던진 SELECT 수 | 늘면 왕복이 늘어난 만큼 락을 오래 잡습니다 |
 | `isolation` | MySQL 격리 수준 (`RR`/`RC`) | `--isolation` 으로 정한 값 |
 | `gap_locks` | 갭까지 잠근 락을 표본에서 본 횟수 | 절대값이 아니라 RC 에서 0 이 되는지를 봅니다 |
+| `bid_rate_limit` | 입찰 rate limit 을 켜고 쟀는지 (`on`/`off`) | **`on` 인 줄은 서버 한계가 아닙니다.** 부하 스크립트가 쉬지 않고 때리면 몇 초 만에 토큰이 말라 그 뒤로 전부 429 라, 요청이 서버 로직까지 도달하지 않습니다. 입찰 시나리오는 `--bid-rate-limit` 기본값이 `off` 입니다 |
 | `bulk_items` | SQL 로 채워 넣은 닫힌 물품 수 | `--bulk-items` 로 정한 값 |
 | `sweep_index` | 마감 조회 인덱스를 켰는지 (`on`/`off`) | `--sweep-index` 로 정한 값 |
 | `close_delay_p95_ms` | 마감이 예정 시각보다 늦은 시간 p95 | 시나리오 4의 주인공 |
 | `close_lock_wait_p95_ms` | 마감이 물품 행 락을 기다린 시간 p95 | `lock_wait_p95_ms`(입찰 쪽)와 나란히 놓고 누가 누구를 기다리게 했는지 봅니다 |
 | `close_lock_hold_p95_ms` | 마감이 락을 잡고 있던 시간 p95 (커밋까지) | 이게 크면 그동안 입찰이 못 들어갑니다 |
-| `close_notify_p95_ms` | 마감 알림(`ITEM_ENDED`)을 방 전체에 동기로 전송한 시간 p95 | 각 emitter의 실제 send 시간은 `sse_send_p95_ms`에서 봅니다 |
+| `close_notify_p95_ms` | 마감 알림(`ITEM_ENDED`)을 방의 emitter 큐에 배분하는 시간 p95 | 실제 네트워크 send 시간은 `sse_send_p95_ms`에서 봅니다 |
 | `close_award_p95_ms` | 낙찰 후보 스냅샷을 만드는 데 걸린 시간 p95. **`award()` 트랜잭션 전체**입니다 | 후보를 입찰자 수만큼 만들어서 입찰이 몰린 물품일수록 길어집니다 |
 | `close_award_insert_p95_ms` | 그중 `insertCandidatesFromBids` **쿼리 하나만** | 위 값에서 이걸 빼면 나머지(커넥션 획득·락 대기·이벤트 발행·커밋)입니다. 아래 설명 |
 | `closes`, `awards` | 구간 안에 실제로 닫힌 물품 수와 낙찰 건수 | **표본 수입니다.** 이게 작으면 위 p95 들이 크게 흔들립니다 |
 | `sse_heartbeat_p95_ms` | 30초마다 전원에게 신호 보내는 데 걸린 시간 | 접속이 늘면 같이 커집니다 |
 | `heartbeat_runs`, `heartbeat_expected` | heartbeat 가 실제로 돈 횟수와 돌았어야 할 횟수 | 실제가 모자라면 스케줄러 스레드가 굶은 것입니다 |
-| `sse_broadcast_p95_ms`, `sse_broadcast_p99_ms` | 논리 이벤트 하나를 방 전체에 동기로 전송한 시간 | 모든 emitter의 `send()`가 반환될 때까지 포함합니다. 시나리오 10은 BID_PLACED만 집계합니다 |
+| `sse_broadcast_p95_ms`, `sse_broadcast_p99_ms` | 논리 이벤트 하나를 방의 emitter 큐에 배분하는 시간(기존 이름) | 실제 send 완료 시간이 아니라 fan-out enqueue 시간입니다. 시나리오 10은 BID_PLACED만 집계합니다 |
 | `sse_conn_max` | 동시에 열려 있던 실시간 접속 수(최대) | 시나리오 3의 주인공 |
 | `sse_connections_opened`, `sse_connections_closed` | 측정 구간의 SSE 연결 수립·종료 횟수 | 종료 원인별 상세는 Grafana에서 `reason` 태그로 봅니다 |
 | `sse_events_published` | Redis에 성공적으로 발행한 논리 SSE 이벤트 수 | 한 이벤트가 여러 구독자에게 전달되어도 1건입니다 |
 | `sse_send_attempts`, `sse_send_successes`, `sse_send_failures` | 각 emitter에 대한 실제 `send()` 시도·성공·실패 수 | 구독자가 N명이면 논리 이벤트 1건이 최대 N회의 send가 됩니다 |
 | **`sse_send_failure_rate`** | **`send 실패 / send 시도 × 100`** | 0%가 정상입니다. 원인별 실패는 Grafana의 `cause` 태그로 봅니다 |
-| `sse_fanout_p95_ms` | 논리 이벤트를 방 전체에 동기로 전송한 시간 p95 | 동기 구현에서는 `sse_broadcast`와 같은 범위입니다. 시나리오 10은 BID_PLACED만 집계합니다 |
-| `sse_queue_wait_p95_ms` | 비동기 구현에서 작업이 큐에 들어간 뒤 worker가 잡기까지의 시간 p95 | 동기 구현에는 큐가 없으므로 NaN이 정상입니다 |
+| `sse_fanout_p95_ms` | 논리 이벤트를 방의 emitter 큐에 배분한 시간 p95 | 구독자 수 증가에 따른 순회·enqueue 비용입니다. 시나리오 10은 BID_PLACED만 집계합니다 |
+| `sse_queue_wait_p95_ms` | 작업이 emitter 큐에 들어간 뒤 worker가 잡기까지의 시간 p95 | 커지면 전송 처리량보다 생산 속도가 빠른 것입니다. 시나리오 10은 BID_PLACED만 집계합니다 |
 | `sse_send_p95_ms`, `sse_send_p99_ms` | 실제 `SseEmitter.send()` 호출이 반환할 때까지의 시간 | 느린 클라이언트나 TCP write 정체를 찾습니다. 시나리오 10은 BID_PLACED만 집계합니다 |
-| `sse_queue_depth_max` | 모든 emitter dispatcher에 쌓인 추정 작업 수의 최대 | 동기 구현에는 큐가 없어 항상 0입니다 |
-| `sse_in_flight_max` | 동시에 `send()` 안에서 처리 중이던 작업 수의 최대 | 동기 구현은 보통 1이며 heartbeat가 겹치면 더 커질 수 있습니다 |
-| `sse_rejected` | 닫힌 dispatcher 또는 포화된 큐로 제출하지 못한 작업 수 | 동기 구현에서는 항상 0입니다 |
+| `sse_queue_depth_max` | 모든 emitter dispatcher에 쌓인 추정 작업 수의 최대 | 지속 증가하면 큐 적체입니다 |
+| `sse_in_flight_max` | 동시에 `send()` 안에서 처리 중이던 작업 수의 최대 | 가상 스레드 구현의 동시 처리 폭을 봅니다 |
+| `sse_rejected` | 닫힌 dispatcher 또는 포화된 큐로 제출하지 못한 작업 수 | 0이 정상입니다 |
 | `sse_client_conn_min`, `sse_client_conn_max` | 측정 구간에 실제 SSE frame을 읽던 연결 수의 최소·최대 | 둘 다 `sse` 목표의 95% 이상이어야 합니다 |
 | `sse_client_scrape_up_min` | Prometheus가 SSE 클라이언트 계측 프로세스를 긁은 상태의 최솟값 | 1이어야 하며 0이면 클라이언트 프로세스가 죽은 것입니다 |
 | `sse_client_connections_opened` | 측정 구간에 새로 수립된 클라이언트 연결 수 | 연결은 측정 전에 붙이므로 0보다 크면 재연결이 발생한 것입니다 |
@@ -515,7 +525,7 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `sse_client_missing`, `sse_client_duplicate`, `sse_client_out_of_order` | 방별 순차 SSE ID로 찾은 누락·중복·순서 역전 수 | 모두 0이 정상입니다 |
 | `sse_client_parse_errors`, `sse_correlation_failed` | SSE JSON 파싱 실패와 k6→구독자 correlation 전달 실패 | 모두 0이 정상입니다 |
 | `sse_client_cpu_max` | 실제 프레임 파서가 쓴 CPU 최대 | 높으면 앱보다 부하 발생기가 먼저 병목일 수 있습니다 |
-| `jvm_threads_live_max` | JVM 라이브 플랫폼 스레드 수의 최대 | 동기 구현에는 SSE dispatch worker가 없으므로 다른 구현의 증가분과 비교합니다 |
+| `jvm_threads_live_max` | JVM 라이브 플랫폼 스레드 수의 최대 | VT는 carrier 스레드만 잡힙니다. `sse_in_flight_max`와 함께 봅니다 |
 | `sse_queue_saturated` | emitter 큐 포화로 연결을 종료한 횟수 | 0이 정상입니다 |
 | `virtual_threads` | 가상 스레드를 켰는지 | 켜면 톰캣도 함께 바뀝니다 |
 | `gc_pause_ms_per_s` | 1초당 GC가 멈춰 세운 시간(ms) | 커지면 힙이 빡빡한 것 |

@@ -5,7 +5,7 @@ import { resolveEventTone } from '@/features/live/components/event-tone'
 import { useEventEntrance } from '@/features/live/use-event-entrance'
 import { cn } from '@/lib/utils'
 import { formatTime } from '@/lib/format'
-import type { RoomEvent } from '@/mocks/types'
+import type { RoomEvent } from '@/types/domain'
 
 const BOTTOM_THRESHOLD = 10 // px
 
