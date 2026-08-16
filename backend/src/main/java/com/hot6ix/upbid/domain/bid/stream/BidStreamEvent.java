@@ -27,14 +27,14 @@ public sealed interface BidStreamEvent {
                     number(fields, "itemId"), number(fields, "roomId"),
                     number(fields, "endAt"), integer(fields, "remainingSeconds"),
                     number(fields, "advancedAt"));
-            default -> throw new IllegalArgumentException("지원하지 않는 Stream event type: " + type);
+            default -> throw invalid("지원하지 않는 Stream event type: " + type);
         };
     }
 
     private static String required(Map<String, String> fields, String name) {
         String value = fields.get(name);
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("Stream 필수 필드가 없다: " + name);
+            throw invalid("Stream 필수 필드가 없다: " + name);
         }
         return value;
     }
@@ -44,7 +44,7 @@ public sealed interface BidStreamEvent {
         try {
             return Long.parseLong(value);
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Stream 숫자 필드 형식이 잘못됐다: " + name, e);
+            throw invalid("Stream 숫자 필드 형식이 잘못됐다: " + name, e);
         }
     }
 
@@ -53,7 +53,7 @@ public sealed interface BidStreamEvent {
         try {
             return Integer.parseInt(value);
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Stream 숫자 필드 형식이 잘못됐다: " + name, e);
+            throw invalid("Stream 숫자 필드 형식이 잘못됐다: " + name, e);
         }
     }
 
@@ -65,8 +65,18 @@ public sealed interface BidStreamEvent {
         try {
             return Long.parseLong(value);
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Stream 숫자 필드 형식이 잘못됐다: " + name, e);
+            throw invalid("Stream 숫자 필드 형식이 잘못됐다: " + name, e);
         }
+    }
+
+    private static BidStreamPermanentException invalid(String message) {
+        return new BidStreamPermanentException(
+                BidStreamFailureCode.EVENT_FORMAT_INVALID, message);
+    }
+
+    private static BidStreamPermanentException invalid(String message, Throwable cause) {
+        return new BidStreamPermanentException(
+                BidStreamFailureCode.EVENT_FORMAT_INVALID, message, cause);
     }
 
     record BidAccepted(

@@ -13,20 +13,31 @@ public class BidStreamMetrics {
 
     private final MeterRegistry registry;
     private final Counter acknowledgeFailures;
+    private final Counter quarantineWriteFailures;
     private final Counter seedFailures;
     private final Timer persistence;
     private final AtomicLong pending = new AtomicLong();
     private final AtomicLong lagMillis = new AtomicLong();
+    private final AtomicLong oldestPendingAgeSeconds = new AtomicLong();
+    private final AtomicLong halted = new AtomicLong();
 
     public BidStreamMetrics(MeterRegistry registry) {
         this.registry = registry;
         this.acknowledgeFailures = registry.counter("upbid.bid.stream.ack.failures");
+        this.quarantineWriteFailures = registry.counter(
+                "upbid.bid.stream.quarantine.write.failures");
         this.seedFailures = registry.counter("upbid.auction.redis.seed.failures");
         this.persistence = registry.timer("upbid.bid.stream.persist");
         Gauge.builder("upbid.bid.stream.pending", pending, AtomicLong::get)
                 .register(registry);
         Gauge.builder("upbid.bid.stream.lag", lagMillis, AtomicLong::get)
                 .baseUnit("milliseconds")
+                .register(registry);
+        Gauge.builder("upbid.bid.stream.oldest.pending.age",
+                        oldestPendingAgeSeconds, AtomicLong::get)
+                .baseUnit("seconds")
+                .register(registry);
+        Gauge.builder("upbid.bid.stream.halted", halted, AtomicLong::get)
                 .register(registry);
     }
 
@@ -54,6 +65,29 @@ public class BidStreamMetrics {
         acknowledgeFailures.increment();
     }
 
+    public void recordRetry(String failureKind) {
+        registry.counter("upbid.bid.stream.retries",
+                "failure.kind", normalize(failureKind)).increment();
+    }
+
+    public void recordQuarantined(String eventType, String failureCode) {
+        registry.counter("upbid.bid.stream.quarantined",
+                "event.type", normalize(eventType),
+                "failure.code", normalize(failureCode)).increment();
+    }
+
+    public void recordQuarantineWriteFailure() {
+        quarantineWriteFailures.increment();
+    }
+
+    public void recordOldestPendingAgeSeconds(long value) {
+        oldestPendingAgeSeconds.set(Math.max(value, 0));
+    }
+
+    public void recordHalted(boolean value) {
+        halted.set(value ? 1 : 0);
+    }
+
     public void recordLuaDecision(String result) {
         registry.counter("upbid.bid.lua.decisions", "result", result).increment();
     }
@@ -68,7 +102,11 @@ public class BidStreamMetrics {
 
     private Counter processed(String type, String result) {
         return registry.counter("upbid.bid.stream.processed",
-                "type", type == null || type.isBlank() ? "UNKNOWN" : type,
+                "type", normalize(type),
                 "result", result);
+    }
+
+    private static String normalize(String value) {
+        return value == null || value.isBlank() ? "UNKNOWN" : value;
     }
 }

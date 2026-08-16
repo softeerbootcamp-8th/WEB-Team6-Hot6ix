@@ -29,7 +29,9 @@ class BidStreamEventTest {
         fields.remove("requestId");
 
         assertThatThrownBy(() -> BidStreamEvent.from(fields))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOfSatisfying(BidStreamPermanentException.class,
+                        error -> assertThat(error.getCode())
+                                .isEqualTo(BidStreamFailureCode.EVENT_FORMAT_INVALID))
                 .hasMessageContaining("requestId");
     }
 
@@ -41,7 +43,9 @@ class BidStreamEventTest {
         fields.put("amount", "만원");
 
         assertThatThrownBy(() -> BidStreamEvent.from(fields))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOfSatisfying(BidStreamPermanentException.class,
+                        error -> assertThat(error.getCode())
+                                .isEqualTo(BidStreamFailureCode.EVENT_FORMAT_INVALID))
                 .hasMessageContaining("amount");
     }
 
@@ -53,7 +57,9 @@ class BidStreamEventTest {
         fields.put("type", "UNKNOWN");
 
         assertThatThrownBy(() -> BidStreamEvent.from(fields))
-                .isInstanceOf(IllegalArgumentException.class)
+                .isInstanceOfSatisfying(BidStreamPermanentException.class,
+                        error -> assertThat(error.getCode())
+                                .isEqualTo(BidStreamFailureCode.EVENT_FORMAT_INVALID))
                 .hasMessageContaining("UNKNOWN");
     }
 

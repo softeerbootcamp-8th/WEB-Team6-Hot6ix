@@ -15,6 +15,8 @@ import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.bid.entity.Bid;
 import com.hot6ix.upbid.domain.bid.repository.BidRepository;
 import com.hot6ix.upbid.domain.bid.stream.BidStreamEvent;
+import com.hot6ix.upbid.domain.bid.stream.BidStreamFailureCode;
+import com.hot6ix.upbid.domain.bid.stream.BidStreamPermanentException;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.UserRepository;
@@ -146,10 +148,31 @@ class BidStreamPersistenceServiceTest {
         when(bidRepository.findByRequestId("request-1")).thenReturn(Optional.of(existingBid));
 
         assertThatThrownBy(() -> persistenceService.persist(conflictingEvent))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOfSatisfying(BidStreamPermanentException.class,
+                        error -> assertThat(error.getCode())
+                                .isEqualTo(BidStreamFailureCode.IDEMPOTENCY_CONFLICT))
                 .hasMessageContaining("request-1");
         verify(bidRepository, never()).saveAndFlush(any(Bid.class));
         verifyNoInteractions(auctionItemRepository, userRepository, domainEventPublisher);
+    }
+
+    @Test
+    @DisplayName("승인 이벤트의 입찰자가 MySQL에 없으면 재시도로 해결되지 않는 실패다")
+    void rejectsMissingBidderAsPermanentFailure() {
+        BidStreamEvent.BidAccepted event = event(
+                "request-missing-bidder", 99L, 20_000L, 0, 0,
+                Instant.parse("2026-08-13T13:04:00Z"),
+                Instant.parse("2026-08-13T13:05:00Z"));
+        when(bidRepository.findByRequestId("request-missing-bidder"))
+                .thenReturn(Optional.empty());
+        when(userRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> persistenceService.persist(event))
+                .isInstanceOfSatisfying(BidStreamPermanentException.class,
+                        error -> assertThat(error.getCode())
+                                .isEqualTo(BidStreamFailureCode.REFERENCED_RESOURCE_MISSING));
+
+        verifyNoInteractions(auctionItemRepository, domainEventPublisher);
     }
 
     @Test

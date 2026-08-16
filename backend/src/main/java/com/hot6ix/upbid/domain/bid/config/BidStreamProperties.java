@@ -11,6 +11,10 @@ public record BidStreamProperties(
         String consumer,
         Duration pollDelay,
         Duration blockTimeout,
-        Duration lockAtMostFor
+        Duration lockAtMostFor,
+        Duration retryDelay,
+        int maxFastAttempts,
+        Duration haltedRetryDelay,
+        int transactionTimeoutSeconds
 ) {
 }
