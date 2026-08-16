@@ -18,6 +18,19 @@ public record SseProperties(
          * emitter 별 이벤트 큐의 최대 크기. 포화 시 이벤트를 drop하고 해당 emitter를 종료한다.
          * 포화는 느린 구독자의 신호다.
          */
-        int emitterQueueCapacity
+        int emitterQueueCapacity,
+        /**
+         * emitter drain 전용 고정 스레드 풀의 스레드 수.
+         * VT 대신 플랫폼 스레드를 쓸 때 이 값으로 풀 크기를 결정한다.
+         */
+        int workerPoolSize,
+        /**
+         * sseWorkerExecutor 의 내부 대기 큐 크기.
+         * 풀 스레드가 모두 바쁠 때 drain 태스크가 여기서 대기한다.
+         * 최악의 경우 대기 수 ≈ 활성 emitter 수 - 풀 크기이므로,
+         * 이 값이 곧 고정 풀이 수용 가능한 동시 emitter 상한이 된다.
+         * 초과 시 RejectedExecutionException → VT 와 FixedPool의 한계가 갈리는 지점.
+         */
+        int workerQueueCapacity
 ) {
 }

@@ -63,6 +63,10 @@ class AuctionRoomServiceIntegrationTest extends AbstractMySqlContainerTest {
     @MockitoBean
     private AuctionRoomPublicCacheService auctionRoomPublicCacheService;
 
+    // 결과 조회 캐시도 같은 이유로 슬라이스 밖이다(#329). create()만 보는 테스트라 관련 없다.
+    @MockitoBean
+    private AuctionResultCache auctionResultCache;
+
     // @DataJpaTest 슬라이스에는 sse 도메인 빈이 안 올라온다. 목록 조회만 쓰는 의존이라 목으로 채운다.
     @MockitoBean
     private RoomSseManager roomSseManager;

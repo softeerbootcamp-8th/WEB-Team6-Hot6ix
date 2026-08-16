@@ -59,7 +59,7 @@ class ItemClosingSoonPollerTest {
                 closingSoonDelayQueue,
                 itemClosingSoonService,
                 new ItemClosingSoonMetrics(registry),
-                new AuctionProperties(3, null, new AuctionProperties.ClosingSoon(BATCH, VISIBILITY), null));
+                new AuctionProperties(3, null, new AuctionProperties.ClosingSoon(BATCH, VISIBILITY), null, null));
     }
 
     @Test

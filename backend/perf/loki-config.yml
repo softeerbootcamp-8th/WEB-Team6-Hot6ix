@@ -1,0 +1,55 @@
+# 측정 EC2 에 띄우는 Loki 설정이다 (이슈 #332).
+#
+# 이 서버는 t4g.micro 라 가용 메모리가 468MB 뿐이고 Grafana(100MB)와 Prometheus(82MB)가
+# 이미 돌고 있다. 그래서 단일 바이너리 모드로 최소 구성만 쓰고, 메모리를 먹는 기능은 끈다.
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  # info 로 두면 Loki 자기 로그가 초당 여러 줄씩 나온다. 우리가 볼 것은 앱 로그다.
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  # 한 대뿐이라 복제가 없다. 이 값을 안 주면 링을 구성하려다 기동이 안 된다.
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2026-08-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # 14일치만 남긴다. 안 정하면 무한히 쌓이는데, 루트 디스크가 19GB 중 10GB 남았고
+  # Prometheus 볼륨이 이미 4일에 632MB 씩 늘고 있어서 나눠 써야 한다.
+  retention_period: 336h
+  # loki4j 가 MDC 를 구조화 메타데이터로 보낸다. 이걸 꺼 두면 traceId 가 통째로 버려진다.
+  allow_structured_metadata: true
+  # 부하 측정 중에는 로그가 몰린다. 순간 폭주로 Loki 가 메모리를 먹고 죽는 것보다,
+  # 넘치는 만큼 거절하고 살아 있는 편이 낫다.
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+
+compactor:
+  working_directory: /loki/compactor
+  # 이게 없으면 위 retention_period 를 적어 놔도 실제로는 안 지워진다.
+  retention_enabled: true
+  delete_request_store: filesystem
+
+# 익명 사용 통계를 밖으로 보내지 않는다.
+analytics:
+  reporting_enabled: false

@@ -77,7 +77,7 @@ class AuctionRoomCloseVsItemAddConcurrencyTest extends AbstractMySqlContainerTes
         @Bean
         AuctionProperties auctionProperties() {
             return new AuctionProperties(3, null, null,
-                    new AuctionProperties.Room(Duration.ofHours(12), 50));
+                    new AuctionProperties.Room(Duration.ofHours(12), 50), null);
         }
     }
 

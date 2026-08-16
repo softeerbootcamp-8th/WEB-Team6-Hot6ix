@@ -36,7 +36,7 @@ class AuctionRoomIdleCloseRunnerTest {
     private AuctionRoomCloseService auctionRoomCloseService;
 
     private final AuctionProperties auctionProperties =
-            new AuctionProperties(3, null, null, new AuctionProperties.Room(IDLE_AFTER, BATCH_SIZE));
+            new AuctionProperties(3, null, null, new AuctionProperties.Room(IDLE_AFTER, BATCH_SIZE), null);
 
     private AuctionRoomIdleCloseRunner runner() {
         return new AuctionRoomIdleCloseRunner(

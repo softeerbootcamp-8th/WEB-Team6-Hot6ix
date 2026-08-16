@@ -12,3 +12,12 @@ datasources:
       # prometheus.yml 의 scrape_interval 과 맞춘다. 어긋나면 Grafana 가 기본 step 을
       # 제 마음대로 잡아서 rate() 창이 실제 간격과 안 맞는다.
       timeInterval: 5s
+
+  # 로그 조회용 (이슈 #332). loki 컨테이너를 안 띄웠으면 이 데이터소스만 비어 보이고
+  # 기존 대시보드에는 영향이 없다.
+  - name: Loki
+    uid: upbid-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
