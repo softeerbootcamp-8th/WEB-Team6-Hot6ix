@@ -59,6 +59,8 @@ public class AuctionRoomService {
      * 낙찰 후보에 있어 한쪽은 반드시 경계를 넘어야 한다. 읽기만 하고 상태를 바꾸지 않는다.
      */
     private final DealCandidateRepository dealCandidateRepository;
+    /** 결과 화면의 공개 부분(물품·낙찰자)을 캐시에서 읽고, CLOSED 방일 때만 채운다. */
+    private final AuctionResultCache auctionResultCache;
     private final DomainEventPublisher domainEventPublisher;
     /** 커버 주소는 클라이언트가 문자열로 보낸다. 우리 버킷에서 온 것인지 본다. */
     private final ImageUrlValidator imageUrlValidator;
@@ -191,25 +193,65 @@ public class AuctionRoomService {
      * <p>상태로 거르지 않는다. 방이 아직 열려 있어도 마감된 물품의 결과는 볼 수 있어야 하고,
      * 어느 물품이 아직 진행 중인지는 {@code status}로 드러난다.
      *
-     * <p>쿼리는 두 번이다 — 물품과 낙찰자를 한 번, 요청자의 순위를 한 번. 물품마다 후보를
-     * 조회하면 물품 수만큼 쿼리가 나간다.
+     * <p>공개 부분(물품·낙찰자)은 {@link AuctionResultCache}에서 먼저 찾는다({@code CLOSED}
+     * 방만 저장돼 있다). 히트하면 비로그인 요청은 DB를 전혀 안 읽고, 로그인 요청도 요청자의
+     * 순위 조회 한 번만 남는다. 미스거나 방이 아직 안 닫혔으면 방 조회 + 물품·낙찰자 조회 +
+     * (로그인 시) 순위 조회까지 최대 세 번이다.
      *
      * @param shareCode 조회할 경매방의 공유 코드
      * @param userId    요청자의 회원 ID. 비로그인이면 {@code null}
      * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
     public AuctionRoomResultResponseDto getResults(String shareCode, Long userId) {
+        return auctionResultCache.find(shareCode)
+                .map(guestView -> withMyRanks(guestView, userId))
+                .orElseGet(() -> loadResults(shareCode, userId));
+    }
+
+    /**
+     * 캐시가 비었을 때만 부른다. 비로그인 응답을 만들어 방이 {@code CLOSED}일 때만 캐시에
+     * 담고, 그 위에 요청자의 순위를 채워 돌려준다.
+     */
+    private AuctionRoomResultResponseDto loadResults(String shareCode, Long userId) {
 
         AuctionRoom auctionRoom = findRoomByShareCode(shareCode);
         Long auctionRoomId = auctionRoom.getAuctionRoomId();
 
-        Map<Long, MyCandidateRankProjection> myRanks = findMyRanks(auctionRoomId, userId);
-
         List<AuctionItemResultResponseDto> items = auctionItemRepository.findResults(auctionRoomId).stream()
-                .map(item -> toResult(item, myRanks.get(item.auctionItemId())))
+                .map(this::toResult)
                 .toList();
 
-        return AuctionRoomResultResponseDto.of(auctionRoom, items);
+        AuctionRoomResultResponseDto guestView = AuctionRoomResultResponseDto.of(auctionRoom, items);
+
+        if (auctionRoom.getStatus() == AuctionRoomStatus.CLOSED) {
+            auctionResultCache.put(shareCode, guestView);
+        }
+
+        return withMyRanks(guestView, userId);
+    }
+
+    /** 비로그인이면 그대로 반환한다 — 캐시 히트 시 0쿼리가 되는 지점이 여기다. */
+    private AuctionRoomResultResponseDto withMyRanks(AuctionRoomResultResponseDto guestView, Long userId) {
+        if (userId == null) {
+            return guestView;
+        }
+
+        Map<Long, MyCandidateRankProjection> myRanks = findMyRanks(guestView.auctionRoomId(), userId);
+
+        List<AuctionItemResultResponseDto> items = guestView.items().stream()
+                .map(item -> withMyRank(item, myRanks.get(item.auctionItemId())))
+                .toList();
+
+        return guestView.withItems(items);
+    }
+
+    private AuctionItemResultResponseDto withMyRank(
+            AuctionItemResultResponseDto item, MyCandidateRankProjection myRank) {
+
+        if (myRank == null) {
+            return item;
+        }
+        return item.withMyRank(myRank.candidateRank(), myRank.bidAmount());
     }
 
     /** 비로그인이면 조회하지 않는다. 순위를 물어볼 사람이 없다. */
@@ -225,9 +267,11 @@ public class AuctionRoomService {
      * 낙찰자와 낙찰가는 {@code SOLD}일 때만 채운다. {@code leaderUser}는 입찰이 들어올 때마다
      * 갱신되므로 진행 중인 물품에도 값이 있는데, 그 사람은 아직 낙찰자가 아니다.
      * 유찰 물품의 {@code currentPrice}가 시작가로 남아 있는 것도 같은 이유로 내리지 않는다.
+     *
+     * <p>공개 뷰라 {@code myRank}/{@code myAmount}는 항상 {@code null}이다 —
+     * {@link #withMyRank}가 요청자별로 나중에 채운다.
      */
-    private AuctionItemResultResponseDto toResult(
-            AuctionItemResultProjection item, MyCandidateRankProjection myRank) {
+    private AuctionItemResultResponseDto toResult(AuctionItemResultProjection item) {
 
         boolean sold = item.status() == AuctionItemStatus.SOLD;
 
@@ -238,8 +282,8 @@ public class AuctionRoomService {
                 item.status(),
                 sold ? item.currentPrice() : null,
                 sold ? item.leaderNickname() : null,
-                myRank == null ? null : myRank.candidateRank(),
-                myRank == null ? null : myRank.bidAmount());
+                null,
+                null);
     }
 
     /**

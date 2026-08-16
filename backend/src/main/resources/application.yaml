@@ -208,6 +208,12 @@ upbid:
       idle-close-interval-ms: ${ROOM_IDLE_CLOSE_INTERVAL_MS:600000}
       # 한 tick 에 닫을 방 수 상한. 잘린 방은 다음 주기에 다시 집힌다.
       idle-close-batch-size: ${ROOM_IDLE_CLOSE_BATCH_SIZE:50}
+    result-cache:
+      # 종료된 경매방 결과 조회의 공개 부분만 담는다(#329). CLOSED 방만 저장하므로 히트 =
+      # 되돌아갈 수 없는 상태다. 남는 변동은 상품 이름·이미지 수정(ProductService.update가
+      # 이미 소급 반영을 수용한 트레이드오프)과 닉네임·상점명 변경뿐이라 TTL로 경계를 짓는다.
+      enabled: ${RESULT_CACHE_ENABLED:true}
+      ttl: ${RESULT_CACHE_TTL:60s}
   deal:
     award-recovery:
       enabled: ${AWARD_RECOVERY_ENABLED:true}

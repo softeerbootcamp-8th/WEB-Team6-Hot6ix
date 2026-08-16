@@ -228,6 +228,8 @@ KAKAO_REDIRECT_URI=http://localhost:8080/api/v1/oauth/kakao/callback
 ./perf/run.sh --scenario 8 --vus 50 --burst-mode same       # 동일 금액 동시 출발 정합성
 ./perf/run.sh --scenario 8 --vus 50 --burst-mode increasing # 증가 금액 동시 출발 정합성
 ./perf/run.sh --scenario 9 --rate 200           # 입장 폭주. 링크 뿌린 직후의 방 공개 조회
+./perf/run.sh --scenario 11 --rate 200 --results-auth guest   # 종료된 방 결과 조회 (비로그인)
+./perf/run.sh --scenario 11 --rate 200 --results-auth member  # 같은 조회, 로그인 (내 순위 포함)
 ```
 
 계단은 **10 / 20 / 40 / 80 / 160**입니다. 한 번에 하나만 올리고 나머지는 그대로 둡니다.
@@ -280,6 +282,39 @@ Soft Close 가 마감을 계속 미루기 때문입니다. 실제로 `--items 20
 
 `room_read_p95_ms` 와 `items_read_p95_ms` 를 따로 남깁니다. 두 조회는 쿼리 수도 응답 크기도
 달라서 합친 p95만 보면 어느 쪽이 무거운지 안 갈립니다.
+
+### 결과 조회
+
+시나리오 11은 **종료된 경매방의 결과 조회 하나**만 잽니다(`GET share/{shareCode}/results`).
+경매 결과 조회에 캐시(#329)를 붙일 근거를 재는 것이 목적이라, 캐시가 생기기 전에도 이
+시나리오로 기준선을 먼저 잽니다.
+
+- **`--results-auth guest|member`로 나눕니다 (기본 guest).** 비로그인은 캐시가 히트하면
+  DB를 아예 안 보는 경로이고, 로그인은 히트해도 내 순위를 채우는 조회가 한 번 남는 경로라
+  하나로 섞어 재면 "히트해도 남는 쿼리"가 평균 뒤에 숨습니다.
+- **닫힌 모델(`--vus`)과 열린 모델(`--rate`) 둘 다 됩니다.** 9번(입장 폭주)과 달리 절벽이
+  아니라 1·2번과 같은 계단이라, `--rate`가 없으면 그냥 닫힌 모델로 돕니다.
+- **시딩이 방을 실제로 닫습니다.** `seed.sh --close-room`이 물품마다 입찰을 넣고 방 종료
+  API를 호출해 SOLD 물품과 낙찰 후보를 실제 도메인 경로로 만듭니다. 방이 안 닫혔으면
+  `setup()`이 바로 죽습니다 — OPEN 방은 캐시 규칙상 저장되지 않아, 그 상태로 3분을 재면
+  히트율이 왜 0인지 나중에서야 알게 됩니다.
+- **4xx는 0이어야 합니다.** 결과 조회도 `@GuestAllowed`라 거절 규칙이 없습니다. 4xx가
+  찍히면 공유 코드나 시딩이 틀린 것입니다.
+- **`--result-cache on|off`(기본 on)로 캐시(#329)를 껐다 켰다 합니다.** 값 하나만 바꿔
+  같은 조건을 두 번 재는 것이 이 시나리오의 목적입니다 — `--sweep-index`와 같은 방식입니다.
+
+```bash
+./perf/run.sh --scenario 11 --rate 200 --vus 200 --results-auth guest  --result-cache off
+./perf/run.sh --scenario 11 --rate 200 --vus 200 --results-auth guest  --result-cache on
+./perf/run.sh --scenario 11 --rate 200 --vus 200 --results-auth member --result-cache off
+./perf/run.sh --scenario 11 --rate 200 --vus 200 --results-auth member --result-cache on
+```
+
+`result_cache_hit_rate`가 1에 가까운지 먼저 봅니다(0에 가까우면 시딩이 방을 못 닫은
+것이라 그 줄은 버립니다). 그다음 `select_per_result`(캐시가 실제로 DB를 안 건드린다는
+직접 증거 — guest는 0에 수렴, member는 로그인 요청마다 남는 순위 조회 1건 때문에 1
+근처)를 `p95_ms`·`throughput_req_per_s`·`mysql_cpu_avg`·`hikari_*`와 함께 off 줄과
+나란히 놓습니다.
 
 ### 동시 출발 정합성
 
@@ -454,7 +489,7 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `who` | 잰 사람 | 실행할 때 적은 이름 |
 | `commit` | 어느 코드로 쟀는지 | 개선 전후를 가를 때 씁니다 |
 | `status` | `ok` / `aborted` | **`aborted` 줄은 노션에 붙여넣지 않습니다.** 아래 설명 |
-| `scenario` | 시나리오 번호 (0~10) | |
+| `scenario` | 시나리오 번호 (0~11) | |
 | `vus` | 동시 요청 스트림 수. **사람 수가 아니다** (생각하는 시간이 없어 한 줄이 여러 명 몫을 한다) | 내가 정한 값. `rate` 가 있으면 도착률을 채울 VU 수다 |
 | `rate` | 초당 도착 건수. **0 이면 닫힌 모델**(`--vus` 로 돈 것) | 0 이 아닌 줄끼리만 나란히 놓는다. 모델이 다르면 같은 축이 아니다 |
 | `pool` | DB 커넥션 풀 크기 | 내가 정한 값 (기본 10) |

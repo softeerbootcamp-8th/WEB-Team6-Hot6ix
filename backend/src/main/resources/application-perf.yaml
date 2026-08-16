@@ -39,6 +39,14 @@ upbid:
     # 시나리오 2(물품 분산)는 한 방에서 물품 20개를 동시에 진행해야 하는데 서비스 규칙이 3이다.
     # 여기서만 올린다. 이 프로파일로 잰 숫자는 "제한을 푼 상태"라는 걸 note.md 에 적는다.
     max-in-progress-per-room: ${MAX_IN_PROGRESS_PER_ROOM:50}
+  rate-limit:
+    bid:
+      # 서비스 규칙(초당 1~2건 상한)은 실사용자 손 속도 기준이다. 부하 테스트 VU 는
+      # 응답을 받는 즉시 다음 요청을 쏘므로, 켜 두면 서버 처리량이 아니라 이 버킷의
+      # 재충전 속도(초당 2건)를 재게 된다 — 실측으로 seed.sh 의 연속 입찰조차 7009 로
+      # 거절됐다. 그래서 여기서는 끈다. 리미터 자체를 검증하려면
+      # run.sh --bid-rate-limit on 으로 되돌린다.
+      enabled: ${BID_RATE_LIMIT_ENABLED:false}
   # deal.award-recovery는 여기서 건드리지 않는다. application.yaml 기본값
   # (enabled=true, interval-ms=300000)을 그대로 쓴다 — DealAwardRecoveryRunner의
   # @Scheduled가 SSE heartbeat·마감 예약과 스케줄링 풀을 공유해 upbid.auction.close.delay에
@@ -77,11 +85,12 @@ ncp:
     send-from: 00000000000
 
 management:
-  # perf 컨테이너에는 Redis가 없다 (docker-compose.perf.yml 참고). spring-data-redis가
-  # 클래스패스에 있으면 Boot가 Redis 헬스 인디케이터를 자동으로 켜는데, 붙을 Redis가 없으니
-  # 검사가 실패해서 앱은 멀쩡한데 health가 DOWN이 되고, run.sh의 기동 대기(curl -sf
-  # /actuator/health)가 503으로 죽어 부하 측정을 아예 못 돌린다. base(application.yaml)에는
-  # 두지 않는다 — prod는 ShedLock이 실제로 Redis를 쓰므로 거기서는 진짜 상태를 봐야 한다.
+  # perf 컨테이너에도 이제 Redis가 있다 (docker-compose.perf.yml의 redis 서비스, #289 마감
+  # 예약부터 #329 결과 캐시까지 이걸 쓴다) — 그래서 이 설정이 캐시가 perf에서 안 돈다는
+  # 뜻은 아니다. 그래도 헬스체크는 꺼 둔다. Redis 컨테이너가 아직 Healthy 로 안 잡힌
+  # 찰나에 앱이 뜨면 health가 DOWN이 되고, run.sh의 기동 대기(curl -sf /actuator/health)가
+  # 503으로 죽어 부하 측정을 아예 못 돌린다. base(application.yaml)에는 두지 않는다 —
+  # prod는 ShedLock이 실제로 Redis를 쓰므로 거기서는 진짜 상태를 봐야 한다.
   health:
     redis:
       enabled: false

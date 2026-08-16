@@ -96,7 +96,7 @@ class AuctionClosePollerTest {
                 closeDelayQueue,
                 auctionItemCloseService,
                 new AuctionCloseMetrics(registry),
-                new AuctionProperties(3, new AuctionProperties.Close(BATCH, VISIBILITY, WORKERS, QUEUE_CAPACITY), null, null),
+                new AuctionProperties(3, new AuctionProperties.Close(BATCH, VISIBILITY, WORKERS, QUEUE_CAPACITY), null, null, null),
                 executor);
     }
 
