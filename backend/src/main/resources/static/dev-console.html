@@ -1192,10 +1192,11 @@ function log(text, kind = '') {
 }
 
 // ── API ─────────────────────────────────────────────────────────────
-async function api(method, path, body) {
+async function api(method, path, body, extraHeaders) {
+  const headers = body ? { 'Content-Type': 'application/json' } : {}
   const res = await fetch(API + path, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: { ...headers, ...(extraHeaders || {}) },
     body: body ? JSON.stringify(body) : undefined,
   })
 
@@ -1471,7 +1472,9 @@ async function placeOneBid() {
 
   try {
     await loginAs(`bidder-${bidder}`)
-    await api('POST', `/auction-items/${item.auctionItemId}/bids`, { amount })
+    // 멱등 키는 요청마다 유일해야 한다 (#337).
+    await api('POST', `/auction-items/${item.auctionItemId}/bids`, { amount },
+      { 'Idempotency-Key': `console-${item.auctionItemId}-${bidder}-${Date.now()}` })
     bidCount++
     log(`bidder-${bidder} → ${item.productName} ${amount.toLocaleString()}원`, 'ok')
   } catch (e) {

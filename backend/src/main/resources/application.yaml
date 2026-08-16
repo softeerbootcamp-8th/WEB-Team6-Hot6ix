@@ -141,8 +141,15 @@ upbid:
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
     buffer-size: ${SSE_BUFFER_SIZE:50}
     # 참여자 수 전역 집계에서 이 인스턴스를 구분하는 값. 컨테이너마다 HOSTNAME이 달라
-    # bid-stream consumer(148행)와 같은 이유로 재시작해도 값이 자연스럽게 이어진다.
+    # 아래 bid-stream consumer와 같은 이유로 재시작해도 값이 자연스럽게 이어진다.
     server-hostname: ${HOSTNAME:local}
+    # emitter 별 이벤트 큐 크기. 포화 시 drop 하므로 heartbeat 주기 안에 처리 가능한 크기로 잡는다.
+    emitter-queue-capacity: ${SSE_EMITTER_QUEUE_CAPACITY:128}
+    # emitter drain 전용 고정 스레드 풀 크기. 동시에 drain 가능한 emitter 수 상한이다.
+    worker-pool-size: ${SSE_WORKER_POOL_SIZE:4}
+    # 풀이 포화됐을 때 drain 태스크가 대기하는 큐. 활성 emitter 수(VUS)가 이 값을 넘으면
+    # RejectedExecutionException — 고정 풀이 VT와 갈리는 측정 지점이다.
+    worker-queue-capacity: ${SSE_WORKER_QUEUE_CAPACITY:512}
   bid-stream:
     key: auction:bid:stream
     group: bid-mysql-writers
@@ -209,6 +216,12 @@ upbid:
       idle-close-interval-ms: ${ROOM_IDLE_CLOSE_INTERVAL_MS:600000}
       # 한 tick 에 닫을 방 수 상한. 잘린 방은 다음 주기에 다시 집힌다.
       idle-close-batch-size: ${ROOM_IDLE_CLOSE_BATCH_SIZE:50}
+    result-cache:
+      # 종료된 경매방 결과 조회의 공개 부분만 담는다(#329). CLOSED 방만 저장하므로 히트 =
+      # 되돌아갈 수 없는 상태다. 남는 변동은 상품 이름·이미지 수정(ProductService.update가
+      # 이미 소급 반영을 수용한 트레이드오프)과 닉네임·상점명 변경뿐이라 TTL로 경계를 짓는다.
+      enabled: ${RESULT_CACHE_ENABLED:true}
+      ttl: ${RESULT_CACHE_TTL:60s}
   deal:
     award-recovery:
       enabled: ${AWARD_RECOVERY_ENABLED:true}
@@ -224,6 +237,10 @@ app:
     slack:
       webhook-url: ${SLACK_WEBHOOK_URL:}
       cooldown-seconds: ${SLACK_ALERT_COOLDOWN_SECONDS:60}
+  logging:
+    loki:
+      # loki 프로파일을 켤 때만 쓴다. logback-spring.xml 이 springProperty 로 읽어 간다.
+      url: ${LOKI_URL:}
 
 ncp:
   sms:

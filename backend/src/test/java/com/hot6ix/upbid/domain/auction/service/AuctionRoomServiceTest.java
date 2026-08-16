@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.auction.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -15,6 +16,7 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionRoomUpdateRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomCountsResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomListItemResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemResultResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomResultResponseDto;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
@@ -80,6 +82,14 @@ class AuctionRoomServiceTest {
 
     @Mock
     private DealCandidateRepository dealCandidateRepository;
+
+    /**
+     * 결과 화면의 공개 부분을 캐시에서 읽어 온다. 기본 동작(unstub 시 Optional.empty())이
+     * 곧 "미스"라서, 여기서 보는 기존 getResults 테스트는 전부 캐시 미스 경로를 본다.
+     * 히트·저장 자체는 {@link AuctionResultCacheTest}와 아래 캐시 전용 테스트에서 본다.
+     */
+    @Mock
+    private AuctionResultCache auctionResultCache;
 
     @Mock
     private RoomSseManager roomSseManager;
@@ -851,5 +861,98 @@ class AuctionRoomServiceTest {
                 .isInstanceOf(ApplicationException.class)
                 .extracting(e -> ((ApplicationException) e).getErrorType())
                 .isEqualTo(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("캐시 미스에 방이 CLOSED면 결과를 캐시에 저장한다")
+    void getResults_missAndClosed_savesToCache() {
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
+                .thenReturn(Optional.of(newClosedRoom()));
+        when(auctionItemRepository.findResults(10L)).thenReturn(newResultRows());
+        when(dealCandidateRepository.findMyRanksInRoom(10L, 1L)).thenReturn(List.of());
+
+        auctionRoomService.getResults(SHARE_CODE, 1L);
+
+        ArgumentCaptor<AuctionRoomResultResponseDto> captor =
+                ArgumentCaptor.forClass(AuctionRoomResultResponseDto.class);
+        verify(auctionResultCache).put(eq(SHARE_CODE), captor.capture());
+
+        // 캐시에 담기는 건 공개 뷰다. 저장 시점엔 아직 요청자의 순위를 모른다.
+        assertThat(captor.getValue().items())
+                .allSatisfy(item -> {
+                    assertThat(item.myRank()).isNull();
+                    assertThat(item.myAmount()).isNull();
+                });
+    }
+
+    @Test
+    @DisplayName("캐시 미스여도 방이 CLOSED가 아니면 저장하지 않는다")
+    void getResults_missAndNotClosed_doesNotSaveToCache() {
+
+        when(auctionRoomRepository.findByShareCodeAndDeletedAtIsNull(SHARE_CODE))
+                .thenReturn(Optional.of(newRoom(AuctionRoomStatus.OPEN)));
+        when(auctionItemRepository.findResults(10L)).thenReturn(newResultRows());
+        when(dealCandidateRepository.findMyRanksInRoom(10L, 1L)).thenReturn(List.of());
+
+        auctionRoomService.getResults(SHARE_CODE, 1L);
+
+        verify(auctionResultCache, never()).put(any(), any());
+    }
+
+    @Test
+    @DisplayName("캐시 히트 + 비로그인이면 DB를 전혀 읽지 않는다")
+    void getResults_hitAndGuest_readsNothingFromDb() {
+
+        AuctionRoomResultResponseDto cached = cachedGuestView();
+        when(auctionResultCache.find(SHARE_CODE)).thenReturn(Optional.of(cached));
+
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(SHARE_CODE, null);
+
+        assertThat(response).isEqualTo(cached);
+        verifyNoInteractions(auctionRoomRepository, auctionItemRepository, dealCandidateRepository);
+    }
+
+    @Test
+    @DisplayName("캐시 히트 + 로그인이면 내 순위 조회 한 번만 하고 채운다")
+    void getResults_hitAndMember_onlyQueriesMyRank() {
+
+        AuctionRoomResultResponseDto cached = cachedGuestView();
+        when(auctionResultCache.find(SHARE_CODE)).thenReturn(Optional.of(cached));
+        when(dealCandidateRepository.findMyRanksInRoom(10L, 1L))
+                .thenReturn(List.of(new MyCandidateRankProjection(1L, 7, 60_000L)));
+
+        AuctionRoomResultResponseDto response = auctionRoomService.getResults(SHARE_CODE, 1L);
+
+        assertThat(response.items().getFirst().myRank()).isEqualTo(7);
+        assertThat(response.items().getFirst().myAmount()).isEqualTo(60_000L);
+        verifyNoInteractions(auctionRoomRepository, auctionItemRepository);
+    }
+
+    /** {@code newClosedRoom()}과 같은 모양이되 상태를 고를 수 있다. */
+    private AuctionRoom newRoom(AuctionRoomStatus status) {
+        AuctionRoom auctionRoom = AuctionRoom.builder()
+                .bidIncrement(1_000L)
+                .sellerProfile(newSellerProfile())
+                .name("승민의 경매방")
+                .shareCode(SHARE_CODE)
+                .status(status)
+                .softCloseTriggerSeconds(60)
+                .softCloseExtendSeconds(60)
+                .build();
+        ReflectionTestUtils.setField(auctionRoom, "auctionRoomId", 10L);
+
+        return auctionRoom;
+    }
+
+    /** 캐시에서 히트했다고 가정하는 공개 뷰. myRank/myAmount는 항상 null이다. */
+    private AuctionRoomResultResponseDto cachedGuestView() {
+        List<AuctionItemResultResponseDto> items = List.of(
+                new AuctionItemResultResponseDto(
+                        1L, "한정판 피규어", "https://cdn.hot6ix.com/1.png",
+                        AuctionItemStatus.SOLD, 85_000L, "스니커홀릭", null, null));
+
+        return new AuctionRoomResultResponseDto(
+                10L, "승민의 경매방", "승민상점", AuctionRoomStatus.CLOSED, null, items);
     }
 }

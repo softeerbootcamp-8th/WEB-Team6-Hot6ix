@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  이 파일이 없던 동안 Spring Boot 기본 콘솔 설정만 나갔다. 그대로 두면 나중에 로그를
+  수집기로 보낼 때 붙일 자리가 없어서 여기서 한 번 잡아 둔다.
+
+  콘솔 출력은 Boot 기본을 그대로 include 한다. 형식을 직접 적으면 Boot 를 올릴 때마다
+  기본 패턴과 어긋나고, application.yaml 의 logging.level 설정도 계속 그대로 먹는다.
+-->
+<configuration>
+
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+    <!--
+      appender 는 Spring 빈이 아니라 @Value 나 주입을 못 받는다. 값을 넘길 수 있는 통로가
+      springProperty 뿐이라 여기서 읽어 아래 appender 의 setter 로 넣는다.
+    -->
+    <springProperty scope="context" name="SLACK_WEBHOOK_URL"
+                    source="app.alert.slack.webhook-url"/>
+    <springProperty scope="context" name="SLACK_COOLDOWN_SECONDS"
+                    source="app.alert.slack.cooldown-seconds" defaultValue="60"/>
+    <springProperty scope="context" name="LOKI_URL" source="app.logging.loki.url"/>
+
+    <springProfile name="prod">
+        <!--
+          운영에서만 켠다. 로컬과 부하 측정에서 켜면 팀 채널이 개발 중 에러로 덮인다.
+
+          ThresholdFilter 로 ERROR 만 통과시킨다. 알림 여부를 로그 레벨에 묶는 것이 이 방식의
+          핵심이라, "알릴 만한 실패면 log.error 로 남긴다"가 곧 규칙이 된다.
+        -->
+        <appender name="SLACK" class="com.hot6ix.upbid.global.alert.SlackAppender">
+            <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+                <level>ERROR</level>
+            </filter>
+            <webhookUrl>${SLACK_WEBHOOK_URL}</webhookUrl>
+            <cooldownSeconds>${SLACK_COOLDOWN_SECONDS}</cooldownSeconds>
+        </appender>
+    </springProfile>
+
+    <springProfile name="loki">
+        <!--
+          로그를 측정 EC2 의 Loki 로 보낸다 (이슈 #332).
+
+          프로파일을 따로 둔 이유는 껐다 켜는 스위치가 필요해서다. Loki 가 아직 안 떴는데
+          켜져 있으면 전송 실패 로그만 쌓인다. 배포에서 SPRING_PROFILES_ACTIVE 를
+          prod 에서 prod,loki 로 바꾸면 켜지고, 되돌리면 지금과 동작이 같다.
+        -->
+        <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+            <http>
+                <url>${LOKI_URL}</url>
+                <connectionTimeoutMs>5000</connectionTimeoutMs>
+                <requestTimeoutMs>10000</requestTimeoutMs>
+            </http>
+            <batch>
+                <!--
+                  **여기가 앱을 지키는 자리다.** Loki 가 죽거나 느려지면 못 보낸 로그가 앱 힙에
+                  쌓이는데, 배포 서버는 힙이 490MB 인 데다 이미 스왑을 404MB 쓰고 있어서
+                  여기서 메모리를 더 먹으면 바로 Full GC 멈춤으로 이어진다.
+                  기본값(수십 MB)보다 훨씬 작게 잡고, 넘치면 버린다. 버려도 콘솔에는 남는다.
+                -->
+                <sendQueueMaxBytes>8388608</sendQueueMaxBytes>
+                <!--
+                  loki4j 는 sendQueueMaxBytes 가 maxBytes 의 5배보다 작으면 경고를 낸다.
+                  경고를 없애는 방법이 둘인데, 큐를 20MB 로 키우는 쪽은 위에 적은 이유로
+                  못 쓴다. 그래서 배치 상한을 기본값 4MB 에서 1MB 로 내렸다.
+                  접근 로그 한 줄이 150B 남짓이라 아래 maxItems 가 거의 항상 먼저 걸린다.
+                -->
+                <maxBytes>1048576</maxBytes>
+                <maxItems>1000</maxItems>
+                <timeoutMs>10000</timeoutMs>
+            </batch>
+            <!--
+              라벨은 카디널리티가 낮은 것만 넣는다. traceId 나 itemId 를 라벨로 넣으면 값마다
+              시계열이 새로 생겨서 Loki 가 감당하지 못한다.
+
+              **줄바꿈으로 나눈다. 쉼표가 아니다.** loki4j 2.0 의 기본 pairSeparator 가
+              `regex:\n|\r` 라, 한 줄에 쉼표로 이어 쓰면 기동할 때 예외가 나고 앱이 안 뜬다.
+              들여쓰기도 키에 섞이므로 왼쪽에 붙여 쓴다.
+
+              traceId 는 여기 넣지 않아도 된다. 기본 structuredMetadata 가 `*=%mdc` 라
+              MDC 값이 통째로 실려 나간다.
+            -->
+<labels>
+app=upbid
+host=${HOSTNAME}
+level=%level
+</labels>
+            <message>
+                <pattern>[%thread] %-5level %logger{36} [%mdc{traceId:-}] - %msg%n%ex</pattern>
+            </message>
+        </appender>
+    </springProfile>
+
+    <!--
+      **<root> 안에 <springProfile> 을 넣지 않는다.** 동작은 하지만 Boot 가 기동할 때마다
+      "지원하지 않는 중첩" 경고를 낸다(SpringProfileIfNestedWithinSecondPhaseElementSanityChecker).
+      지금은 맞게 붙어도 Boot 를 올리다 조용히 안 붙는 날이 오면, 하필 그게 "알림이 안 온다"라
+      아무도 모른다. 대신 <root> 를 프로파일별로 하나씩 더 쓴다. logback 은 <root> 를 여러 번
+      만나면 appender 를 덮어쓰지 않고 더한다.
+    -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <springProfile name="prod">
+        <root>
+            <appender-ref ref="SLACK"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="loki">
+        <root>
+            <appender-ref ref="LOKI"/>
+        </root>
+    </springProfile>
+
+</configuration>

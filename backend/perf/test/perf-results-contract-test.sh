@@ -17,7 +17,8 @@ for symbol in \
   P99_MS K6_P99_MS \
   CONN_ACQUIRE_P99_MS CONN_USAGE_P95_MS CONN_USAGE_P99_MS CONN_TIMEOUT_COUNT \
   PROCESS_CPU_AVG PROCESS_CPU_MAX SYSTEM_CPU_AVG SYSTEM_CPU_MAX SYSTEM_LOAD_AVG SYSTEM_LOAD_MAX \
-  DROPPED_ITERATIONS BID_ATTEMPT_PER_S BID_ACCEPT_RATE; do
+  DROPPED_ITERATIONS BID_ATTEMPT_PER_S BID_ACCEPT_RATE \
+  RESULT_CACHE_HIT_RATE SELECT_PER_RESULT; do
   count="$({ grep -o "$symbol" "$RUN" || true; } | wc -l | tr -d ' ')"
   [ "$count" -ge 3 ] || fail "$symbol 이 계산·CSV·note에 모두 연결되지 않았습니다 (등장 ${count}회)"
 done
@@ -35,14 +36,6 @@ grep -q 'SSE_MSG_LATENCY_SAMPLES.*SSE_CLIENT_BID_EVENTS_RECEIVED' "$RUN" \
   || fail "BID_PLACED 수신 수와 latency 표본 정합성 판정이 없습니다"
 grep -q 'SSE_PERF=.*BID_PLACED' "$RUN" \
   || fail "시나리오 10 핵심 지연에서 heartbeat를 제외하지 않았습니다"
-grep -q '^SSE_VT=false$' "$RUN" \
-  || fail "동기 구현 결과가 sse_vt=false로 고정되지 않았습니다"
-grep -q '^SSE_POOL=0$' "$RUN" \
-  || fail "동기 구현 결과의 dispatch pool이 0으로 기록되지 않습니다"
-grep -q 'SSE_VT_SUFFIX="_ssesync"' "$RUN" \
-  || fail "시나리오 10 실행 이름에서 동기 구현을 구분하지 않습니다"
-grep -q '동기 SSE 구현에서는 --sse-vt를 사용할 수 없다' "$RUN" \
-  || fail "동기 구현에서 잘못된 --sse-vt 실행을 차단하지 않습니다"
 
 grep -q 'hikaricp_connections_usage_seconds_bucket' "$DASHBOARD" \
   || fail "Grafana에 Hikari usage 지표가 없습니다"

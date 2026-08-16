@@ -35,4 +35,9 @@ public record AuctionRoomResultResponseDto(
                 auctionRoom.getClosedAt(),
                 items);
     }
+
+    /** 물품 목록만 바꾼 복사본. 캐시에서 읽은 공용 응답에 요청자의 순위를 끼워 넣을 때 쓴다. */
+    public AuctionRoomResultResponseDto withItems(List<AuctionItemResultResponseDto> items) {
+        return new AuctionRoomResultResponseDto(auctionRoomId, name, sellerStoreName, status, closedAt, items);
+    }
 }

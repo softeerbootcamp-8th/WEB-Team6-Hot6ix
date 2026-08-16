@@ -12,7 +12,8 @@ public record AuctionProperties(
         int maxInProgressPerRoom,
         Close close,
         ClosingSoon closingSoon,
-        Room room
+        Room room,
+        ResultCache resultCache
 ) {
 
     /**
@@ -73,6 +74,20 @@ public record AuctionProperties(
     public record ClosingSoon(
             int claimBatchSize,
             Duration visibilityTimeout
+    ) {
+    }
+
+    /**
+     * 종료된 경매방 결과 조회의 공개 부분을 Redis에 캐시하는 값들(#329).
+     *
+     * @param enabled 꺼져 있으면 {@code AuctionResultCache}가 조회·저장을 아예 하지 않는다
+     * @param ttl     유일한 무효화 수단이다. 상품 이름·이미지 수정이나 상점명·닉네임 변경이
+     *                이 시간만큼 결과 화면에 늦게 반영될 수 있다 — 이벤트 기반 무효화 대신
+     *                받아들인 지연이다
+     */
+    public record ResultCache(
+            boolean enabled,
+            Duration ttl
     ) {
     }
 }

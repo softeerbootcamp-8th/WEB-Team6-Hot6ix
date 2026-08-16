@@ -13,6 +13,13 @@
 # 왜 5번이 필요한가: 입찰은 auction_participants 에 agreed_at 이 채워진 행을 요구한다.
 # 그게 없으면 부하를 아무리 걸어도 전부 TERMS_NOT_AGREED 로 거절돼서 아무것도 못 잰다.
 #
+# --close-room 을 주면 한 단계를 더 한다.
+#   6. 물품마다 구매자 1..N(--bids-per-item)이 순서대로 입찰 (증가하는 금액)
+#   7. 판매자 세션으로 방 종료 API 호출 — 진행 중 물품을 전부 닫고 방을 CLOSED 로 만든다
+#
+# 결과 조회(#329) 부하 시나리오가 쓴다. 낙찰자·낙찰 후보가 실제 도메인 경로로 생겨야
+# GET .../results 가 SOLD 물품과 myRank 를 채운 상태로 응답한다.
+#
 # 마지막에 SHARE_CODE / ITEM_IDS / CLOSE_ITEM_IDS 를 --out 파일에 shell 변수로 남긴다.
 # run.sh 가 그걸 읽어 k6 에 넘긴다.
 #
@@ -39,6 +46,10 @@ CONCURRENCY=16
 SOFT_CLOSE_TRIGGER=60
 SOFT_CLOSE_EXTEND=60
 
+# 결과 조회 부하 시나리오(#329) 전용. 기본은 꺼져 있어 기존 호출은 그대로 동작한다.
+CLOSE_ROOM=0
+BIDS_PER_ITEM=3
+
 usage() {
   cat <<'USAGE'
 사용법: seed.sh [옵션]
@@ -51,6 +62,8 @@ usage() {
   --duration-min N   시작할 때 줄 경매 시간(분). 기본 720 = 12시간, 측정 중에 안 닫히게
   --soft-close-trigger N  마감 임박으로 보는 남은 초 (기본 60)
   --soft-close-extend N   임박 구간에 입찰이 들어오면 밀어 줄 초 (기본 60)
+  --close-room       물품마다 입찰을 넣고 방을 종료한다 (결과 조회 시나리오용, 기본 꺼짐)
+  --bids-per-item N  --close-room 일 때 물품 하나에 넣을 입찰 수 (기본 3)
   --out FILE         결과를 shell 변수로 적을 파일
   --base URL         API 주소 (기본 http://localhost:8080/api/v1 = 개발 앱)
 USAGE
@@ -67,6 +80,8 @@ while [ $# -gt 0 ]; do
     --duration-min) DURATION_MINUTES="$2"; shift 2 ;;
     --soft-close-trigger) SOFT_CLOSE_TRIGGER="$2"; shift 2 ;;
     --soft-close-extend) SOFT_CLOSE_EXTEND="$2"; shift 2 ;;
+    --close-room) CLOSE_ROOM=1; shift ;;
+    --bids-per-item) BIDS_PER_ITEM="$2"; shift 2 ;;
     --out) OUT="$2"; shift 2 ;;
     --base) BASE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -289,6 +304,46 @@ if [ "$FAILED" != "0" ]; then
   echo "[seed] 구매자 ${FAILED}명이 로그인 또는 약관 동의에 실패했다." >&2
   echo "       이대로 재면 그 사람들의 입찰이 전부 거절돼 숫자가 의미 없어진다. 여기서 멈춘다." >&2
   exit 1
+fi
+
+# 결과 조회 부하 시나리오(#329) 전용. 낙찰자·낙찰 후보를 실제 도메인 경로로 만들어야
+# GET .../results 가 SOLD 물품과 myRank 를 채운 채로 응답한다.
+if [ "$CLOSE_ROOM" -eq 1 ]; then
+  if [ "$START_MODE" != "all" ]; then
+    echo "--close-room 은 --start all 이어야 한다 (입찰은 IN_PROGRESS 물품에만 들어간다)." >&2
+    exit 1
+  fi
+  if [ "$ROOM_COUNT" -ne 1 ]; then
+    echo "--close-room 은 방 하나짜리 시딩에서만 쓴다 (--per-room 을 빼거나 0으로 둔다)." >&2
+    exit 1
+  fi
+  if [ "$BIDS_PER_ITEM" -gt "$USERS" ] 2>/dev/null; then
+    echo "--bids-per-item($BIDS_PER_ITEM)이 --users($USERS)보다 크다. 로그인·동의된 구매자가 모자란다." >&2
+    exit 1
+  fi
+
+  echo "[seed] 결과 조회용 입찰 (물품당 ${BIDS_PER_ITEM}건, 증가하는 금액)"
+  # 물품마다 같은 구매자 1..N 을 재사용하면 안 된다. 입찰 Rate Limiter(#324, 버킷
+  # 용량 5)가 짧은 시간에 여러 물품을 잇달아 입찰한 회원을 7009 로 거절한다 — 실측으로
+  # 물품 6개째부터 막혔다. 그래서 입찰마다 다른 구매자를 돌려 쓴다. 한 사람이 한 번만
+  # 입찰하면 버킷을 건드릴 일이 없다.
+  BIDDER_SEQ=0
+  for item_id in $(printf '%s' "$STARTED_IDS" | tr ',' ' '); do
+    PRICE="$START_PRICE"
+    b=1
+    while [ "$b" -le "$BIDS_PER_ITEM" ]; do
+      PRICE=$((PRICE + UNIT))
+      BIDDER_SEQ=$((BIDDER_SEQ + 1))
+      BIDDER=$(( (BIDDER_SEQ - 1) % USERS + 1 ))
+      # 위 구매자 시딩이 이미 로그인·동의까지 끝낸 쿠키를 그대로 쓴다. 새로 만들 이유가 없다.
+      api "$WORK/buyer-$BIDDER.cookie" POST "/auction-items/$item_id/bids" \
+        "$(jq -nc --argjson amount "$PRICE" '{amount:$amount}')" >/dev/null
+      b=$((b + 1))
+    done
+  done
+
+  echo "[seed] 경매방 종료 (진행 중 물품을 전부 닫는다)"
+  api "$SELLER_JAR" POST "/auction-rooms/$ROOM_ID/close" >/dev/null
 fi
 
 echo "[seed] 완료"

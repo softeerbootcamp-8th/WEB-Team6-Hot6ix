@@ -1,0 +1,229 @@
+{
+  "uid": "upbid-logs",
+  "title": "Upbid 로그",
+  "tags": ["upbid", "logs"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "level",
+        "label": "레벨",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "upbid-loki" },
+        "query": {
+          "label": "level",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{app=\"upbid\"}",
+          "type": 1
+        },
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "options": []
+      },
+      {
+        "name": "search",
+        "label": "검색어",
+        "description": "traceId, URL, 예외 이름 아무거나 붙여넣으면 그것만 걸러진다. 비우면 전체.",
+        "type": "textbox",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "에러",
+      "description": "이 구간에 찍힌 ERROR 로그 수. 0이 아니면 슬랙에도 갔다.",
+      "datasource": { "type": "loki", "uid": "upbid-loki" },
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "sum(count_over_time({app=\"upbid\", level=\"ERROR\"}[$__range]))"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [{ "type": "special", "options": { "match": "null", "result": { "text": "0" } } }],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "경고",
+      "description": "WARN. 5xx 응답도 여기 들어온다(슬랙 중복을 막으려고 접근 로그는 warn 으로 남긴다).",
+      "datasource": { "type": "loki", "uid": "upbid-loki" },
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "sum(count_over_time({app=\"upbid\", level=\"WARN\"}[$__range]))"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [{ "type": "special", "options": { "match": "null", "result": { "text": "0" } } }],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "요청",
+      "description": "접근 로그 한 줄이 요청 한 건이다.",
+      "datasource": { "type": "loki", "uid": "upbid-loki" },
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "sum(count_over_time({app=\"upbid\"} |= `요청 - `[$__range]))"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [{ "type": "special", "options": { "match": "null", "result": { "text": "0" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "레벨별 로그량 (분당)",
+      "description": "평소와 다른 봉우리가 있으면 그 시간대를 드래그해서 아래 로그를 좁힌다.",
+      "datasource": { "type": "loki", "uid": "upbid-loki" },
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (level) (count_over_time({app=\"upbid\"}[1m]))",
+          "legendFormat": "{{level}}"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 60, "lineWidth": 0, "stacking": { "mode": "normal" } },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "ERROR" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "WARN" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] },
+          { "matcher": { "id": "byName", "options": "INFO" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }] },
+          { "matcher": { "id": "byName", "options": "DEBUG" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "text" } }] }
+        ]
+      }
+    },
+    {
+      "type": "row",
+      "title": "에러만",
+      "gridPos": { "x": 0, "y": 5, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "title": "ERROR 로그 (슬랙으로 나간 것과 같다)",
+      "description": "줄을 누르면 traceId 가 나온다. 그 값을 위 검색어에 붙여넣으면 그 요청 전체가 아래에 보인다.",
+      "datasource": { "type": "loki", "uid": "upbid-loki" },
+      "gridPos": { "x": 0, "y": 6, "w": 24, "h": 9 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{app=\"upbid\", level=\"ERROR\"}"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      }
+    },
+    {
+      "type": "row",
+      "title": "전체 로그",
+      "gridPos": { "x": 0, "y": 15, "w": 24, "h": 1 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "title": "전체 로그 (위 레벨과 검색어가 그대로 걸린다)",
+      "datasource": { "type": "loki", "uid": "upbid-loki" },
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{app=\"upbid\", level=~\"$level\"} |~ `$search`"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      }
+    }
+  ]
+}

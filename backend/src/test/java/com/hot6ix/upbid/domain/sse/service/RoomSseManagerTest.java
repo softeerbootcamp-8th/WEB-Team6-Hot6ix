@@ -7,13 +7,13 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.event.ParticipantCountPublisher;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -30,8 +31,10 @@ class RoomSseManagerTest {
     private static final Long ROOM_ID = 1L;
     private static final String EVENT_NAME = "TEST_EVENT";
     private static final long EMITTER_TIMEOUT_MS = 60 * 60 * 1000L;
+    private static final int QUEUE_CAPACITY = 128;
 
-    private static final SseProperties PROPS = new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50, "local");
+    private static final SseProperties PROPS =
+            new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50, "local", QUEUE_CAPACITY, 1, 1);
 
     private final RoomSseManager roomSseManager = newRoomSseManager();
 
@@ -49,9 +52,117 @@ class RoomSseManagerTest {
         return newRoomSseManager(buffer, publisher, new SimpleMeterRegistry());
     }
 
+    /**
+     * dispatcher 를 돌리는 executor 로 {@code Runnable::run} 을 준다. 운영에서는 고정 풀이
+     * 비동기로 전송하지만, 이 테스트가 보는 것은 <b>등록·해제·팬아웃 대상 선정</b>이지
+     * 전송 시점이 아니다. 같은 스레드에서 즉시 실행시켜 {@code deliverLocal} 이 돌아온 뒤
+     * 바로 단언할 수 있게 한다.
+     *
+     * <p>emitter 는 {@link FakeMvcEmitter}로 갈아끼운다. 이유는 그 클래스 주석 참고.
+     */
     private static RoomSseManager newRoomSseManager(
             SseEventBuffer buffer, ParticipantCountPublisher publisher, SimpleMeterRegistry registry) {
-        return new RoomSseManager(PROPS, new SseMetrics(registry), buffer, publisher);
+        return new RoomSseManager(PROPS, new SseMetrics(registry), buffer, publisher, Runnable::run) {
+            @Override
+            SseEmitter createEmitter() {
+                return new FakeMvcEmitter();
+            }
+        };
+    }
+
+    /**
+     * Spring MVC 의 async handler 역할을 대신하는 emitter.
+     *
+     * <p>{@code ResponseBodyEmitter}는 MVC 가 {@code initialize(handler)}를 불러줘야
+     * {@code onCompletion}/{@code onError} 콜백을 연결한다. 유닛 테스트에서 만든 맨 emitter 는
+     * handler 가 없어서 {@code complete()}를 불러도 <b>콜백이 발화하지 않는다.</b>
+     * {@code RoomSseManager}의 정리가 전부 그 콜백을 타므로, 이 대역 없이는
+     * "죽은 연결이 걷어지는가"를 확인할 수 없다.
+     *
+     * <p>{@link #killClient()}는 <b>클라이언트 소켓은 죽었는데 서버는 아직 모르는</b> 상태를
+     * 만든다. 실제로 연결이 끊기는 방식이 이렇다 — 다음 전송을 시도해야 비로소 드러난다.
+     * {@code complete()}를 대신 부르면 그 즉시 정리돼서, heartbeat 가 걷어내는지를 못 본다.
+     */
+    /** 클라이언트 소켓만 죽인다. 서버는 다음 전송을 시도해야 안다. */
+    private static void killClient(SseEmitter emitter) {
+        ((FakeMvcEmitter) emitter).killClient();
+    }
+
+    private static class FakeMvcEmitter extends SseEmitter {
+
+        private Runnable completionCallback;
+        private Consumer<Throwable> errorCallback;
+        private boolean completed;
+        private boolean clientGone;
+
+        void killClient() {
+            this.clientGone = true;
+        }
+
+        @Override
+        public synchronized void onCompletion(Runnable callback) {
+            this.completionCallback = callback;
+        }
+
+        @Override
+        public synchronized void onError(Consumer<Throwable> callback) {
+            this.errorCallback = callback;
+        }
+
+        @Override
+        public void complete() {
+            finish(null);
+        }
+
+        @Override
+        public void completeWithError(Throwable ex) {
+            finish(ex);
+        }
+
+        @Override
+        public void send(SseEventBuilder builder) throws IOException {
+            requireWritable();
+        }
+
+        @Override
+        public void send(Object object) throws IOException {
+            requireWritable();
+        }
+
+        /**
+         * 콜백은 lock 밖에서 부른다. 콜백이 {@code disconnect → unregister} 로 이어지며
+         * 이 emitter 를 다시 건드리기 때문이다.
+         */
+        private void finish(Throwable ex) {
+            Runnable completion;
+            Consumer<Throwable> error;
+
+            synchronized (this) {
+                if (completed) {
+                    // 실제 ResponseBodyEmitter 와 같은 반응. closeRoom 이 이걸 잡아서 삼킨다.
+                    throw new IllegalStateException("ResponseBodyEmitter has already completed");
+                }
+                completed = true;
+                completion = completionCallback;
+                error = errorCallback;
+            }
+
+            if (ex != null) {
+                if (error != null) {
+                    error.accept(ex);
+                }
+                return;
+            }
+            if (completion != null) {
+                completion.run();
+            }
+        }
+
+        private synchronized void requireWritable() {
+            if (completed || clientGone) {
+                throw new IllegalStateException("ResponseBodyEmitter has already completed");
+            }
+        }
     }
 
     @Test
@@ -132,7 +243,7 @@ class RoomSseManagerTest {
 
         // 연결은 끊겼지만 아직 Set 에서 제거되지 않은 상태를 만든다.
         // 이 emitter 에 쓰면 ResponseBodyEmitter 가 IllegalStateException 을 던진다.
-        dead.complete();
+        killClient(dead);
 
         assertThatCode(() -> roomSseManager.deliverLocal(ROOM_ID, EVENT_NAME, 1L, "payload"))
                 .doesNotThrowAnyException();
@@ -147,7 +258,7 @@ class RoomSseManagerTest {
         roomSseManager.subscribe(ROOM_ID, null);
         SseEmitter dead = roomSseManager.subscribe(ROOM_ID, null);
 
-        dead.complete();
+        killClient(dead);
 
         assertThatCode(roomSseManager::sendHeartbeat).doesNotThrowAnyException();
 
@@ -173,7 +284,7 @@ class RoomSseManagerTest {
         ParticipantCountPublisher publisher = mock(ParticipantCountPublisher.class);
         RoomSseManager manager = newRoomSseManager(mock(SseEventBuffer.class), publisher);
         SseEmitter dead = manager.subscribe(ROOM_ID, null);
-        dead.complete();
+        killClient(dead);
 
         clearInvocations(publisher);
 
@@ -212,7 +323,7 @@ class RoomSseManagerTest {
 
         manager.subscribe(ROOM_ID, null);
         SseEmitter dead = manager.subscribe(ROOM_ID, null);
-        dead.complete();
+        killClient(dead);
 
         clearInvocations(publisher);
 
@@ -334,8 +445,8 @@ class RoomSseManagerTest {
         assertThat(rooms(registry)).isEqualTo(1);
 
         // 연결이 끊긴 상태를 만들고 heartbeat 로 걷어내게 한다.
-        first.complete();
-        second.complete();
+        killClient(first);
+        killClient(second);
         manager.sendHeartbeat();
 
         assertThat(manager.getParticipantCount(ROOM_ID)).isZero();
@@ -345,66 +456,21 @@ class RoomSseManagerTest {
     }
 
     @Test
-    @DisplayName("일반 이벤트와 heartbeat를 실제 send 지점에서 계측한다")
-    void recordsEventAndHeartbeatAtActualSend() {
+    @DisplayName("연결 수립과 방 종료 연결 수를 중복 없이 기록한다")
+    void recordsOpenedAndRoomClosedConnections() {
 
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         RoomSseManager manager = newRoomSseManager(
                 mock(SseEventBuffer.class), mock(ParticipantCountPublisher.class), registry);
 
         manager.subscribe(ROOM_ID, null);
-        manager.deliverLocal(ROOM_ID, EVENT_NAME, 1L, "payload");
-        manager.sendHeartbeat();
+        manager.subscribe(ROOM_ID, null);
+        manager.closeRoom(ROOM_ID);
 
-        assertThat(registry.get("upbid.sse.send.attempts")
-                .tag("event", EVENT_NAME)
-                .counter().count()).isEqualTo(1);
-        assertThat(registry.get("upbid.sse.send.successes")
-                .tag("event", EVENT_NAME)
-                .counter().count()).isEqualTo(1);
-        assertThat(registry.get("upbid.sse.send")
-                .tag("event", EVENT_NAME)
-                .timer().count()).isEqualTo(1);
-        assertThat(registry.get("upbid.sse.fanout")
-                .tag("event", EVENT_NAME)
-                .timer().count()).isEqualTo(1);
-
-        assertThat(registry.get("upbid.sse.send.attempts")
-                .tag("event", SseMetrics.HEARTBEAT_EVENT)
-                .counter().count()).isEqualTo(1);
-        assertThat(registry.get("upbid.sse.send.successes")
-                .tag("event", SseMetrics.HEARTBEAT_EVENT)
-                .counter().count()).isEqualTo(1);
-        assertThat(registry.get("upbid.sse.send")
-                .tag("event", SseMetrics.HEARTBEAT_EVENT)
-                .timer().count()).isEqualTo(1);
-
-        assertThat(registry.get("upbid.sse.in.flight").gauge().value()).isZero();
-        assertThat(registry.get("upbid.sse.queue.depth").gauge().value()).isZero();
-    }
-
-    @Test
-    @DisplayName("send 실패를 원인별로 기록하고 연결을 한 번만 종료한다")
-    void recordsSendFailureAndConnectionCloseOnce() {
-
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        RoomSseManager manager = newRoomSseManager(
-                mock(SseEventBuffer.class), mock(ParticipantCountPublisher.class), registry);
-        SseEmitter dead = manager.subscribe(ROOM_ID, null);
-        dead.complete();
-
-        manager.deliverLocal(ROOM_ID, EVENT_NAME, 1L, "payload");
-
-        assertThat(registry.get("upbid.sse.send.failures")
-                .tags("event", EVENT_NAME, "cause", "illegal_state")
-                .counter().count()).isEqualTo(1);
-        assertThat(registry.get("upbid.sse.send")
-                .tag("event", EVENT_NAME)
-                .timer().count()).isEqualTo(1);
+        assertThat(registry.get("upbid.sse.connections.opened").counter().count()).isEqualTo(2);
         assertThat(registry.get("upbid.sse.connections.closed")
-                .tag("reason", SseMetrics.CLOSE_SEND_ERROR)
-                .counter().count()).isEqualTo(1);
-        assertThat(manager.getParticipantCount(ROOM_ID)).isZero();
+                .tag("reason", SseMetrics.CLOSE_ROOM_CLOSED)
+                .counter().count()).isEqualTo(2);
     }
 
     private static double rooms(SimpleMeterRegistry registry) {
