@@ -5,7 +5,7 @@ import {
   StartIcon,
   WinIcon,
 } from '@/features/live/components/event-icons'
-import type { RoomEvent } from '@/mocks/types'
+import type { RoomEvent } from '@/types/domain'
 
 /**
  * 이벤트 한 줄의 배경·아이콘 칩 색과 아이콘. Figma `MOB-04` 값이다.

@@ -1,7 +1,7 @@
 import type { RecentRoomEventDto } from '@/api/generated/model'
 import type { SseEventPayload } from '@/features/live/use-realtime-status'
 import { formatClosingLead, formatWon } from '@/lib/format'
-import type { RoomEvent } from '@/mocks/types'
+import type { RoomEvent } from '@/types/domain'
 
 /**
  * 새로고침 등으로 화면 진입 직후 알림 피드를 미리 채울 때 쓴다.

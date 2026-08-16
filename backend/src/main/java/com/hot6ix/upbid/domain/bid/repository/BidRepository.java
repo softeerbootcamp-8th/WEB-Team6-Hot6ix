@@ -36,9 +36,10 @@ public interface BidRepository extends JpaRepository<Bid, Long> {
 
     @Query(value = """
             SELECT * FROM (
-                SELECT b.auction_item_id AS auctionItemId,
-                       u.nickname        AS nickname,
-                       MAX(b.amount)     AS amount,
+                SELECT b.auction_item_id  AS auctionItemId,
+                       b.bidder_user_id   AS bidderUserId,
+                       u.nickname         AS nickname,
+                       MAX(b.amount)      AS amount,
                        ROW_NUMBER() OVER (
                            PARTITION BY b.auction_item_id
                            ORDER BY MAX(b.amount) DESC, b.bidder_user_id ASC) AS rankNo
