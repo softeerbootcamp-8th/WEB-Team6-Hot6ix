@@ -77,18 +77,20 @@ public class AuctionItemService {
      * <p>리더보드는 쿼리 한 번으로 물품 전체를 가져와 ID로 묶는다. 물품마다 따로 조회하면
      * 물품 수만큼 쿼리가 늘어난다. 물품이 없으면 조회 자체를 건너뛴다.
      *
-     * @param shareCode 조회할 경매방의 공유 코드
+     * @param shareCode    조회할 경매방의 공유 코드
+     * @param viewerUserId 조회한 사람. 리더보드의 {@code isMe}를 가리는 데만 쓴다. 게스트면 {@code null}
      * @return 물품 요약 목록. 물품이 없으면 빈 목록
      * @throws ApplicationException 해당 공유 코드의 경매방이 없거나 soft delete 되었을 때(AUCTION_ROOM_NOT_FOUND)
      */
-    public List<AuctionItemSummaryResponseDto> getSummaries(String shareCode) {
+    public List<AuctionItemSummaryResponseDto> getSummaries(String shareCode, Long viewerUserId) {
         Long auctionRoomId = auctionRoomShareService.resolveRoomId(shareCode);
 
         List<AuctionItemSummaryResponseDto> summaries =
                 auctionItemRepository.findSummaries(auctionRoomId);
 
         Map<Long, List<LeaderboardEntryResponseDto>> leaderboards = findLeaderboards(
-                summaries.stream().map(AuctionItemSummaryResponseDto::auctionItemId).toList());
+                summaries.stream().map(AuctionItemSummaryResponseDto::auctionItemId).toList(),
+                viewerUserId);
 
         return summaries.stream()
                 .map(summary -> summary.withLeaderboard(
@@ -108,11 +110,12 @@ public class AuctionItemService {
      *
      * @param shareCode     물품이 속한 경매방의 공유 코드
      * @param auctionItemId 조회할 물품의 ID
+     * @param viewerUserId  조회한 사람. 리더보드의 {@code isMe}를 가리는 데만 쓴다. 게스트면 {@code null}
      * @return 물품 상세. 입찰이 없으면 리더보드는 빈 목록
      * @throws ApplicationException 해당 공유 코드의 경매방이 없을 때(AUCTION_ROOM_NOT_FOUND),
      *                               물품이 없거나 그 방 소속이 아닐 때(AUCTION_ITEM_NOT_FOUND)
      */
-    public AuctionItemDetailResponseDto getDetail(String shareCode, Long auctionItemId) {
+    public AuctionItemDetailResponseDto getDetail(String shareCode, Long auctionItemId, Long viewerUserId) {
         Long auctionRoomId = auctionRoomShareService.resolveRoomId(shareCode);
 
         AuctionItemDetailResponseDto detail = auctionItemRepository.findDetail(auctionItemId)
@@ -123,7 +126,7 @@ public class AuctionItemService {
         }
 
         return detail.withLeaderboard(
-                findLeaderboards(List.of(auctionItemId))
+                findLeaderboards(List.of(auctionItemId), viewerUserId)
                         .getOrDefault(auctionItemId, List.of()));
     }
 
@@ -131,13 +134,16 @@ public class AuctionItemService {
      * 물품들의 리더보드를 쿼리 한 번으로 가져와 물품 ID로 묶는다. 물품마다 따로 조회하면
      * 물품 수만큼 쿼리가 늘어난다.
      *
+     * @param viewerUserId 조회한 사람. 줄마다 {@code isMe}를 가리는 데만 쓴다. 게스트면 {@code null}
      * @return 물품 ID → 상위 {@link #LEADERBOARD_SIZE}명. 입찰이 없는 물품은 키가 없다
      */
-    private Map<Long, List<LeaderboardEntryResponseDto>> findLeaderboards(List<Long> auctionItemIds) {
+    private Map<Long, List<LeaderboardEntryResponseDto>> findLeaderboards(List<Long> auctionItemIds,
+                                                                          Long viewerUserId) {
         return bidRepository.findTopBidders(auctionItemIds, LEADERBOARD_SIZE).stream()
                 .collect(Collectors.groupingBy(
                         TopBidderProjection::getAuctionItemId,
-                        Collectors.mapping(LeaderboardEntryResponseDto::from, Collectors.toList())));
+                        Collectors.mapping(row -> LeaderboardEntryResponseDto.from(row, viewerUserId),
+                                Collectors.toList())));
     }
 
     /**
@@ -171,7 +177,7 @@ public class AuctionItemService {
     public AuctionItemDetailResponseDto add(Long userId, Long auctionRoomId, AuctionItemAddRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
-        AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
+        AuctionRoom auctionRoom = findOwnedRoomForUpdate(sellerProfile, auctionRoomId);
 
         assertRoomNotClosed(auctionRoom);
 
@@ -224,7 +230,7 @@ public class AuctionItemService {
                                                 AuctionItemBulkAddRequestDto request) {
 
         SellerProfile sellerProfile = findActiveSellerProfile(userId);
-        AuctionRoom auctionRoom = findOwnedRoom(sellerProfile, auctionRoomId);
+        AuctionRoom auctionRoom = findOwnedRoomForUpdate(sellerProfile, auctionRoomId);
 
         assertRoomNotClosed(auctionRoom);
 
@@ -503,6 +509,36 @@ public class AuctionItemService {
                 .findByAuctionRoomIdAndSellerProfile_SellerProfileIdAndDeletedAtIsNull(
                         auctionRoomId, sellerProfile.getSellerProfileId())
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+    }
+
+    /**
+     * 물품을 추가할 경매방을 <b>쓰기 락을 걸고</b> 읽는다. 소유 확인은 잠근 뒤에 한다.
+     *
+     * <p><b>락이 없으면 종료된 방에 물품이 들어간다.</b> 추가가 방을 읽어 {@code OPEN}을 확인한
+     * 뒤 저장하기까지 사이에 방이 닫힐 수 있는데, 그때 INSERT는 그대로 성공한다. 방 종료는
+     * 되돌릴 수 없어서 그 물품은 영영 시작할 수 없는 상태로 남는다. 자동 종료(#284)가 붙으면서
+     * 판매자가 종료를 누르지 않아도 이 일이 생길 수 있게 됐다.
+     *
+     * <p>격리 수준만으로는 못 막는다. {@code READ_COMMITTED}는 읽는 <b>순간</b>의 최신을 보여줄
+     * 뿐이고, 읽은 뒤 저장까지 그 값이 유지되게 하는 것은 락이다.
+     *
+     * <p><b>락 순서는 경매방 → 상품이다.</b> 물품 시작({@code start})은 물품 → 경매방으로 잡는데,
+     * 방을 쥔 채 <b>물품</b>을 기다리는 코드가 여기에 없어(추가는 물품을 새로 만든다) 두 순서가
+     * 고리를 만들지 않는다. 방을 쥐고 물품 행을 기다리는 코드를 새로 만들면 그때 깨진다.
+     */
+    private AuctionRoom findOwnedRoomForUpdate(SellerProfile sellerProfile, Long auctionRoomId) {
+
+        AuctionRoom auctionRoom = auctionRoomRepository.findByIdForUpdate(auctionRoomId)
+                .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+
+        // 남의 방도 4002다. 물품 시작({@code assertRoomOwnedBy})이 4001로 감추는 것과 다른 것은,
+        // 여기서는 요청자가 방 ID를 직접 주기 때문에 방의 존재를 숨길 이유가 없어서다.
+        if (!auctionRoom.getSellerProfile().getSellerProfileId()
+                .equals(sellerProfile.getSellerProfileId())) {
+            throw new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND);
+        }
+
+        return auctionRoom;
     }
 
     /**

@@ -354,15 +354,13 @@ O(N²) 전송 폭주가 생기기 때문입니다. 연결 폭주 자체를 재�
 관측하여 emitter queue나 TCP에 남아 있던 마지막 이벤트까지 latency·누락 판정에 포함합니다.
 
 ```bash
-# 가상 스레드 구현
-./perf/run.sh --scenario 10 --vus 200 --rate 30 --sse-vt
-
-# 동일 조건의 플랫폼 스레드 구현
-./perf/run.sh --scenario 10 --vus 200 --rate 30 --no-sse-vt --sse-pool 4
+./perf/run.sh --scenario 10 --vus 200 --rate 30
 
 # 연결 폭주를 별도 실험으로 재는 경우
 ./perf/run.sh --scenario 3 --vus 200 --sse-ramp-seconds 0 --sse-stabilize-seconds 0
 ```
+
+
 
 `sse_msg_latency`는 운영 SSE payload에 테스트 필드를 추가하지 않습니다. 입찰 k6가 테스트
 네트워크 안의 구독자에게 `itemId + amount + 입찰 요청 시작 시각`을 보내고, 구독자가 실제
@@ -500,7 +498,7 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `sse_queue_wait_p95_ms` | 작업이 emitter 큐에 들어간 뒤 worker가 잡기까지의 시간 p95 | 커지면 전송 처리량보다 생산 속도가 빠른 것입니다. 시나리오 10은 BID_PLACED만 집계합니다 |
 | `sse_send_p95_ms`, `sse_send_p99_ms` | 실제 `SseEmitter.send()` 호출이 반환할 때까지의 시간 | 느린 클라이언트나 TCP write 정체를 찾습니다. 시나리오 10은 BID_PLACED만 집계합니다 |
 | `sse_queue_depth_max` | 모든 emitter dispatcher에 쌓인 추정 작업 수의 최대 | 지속 증가하면 큐 적체입니다 |
-| `sse_in_flight_max` | 동시에 `send()` 안에서 처리 중이던 작업 수의 최대 | 플랫폼 스레드·가상 스레드 구현의 동시 처리 폭을 비교합니다 |
+| `sse_in_flight_max` | 동시에 `send()` 안에서 처리 중이던 작업 수의 최대 | 가상 스레드 구현의 동시 처리 폭을 봅니다 |
 | `sse_rejected` | 닫힌 dispatcher 또는 포화된 큐로 제출하지 못한 작업 수 | 0이 정상입니다 |
 | `sse_client_conn_min`, `sse_client_conn_max` | 측정 구간에 실제 SSE frame을 읽던 연결 수의 최소·최대 | 둘 다 `sse` 목표의 95% 이상이어야 합니다 |
 | `sse_client_scrape_up_min` | Prometheus가 SSE 클라이언트 계측 프로세스를 긁은 상태의 최솟값 | 1이어야 하며 0이면 클라이언트 프로세스가 죽은 것입니다 |
@@ -513,7 +511,7 @@ Redis 전후 입력량은 전체 HTTP 처리량이 아니라 **입찰 시도율*
 | `sse_client_missing`, `sse_client_duplicate`, `sse_client_out_of_order` | 방별 순차 SSE ID로 찾은 누락·중복·순서 역전 수 | 모두 0이 정상입니다 |
 | `sse_client_parse_errors`, `sse_correlation_failed` | SSE JSON 파싱 실패와 k6→구독자 correlation 전달 실패 | 모두 0이 정상입니다 |
 | `sse_client_cpu_max` | 실제 프레임 파서가 쓴 CPU 최대 | 높으면 앱보다 부하 발생기가 먼저 병목일 수 있습니다 |
-| `jvm_threads_live_max` | JVM 라이브 플랫폼 스레드 수의 최대 | 고정 풀은 baseline + `sse_dispatch_pool`, VT는 carrier 스레드만 잡힙니다. `sse_in_flight_max`와 함께 봅니다 |
+| `jvm_threads_live_max` | JVM 라이브 플랫폼 스레드 수의 최대 | VT는 carrier 스레드만 잡힙니다. `sse_in_flight_max`와 함께 봅니다 |
 | `sse_queue_saturated` | emitter 큐 포화로 연결을 종료한 횟수 | 0이 정상입니다 |
 | `virtual_threads` | 가상 스레드를 켰는지 | 켜면 톰캣도 함께 바뀝니다 |
 | `gc_pause_ms_per_s` | 1초당 GC가 멈춰 세운 시간(ms) | 커지면 힙이 빡빡한 것 |

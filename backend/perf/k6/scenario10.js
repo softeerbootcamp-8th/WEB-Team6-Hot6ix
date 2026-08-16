@@ -6,11 +6,10 @@
 //   3. 이 스크립트가 --rate R건/초로 입찰을 발생시킨다.
 //
 // 연결 폭주와 이벤트 전송을 같은 시각에 시작하면 참가자 수 이벤트가 O(N²)로 쏟아져,
-// 비교 대상인 입찰 fan-out 전에 큐가 포화된다. 연결 수립과 안정 구간을 측정 전에 분리한 이유다.
+// 비교 대상인 입찰 fan-out 측정에 연결 수립 비용이 섞인다. 연결과 안정 구간을 분리한 이유다.
 // 실제 SSE 프레임 수신·누락·중복·순서·E2E 지연은 전용 클라이언트가 Prometheus로 노출한다.
 //
-//   ./perf/run.sh --scenario 10 --vus 200 --rate 30 --sse-vt
-//   ./perf/run.sh --scenario 10 --vus 200 --rate 30 --no-sse-vt --sse-pool 4
+//   ./perf/run.sh --scenario 10 --vus 200 --rate 30
 
 import { sleep } from 'k6'
 import {

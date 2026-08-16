@@ -75,11 +75,10 @@ JAVA_OPTS=""
 SKIP_BUILD=0
 JFR=0
 VIRTUAL_THREADS=false
-# SSE emitter 별 drain 을 가상 스레드로 할지. true 가 기본이다.
-# --no-sse-vt 로 끄면 플랫폼 스레드(newCachedThreadPool)로 바뀐다.
-SSE_VT=true
-# --no-sse-vt 일 때 drain 스레드 풀 크기. 기본 4 = t4g.micro(2 vCPU) × 2.
-SSE_POOL=4
+# 동기 구현에는 emitter별 drain worker가 없다. 비교용 공통 결과 스키마에는
+# sse_vt=false, sse_dispatch_pool=0으로 남겨 비동기/가상 스레드 결과와 구분한다.
+SSE_VT=false
+SSE_POOL=0
 BID_ITEMS=0
 
 # 시나리오 5 전용. 방을 만들 때 주는 마감 임박 설정과, 마감 대상 물품에 입찰을 언제까지
@@ -136,9 +135,9 @@ usage() {
   --heartbeat-ms N   SSE heartbeat 주기 (기본 30000)
   --xmx SIZE         앱 힙 상한. 예: 512m
   --virtual-threads  가상 스레드를 켠다. **톰캣도 함께 바뀐다**(전역 스위치)
-  --sse-vt           SSE emitter drain 을 가상 스레드로 한다 (기본 on)
-  --no-sse-vt        SSE emitter drain 을 bounded 스레드 풀로 한다 (시나리오 10 비교용)
-  --sse-pool N       --no-sse-vt 일 때 drain 스레드 풀 크기 (기본 4)
+  --sse-vt           동기 구현에서는 사용할 수 없다
+  --no-sse-vt        호환용 옵션. 동기 구현이므로 결과에는 항상 false로 기록된다
+  --sse-pool N       동기 구현에서는 사용할 수 없다
   --bid-items N      시나리오 5 에서 입찰을 넣을 물품 수. 나머지는 마감 대상이 된다
   --bid-start T      입찰 VU 가 뛰기까지 기다릴 시간 (기본 10s). 물품을 다 시작하기 전에
                      입찰이 들어가면 전부 4xx 로 거절되므로, --items 를 올리면 같이 올린다
@@ -211,9 +210,9 @@ while [ $# -gt 0 ]; do
     --heartbeat-ms) HEARTBEAT_MS="$2"; shift 2 ;;
     --xmx) JAVA_OPTS="-Xmx$2"; shift 2 ;;
     --virtual-threads) VIRTUAL_THREADS=true; shift ;;
-    --sse-vt) SSE_VT=true; shift ;;
+    --sse-vt) echo "동기 SSE 구현에서는 --sse-vt를 사용할 수 없다." >&2; exit 1 ;;
     --no-sse-vt) SSE_VT=false; shift ;;
-    --sse-pool) SSE_POOL="$2"; shift 2 ;;
+    --sse-pool) echo "동기 SSE 구현에는 dispatch pool이 없어 --sse-pool을 사용할 수 없다." >&2; exit 1 ;;
     --bid-items) BID_ITEMS="$2"; shift 2 ;;
     --cpus) CPUS="$2"; shift 2 ;;
     --soft-close-trigger) SOFT_CLOSE_TRIGGER="$2"; shift 2 ;;
@@ -393,7 +392,7 @@ SSE_CLIENT_STARTED=0
 
 stop_sse_client() {
   if [ "$SSE_CLIENT_STARTED" -eq 1 ]; then
-    "${COMPOSE[@]}" --profile tools rm -sf sse-client >/dev/null 2>&1 || true
+    "${COMPOSE[@]}" rm -sf sse-client >/dev/null 2>&1 || true
     SSE_CLIENT_STARTED=0
   fi
 }
@@ -513,11 +512,7 @@ preflight
 STAMP="$(date +%Y-%m-%dT%H-%M-%S)"
 SSE_VT_SUFFIX=""
 if [ "$SCENARIO" = "10" ]; then
-  if [ "$SSE_VT" = "true" ]; then
-    SSE_VT_SUFFIX="_ssevttrue"
-  else
-    SSE_VT_SUFFIX="_ssevtfalse_p${SSE_POOL}"
-  fi
+  SSE_VT_SUFFIX="_ssesync"
 fi
 RUN_ID="${STAMP}_s${SCENARIO}_vus${VUS}_pool${POOL}_items${ITEMS}_sse${SSE}${SSE_VT_SUFFIX}"
 RESULT_DIR="$PERF_DIR/results/$RUN_ID"
@@ -596,7 +591,7 @@ cleanup_oneoff() {
 cleanup_oneoff
 # 전용 SSE 클라이언트는 oneoff가 아니라 compose 서비스다. 앞 실행이 강제 종료됐어도 이번
 # 실행의 run 라벨과 연결 수를 물려받지 않게 명시적으로 걷어낸다.
-"${COMPOSE[@]}" --profile tools rm -sf sse-client >/dev/null 2>&1 || true
+"${COMPOSE[@]}" rm -sf sse-client >/dev/null 2>&1 || true
 
 # down 이 아니라 이 셋만 지운다.
 #
@@ -620,6 +615,25 @@ UP_AT="$(date +%s)"
 # 컨테이너가 이전 inode를 계속 볼 수 있어 SIGHUP만으로는 새 scrape job이 반영되지 않는다.
 # 매 실행 현재 브랜치의 파일을 다시 mount한다. TSDB는 named volume이라 기존 측정치는 유지된다.
 "${COMPOSE[@]}" up -d --force-recreate prometheus
+
+# 방금 만든 Prometheus 가 조회를 받을 수 있을 때까지 기다린다.
+#
+# 뜨는 동안 /api/v1/query 는 JSON 이 아니라 평문 "Service Unavailable" 을 503 으로 돌려주는데,
+# 아래 조회들이 curl -sG 로 받아 그대로 jq 에 넘겨서 다음으로 죽는다.
+#   jq: parse error: Invalid numeric literal at line 1, column 8
+#
+# 기동 시간은 쌓인 TSDB 크기에 비례해 늘어난다. 배포 측정 서버는 볼륨이 632MB 일 때 2.5초였다.
+# 데이터가 적던 때는 우연히 성공하다가 어느 시점부터 매번 걸리게 됐다.
+for _ in $(seq 1 60); do
+  curl -sf "$PROM_URL/-/ready" >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -sf "$PROM_URL/-/ready" >/dev/null 2>&1 || {
+  echo "Prometheus 가 60초 안에 준비되지 않았다. 아래로 원인을 본다." >&2
+  echo "  ${COMPOSE[*]} logs --tail 50 prometheus" >&2
+  exit 1
+}
+
 
 if [ "$REMOTE" = "1" ]; then
   # 배포 스택은 이 스크립트가 건드리지 않는다. 관측 도구만 띄운다.
@@ -906,7 +920,7 @@ if [ "$SSE" -gt 0 ]; then
   export SSE_CLIENT_CONNECTIONS="$SSE"
   export SSE_CLIENT_RAMP_SECONDS="$SSE_RAMP_SECONDS"
 
-  "${COMPOSE[@]}" --profile tools up -d --no-deps --force-recreate sse-client >/dev/null
+  "${COMPOSE[@]}" up -d --no-deps --force-recreate sse-client >/dev/null
   SSE_CLIENT_STARTED=1
   SSE_CORRELATION_URL="http://sse-client:9091/published"
 
@@ -1169,7 +1183,8 @@ CPU_LOG="$RESULT_DIR/container_cpu.txt"
           tolower($1) ~ /k6/ { print "k6", $2; next }
           tolower($1) ~ /sse-client/ { print "sse-client", $2; next }
           $1 ~ /^upbid-perf-app-/   { print "app", $2; next }
-          $1 ~ /^upbid-perf-mysql-/ { print "mysql", $2; next }' \
+          $1 ~ /^upbid-perf-mysql-/ { print "mysql", $2; next }
+          $1 ~ /^upbid-perf-redis-/ { print "redis", $2; next }' \
       >>"$CPU_LOG" || true
     sleep 5
   done
@@ -1431,8 +1446,8 @@ fi
 SSE_BROADCAST_P95_MS="$(p95_of "upbid_sse_broadcast_seconds_bucket{$SSE_PERF}")"
 SSE_BROADCAST_P99_MS="$(quantile_of "upbid_sse_broadcast_seconds_bucket{$SSE_PERF}" 0.99)"
 SSE_CONN_MAX="$(promq "max_over_time((sum(upbid_sse_connections{$RUN}))[$W:5s])")"
-# SSE 단계별 지연을 분리한다. fanout은 로컬 emitter 큐에 배분하는 시간, queue_wait은
-# 배분 후 실제 worker가 잡기까지의 시간, send는 실제 emitter.send() 호출 시간이다.
+# SSE 단계별 지연을 분리한다. 동기 구현에서 fanout은 전체 emitter.send() 완료 시간이고
+# queue_wait은 표본이 없다. send는 구현과 관계없이 실제 emitter.send() 호출 시간이다.
 SSE_FANOUT_P95_MS="$(p95_of "upbid_sse_fanout_seconds_bucket{$SSE_PERF}")"
 SSE_SEND_P95_MS="$(p95_of "upbid_sse_send_seconds_bucket{$SSE_PERF}")"
 SSE_SEND_P99_MS="$(quantile_of "upbid_sse_send_seconds_bucket{$SSE_PERF}" 0.99)"
@@ -1451,8 +1466,8 @@ SSE_SEND_FAILURE_RATE="$(awk -v f="$SSE_SEND_FAILURES" -v a="$SSE_SEND_ATTEMPTS"
   'BEGIN { printf "%.3f", (a > 0 ? f / a * 100 : 0) }')"
 SSE_QUEUE_DEPTH_MAX="$(promq "max_over_time((sum(upbid_sse_queue_depth{$RUN}))[$W:5s])")"
 SSE_IN_FLIGHT_MAX="$(promq "max_over_time((sum(upbid_sse_in_flight{$RUN}))[$W:5s])")"
-# JVM이 실제로 유지하는 플랫폼 스레드 수다. 고정 풀 구현에서는 baseline + dispatch pool,
-# VT 구현에서는 carrier 쪽만 잡히므로, sse_in_flight와 함께 봐야 실제 동시 전송 폭을 비교할 수 있다.
+# JVM이 실제로 유지하는 플랫폼 스레드 수다. 동기 구현에는 SSE dispatch worker가 없으므로
+# 비동기/가상 스레드 구현의 증가분 및 sse_in_flight와 함께 비교한다.
 JVM_THREADS_LIVE_MAX="$(promq "max(max_over_time(jvm_threads_live_threads{$RUN}[$W]))")"
 # 큐 포화로 끊긴 연결 수. 0이 정상이고, 값이 있으면 느린 구독자가 있다는 뜻이다.
 SSE_QUEUE_SATURATED="$(promq "sum($(delta "upbid_sse_queue_saturated_total{$RUN}")) or vector(0)")"
@@ -1608,6 +1623,9 @@ cpu_stat() {
 }
 read -r APP_CPU_AVG APP_CPU_MAX <<<"$(cpu_stat app "$CPUS")"
 read -r MYSQL_CPU_AVG MYSQL_CPU_MAX <<<"$(cpu_stat mysql "$CPUS")"
+# Redis 를 안 띄운 실행에서는 NaN 이 들어간다. 0 으로 안 바꾼다 —
+# "안 재진 값"과 "0이었던 값"이 구분되지 않는다.
+read -r REDIS_CPU_AVG REDIS_CPU_MAX <<<"$(cpu_stat redis "$CPUS")"
 read -r _ K6_CPU_MAX <<<"$(cpu_stat k6 1)"
 read -r _ SSE_CLIENT_CPU_MAX <<<"$(cpu_stat sse-client 1)"
 
@@ -1700,6 +1718,8 @@ APP_CPU_AVG="$(round "$APP_CPU_AVG" 1)"
 APP_CPU_MAX="$(round "$APP_CPU_MAX" 1)"
 MYSQL_CPU_AVG="$(round "$MYSQL_CPU_AVG" 1)"
 MYSQL_CPU_MAX="$(round "$MYSQL_CPU_MAX" 1)"
+REDIS_CPU_AVG="$(round "$REDIS_CPU_AVG" 1)"
+REDIS_CPU_MAX="$(round "$REDIS_CPU_MAX" 1)"
 K6_P95_MS="$(round "$K6_P95_MS" 0)"
 K6_P99_MS="$(round "$K6_P99_MS" 0)"
 PROCESS_CPU_AVG="$(round "$PROCESS_CPU_AVG" 1)"
@@ -1957,7 +1977,7 @@ jq -n \
     sse_client:{target_reached:($sse_client_reached=="1")},
     status:$status}' >"$RESULT_DIR/meta.json"
 
-HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,bid_api_p95_ms,bid_api_p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_broadcast_p99_ms,sse_conn_max,sse_connections_opened,sse_connections_closed,sse_events_published,sse_send_attempts,sse_send_successes,sse_send_failures,sse_send_failure_rate,sse_fanout_p95_ms,sse_send_p95_ms,sse_send_p99_ms,sse_queue_depth_max,sse_queue_wait_p95_ms,sse_in_flight_max,sse_rejected,sse_client_conn_min,sse_client_conn_max,sse_client_scrape_up_min,sse_client_connections_opened,sse_client_unexpected_closes,sse_client_connection_errors,sse_client_events_received,sse_client_bid_events_received,sse_client_delivery_ratio,sse_msg_latency_p95_ms,sse_msg_latency_p99_ms,sse_msg_latency_samples,sse_client_latency_pending,sse_client_missing,sse_client_duplicate,sse_client_out_of_order,sse_client_parse_errors,sse_correlation_failed,sse_client_cpu_max,jvm_threads_live_max,sse_queue_saturated,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,process_open_fds_max,process_max_fds,process_fd_usage_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,virtual_threads,sse_vt,sse_dispatch_pool,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
+HEADER="run_id,who,commit,status,scenario,apps,vus,rate,pool,items,sse,throughput_req_per_s,bid_attempt_per_s,accepted_per_s,bid_accept_rate,p95_ms,p99_ms,bid_api_p95_ms,bid_api_p99_ms,k6_p95_ms,k6_p99_ms,room_read_p95_ms,items_read_p95_ms,tomcat_busy_max,hikari_active_max,hikari_pending_max,conn_acquire_p95_ms,conn_acquire_p99_ms,conn_usage_p95_ms,conn_usage_p99_ms,conn_timeout_count,heap_mb_max,before_lock_p95_ms,lock_wait_p95_ms,lock_hold_p95_ms,lock_hold_acc_p95_ms,lock_hold_rej_p95_ms,commit_p95_ms,select_per_bid,isolation,gap_locks,close_delay_p50_ms,close_delay_p95_ms,close_delay_max_ms,close_duration_p95_ms,close_lock_wait_p95_ms,close_lock_hold_p95_ms,close_notify_p95_ms,close_award_p95_ms,close_award_insert_p95_ms,close_failures,closes,awards,sched_active_max,sched_queued_max,close_active_max,close_queued_max,close_backlog_max,sse_heartbeat_p95_ms,heartbeat_runs,heartbeat_expected,sse_broadcast_p95_ms,sse_broadcast_p99_ms,sse_conn_max,sse_connections_opened,sse_connections_closed,sse_events_published,sse_send_attempts,sse_send_successes,sse_send_failures,sse_send_failure_rate,sse_fanout_p95_ms,sse_send_p95_ms,sse_send_p99_ms,sse_queue_depth_max,sse_queue_wait_p95_ms,sse_in_flight_max,sse_rejected,sse_client_conn_min,sse_client_conn_max,sse_client_scrape_up_min,sse_client_connections_opened,sse_client_unexpected_closes,sse_client_connection_errors,sse_client_events_received,sse_client_bid_events_received,sse_client_delivery_ratio,sse_msg_latency_p95_ms,sse_msg_latency_p99_ms,sse_msg_latency_samples,sse_client_latency_pending,sse_client_missing,sse_client_duplicate,sse_client_out_of_order,sse_client_parse_errors,sse_correlation_failed,sse_client_cpu_max,jvm_threads_live_max,sse_queue_saturated,gc_pause_ms_per_s,k6_cpu_max,process_cpu_avg,process_cpu_max,system_cpu_avg,system_cpu_max,system_load_avg,system_load_max,process_open_fds_max,process_max_fds,process_fd_usage_max,cpus,app_cpu_avg,app_cpu_max,mysql_cpu_avg,mysql_cpu_max,redis_cpu_avg,redis_cpu_max,virtual_threads,sse_vt,sse_dispatch_pool,bulk_items,sweep_index,accepted,rejected_4xx,concurrent_conflict,failed_5xx,dropped_iterations,bottleneck,note"
 INDEX="$PERF_DIR/results/index.csv"
 
 # 헤더는 파일이 없을 때만 쓴다. 그래서 헤더가 바뀐 뒤에도 낡은 파일이 남아 있으면 새 줄이
@@ -2018,7 +2038,8 @@ VALUES=( \
   "$GC_PAUSE_MS_PER_S" "$K6_CPU_MAX" \
   "$PROCESS_CPU_AVG" "$PROCESS_CPU_MAX" "$SYSTEM_CPU_AVG" "$SYSTEM_CPU_MAX" "$SYSTEM_LOAD_AVG" "$SYSTEM_LOAD_MAX" \
   "$PROCESS_OPEN_FDS_MAX" "$PROCESS_MAX_FDS" "$PROCESS_FD_USAGE_MAX" \
-  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$VIRTUAL_THREADS" "$SSE_VT" "$SSE_POOL" "$BULK_ITEMS" "$SWEEP_INDEX" \
+  "$CPUS" "$APP_CPU_AVG" "$APP_CPU_MAX" "$MYSQL_CPU_AVG" "$MYSQL_CPU_MAX" "$REDIS_CPU_AVG" "$REDIS_CPU_MAX" \
+  "$VIRTUAL_THREADS" "$SSE_VT" "$SSE_POOL" "$BULK_ITEMS" "$SWEEP_INDEX" \
   "$ACCEPTED" "$REJECTED_4XX" "$CONCURRENT_CONFLICT" "$FAILED_5XX" "$DROPPED_ITERATIONS" "" "" \
 )
 (IFS=,; echo "${VALUES[*]}") >>"$INDEX"
@@ -2043,20 +2064,11 @@ fi
 
 SSE_VT_NOTE=""
 if [ "$SCENARIO" = "10" ]; then
-  if [ "$SSE_VT" = "true" ]; then
-    SSE_VT_NOTE="> **시나리오 10 — SSE emitter drain 을 가상 스레드로 잰 숫자다.**
-> 플랫폼 스레드 결과와 비교할 때 --no-sse-vt 를 붙인 줄을 나란히 놓는다.
-> jvm_threads_live는 carrier만 보여 주므로 sse_in_flight가 fixed pool보다 늘고 queue_wait가 줄었는지 함께 본다.
+  SSE_VT_NOTE="> **시나리오 10 — Redis 구독 스레드가 emitter를 순서대로 직접 send하는 동기 구현이다.**
+> emitter별 queue와 dispatch worker가 없으므로 sse_queue_depth는 0, queue_wait는 NaN이 정상이다.
+> sse_broadcast와 sse_fanout은 모두 한 논리 이벤트를 전체 구독자에게 실제 전송 완료한 시간이다.
 
 "
-  else
-    SSE_VT_NOTE="> **시나리오 10 — SSE emitter drain 을 플랫폼 스레드로 잰 숫자다.**
-> 가상 스레드 결과와 비교할 때 --sse-vt (기본) 를 붙인 줄을 나란히 놓는다.
-> 이 구현은 고정 풀이라 jvm_threads_live는 연결 수가 아니라 sse_dispatch_pool만큼 늘어나는 것이 정상이다.
-> 대신 sse_in_flight가 풀 크기에 막히고 queue_wait가 증가하는지를 본다.
-
-"
-  fi
 fi
 
 # 배포는 보류 조건이 하나 늘어난다. 자원 넷이 다 여유로운데 처리량이 안 오르는 그림이
@@ -2144,7 +2156,7 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | SSE 논리 이벤트 발행 | ${SSE_EVENTS_PUBLISHED} 건 |
 | SSE 전송 시도 / 성공 / 실패 | ${SSE_SEND_ATTEMPTS} / ${SSE_SEND_SUCCESSES} / ${SSE_SEND_FAILURES} 건 |
 | **SSE 전송 실패율** | **${SSE_SEND_FAILURE_RATE}%** |
-| SSE fan-out(큐 배분) p95 | ${SSE_FANOUT_P95_MS} ms |
+| SSE fan-out p95 | ${SSE_FANOUT_P95_MS} ms |
 | SSE 실제 send p95 / p99 | ${SSE_SEND_P95_MS} / ${SSE_SEND_P99_MS} ms |
 | SSE 큐 깊이 max / 큐 대기 p95 | ${SSE_QUEUE_DEPTH_MAX} / ${SSE_QUEUE_WAIT_P95_MS} ms |
 | SSE 전송 중 max / 거부 | ${SSE_IN_FLIGHT_MAX} / ${SSE_REJECTED} 건 |
@@ -2157,14 +2169,14 @@ cat >"$RESULT_DIR/note.md" <<EOF
 | latency 표본 / 미매칭 수신 이벤트 | ${SSE_MSG_LATENCY_SAMPLES} / ${SSE_CLIENT_LATENCY_PENDING} 건 |
 | **클라이언트 누락 / 중복 / 순서 역전 / 파싱 실패** | **${SSE_CLIENT_MISSING} / ${SSE_CLIENT_DUPLICATE} / ${SSE_CLIENT_OUT_OF_ORDER} / ${SSE_CLIENT_PARSE_ERRORS} 건** |
 | 입찰–SSE correlation 전송 실패 | ${SSE_CORRELATION_FAILED} 건 |
-| **JVM 플랫폼 스레드 수 max** | **${JVM_THREADS_LIVE_MAX}** ← \`sse_in_flight\`, dispatch pool과 함께 비교 |
+| **JVM 플랫폼 스레드 수 max** | **${JVM_THREADS_LIVE_MAX}** ← \`sse_in_flight\`, 다른 구현의 스레드 수와 비교 |
 | SSE 큐 포화(연결 끊김) | ${SSE_QUEUE_SATURATED} 건 ← 0이 정상 |
-| **앱 CPU max** | **${APP_CPU_MAX} %** ← 천장이 200%(cpus: 2.0). 여기 붙었으면 이 줄은 CPU 실험이다 |
+| **앱 CPU max** | **${APP_CPU_MAX} %** ← 할당한 ${CPUS}코어 대비 값으로 천장은 100%다 |
 | JVM process CPU 평균 / 최대 | ${PROCESS_CPU_AVG} / ${PROCESS_CPU_MAX} % |
 | 호스트 system CPU 평균 / 최대 | ${SYSTEM_CPU_AVG} / ${SYSTEM_CPU_MAX} % |
 | system load average 1m 평균 / 최대 | ${SYSTEM_LOAD_AVG} / ${SYSTEM_LOAD_MAX} |
 | **프로세스 FD 최대 / 한도 / 최대 사용률** | **${PROCESS_OPEN_FDS_MAX} / ${PROCESS_MAX_FDS} / ${PROCESS_FD_USAGE_MAX}%** |
-| MySQL CPU max | ${MYSQL_CPU_MAX} % ← 천장 200% |
+| MySQL CPU max | ${MYSQL_CPU_MAX} % ← 할당한 ${CPUS}코어 대비 값으로 천장은 100%다 |
 | k6 CPU max | ${K6_CPU_MAX} % |
 | SSE 클라이언트 CPU max | ${SSE_CLIENT_CPU_MAX} % ← 높으면 서버보다 부하 발생기가 먼저 병목일 수 있다 |
 | 앱 CPU (준 ${CPUS} 코어 기준) | 평균 ${APP_CPU_AVG} % / 최대 ${APP_CPU_MAX} % |

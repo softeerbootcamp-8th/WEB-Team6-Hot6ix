@@ -24,7 +24,8 @@ public enum BidErrorType implements ErrorType {
     CONCURRENT_BID_CONFLICT(HttpStatus.CONFLICT, 7006, "다른 분이 먼저 입찰했습니다. 현재가를 확인해 주세요."),
     SELLER_CANNOT_BID(HttpStatus.FORBIDDEN, 7007, "판매자는 자신의 물품에 입찰할 수 없습니다."),
     TERMS_NOT_AGREED(HttpStatus.FORBIDDEN, 7008, "경매방 입장 약관에 동의한 회원만 입찰할 수 있습니다."),
-    TOO_MANY_BIDS(HttpStatus.TOO_MANY_REQUESTS, 7009, "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.");
+    TOO_MANY_BIDS(HttpStatus.TOO_MANY_REQUESTS, 7009, "요청이 너무 많습니다. 잠시 후 다시 시도해주세요."),
+    IDEMPOTENCY_KEY_CONFLICT(HttpStatus.CONFLICT, 7010, "이미 다른 입찰에 사용된 멱등 키입니다.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;

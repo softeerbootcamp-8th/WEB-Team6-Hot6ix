@@ -262,5 +262,4 @@ public class RoomSseManager {
                 ? SseMetrics.CLOSE_QUEUE_SATURATED
                 : SseMetrics.CLOSE_SEND_ERROR;
     }
-
 }

@@ -1,9 +1,12 @@
 import { isAxiosError } from 'axios'
 
+import { readValidationMessage } from '@/lib/validation-message'
+
 /**
  * 경매방 생성·물품 추가가 거절된 이유를 사용자 문구로 바꾼다.
  *
  * 서버 `message` 를 그대로 띄우지 않는다 (`API-INTEGRATION.md` 3장).
+ * 예외는 검증 실패의 `errors[]` 하나다 (`readValidationMessage`).
  * `product-error.ts` · `profile-error.ts` 와 같은 모양이다.
  */
 
@@ -83,7 +86,11 @@ export function toAuctionRoomErrorMessage(
     )
   }
 
-  return known ?? UNKNOWN
+  // 어느 칸이 왜 걸렸는지는 서버가 알려준 문구가 표보다 정확하다.
+  const detail = readValidationMessage(error)
+  const message = known ?? UNKNOWN
+
+  return detail === null ? message : { ...message, description: detail }
 }
 
 /**

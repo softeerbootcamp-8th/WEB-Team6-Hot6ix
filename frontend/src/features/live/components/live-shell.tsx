@@ -3,9 +3,10 @@ import { Settings, Share2, Square, Users } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 
 import { AppHeader, GuestHeader } from '@/components/layout/app-header'
+import { ProfilePhoto } from '@/components/profile-photo'
 import { RoomRuleChips } from '@/features/live/components/room-rule-chips'
 import { cn } from '@/lib/utils'
-import type { AuctionRoomDetail } from '@/mocks/types'
+import type { AuctionRoomDetail } from '@/types/domain'
 
 /**
  * 라이브 화면 공통 골격 (Figma `WEB-09` / `WEB-13`).
@@ -22,6 +23,7 @@ export function LiveShell({
   isGuest,
   participantCount,
   onShare,
+  onOpenSeller,
   onOpenSettings,
   onCloseRoom,
   left,
@@ -41,6 +43,8 @@ export function LiveShell({
   participantCount?: number | null
   /** 방 헤더의 공유 버튼. 오른쪽 열에 공유 패널을 띄운다. */
   onShare?: () => void
+  /** 판매자 이름을 누르면 오른쪽 열에 판매자 패널을 띄운다. 방송 링크도 거기 있다. */
+  onOpenSeller?: () => void
   /** 공유 버튼 왼쪽에 들어가는 보조 조작(개발용 시점 전환 등) */
   headerActions?: ReactNode
   /** 판매자만 받는다. 방 설정 수정 모달을 연다. */
@@ -86,81 +90,109 @@ export function LiveShell({
 
       {/* 방 헤더 */}
       <div className="shrink-0 border-b bg-card">
-        <div className="mx-auto flex min-h-[68px] max-w-[1280px] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 md:px-7">
-          {/*
-            배지를 LIVE 로 못 박아 두면 물품 상세 라우트처럼 종료된 방에도
-            이 골격을 그대로 쓰는 화면에서 "LIVE" 가 뜬다. 방 상태를 따른다.
-          */}
-          <span
-            className={cn(
-              'flex h-6 items-center rounded-full px-3 text-[11px] font-extrabold',
-              room.status === 'CLOSED'
-                ? 'bg-fill text-neutral-tertiary'
-                : room.status === 'READY'
-                  ? 'bg-notice-surface text-notice'
-                  : 'bg-live text-white',
-            )}
-          >
-            {room.status === 'CLOSED'
-              ? '종료'
-              : room.status === 'READY'
-                ? '준비 중'
-                : 'LIVE'}
-          </span>
-
-          <h1 className="text-[17px] font-bold text-foreground">
-            {room.title}
-          </h1>
-
-          {/* 누가 파는 방인지. 링크만 받고 들어온 사람에게는 이게 첫 단서다. */}
-          {room.sellerName && (
-            <p className="min-w-0 truncate text-[13px] font-medium text-neutral-secondary">
-              {room.sellerName}
-            </p>
-          )}
-
-          <p className="flex items-center gap-1.5 text-[13px] font-medium text-neutral-tertiary">
-            <Users aria-hidden className="size-[15px]" />
-            {participantCount ?? room.participantCount}명 참여 중
-          </p>
-
-          <RoomRuleChips room={room} />
-
-          <div className="ml-auto flex items-center gap-2">
-            {headerActions}
-
-            <button
-              type="button"
-              onClick={onShare}
-              className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-border-strong bg-card px-3 text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
+        {/*
+         * **제목 줄과 정보 줄을 갈라 둔다.** 한 줄에 다 넣으면 방 이름 길이에 따라
+         * 판매자·참여자 수·규칙이 붙었다 떨어졌다 해서, 같은 화면인데 방마다 헤더
+         * 생김새가 달라진다.
+         */}
+        <div className="mx-auto flex min-h-[68px] max-w-[1280px] flex-col justify-center gap-y-2 px-5 py-3 md:px-7">
+          {/* 첫 줄 — 상태 배지와 방 이름, 오른쪽 끝에 조작 버튼 */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            {/*
+              배지를 LIVE 로 못 박아 두면 물품 상세 라우트처럼 종료된 방에도
+              이 골격을 그대로 쓰는 화면에서 "LIVE" 가 뜬다. 방 상태를 따른다.
+            */}
+            <span
+              className={cn(
+                'flex h-6 shrink-0 items-center rounded-full px-3 text-[11px] font-extrabold',
+                room.status === 'CLOSED'
+                  ? 'bg-fill text-neutral-tertiary'
+                  : room.status === 'READY'
+                    ? 'bg-notice-surface text-notice'
+                    : 'bg-live text-white',
+              )}
             >
-              <Share2 aria-hidden className="size-[15px]" />
-              공유
-            </button>
+              {room.status === 'CLOSED'
+                ? '종료'
+                : room.status === 'READY'
+                  ? '준비 중'
+                  : 'LIVE'}
+            </span>
 
-            {/* 방을 만든 사람만 보인다. */}
-            {onOpenSettings && (
+            <h1 className="min-w-0 text-[17px] font-bold text-foreground">
+              {room.title}
+            </h1>
+
+            <div className="ml-auto flex items-center gap-2">
+              {headerActions}
+
               <button
                 type="button"
-                onClick={onOpenSettings}
+                onClick={onShare}
                 className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-border-strong bg-card px-3 text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
               >
-                <Settings aria-hidden className="size-[15px]" />
-                설정
+                <Share2 aria-hidden className="size-[15px]" />
+                공유
               </button>
-            )}
 
-            {/* 방을 만든 사람만 보인다. 되돌릴 수 없어 확인을 한 번 받는다. */}
-            {onCloseRoom && (
-              <button
-                type="button"
-                onClick={onCloseRoom}
-                className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-live/40 bg-card px-3 text-[12px] font-bold text-live transition-all duration-150 hover:bg-live-surface active:scale-95"
-              >
-                <Square aria-hidden className="size-[13px]" />
-                경매방 종료
-              </button>
-            )}
+              {/* 방을 만든 사람만 보인다. */}
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-border-strong bg-card px-3 text-[12px] font-bold text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
+                >
+                  <Settings aria-hidden className="size-[15px]" />
+                  설정
+                </button>
+              )}
+
+              {/* 방을 만든 사람만 보인다. 되돌릴 수 없어 확인을 한 번 받는다. */}
+              {onCloseRoom && (
+                <button
+                  type="button"
+                  onClick={onCloseRoom}
+                  className="ease-soft flex h-8 items-center gap-1.5 rounded-[10px] border border-live/40 bg-card px-3 text-[12px] font-bold text-live transition-all duration-150 hover:bg-live-surface active:scale-95"
+                >
+                  <Square aria-hidden className="size-[13px]" />
+                  경매방 종료
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 둘째 줄 — 판매자와 참여자 수, 방 규칙 */}
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+            {/*
+             * 누가 파는 방인지. 링크만 받고 들어온 사람에게는 이게 첫 단서다.
+             * 누르면 판매자 패널이 열리고, 방송 링크는 그 안에 있다(#192·#193).
+             */}
+            {room.sellerName &&
+              (onOpenSeller ? (
+                <button
+                  type="button"
+                  onClick={onOpenSeller}
+                  className="ease-soft flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-0.5 text-[13px] font-medium text-neutral-secondary transition-all duration-150 hover:bg-fill active:scale-95"
+                >
+                  <ProfilePhoto
+                    src={room.sellerImageUrl}
+                    iconClassName="size-3"
+                    className="size-5 shrink-0 rounded-full bg-brand-50"
+                  />
+                  <span className="min-w-0 truncate">{room.sellerName}</span>
+                </button>
+              ) : (
+                <p className="min-w-0 truncate text-[13px] font-medium text-neutral-secondary">
+                  {room.sellerName}
+                </p>
+              ))}
+
+            <p className="flex shrink-0 items-center gap-1.5 text-[13px] font-medium text-neutral-tertiary">
+              <Users aria-hidden className="size-[15px]" />
+              {participantCount ?? room.participantCount}명 참여 중
+            </p>
+
+            <RoomRuleChips room={room} />
           </div>
         </div>
       </div>
@@ -228,8 +260,12 @@ export function LiveShell({
 export function GuestNotice({ redirectTo }: { redirectTo: string }) {
   return (
     <div className="mb-3 flex shrink-0 flex-wrap items-center gap-3 rounded-xl bg-brand-50 px-4 py-2.5">
+      {/*
+       * "둘러보는 건 로그인 없이도 가능해요" 는 뺐다. 이미 둘러보고 있는 사람에게
+       * 하는 말이라 알려주는 게 없다. 필요한 것은 다음 행동 하나다.
+       */}
       <p className="text-[13px] font-medium text-brand-600">
-        둘러보는 건 로그인 없이도 가능해요. 입찰하려면 로그인이 필요합니다.
+        입찰하려면 로그인이 필요합니다.
       </p>
       <Link
         to="/"

@@ -46,12 +46,7 @@ public class SseMetrics {
     /** heartbeat 한 바퀴. 접속 수가 늘 때 이 시간이 어떻게 늘어나는지를 본다. */
     private final Timer heartbeat;
 
-    /**
-     * 발행이 실패해 사라진 이벤트 수.
-     *
-     * <p>Redis 가 SSE 의 단일 실패점이라 이 값이 0이 아니면 화면이 실시간을 못 받고 있다는 뜻이다.
-     * 발행 실패는 로그만 남고 호출한 쪽으로 전파되지 않아서, 지표가 없으면 조용히 죽는다.
-     */
+    /** 발행이 실패해 사라진 이벤트 수. */
     private final Counter publishFailures;
 
     /**
@@ -183,13 +178,7 @@ public class SseMetrics {
         return Set.copyOf(names);
     }
 
-    /**
-     * 지금 열려 있는 연결 수와 방 수를 이 Map에서 읽도록 게이지를 건다.
-     *
-     * <p>게이지는 값을 밀어 넣는 게 아니라 <b>스크랩할 때 읽어 가는</b> 방식이라, 연결을
-     * 등록·해제하는 코드에 계측을 넣지 않아도 된다. Micrometer가 Map을 약한 참조로 들고 있어서
-     * 이 객체가 살아 있는 동안만 유효하다.
-     */
+    /** 지금 열려 있는 연결 수와 방 수를 이 Map에서 읽도록 게이지를 건다. */
     public void bindConnections(Map<Long, Set<SseEmitter>> roomEmitters) {
         Gauge.builder("upbid.sse.connections", roomEmitters,
                         map -> map.values().stream().mapToInt(Set::size).sum())
@@ -287,10 +276,8 @@ public class SseMetrics {
     }
 
     /**
-     * 방 전원에게 한 번 쏘는 시간을 이벤트 이름별로 잰다.
-     *
-     * <p>미리 만들어 둔 것에 없는 이름이면 그때 만든다. 그런 이름은 지금 없지만, 새 이벤트를
-     * 추가하고 여기에 등록하는 걸 잊었을 때 계측이 통째로 빠지는 것보다는 낫다.
+     * 논리 이벤트 하나를 이 인스턴스의 모든 구독자에게 fan-out하는 시간을 잰다.
+     * 동기 구현에서는 emitter.send() 전체가 이 범위에 포함된다.
      */
     public void recordBroadcast(String eventName, Runnable send) {
         long startedAt = System.nanoTime();

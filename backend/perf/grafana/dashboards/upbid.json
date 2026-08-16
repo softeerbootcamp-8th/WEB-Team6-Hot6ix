@@ -977,8 +977,8 @@
     },
     {
       "type": "timeseries",
-      "title": "SSE heartbeat / fan-out enqueue (ms)",
-      "description": "broadcast는 현재 방의 emitter 큐에 작업을 배분하는 시간이다. 실제 emitter.send() 완료 시간은 아래 SSE 단계별 지연 패널의 send 지표로 본다.\nheartbeat가 길어지면 SSE 유지 작업이 밀리고 있다는 뜻이다.",
+      "title": "SSE heartbeat / fan-out (ms)",
+      "description": "broadcast 범위는 구현에 따라 다르다. 동기 구현은 방 전체 emitter.send() 완료까지, 비동기 구현은 emitter 큐 배분까지 잰다. 개별 emitter.send() 시간은 아래 SSE 단계별 지연 패널에서 본다.\nheartbeat가 길어지면 SSE 유지 작업이 밀리고 있다는 뜻이다.",
       "id": 11,
       "datasource": {
         "type": "prometheus",
@@ -1040,7 +1040,7 @@
           },
           "editorMode": "code",
           "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_sse_broadcast_seconds_bucket{run=~\"$run\"}[30s]))) * 1000",
-          "legendFormat": "fan-out enqueue p95 (legacy)",
+          "legendFormat": "fan-out p95 (legacy)",
           "range": true,
           "refId": "B"
         }
@@ -1540,7 +1540,7 @@
     {
       "type": "timeseries",
       "title": "SSE 단계별 지연 p95 (ms)",
-      "description": "fan-out은 방 emitter 큐 배분, queue wait은 큐 체류, send는 실제 emitter.send() 호출 시간이다.",
+      "description": "동기 구현에서 fan-out은 방 전체 send 완료 시간이고 queue wait은 값이 없다. 비동기 구현에서는 fan-out이 emitter 큐 배분, queue wait이 큐 체류 시간이다. send는 두 구현 모두 실제 emitter.send() 호출 시간이다.",
       "id": 28,
       "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
       "gridPos": { "x": 12, "y": 79, "w": 12, "h": 8 },
@@ -1555,7 +1555,7 @@
     {
       "type": "timeseries",
       "title": "SSE 큐·처리 중·거부",
-      "description": "큐 깊이가 계속 증가하면 생산 속도가 send 처리 속도보다 빠르다는 뜻이다. rejected는 큐 포화나 종료된 dispatcher로 전달하지 못한 수다.",
+      "description": "비동기 구현에서 큐 깊이가 계속 증가하면 생산 속도가 send 처리 속도보다 빠르다는 뜻이다. 동기 구현에는 큐가 없어 queue depth와 rejected가 0이다.",
       "id": 29,
       "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
       "gridPos": { "x": 0, "y": 87, "w": 12, "h": 8 },

@@ -22,7 +22,9 @@ public enum AuctionErrorType implements ErrorType {
             "한 경매방에는 최대 100개 물품만 등록할 수 있습니다."),
     AUCTION_ITEM_NOT_IN_PROGRESS(HttpStatus.CONFLICT, 4010, "진행 중인 물품이 아닙니다."),
     AUCTION_ITEM_ALREADY_CLOSING_SOON(HttpStatus.CONFLICT, 4011,
-            "이미 마감이 임박한 물품입니다.");
+            "이미 마감이 임박한 물품입니다."),
+    AUCTION_ROOM_HAS_IN_PROGRESS_ITEM(HttpStatus.CONFLICT, 4012,
+            "진행 중인 물품이 있어 경매방을 종료할 수 없습니다.");
 
     private final HttpStatus httpStatus;
     private final Integer errorCode;

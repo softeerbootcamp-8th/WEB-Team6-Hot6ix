@@ -92,11 +92,13 @@ public class AuctionCloseScheduleListener {
      * 판매자가 앞당긴 마감 시각에 맞춰 예약을 다시 건다. 하는 일은
      * {@link #on(SoftCloseExtended)}과 같고, 시각이 뒤가 아니라 앞으로 옮겨진다는 점만 다르다.
      *
-     * <p>여기서 예약을 못 바꾸면 물품은 <b>원래 시각까지 그대로 열려 있다.</b> 연장 때와 달리
-     * {@code closeIfDue}가 구해 주지 못한다 — 그쪽은 예약이 너무 일찍 깼을 때 다시 걸어주는
-     * 장치라, 앞당겨진 마감처럼 예약이 늦게 깨는 경우는 되돌리지 못한다. 그래도 예외를 삼키는
-     * 것은 커밋이 끝난 뒤에 도는 리스너라서다. 여기서 던지면 마감 시각은 이미 앞당겨졌는데
-     * 요청만 실패로 보인다.
+     * <p>여기서 예약을 못 바꿔도 {@code closeIfDue}는 구해 주지 못한다 — 그쪽은 예약이 너무
+     * 일찍 깼을 때 다시 걸어주는 장치라, 앞당겨진 마감처럼 예약이 늦게 깨는 경우는 되돌리지
+     * 못한다. <b>그 자리는 {@link AuctionRecoveryRunner}가 맡는다.</b> 재동기화가 마감 예약을
+     * DB 값으로 덮어쓰므로 낡은 시각이 남아도 한 주기 안에 고쳐진다(#327).
+     *
+     * <p>그래서 예외를 삼켜도 된다. 삼키는 이유 자체는 커밋이 끝난 뒤에 도는 리스너라서다.
+     * 여기서 던지면 마감 시각은 이미 앞당겨졌는데 요청만 실패로 보인다.
      */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(ItemCloseAdvanced event) {

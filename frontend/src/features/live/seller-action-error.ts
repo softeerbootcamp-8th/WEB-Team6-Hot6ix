@@ -1,4 +1,5 @@
 import { readApiErrorCode } from '@/features/live/api-error'
+import { readValidationMessage } from '@/lib/validation-message'
 
 /**
  * 판매자 조작(물품 추가·빼기·시작·마감 앞당기기) 실패 응답을 화면 문구로 바꾼다.
@@ -80,6 +81,10 @@ const BY_CODE: Record<number, SellerActionErrorMessage> = {
     title: '이미 마감이 임박했어요',
     description: '연장 구간에 들어와서 더 앞당길 수 없어요.',
   },
+  4012: {
+    title: '진행 중인 물품이 있어요',
+    description: '물품 마감을 먼저 끝낸 뒤에 종료해 주세요.',
+  },
   5001: {
     title: '없는 상품이에요',
     description: '상품 목록에서 빠졌을 수 있어요. 다시 골라주세요.',
@@ -143,5 +148,9 @@ export function toSellerActionErrorMessage(
     console.error('처리하지 않은 판매자 조작 에러', action, code, error)
   }
 
-  return known ?? UNKNOWN[action]
+  // 어느 칸이 왜 걸렸는지는 서버가 알려준 문구가 표보다 정확하다.
+  const detail = readValidationMessage(error)
+  const message = known ?? UNKNOWN[action]
+
+  return detail === null ? message : { ...message, description: detail }
 }
