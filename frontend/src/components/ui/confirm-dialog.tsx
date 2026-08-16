@@ -21,6 +21,7 @@ export function ConfirmDialog({
   cancelLabel = '취소',
   tone = 'brand',
   pending = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: {
@@ -32,6 +33,11 @@ export function ConfirmDialog({
   /** 되돌릴 수 없거나 파괴적인 동작이면 `danger`. */
   tone?: 'brand' | 'danger'
   pending?: boolean
+  /**
+   * 확인만 막고 취소는 열어 둔다. 설명 자리에 입력을 받는 다이얼로그에서 값이
+   * 아직 유효하지 않을 때 쓴다. `pending` 과 달리 배경·ESC 로 닫는 것은 막지 않는다.
+   */
+  confirmDisabled?: boolean
   onConfirm: () => void
   onCancel: () => void
 }) {
@@ -70,7 +76,7 @@ export function ConfirmDialog({
           variant={tone === 'danger' ? 'danger' : 'brand'}
           size="lg"
           className="h-12 flex-1 rounded-xl"
-          disabled={pending}
+          disabled={pending || confirmDisabled}
           onClick={onConfirm}
         >
           {pending ? '처리 중…' : confirmLabel}
