@@ -13,6 +13,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record SseProperties(
         long heartbeatIntervalMs,
         long emitterTimeoutMs,
-        int bufferSize
+        int bufferSize,
+        String serverHostname
 ) {
 }

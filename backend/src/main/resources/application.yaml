@@ -140,6 +140,9 @@ upbid:
     heartbeat-interval-ms: ${SSE_HEARTBEAT_MS:30000}
     emitter-timeout-ms: ${SSE_TIMEOUT_MS:3600000}
     buffer-size: ${SSE_BUFFER_SIZE:50}
+    # 참여자 수 전역 집계에서 이 인스턴스를 구분하는 값. 컨테이너마다 HOSTNAME이 달라
+    # bid-stream consumer(148행)와 같은 이유로 재시작해도 값이 자연스럽게 이어진다.
+    server-hostname: ${HOSTNAME:local}
   bid-stream:
     key: auction:bid:stream
     group: bid-mysql-writers
