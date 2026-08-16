@@ -35,8 +35,8 @@ public class RoomSseManager {
     private final SseEventBuffer sseEventBuffer;
     /** 참여자 수도 다른 이벤트와 같은 경로로 나간다. 여기서 직접 쏘면 다른 인스턴스가 모른다. */
     private final SseEventPublisher sseEventPublisher;
-    /** emitter 별 drain 을 실행하는 executor. 고정 스레드 풀을 전역 공유한다. */
-    private final Executor sseWorkerExecutor;
+    /** emitter 별 drain 을 실행하는 executor. 가상 스레드를 전역 공유한다. */
+    private final Executor sseVirtualThreadExecutor;
 
     @PostConstruct
     void bindMetrics() {
@@ -138,7 +138,7 @@ public class RoomSseManager {
                 .add(emitter);
 
         dispatchers.put(emitter, new EmitterDispatcher(
-                sseWorkerExecutor,
+                sseVirtualThreadExecutor,
                 sseProperties.emitterQueueCapacity(),
                 roomId,
                 emitter,
