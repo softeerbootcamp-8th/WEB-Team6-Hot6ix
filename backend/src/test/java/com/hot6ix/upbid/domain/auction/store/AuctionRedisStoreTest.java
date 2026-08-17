@@ -170,6 +170,17 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
     }
 
     @Test
+    @DisplayName("진행 중 물품의 마감 시각을 한 번에 읽고 Hash가 없는 물품은 빼고 돌려준다")
+    void readsEndAtMillisInBulk() {
+
+        assertThat(store.seed(seed(List.of(11L)))).isTrue();
+
+        assertThat(store.findEndAtMillis(List.of(ITEM_ID, ITEM_ID + 1)))
+                .containsOnlyKeys(ITEM_ID);
+        assertThat(store.findEndAtMillis(List.of())).isEmpty();
+    }
+
+    @Test
     @DisplayName("참여자 nickname Hash가 유실되면 Seed 복구 대상으로 판단한다")
     void missingParticipantNicknamesIsNotReady() {
 
