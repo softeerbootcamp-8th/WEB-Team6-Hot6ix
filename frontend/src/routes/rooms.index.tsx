@@ -125,14 +125,38 @@ function MyRoomsPage() {
         </div>
       </div>
 
-      {/* 개수는 목록이 아니라 counts 응답에서 온다. "더 보기"를 눌러도 안 변한다. */}
-      <p className="mt-6 text-[13px] font-bold text-neutral-secondary md:mt-8">
-        {mineOnly ? '내가 만든 경매방' : '내 경매방'} ({total})
-      </p>
+      <div className="mt-6 flex items-center justify-between gap-3 md:mt-8">
+        {/* 개수는 목록이 아니라 counts 응답에서 온다. "더 보기"를 눌러도 안 변한다. */}
+        <p className="min-w-0 truncate text-[13px] font-bold text-neutral-secondary">
+          {mineOnly ? '내가 만든 경매방' : '내 경매방'} ({total})
+        </p>
+
+        {/*
+          상태와 직교하는 축이라 상태 탭 줄에 끼우지 않는다. 그렇다고 필터 바에
+          같이 두면 폰 폭에서 탭 네 개가 첫 줄을, 검색창이 다음 줄을 다 써서
+          이것만 가운데 줄에 혼자 남는다. 오른쪽이 비어 있는 이 줄로 올린다.
+        */}
+        <label
+          className={cn(
+            'flex shrink-0 cursor-pointer items-center gap-2 text-[13px] transition-colors',
+            mineOnly
+              ? 'font-semibold text-brand-600'
+              : 'font-medium text-neutral-tertiary',
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={mineOnly}
+            onChange={(event) => setMineOnly(event.target.checked)}
+            className="size-4 shrink-0 accent-brand-500"
+          />
+          내가 만든 방만
+        </label>
+      </div>
 
       {/*
-        필터 바는 목록이 비어도 항상 그린다. 토글이 켜진 채로 결과가 0개일 때
-        바가 사라지면 토글을 다시 끌 방법이 없어진다.
+        필터 바는 목록이 비어도 항상 그린다. 상태를 걸어서 결과가 0개일 때
+        바가 사라지면 그 상태를 다시 풀 방법이 없어진다.
       */}
       <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl border bg-card p-3">
         <div role="tablist" aria-label="상태 필터" className="flex gap-1">
@@ -155,24 +179,6 @@ function MyRoomsPage() {
           ))}
         </div>
 
-        {/*
-          상태와 직교하는 축이라 탭 줄에 끼우지 않는다. 다만 생김새는 상태 탭과
-          같은 규격을 쓴다 — 같은 줄에서 테두리 유무로 모양이 갈리면 어긋나 보인다.
-        */}
-        <button
-          type="button"
-          aria-pressed={mineOnly}
-          onClick={() => setMineOnly((prev) => !prev)}
-          className={cn(
-            'h-9 rounded-[10px] px-3.5 text-[13px] transition-colors',
-            mineOnly
-              ? 'bg-brand-50 font-semibold text-brand-600'
-              : 'font-medium text-neutral-tertiary hover:bg-fill',
-          )}
-        >
-          내가 만든 방
-        </button>
-
         <div className="relative ml-auto w-full sm:w-[240px]">
           <Search
             aria-hidden
@@ -190,7 +196,10 @@ function MyRoomsPage() {
       </div>
 
       {listQuery.isPending ? (
-        <ul aria-hidden className="mt-6 grid gap-4 md:mt-8 xl:grid-cols-2">
+        <ul
+          aria-hidden
+          className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-4 md:mt-8 xl:grid-cols-2"
+        >
           {Array.from({ length: 4 }).map((_, index) => (
             <li
               key={index}
@@ -250,7 +259,7 @@ function MyRoomsPage() {
                       진행 중인 방이 먼저 표시됩니다
                     </p>
                   </div>
-                  <ul className="mt-3 grid gap-4 xl:grid-cols-2">
+                  <ul className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
                     {visibleLive.map((room) => (
                       <RoomCard key={room.id} room={room} />
                     ))}
@@ -268,7 +277,7 @@ function MyRoomsPage() {
                       물품을 편성하면 시작할 수 있어요
                     </p>
                   </div>
-                  <ul className="mt-3 grid gap-4 xl:grid-cols-2">
+                  <ul className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
                     {visibleReady.map((room) => (
                       <RoomCard key={room.id} room={room} />
                     ))}
@@ -281,7 +290,7 @@ function MyRoomsPage() {
                   <h2 className="text-[13px] font-bold text-foreground">
                     종료 경매방 ({visibleClosed.length})
                   </h2>
-                  <ul className="mt-3 grid gap-4 xl:grid-cols-2">
+                  <ul className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
                     {visibleClosed.map((room) => (
                       <RoomCard key={room.id} room={room} />
                     ))}

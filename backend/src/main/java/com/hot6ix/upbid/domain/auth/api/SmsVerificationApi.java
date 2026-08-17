@@ -6,6 +6,7 @@ import com.hot6ix.upbid.global.response.CommonResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +26,7 @@ public interface SmsVerificationApi {
             @ApiResponse(responseCode = "429", description = "재발송 쿨다운 (code 8006) / 시간당 발송 초과 (code 8007) / 일일 발송 초과 (code 8008)"),
             @ApiResponse(responseCode = "502", description = "SMS 발송 실패 (code 8001)")
     })
+    @SecurityRequirements
     ResponseEntity<CommonResponse<Void>> sendCode(SmsSendRequestDto request);
 
     @Operation(

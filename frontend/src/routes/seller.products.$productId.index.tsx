@@ -107,7 +107,7 @@ function SellerProductDetailPage() {
         description="등록한 상품 정보와 경매 상태를 확인하세요."
       />
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+      <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         {/* 왼쪽 · 사진과 기본 정보 */}
         <section className="rounded-[20px] border bg-card p-6">
           <div className="relative">
@@ -127,7 +127,8 @@ function SellerProductDetailPage() {
             </span>
           </div>
 
-          <h2 className="mt-5 text-[22px] leading-[1.35] font-extrabold text-foreground">
+          {/* 띄어쓰기 없는 긴 이름이 그냥 두면 안 쪼개져서 카드를 밀어낸다. */}
+          <h2 className="mt-5 text-[22px] leading-[1.35] font-extrabold break-words text-foreground">
             {product.name}
           </h2>
 
@@ -178,7 +179,7 @@ function SellerProductDetailPage() {
 
             {trade ? (
               <>
-                <dl className="mt-4 grid gap-3 sm:grid-cols-3">
+                <dl className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-3">
                   <div className="rounded-2xl bg-surface-subtle px-4 py-3.5">
                     <dt className="text-[12px] font-medium text-neutral-tertiary">
                       경매방

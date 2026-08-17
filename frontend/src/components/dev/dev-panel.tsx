@@ -41,10 +41,19 @@ import { useLogout } from '@/api/generated/인증/인증'
  */
 const SELLER_KEY = 'seller'
 
+/**
+ * 입찰자로 붙을 때 쓰는 key. 시드가 만든 입찰자 중 하나다.
+ *
+ * 종료된 경매방 결과의 "내 입찰 N위" 처럼 <b>입찰한 적이 있어야만</b> 보이는 화면이
+ * 있는데, 판매자와 기본 회원은 입찰 이력이 없어서 그 자리가 늘 비어 보인다.
+ */
+const BIDDER_KEY = 'bidder-3'
+
 const SESSIONS = [
   { key: 'guest', label: '게스트' },
   { key: 'member', label: '회원' },
   { key: 'seller', label: '판매자' },
+  { key: 'bidder', label: '입찰자' },
 ] as const
 
 const DELAYS = [
@@ -69,7 +78,9 @@ const FAIL_RATES = [
 function currentKey(session: Session) {
   if (session.status === 'guest') return 'guest'
 
-  return session.user.nickname === SELLER_KEY ? 'seller' : 'member'
+  if (session.user.nickname === SELLER_KEY) return 'seller'
+  if (session.user.nickname === BIDDER_KEY) return 'bidder'
+  return 'member'
 }
 
 export function DevPanel() {
@@ -97,11 +108,21 @@ export function DevPanel() {
         sessionStore.signOut()
       } else {
         // key 를 생략하면 기본 회원, 주면 그 key 로 회원이 갈린다.
-        await devLogin(key === 'seller' ? { key: SELLER_KEY } : {})
+        const keys: Partial<Record<typeof key, string>> = {
+          seller: SELLER_KEY,
+          bidder: BIDDER_KEY,
+        }
+        const devKey = keys[key]
+        await devLogin(devKey ? { key: devKey } : {})
         await hydrateSession()
       }
-      // 앱 초기화 때 채운 캐시가 남아있으면 다음 진입에서 재요청을 안 하므로 지운다.
-      queryClient.removeQueries({ queryKey: ['session'] })
+      /*
+       * 캐시를 통째로 비운다. 서버 응답이 거의 다 "지금 로그인한 사람" 기준이라
+       * (내 거래, 내 경매방, 결과의 내 순위 등) 세션 키만 지우면 화면은 이전
+       * 사용자의 응답을 그대로 다시 그린다. 세션을 바꿨는데 아무것도 안 바뀌거나
+       * 이전 사용자에게 났던 403 이 계속 남아 있던 게 이것 때문이다.
+       */
+      queryClient.clear()
       // 세션이 바뀌면 라우트 가드를 다시 태운다.
       await router.invalidate()
     } catch {

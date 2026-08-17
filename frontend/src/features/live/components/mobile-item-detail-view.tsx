@@ -5,13 +5,9 @@ import { ItemLeaderboard } from '@/features/live/components/leaderboard'
 import { MobileEventFeed } from '@/features/live/components/mobile-event-feed'
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer'
 import { ProductThumbnail } from '@/components/product-thumbnail'
+import { RoomRuleChips } from '@/features/live/components/room-rule-chips'
 import { cn } from '@/lib/utils'
-import {
-  formatClosingLead,
-  formatRemaining,
-  formatWon,
-  toHref,
-} from '@/lib/format'
+import { formatRemaining, formatWon, toHref } from '@/lib/format'
 import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
 
 /**
@@ -161,58 +157,56 @@ export function MobileItemDetailView({
             {sellerName}
           </p>
 
-          {/* 현재 최고가 알약 — 브랜드색으로 강조한다. */}
-          <div className="mt-5 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3.5">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-[12px] font-semibold text-brand-600">
-                {closed
-                  ? item.sold
-                    ? '낙찰가'
-                    : '유찰 · 시작가'
-                  : ready
-                    ? '시작가'
-                    : '현재 최고가'}
-              </span>
-              <span className="text-[20px] font-extrabold tabular-nums text-brand-600">
-                {formatWon(ready ? item.startPrice : item.currentPrice)}
-              </span>
-            </div>
-            <div className="mt-1.5 flex items-baseline justify-between gap-3">
-              <span
-                className={cn(
-                  'text-[10px] font-semibold tabular-nums',
-                  urgent ? 'text-live' : 'text-neutral-tertiary',
-                )}
-              >
-                {/* 시작 전에는 마감 시각이 아직 없다. 카운트다운을 그리면 0초로 굳는다. */}
-                {closed
-                  ? '마감됨'
-                  : ready
-                    ? '시작 전'
-                    : /*
-                       * 0 초에서는 "남은 시간" 을 떼고 상태만 적는다.
-                       * "남은 시간 마감 처리 중" 은 읽히지 않는다.
-                       */
-                      remaining <= 0
-                      ? '마감 처리 중'
-                      : `남은 시간 ${formatRemaining(remaining)}`}
-              </span>
-              <span className="text-[10px] font-semibold tabular-nums text-neutral-tertiary">
-                입찰 단위 +{item.bidUnit.toLocaleString('ko-KR')}원
-              </span>
-            </div>
+          {/*
+            가격과 남은 시간은 이 화면에서 제일 먼저 읽어야 하는 값이다. 배경을
+            깔면 그 안에서 다시 크기를 나눠 써야 해서 둘 다 작아진다. 테두리 없이
+            구분선만 두고 글자 크기로만 순서를 준다.
+          */}
+          <div className="mt-5 border-t pt-5">
+            <p className="text-[12px] font-semibold text-neutral-tertiary">
+              {closed
+                ? item.sold
+                  ? '낙찰가'
+                  : '유찰 · 시작가'
+                : ready
+                  ? '시작가'
+                  : '현재 최고가'}
+            </p>
+            <p className="mt-1 text-[28px] leading-none font-extrabold tabular-nums text-brand-600">
+              {formatWon(ready ? item.startPrice : item.currentPrice)}
+            </p>
+
+            <p className="mt-4 text-[12px] font-semibold text-neutral-tertiary">
+              남은 시간
+            </p>
+            <p
+              className={cn(
+                'mt-1 text-[20px] leading-none font-extrabold tabular-nums',
+                urgent ? 'text-live' : 'text-foreground',
+              )}
+            >
+              {/* 시작 전에는 마감 시각이 아직 없다. 카운트다운을 그리면 0초로 굳는다. */}
+              {closed
+                ? '마감됨'
+                : ready
+                  ? '시작 전'
+                  : remaining <= 0
+                    ? '마감 처리 중'
+                    : formatRemaining(remaining)}
+            </p>
 
             {/*
               이 화면은 링크로 바로 들어오면 방 헤더 없이 단독으로 뜬다.
               데스크톱은 `LiveShell` 헤더가 규칙을 들고 있지만 여기는 없어서,
-              연장 규칙을 볼 자리가 아예 없었다. 끝난 물품에는 의미가 없어 뺀다.
+              연장 규칙을 볼 자리가 아예 없었다. 끝난 물품에는 의미가 없어
+              연장 규칙을 빼고 입찰 단위만 남긴다.
             */}
-            {!closed && softCloseTriggerSeconds > 0 && softCloseSeconds > 0 && (
-              <p className="mt-1.5 border-t border-brand-200 pt-1.5 text-[10px] font-semibold tabular-nums text-neutral-tertiary">
-                마감 {formatClosingLead(softCloseTriggerSeconds)} 전 입찰 시{' '}
-                {formatClosingLead(softCloseSeconds)} 자동 연장
-              </p>
-            )}
+            <RoomRuleChips
+              className="mt-4"
+              bidUnit={item.bidUnit}
+              softCloseTriggerSeconds={closed ? 0 : softCloseTriggerSeconds}
+              softCloseSeconds={closed ? 0 : softCloseSeconds}
+            />
           </div>
 
           <div className="mt-5 border-t pt-5">

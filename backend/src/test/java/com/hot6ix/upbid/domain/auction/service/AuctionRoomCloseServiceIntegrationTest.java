@@ -100,7 +100,7 @@ class AuctionRoomCloseServiceIntegrationTest extends AbstractMySqlContainerTest 
     }
 
     @Test
-    @DisplayName("아직 시작하지 않은 물품만 남았으면 종료할 수 있고 그 물품은 그대로 둔다")
+    @DisplayName("아직 시작하지 않은 물품만 남았으면 종료할 수 있고 그 물품은 유찰 처리된다")
     void closesRoomWithOnlyReadyItems() {
 
         SellerProfile sellerProfile = newSellerProfile();
@@ -114,9 +114,13 @@ class AuctionRoomCloseServiceIntegrationTest extends AbstractMySqlContainerTest 
         AuctionRoom closed = findRoom(auctionRoom);
         assertThat(closed.getStatus()).isEqualTo(AuctionRoomStatus.CLOSED);
         assertThat(closed.getClosedAt()).isNotNull();
-        assertThat(auctionItemRepository.findStatus(ready.getAuctionItemId()))
-                .as("시작한 적 없는 물품을 유찰로 적으면 실제 유찰과 결과 집계에서 섞인다")
-                .contains(AuctionItemStatus.READY);
+        AuctionItem persisted = auctionItemRepository.findById(ready.getAuctionItemId()).orElseThrow();
+        assertThat(persisted.getStatus())
+                .as("방이 닫히면 다시 시작할 길이 없어 READY로 남기면 재등록·삭제가 막힌다")
+                .isEqualTo(AuctionItemStatus.FAILED);
+        assertThat(persisted.getEndAt())
+                .as("거래 내역과 결과 목록이 end_at으로 정렬하므로 채워야 한다")
+                .isEqualTo(closed.getClosedAt());
     }
 
     @Test

@@ -376,7 +376,8 @@ function TradeDetailPage() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
+      {/* 한 칸일 때도 컬럼을 못 박는다. 이유는 `trades.index.tsx` 목록과 같다. */}
+      <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
         {/* 물품 패널 — 400×560 */}
         <Panel className="flex flex-col">
           <h2 className="shrink-0 text-[18px] font-extrabold text-foreground">
@@ -398,7 +399,11 @@ function TradeDetailPage() {
             )}
           />
 
-          <p className="mt-6 shrink-0 text-[20px] font-extrabold text-foreground">
+          {/*
+            띄어쓰기 없는 긴 이름은 그냥 두면 안 쪼개져서 카드를 밀어낸다. 한글은
+            아무 데서나 줄이 바뀌지만 영문은 단어 단위라 여기서만 걸린다.
+          */}
+          <p className="mt-6 shrink-0 text-[20px] font-extrabold break-words text-foreground">
             {productName}
           </p>
 

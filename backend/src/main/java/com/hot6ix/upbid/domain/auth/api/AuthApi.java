@@ -20,7 +20,7 @@ public interface AuthApi {
             @ApiResponse(responseCode = "200", description = "회원가입 및 로그인 성공"),
             @ApiResponse(responseCode = "400", description = "전화번호 인증 미완료 (code 1010)"),
             @ApiResponse(responseCode = "401", description = "가입 진행 정보 없음 또는 만료 (code 1009)"),
-            @ApiResponse(responseCode = "502", description = "사용자 정보가 정책에 위배됨 (code 1008)")
+            @ApiResponse(responseCode = "422", description = "사용자 정보가 정책에 위배됨 (code 1008)")
     })
     ResponseEntity<CommonResponse<Void>> signup(HttpServletRequest request);
 

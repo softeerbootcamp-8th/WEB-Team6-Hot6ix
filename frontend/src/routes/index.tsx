@@ -90,7 +90,7 @@ function LandingPage() {
         두 카드는 같은 높이로 맞춘다(`items-start` 를 쓰면 오른쪽이 내용만큼만
         줄어 짝이 안 맞는다). 각 카드 안에서도 세로 가운데로 모은다.
       */}
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,404px)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,404px)]">
         <section className="flex flex-col justify-center rounded-4xl border bg-card p-6 md:p-9">
           <Reveal as="div">
             <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-brand-200 bg-brand-50 px-3 text-[11px] font-extrabold tracking-[0.08em] text-brand-600">
@@ -158,7 +158,7 @@ function LandingPage() {
           <Reveal
             as="ul"
             delay={220}
-            className="mt-5 grid gap-3 lg:grid-cols-3 lg:gap-4"
+            className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-3 lg:gap-4"
           >
             {VALUE_POINTS.map((point, index) => (
               <li

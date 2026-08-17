@@ -683,8 +683,12 @@
  * **레이어 밖에 둔다.** `@layer base` 안에 두면 `field.tsx` 의 `text-[14px]` 같은
  * 유틸리티 클래스에 밀려(utilities 가 base 보다 세다) 규칙이 사실상 없는 것과
  * 같아진다. 레이어에 속하지 않은 CSS 는 모든 레이어를 이긴다.
+ *
+ * 조건이 폭만이면 767 을 넘는 순간 다시 14px 로 돌아가 확대가 되살아난다.
+ * 아이패드는 세로도 820 이고 아이폰도 가로로 돌리면 900 을 넘는다. 그래서
+ * 폭이 아니라 손가락으로 쓰는 기기인지(`pointer: coarse`)로도 건다.
  */
-@media (max-width: 767px) {
+@media (max-width: 767px), (pointer: coarse) {
   input,
   textarea,
   select {

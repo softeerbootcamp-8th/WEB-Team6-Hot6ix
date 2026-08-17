@@ -9,8 +9,11 @@ import static org.mockito.Mockito.when;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.InProgressAuctionItemProjection;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +42,9 @@ class AuctionRecoveryRunnerTest {
 
     @Mock
     private ItemClosingSoonScheduler itemClosingSoonScheduler;
+
+    @Mock
+    private AuctionRedisStore auctionRedisStore;
 
     @InjectMocks
     private AuctionRecoveryRunner auctionRecoveryRunner;
@@ -241,5 +247,54 @@ class AuctionRecoveryRunnerTest {
     private void givenTargets(InProgressAuctionItemProjection... targets) {
         when(auctionItemRepository.findScheduleTargets(AuctionItemStatus.IN_PROGRESS))
                 .thenReturn(List.of(targets));
+    }
+
+    private static long toMillis(LocalDateTime value) {
+        return value.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+    }
+
+    @Test
+    @DisplayName("Redis 에 마감 시각이 있으면 DB 값 대신 그것으로 예약을 맞춘다")
+    void prefersRedisEndAtOverDatabase() {
+
+        // 판매자가 앞당기면 Redis 만 즉시 바뀌고 DB 는 Stream 이 반영한 뒤에 따라온다.
+        // DB 값으로 덮으면 재동기화가 주기마다 앞당김을 되돌린다 (#374).
+        LocalDateTime advancedEndAt = FUTURE_END_AT.minusHours(3);
+
+        givenTargets(notNotified(30L, FUTURE_END_AT));
+        when(auctionRedisStore.findEndAtMillis(List.of(30L)))
+                .thenReturn(Map.of(30L, toMillis(advancedEndAt)));
+
+        auctionRecoveryRunner.restoreCloseSchedules();
+
+        verify(auctionCloseScheduler).schedule(30L, advancedEndAt);
+        verify(auctionCloseScheduler, never()).schedule(30L, FUTURE_END_AT);
+    }
+
+    @Test
+    @DisplayName("Redis 에 마감 시각이 없는 물품은 DB 값으로 예약한다")
+    void fallsBackToDatabaseWhenRedisHasNoEndAt() {
+
+        givenTargets(notNotified(30L, FUTURE_END_AT), notNotified(31L, PAST_END_AT));
+        when(auctionRedisStore.findEndAtMillis(List.of(30L, 31L)))
+                .thenReturn(Map.of(31L, toMillis(PAST_END_AT)));
+
+        auctionRecoveryRunner.restoreCloseSchedules();
+
+        verify(auctionCloseScheduler).schedule(30L, FUTURE_END_AT);
+        verify(auctionCloseScheduler).schedule(31L, PAST_END_AT);
+    }
+
+    @Test
+    @DisplayName("Redis 를 못 읽어도 DB 값으로 재동기화를 계속한다")
+    void keepsResyncingWhenRedisReadFails() {
+
+        givenTargets(notNotified(30L, FUTURE_END_AT));
+        when(auctionRedisStore.findEndAtMillis(List.of(30L)))
+                .thenThrow(new RuntimeException("Redis unavailable"));
+
+        auctionRecoveryRunner.restoreCloseSchedules();
+
+        verify(auctionCloseScheduler).schedule(30L, FUTURE_END_AT);
     }
 }

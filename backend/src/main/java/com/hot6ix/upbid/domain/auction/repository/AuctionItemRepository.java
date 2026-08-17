@@ -37,6 +37,12 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
     long countByAuctionRoom_AuctionRoomIdAndStatus(Long auctionRoomId, AuctionItemStatus status);
 
     /**
+     * 경매방에서 지정 상태인 물품을 전부 조회한다. 방 종료 시 시작하지 않은 READY 물품을
+     * 유찰 처리하는 데 쓴다.
+     */
+    List<AuctionItem> findByAuctionRoom_AuctionRoomIdAndStatus(Long auctionRoomId, AuctionItemStatus status);
+
+    /**
      * 경매방에 지정 상태인 물품이 하나라도 있는지 본다. 자동 종료가 아직 안 끝난 물품
      * ({@code READY}, {@code IN_PROGRESS})이 남았는지 확인하는 데 쓴다.
      */
