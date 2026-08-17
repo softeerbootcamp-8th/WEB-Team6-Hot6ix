@@ -11,6 +11,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
@@ -42,7 +47,7 @@ class BidStreamConfigTest extends AbstractRedisContainerTest {
         BidStreamProperties properties = new BidStreamProperties(
                 STREAM, GROUP, "test-consumer", Duration.ofMillis(100),
                 Duration.ofMillis(50), Duration.ofSeconds(60), Duration.ofSeconds(5),
-                5, Duration.ofSeconds(60), 20);
+                5, Duration.ofSeconds(60), 20, true, 50, Duration.ofSeconds(1));
         ApplicationRunner initializer =
                 new BidStreamConfig().bidStreamGroupInitializer(redis, properties);
         DefaultApplicationArguments arguments = new DefaultApplicationArguments(new String[0]);
@@ -53,5 +58,22 @@ class BidStreamConfigTest extends AbstractRedisContainerTest {
         assertThat(redis.opsForStream().groups(STREAM))
                 .anySatisfy(group -> assertThat(group.groupName()).isEqualTo(GROUP));
         assertThatCode(() -> initializer.run(arguments)).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("application.yaml의 Consumer와 drain 상한 기본값을 바인딩한다")
+    void bindsConsumerDrainDefaults() throws Exception {
+        StandardEnvironment environment = new StandardEnvironment();
+        new YamlPropertySourceLoader()
+                .load("application", new ClassPathResource("application.yaml"))
+                .forEach(environment.getPropertySources()::addLast);
+
+        BidStreamProperties properties = Binder.get(environment)
+                .bind("upbid.bid-stream", Bindable.of(BidStreamProperties.class))
+                .get();
+
+        assertThat(properties.consumerEnabled()).isTrue();
+        assertThat(properties.maxRecordsPerPoll()).isEqualTo(50);
+        assertThat(properties.maxDrainDuration()).isEqualTo(Duration.ofSeconds(1));
     }
 }

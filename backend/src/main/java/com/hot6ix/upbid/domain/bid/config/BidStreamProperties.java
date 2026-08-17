@@ -15,6 +15,9 @@ public record BidStreamProperties(
         Duration retryDelay,
         int maxFastAttempts,
         Duration haltedRetryDelay,
-        int transactionTimeoutSeconds
+        int transactionTimeoutSeconds,
+        boolean consumerEnabled,
+        int maxRecordsPerPoll,
+        Duration maxDrainDuration
 ) {
 }

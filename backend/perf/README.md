@@ -232,6 +232,68 @@ KAKAO_REDIRECT_URI=http://localhost:8080/api/v1/oauth/kakao/callback
 ./perf/run.sh --scenario 11 --rate 200 --results-auth member  # 같은 조회, 로그인 (내 순위 포함)
 ```
 
+### 입찰 Stream Consumer backlog 배출 측정
+
+일반 시나리오는 API 처리량을 재지만, 아래 도구는 Redis에서 승인된 입찰을 MySQL에 반영하는
+단일 Consumer의 배출 처리량을 따로 잽니다.
+
+```bash
+./perf/stream-backlog.sh \
+  --vus 40 --rate 50 --duration 20s \
+  --items 3 --sse 0 --target-backlog 500 --users 80
+```
+
+측정은 다음 순서로 진행됩니다.
+
+```text
+Consumer OFF
+  -> k6가 실제 입찰 API 호출
+  -> 입찰 Lua가 판정·Hash 갱신·XADD
+  -> 목표 Stream backlog 생성
+  -> Consumer ON으로 앱만 재생성
+  -> MySQL 반영·XACK·XDEL이 끝날 때까지 배출 속도 측정
+```
+
+테스트 스크립트가 `XADD`로 가짜 이벤트를 만들지 않습니다. 따라서 인증, API, Lua 판정,
+멱등 처리와 실제 Stream payload를 통과한 승인 이벤트만 backlog가 됩니다. 다만 Consumer를
+끄는 것은 측정 전용 동작입니다. **공유 개발·운영 경매에서
+`BID_STREAM_CONSUMER_ENABLED=false`를 사용하면 안 됩니다.** 이 스크립트도 원격 `--base`를
+받지 않고 `upbid-stream-drain`이라는 격리된 로컬 Compose project만 조작합니다.
+
+결과는 `perf/results/<run>/stream-drain.json`에 아래 값으로 남습니다.
+
+| 값 | 의미 |
+|---|---|
+| `backlog_start`, `backlog_end` | 배출 시작·종료 시 Stream 길이 |
+| `processed`, `processed_per_second` | MySQL 반영 후 삭제한 수와 초당 처리량 |
+| `lag_p95_ms` | Lua의 XADD부터 Consumer 처리까지 걸린 p95 |
+| `persist_p95_ms` | 이벤트 한 건의 MySQL 트랜잭션 p95 |
+| `drain_records_p95` | Scheduler tick 한 번의 처리 건수 p95 |
+| `drain_duration_p95_ms` | Scheduler tick 실행시간 p95 |
+| `timed_out` | 제한시간 안에 backlog를 비우지 못했는지 여부 |
+
+2026-08-16 로컬 smoke에서는 201건을 모두 배출했고 약 68.8건/초가 나왔습니다. 이 값은
+스크립트와 메트릭이 연결됐는지 확인하는 참고값일 뿐입니다. Docker Desktop의 CPU·디스크와
+배포 EC2/RDS의 성능이 다르므로 운영 Consumer 용량이나 파티션 수를 이 값으로 확정하지
+않습니다.
+
+운영에서는 동일 스펙과 같은 앱 수, RDS 상태, SSE 부하에서 최소 세 번 측정합니다. backlog가
+0까지 줄고, timeout·quarantine·halted가 없으며, 반복 실행 처리량 편차가 허용 범위 안인
+실행만 용량 산정에 사용합니다. 배포 단일 Consumer의 안정 처리량에 30% 여유를 둡니다.
+
+```text
+단일 Consumer 안전 처리량 = 배포 실측 처리량 * 0.7
+필요 파티션 수 = ceil(예상 최대 승인 유입률 / 단일 Consumer 안전 처리량)
+```
+
+SSE 비용을 분리할 때는 먼저 `--sse 0`으로 Consumer만 재고, 실제 운영 동시 연결 수를 고정한
+실행을 한 줄 더 만듭니다. 파티셔닝은 여러 경매방·물품을 병렬로 반영하는 방법이지, 동일 물품
+하나의 이벤트 순서를 병렬 처리해 빠르게 만드는 방법은 아닙니다.
+
+Prometheus histogram의 p95는 bucket 보간값이므로 `drain_records_p95`가 실제 상한 50보다
+조금 크게 표시될 수 있습니다. 상한 준수 여부는 `drain.limited{reason="records"}`와 테스트로
+확인하고, histogram 값만 보고 제한이 깨졌다고 판단하지 않습니다.
+
 계단은 **10 / 20 / 40 / 80 / 160**입니다. 한 번에 하나만 올리고 나머지는 그대로 둡니다.
 
 **6번은 계단이 물품 수입니다** (5 / 10 / 20 / 50). 입찰자 수는 `--vus` 로 따로 줍니다.
