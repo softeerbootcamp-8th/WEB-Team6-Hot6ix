@@ -239,7 +239,7 @@ export function SellerProfileForm({
   return (
     <form
       onSubmit={(event) => void handleSubmit(event)}
-      className="grid gap-8 rounded-[20px] border bg-card p-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-12"
+      className="grid grid-cols-[minmax(0,1fr)] gap-8 rounded-[20px] border bg-card p-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-12"
     >
       {/* 대표 이미지 — 280×280 */}
       <ImageUploadField

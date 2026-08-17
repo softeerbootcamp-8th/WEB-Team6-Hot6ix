@@ -220,7 +220,7 @@ export function RoutePending() {
           style={{ animationDelay: '80ms' }}
         />
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
+        <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
           {[0, 1].map((index) => (
             <div
               key={index}

@@ -196,7 +196,10 @@ function MyRoomsPage() {
       </div>
 
       {listQuery.isPending ? (
-        <ul aria-hidden className="mt-6 grid gap-4 md:mt-8 xl:grid-cols-2">
+        <ul
+          aria-hidden
+          className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-4 md:mt-8 xl:grid-cols-2"
+        >
           {Array.from({ length: 4 }).map((_, index) => (
             <li
               key={index}
@@ -256,7 +259,7 @@ function MyRoomsPage() {
                       진행 중인 방이 먼저 표시됩니다
                     </p>
                   </div>
-                  <ul className="mt-3 grid gap-4 xl:grid-cols-2">
+                  <ul className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
                     {visibleLive.map((room) => (
                       <RoomCard key={room.id} room={room} />
                     ))}
@@ -274,7 +277,7 @@ function MyRoomsPage() {
                       물품을 편성하면 시작할 수 있어요
                     </p>
                   </div>
-                  <ul className="mt-3 grid gap-4 xl:grid-cols-2">
+                  <ul className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
                     {visibleReady.map((room) => (
                       <RoomCard key={room.id} room={room} />
                     ))}
@@ -287,7 +290,7 @@ function MyRoomsPage() {
                   <h2 className="text-[13px] font-bold text-foreground">
                     종료 경매방 ({visibleClosed.length})
                   </h2>
-                  <ul className="mt-3 grid gap-4 xl:grid-cols-2">
+                  <ul className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-2">
                     {visibleClosed.map((room) => (
                       <RoomCard key={room.id} room={room} />
                     ))}

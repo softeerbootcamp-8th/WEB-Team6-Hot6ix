@@ -131,7 +131,7 @@ function MyPage() {
           프로필과 연결된 계정 정보를 확인하세요.
         </p>
 
-        <div className="mt-4 grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
+        <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
           {/* 내 프로필 — 380×420 */}
           {/* 아래가 휑하지 않도록 남는 높이를 카드가 가져간다. */}
           <section className="flex flex-col rounded-[24px] border bg-card p-7 lg:h-[calc(100svh-15rem)] lg:min-h-[420px]">

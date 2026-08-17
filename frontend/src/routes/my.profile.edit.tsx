@@ -126,7 +126,7 @@ function MyProfileEditPage() {
 
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="mt-4 grid gap-8 rounded-[20px] border bg-card p-6 md:p-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-12"
+        className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-8 rounded-[20px] border bg-card p-6 md:p-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-12"
       >
         <ImageUploadField
           label="프로필 사진"

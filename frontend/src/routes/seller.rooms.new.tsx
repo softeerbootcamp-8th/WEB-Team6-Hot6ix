@@ -235,7 +235,7 @@ function AuctionRoomNewPage() {
         onSubmit={(event) => void handleSubmit(event)}
         className="mt-6 flex flex-col gap-6"
       >
-        <div className="grid gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-2">
           {/* 기본 정보 */}
           <section className="rounded-[20px] border bg-card p-7">
             <h2 className="text-[19px] font-extrabold text-foreground">
@@ -257,7 +257,7 @@ function AuctionRoomNewPage() {
               />
             </div>
 
-            <div className="mt-6 grid gap-6 sm:grid-cols-[240px_minmax(0,1fr)]">
+            <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 sm:grid-cols-[240px_minmax(0,1fr)]">
               {/*
                 지우기는 넘기지 않는다(`onRemove` 없음). 방 수정 요청은 값이 없으면
                 기존 값을 유지해서 "커버를 없앰"을 표현할 방법이 없다. 삭제 버튼만
@@ -312,7 +312,7 @@ function AuctionRoomNewPage() {
               종료 직전 입찰이 발생하면 마감 시간을 자동으로 연장합니다.
             </p>
 
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
               <NumberField
                 label="마감 임박 기준"
                 unit="분"

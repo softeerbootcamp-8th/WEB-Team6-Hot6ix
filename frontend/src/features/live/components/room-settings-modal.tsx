@@ -289,7 +289,7 @@ function RoomSettingsForm({
           종료 직전 입찰이 발생하면 마감 시간을 자동으로 연장합니다.
         </p>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
           <NumberField
             label="마감 임박 기준"
             unit="분"
