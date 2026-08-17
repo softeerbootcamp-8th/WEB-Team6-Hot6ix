@@ -10,23 +10,17 @@
 
 <table>
   <tr>
-    <td align="center" width="33%">
-      <a href="https://www.upbid.store">
-        <b>🛎️&nbsp; 서비스 열기</b><br/>
-        <sub>upbid.store</sub>
-      </a>
+    <td align="center" width="240">
+      <b>🛎️&nbsp; 서비스 열기</b><br/>
+      <a href="https://www.upbid.store">upbid.store</a>
     </td>
-    <td align="center" width="33%">
-      <a href="https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki">
-        <b>📖&nbsp; 기술 문서</b><br/>
-        <sub>GitHub Wiki</sub>
-      </a>
+    <td align="center" width="240">
+      <b>📖&nbsp; 기술 문서</b><br/>
+      <a href="https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki">GitHub Wiki</a>
     </td>
-    <td align="center" width="33%">
-      <a href="https://api.upbid.store/swagger-ui/index.html">
-        <b>🧾&nbsp; API 문서</b><br/>
-        <sub>Swagger UI</sub>
-      </a>
+    <td align="center" width="240">
+      <b>🧾&nbsp; API 문서</b><br/>
+      <a href="https://api.upbid.store/swagger-ui/index.html">Swagger UI</a>
     </td>
   </tr>
 </table>
@@ -52,24 +46,22 @@
 
 ## 프로젝트 소개
 
-**SNS에서 이미 벌어지고 있는 경매를, 댓글 대신 서버가 판정하게 합니다.**
+> **SNS에서 이미 벌어지고 있는 경매를, 댓글 대신 서버가 판정하게 합니다.**
 
-인스타그램 라이브와 카카오톡 오픈채팅, X, 디스코드에서 중고 의류와 포토카드, 굿즈가 경매로 거래되고 있습니다. 문제는 경매할 공간이 없다는 게 아니라, **그 경매를 댓글과 캡처로 판정한다**는 점입니다.
+인스타그램 라이브와 오픈채팅에서 굿즈와 중고 의류가 경매로 거래됩니다. 경매할 공간이 없어서가 아니라, **그 경매를 댓글과 캡처로 판정하는 것**이 문제입니다.
 
-| | 댓글로 하는 경매 | UpBid |
+| | 💬 댓글로 하는 경매 | 🛎️ UpBid |
 | --- | --- | --- |
-| **현재 최고가** | 댓글을 거슬러 올라가 직접 찾습니다 | 화면 위에 항상 떠 있습니다 |
-| **입찰 순서** | 댓글 정렬과 네트워크에 따라 뒤집힙니다 | 서버가 받은 순서로 확정합니다 |
-| **마감** | 판매자가 눈으로 보고 끊습니다 | 서버 시간 기준으로 자동 마감합니다 |
-| **낙찰자** | 최고가와 댓글 순서를 대조해 고릅니다 | 물품별 최고 입찰자를 자동 확정합니다 |
-| **거래 불발** | 차순위를 다시 찾아 연락합니다 | 기록된 순위로 자동 승계합니다 |
-| **기록** | 끝나면 흩어집니다 | 입찰 이력과 결과가 남습니다 |
+| **최고가** | 댓글을 거슬러 올라가 확인 | 화면 위에 고정 |
+| **입찰 순서** | 정렬과 지연으로 뒤집힘 | 서버가 받은 순서로 확정 |
+| **마감** | 판매자가 눈으로 끊음 | 서버 시간 기준 자동 |
+| **낙찰자** | 최고가와 순서를 수동 대조 | 최고 입찰자 자동 확정 |
+| **거래 불발** | 차순위를 다시 찾아 연락 | 기록된 순위로 자동 승계 |
+| **기록** | 끝나면 흩어짐 | 입찰 이력과 결과가 남음 |
 
 ```
 SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  외부에서 거래
 ```
-
-**판매자가 이미 쓰는 SNS 채널을 대체하지 않습니다.** 그 위에 링크와 QR로 들어오는 실시간 경매방을 얹습니다.
 
 <br>
 
@@ -111,6 +103,21 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 
 ## 서비스 화면
 
+모바일에서도 같은 경매방에 그대로 들어옵니다.
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/01d50d20-5ec7-4bb0-b90a-8260b977721e" width="230" alt="경매방 입장" /><br/><b>경매방 입장</b><br/><sub>동의 한 번으로 들어옵니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/98066282-f4e8-448e-85c4-9ffebab438e2" width="230" alt="빠른 입찰" /><br/><b>빠른 입찰</b><br/><sub>바텀시트에서 진행 중인 물품에 바로 입찰합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0e08058d-a615-4591-b35b-0fe29342be0d" width="230" alt="종료 결과" /><br/><b>종료 결과</b><br/><sub>낙찰과 유찰, 총 낙찰액을 한 화면에 정리합니다</sub></td>
+  </tr>
+</table>
+
+<details>
+<summary><b>화면 더 보기</b> (입찰 흐름, 판매자 조작, 모바일 12장)</summary>
+
+<br/>
+
 ### 입찰
 
 ![입찰하기](https://github.com/user-attachments/assets/934160d1-6e10-4b2d-857b-616bb272cc40)
@@ -134,32 +141,19 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 
 <table>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/01d50d20-5ec7-4bb0-b90a-8260b977721e" width="230" alt="경매방 입장" /><br/><b>경매방 입장</b><br/><sub>동의 한 번으로 들어옵니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/98066282-f4e8-448e-85c4-9ffebab438e2" width="230" alt="빠른 입찰" /><br/><b>빠른 입찰</b><br/><sub>바텀시트에서 진행 중인 물품에 바로 입찰합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/ee6a0056-6764-4fc9-81a1-2715127700f0" width="230" alt="입찰 등록" /><br/><b>입찰 등록</b><br/><sub>서버가 승인한 뒤에 확정으로 표시합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/8325487d-2520-4ffe-9c01-3d65c3a0c638" width="230" alt="실시간 이벤트" /><br/><b>실시간 이벤트</b><br/><sub>이벤트와 리더보드를 탭으로 전환합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/28092082-a80c-4df7-923e-eadb1db6906a" width="230" alt="리더보드" /><br/><b>리더보드</b><br/><sub>물품별 순위와 내 위치를 봅니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/6dc00ba0-b424-454a-aaf5-8ee33dc23fe3" width="230" alt="물품 상세" /><br/><b>물품 상세</b><br/><sub>설명과 현재가, 남은 시간을 봅니다</sub></td>
   </tr>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/8325487d-2520-4ffe-9c01-3d65c3a0c638" width="230" alt="실시간 이벤트" /><br/><b>실시간 이벤트</b><br/><sub>이벤트와 리더보드를 탭으로 전환합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0e08058d-a615-4591-b35b-0fe29342be0d" width="230" alt="종료 결과" /><br/><b>종료 결과</b><br/><sub>낙찰과 유찰, 총 낙찰액을 한 화면에 정리합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f522ba6a-daac-451c-8ea9-8bd927f071a6" width="230" alt="입찰 확정" /><br/><b>입찰 확정</b><br/><sub>금액을 확인하고 확정합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/ee6a0056-6764-4fc9-81a1-2715127700f0" width="230" alt="입찰 등록" /><br/><b>입찰 등록</b><br/><sub>서버가 승인한 뒤에 확정으로 표시합니다</sub></td>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/09df720d-ffd2-4d72-b61c-b3a00e6a878f" width="230" alt="낙찰 후보" /><br/><b>낙찰 후보</b><br/><sub>순위대로 남겨 두고 차순위로 넘깁니다</sub></td>
   </tr>
-</table>
-
-<details>
-<summary><b>모바일 화면 더 보기</b> (리더보드, 공유 QR, 마감 앞당기기, 경매방 만들기)</summary>
-
-<br/>
-
-<table>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/28092082-a80c-4df7-923e-eadb1db6906a" width="230" alt="리더보드" /><br/><b>리더보드</b><br/><sub>물품별 순위와 내 위치를 봅니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f522ba6a-daac-451c-8ea9-8bd927f071a6" width="230" alt="입찰 확정" /><br/><b>입찰 확정</b><br/><sub>금액을 확인하고 확정합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/99ddd58a-e0c5-40a9-961e-fbbf1407e861" width="230" alt="공유 QR" /><br/><b>공유 QR</b><br/><sub>링크와 QR을 그 자리에서 만듭니다</sub></td>
-  </tr>
-  <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/fba1cec2-3bc0-4963-ab8e-c6b0a2484646" width="230" alt="마감 앞당기기" /><br/><b>마감 앞당기기</b><br/><sub>판매자가 남길 시간을 정합니다</sub></td>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/74c56aa4-e01f-433e-918b-51bf8de09f0d" width="230" alt="거래 완료" /><br/><b>거래 완료</b><br/><sub>성사된 거래를 기록으로 남깁니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/6dc00ba0-b424-454a-aaf5-8ee33dc23fe3" width="230" alt="물품 상세" /><br/><b>물품 상세</b><br/><sub>설명과 현재가, 남은 시간을 봅니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/99ddd58a-e0c5-40a9-961e-fbbf1407e861" width="230" alt="공유 QR" /><br/><b>공유 QR</b><br/><sub>링크와 QR을 그 자리에서 만듭니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/fba1cec2-3bc0-4963-ab8e-c6b0a2484646" width="230" alt="마감 앞당기기" /><br/><b>마감 앞당기기</b><br/><sub>판매자가 남길 시간을 정합니다</sub></td>
   </tr>
   <tr>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f9d94d90-905b-4b3c-8fe9-0b031fdc5f2d" width="230" alt="입찰 규칙" /><br/><b>입찰 규칙</b><br/><sub>입찰 단위와 마감 연장 조건을 정합니다</sub></td>
