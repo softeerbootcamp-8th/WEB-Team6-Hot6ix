@@ -1,0 +1,111 @@
+package com.hot6ix.upbid.domain.sse.event;
+
+import com.hot6ix.upbid.domain.sse.service.RoomSseManager;
+import com.hot6ix.upbid.domain.sse.service.SseMetrics;
+import com.hot6ix.upbid.domain.sse.service.SseServerIdentifier;
+import java.time.Duration;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.stereotype.Component;
+
+/**
+ * 방별 참여자 수를 전역으로 집계해 발행한다.
+ * 서버별 몫 갱신, 필드 TTL 갱신, 전체 합산, 채널 발행이 <b>스크립트 한 번</b>에 끝난다
+ * ({@code redis/participant-count-publish.lua}).
+ *
+ * <p>{@code SseEventPublisher}와 달리 순차 ID를 발급하지 않고 재연결 replay 버퍼에도
+ * 안 쌓는다. 참여자 수는 지난 값을 다시 볼 이유가 없는 "지금 몇 명" 신호라, 버퍼 자리를
+ * 차지하면 정작 replay가 필요한 입찰·마감 이벤트가 먼저 밀려나기 때문이다.
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class ParticipantCountPublisher {
+
+    public static final String PARTICIPANT_COUNT_CHANNEL = "upbid:sse:participant-count:v1";
+
+    /** heartbeat(기본 30초)를 한 번 놓쳐도 버티도록 2배 여유를 둔다. */
+    private static final Duration FIELD_TTL = Duration.ofMinutes(1);
+
+    /** 방이 비정상 종료되어 정리가 안 된 경우에도 키가 남지 않도록 발행마다 갱신한다. */
+    private static final Duration KEY_TTL = Duration.ofDays(2);
+
+    private final StringRedisTemplate stringRedisTemplate;
+    private final RedisScript<Long> participantCountPublishScript;
+    private final RedisScript<Long> participantCountIncrementScript;
+    private final SseServerIdentifier serverIdentifier;
+    private final SseMetrics sseMetrics;
+
+    /**
+     * 이 서버의 로컬 참여자 수(절대값)를 다시 쓰고, 전역 합계를 발행한다. heartbeat가
+     * 방마다 주기적으로 불러 TTL을 갱신하고, {@link #increment}가 놓쳤을 수도 있는
+     * 드리프트를 절대값으로 바로잡는다.
+     *
+     * <p>발행이 실패하면 그 갱신은 사라진다. 다음 heartbeat나 다른 연결/해제가 다시
+     * 갱신을 트리거하므로 값은 결국 맞아지지만, 조용히 사라지면 아무도 모르니 지표·로그로 남긴다.
+     */
+    public void publish(Long roomId, int localCount) {
+        try {
+            stringRedisTemplate.execute(
+                    participantCountPublishScript,
+                    List.of(SseRedisKeys.counts(roomId)),
+                    serverIdentifier.id(),
+                    String.valueOf(localCount),
+                    String.valueOf(FIELD_TTL.toSeconds()),
+                    PARTICIPANT_COUNT_CHANNEL,
+                    String.valueOf(KEY_TTL.toSeconds()),
+                    String.valueOf(roomId));
+
+            sseMetrics.recordEventPublished(RoomSseManager.PARTICIPANT_COUNT_EVENT);
+
+        } catch (RuntimeException e) {
+            sseMetrics.recordPublishFailure(RoomSseManager.PARTICIPANT_COUNT_EVENT, e);
+            log.error("참여자 수 발행 실패: roomId={}", roomId, e);
+        }
+    }
+
+    /**
+     * 이 서버의 로컬 참여자 수를 {@code delta}(+1 또는 -1)만큼 증감하고, 전역 합계를
+     * 발행한다. {@code subscribe()}/{@code disconnect()}가 쓴다.
+     *
+     * <p>절대값을 읽어서 보내면(예: {@link #publish}) 같은 서버에서 거의 동시에 일어난
+     * 두 연결 변화가 순서가 뒤바뀌어 Redis에 도착했을 때 최신 값이 오래된 값에 덮어써질
+     * 수 있다. 증감은 교환법칙이 성립해 도착 순서와 무관하게 최종 합이 항상 정확하다.
+     */
+    public void increment(Long roomId, int delta) {
+        try {
+            stringRedisTemplate.execute(
+                    participantCountIncrementScript,
+                    List.of(SseRedisKeys.counts(roomId)),
+                    serverIdentifier.id(),
+                    String.valueOf(delta),
+                    String.valueOf(FIELD_TTL.toSeconds()),
+                    PARTICIPANT_COUNT_CHANNEL,
+                    String.valueOf(KEY_TTL.toSeconds()),
+                    String.valueOf(roomId));
+
+            sseMetrics.recordEventPublished(RoomSseManager.PARTICIPANT_COUNT_EVENT);
+
+        } catch (RuntimeException e) {
+            sseMetrics.recordPublishFailure(RoomSseManager.PARTICIPANT_COUNT_EVENT, e);
+            log.error("참여자 수 증감 실패: roomId={}, delta={}", roomId, delta, e);
+        }
+    }
+
+    /**
+     * 방이 종료될 때 그 방의 집계 키를 지운다. 종료된 방은 재구독 자체가 막히므로
+     * 남은 필드가 새로 합산될 일은 없지만, KEY_TTL(2일)까지 기다리지 않고 바로 치운다.
+     */
+    public void clear(Long roomId) {
+        try {
+            stringRedisTemplate.delete(SseRedisKeys.counts(roomId));
+            log.debug("참여자 수 집계 키 삭제: roomId={}", roomId);
+
+        } catch (RuntimeException e) {
+            log.warn("참여자 수 집계 키 삭제 실패: roomId={}", roomId, e);
+        }
+    }
+}

@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.sse.service;
 
+import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
 import java.io.IOException;
 import java.util.concurrent.Flow;
 import lombok.extern.slf4j.Slf4j;
@@ -100,6 +101,10 @@ class EmitterSubscriber implements Flow.Subscriber<QueuedSseDispatchTask> {
                             .data(e.data()));
             case SseDispatchTask.Heartbeat h ->
                     emitter.send(SseEmitter.event().comment("keep-alive"));
+            case SseDispatchTask.ParticipantCount p ->
+                    emitter.send(SseEmitter.event()
+                            .name(RoomSseManager.PARTICIPANT_COUNT_EVENT)
+                            .data(new ParticipantCountDto(p.count())));
         }
     }
 

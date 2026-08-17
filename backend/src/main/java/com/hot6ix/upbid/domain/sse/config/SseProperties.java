@@ -14,6 +14,8 @@ public record SseProperties(
         long heartbeatIntervalMs,
         long emitterTimeoutMs,
         int bufferSize,
+        /** 참여자 수 전역 집계에서 이 인스턴스를 구분하는 값(#311). */
+        String serverHostname,
         /**
          * emitter 별 이벤트 큐의 최대 크기. 포화 시 이벤트를 drop하고 해당 emitter를 종료한다.
          * 포화는 느린 구독자의 신호다.
