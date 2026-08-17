@@ -212,8 +212,64 @@ class BidStreamConsumerTest {
     }
 
     @Test
-    @DisplayName("명시적인 영구 실패는 첫 처리에서 격리하고 ACK하지 않는다")
+    @DisplayName("명시적인 영구 실패는 첫 처리에서 격리하고 원본을 ACK해 놓아준다")
     void quarantinesPermanentFailureImmediately() {
+        MapRecord<String, Object, Object> record = record("1786636800000-0");
+        givenNoPending();
+        when(streamOperations.read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets()))
+                .thenReturn(List.of(record), List.of());
+        when(streamOperations.acknowledge(STREAM, GROUP, record.getId())).thenReturn(1L);
+        BidStreamPermanentException failure = new BidStreamPermanentException(
+                BidStreamFailureCode.EVENT_FORMAT_INVALID, "필드 오류");
+        org.mockito.Mockito.doThrow(failure)
+                .when(persistenceService).persist(any(BidStreamEvent.BidAccepted.class));
+
+        consumer.poll();
+
+        verify(quarantineStore).quarantine(
+                eq(STREAM), eq(record.getId()), any(Map.class),
+                eq(new BidStreamFailure(
+                        BidStreamFailure.Kind.PERMANENT,
+                        BidStreamFailureCode.EVENT_FORMAT_INVALID)),
+                eq(1L), eq(CONSUMER), eq(1_786_636_900_000L), eq(failure));
+        verify(streamOperations).acknowledge(STREAM, GROUP, record.getId());
+        verify(streamOperations).delete(STREAM, record.getId());
+    }
+
+    @Test
+    @DisplayName("격리한 레코드는 PEL에서 빠져 뒤에 밀린 이벤트가 계속 처리된다")
+    void releasesQuarantinedRecordSoLaterEventsProceed() {
+        RecordId stuckId = RecordId.of("1786636800000-0");
+        PendingMessage pendingMessage = new PendingMessage(
+                stuckId, Consumer.from(GROUP, "dead-consumer"), Duration.ofSeconds(5), 1L);
+        givenPendingOnce(pendingMessage);
+        when(quarantineStore.isQuarantined(STREAM, stuckId)).thenReturn(false);
+        MapRecord<String, Object, Object> stuck = record(stuckId.getValue());
+        MapRecord<String, Object, Object> next = record("1786636800000-1");
+        when(streamOperations.claim(
+                STREAM, GROUP, CONSUMER, Duration.ofSeconds(5), stuckId))
+                .thenReturn(List.of(stuck));
+        when(streamOperations.read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets()))
+                .thenReturn(List.of(next), List.of());
+        when(streamOperations.acknowledge(eq(STREAM), eq(GROUP), any(RecordId.class)))
+                .thenReturn(1L);
+        org.mockito.Mockito.doThrow(new BidStreamPermanentException(
+                        BidStreamFailureCode.REFERENCED_RESOURCE_MISSING, "물품을 찾을 수 없다"))
+                .doNothing()
+                .when(persistenceService).persist(any(BidStreamEvent.BidAccepted.class));
+
+        consumer.poll();
+
+        verify(streamOperations).acknowledge(STREAM, GROUP, stuckId);
+        verify(streamOperations).acknowledge(STREAM, GROUP, next.getId());
+        verify(persistenceService, times(2)).persist(any(BidStreamEvent.BidAccepted.class));
+    }
+
+    @Test
+    @DisplayName("격리 기록이 실패하면 원본을 놓아주지 않고 pending으로 남긴다")
+    void keepsRecordPendingWhenQuarantineWriteFails() {
         MapRecord<String, Object, Object> record = record("1786636800000-0");
         givenNoPending();
         when(streamOperations.read(
@@ -223,16 +279,16 @@ class BidStreamConsumerTest {
                 BidStreamFailureCode.EVENT_FORMAT_INVALID, "필드 오류");
         org.mockito.Mockito.doThrow(failure)
                 .when(persistenceService).persist(any(BidStreamEvent.BidAccepted.class));
+        when(quarantineStore.quarantine(
+                any(String.class), any(RecordId.class), any(Map.class),
+                any(BidStreamFailure.class), anyLong(), any(String.class),
+                anyLong(), any(Throwable.class)))
+                .thenThrow(new RuntimeException("Redis unavailable"));
 
         assertThatThrownBy(consumer::poll).isSameAs(failure);
 
-        verify(quarantineStore).quarantine(
-                eq(STREAM), eq(record.getId()), any(Map.class),
-                eq(new BidStreamFailure(
-                        BidStreamFailure.Kind.PERMANENT,
-                        BidStreamFailureCode.EVENT_FORMAT_INVALID)),
-                eq(1L), eq(CONSUMER), eq(1_786_636_900_000L), eq(failure));
         verify(streamOperations, never()).acknowledge(eq(STREAM), eq(GROUP), any(RecordId.class));
+        verify(streamOperations, never()).delete(eq(STREAM), any(RecordId.class));
     }
 
     @Test
@@ -241,17 +297,21 @@ class BidStreamConsumerTest {
         RecordId pendingId = RecordId.of("1786636800000-0");
         PendingMessage pendingMessage = new PendingMessage(
                 pendingId, Consumer.from(GROUP, "dead-consumer"), Duration.ofSeconds(5), 4L);
-        givenPending(pendingMessage);
+        givenPendingOnce(pendingMessage);
         when(quarantineStore.isQuarantined(STREAM, pendingId)).thenReturn(false);
         MapRecord<String, Object, Object> record = record(pendingId.getValue());
         when(streamOperations.claim(
                 STREAM, GROUP, CONSUMER, Duration.ofSeconds(5), pendingId))
                 .thenReturn(List.of(record));
+        when(streamOperations.acknowledge(STREAM, GROUP, record.getId())).thenReturn(1L);
+        when(streamOperations.read(
+                any(Consumer.class), any(StreamReadOptions.class), anyStreamOffsets()))
+                .thenReturn(List.of());
         RuntimeException failure = new RuntimeException("DB unavailable");
         org.mockito.Mockito.doThrow(failure)
                 .when(persistenceService).persist(any(BidStreamEvent.BidAccepted.class));
 
-        assertThatThrownBy(consumer::poll).isSameAs(failure);
+        consumer.poll();
 
         verify(quarantineStore).quarantine(
                 eq(STREAM), eq(record.getId()), any(Map.class),
@@ -259,6 +319,7 @@ class BidStreamConsumerTest {
                         BidStreamFailure.Kind.RETRY_EXHAUSTED,
                         BidStreamFailureCode.RETRY_EXHAUSTED)),
                 eq(5L), eq(CONSUMER), eq(1_786_636_900_000L), eq(failure));
+        verify(streamOperations).acknowledge(STREAM, GROUP, record.getId());
     }
 
     @Test
@@ -373,6 +434,24 @@ class BidStreamConsumerTest {
     private void givenNoPending() {
         when(streamOperations.pending(eq(STREAM), eq(GROUP), any(Range.class), anyLong()))
                 .thenReturn(new PendingMessages(GROUP, List.of()));
+    }
+
+    /**
+     * 첫 조회에만 pending 을 돌려주고 그다음부터는 비운다. 격리한 레코드가 PEL 에서 빠져
+     * 드레인이 다음 레코드로 넘어가는 흐름을 재현하는 데 쓴다.
+     */
+    private void givenPendingOnce(PendingMessage pendingMessage) {
+        when(streamOperations.pending(eq(STREAM), eq(GROUP), any(Range.class), anyLong()))
+                .thenReturn(
+                        new PendingMessages(GROUP, List.of(pendingMessage)),
+                        new PendingMessages(GROUP, List.of()));
+        when(streamOperations.pending(STREAM, GROUP))
+                .thenReturn(new PendingMessagesSummary(
+                        GROUP, 1,
+                        Range.closed(
+                                pendingMessage.getId().getValue(),
+                                pendingMessage.getId().getValue()),
+                        Map.of(pendingMessage.getConsumerName(), 1L)));
     }
 
     private void givenPending(PendingMessage pendingMessage) {

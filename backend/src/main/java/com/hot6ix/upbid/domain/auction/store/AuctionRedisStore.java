@@ -8,7 +8,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -48,6 +50,14 @@ public class AuctionRedisStore {
     private final RedisScript<Long> seedReadyScript;
     @SuppressWarnings("rawtypes")
     private final RedisScript<List> closeScript;
+    @SuppressWarnings("rawtypes")
+    private final RedisScript<List> readEndAtScript;
+
+    /**
+     * {@link #findEndAtMillis(List)}가 한 번에 읽는 물품 수. Redis 는 스크립트가 도는 동안
+     * 다른 명령을 받지 못하므로 {@code AuctionClosePoller}의 집기 상한과 같은 이유로 자른다.
+     */
+    private static final int END_AT_READ_CHUNK_SIZE = 200;
 
     public AuctionRedisStore(StringRedisTemplate redis, BidStreamMetrics metrics) {
         this.redis = redis;
@@ -60,6 +70,51 @@ public class AuctionRedisStore {
                 readScript("lua/add-auction-participant.lua"), Long.class);
         this.seedReadyScript = new DefaultRedisScript<>(readScript("lua/seed-ready.lua"), Long.class);
         this.closeScript = new DefaultRedisScript<>(readScript("lua/close-auction.lua"), List.class);
+        this.readEndAtScript = new DefaultRedisScript<>(
+                readScript("lua/read-auction-end-at.lua"), List.class);
+    }
+
+    /**
+     * 진행 중 물품의 Redis 마감 시각을 한 번에 읽는다. Hash 가 없거나 {@code endAt} 이 비어
+     * 있으면 그 물품은 결과에 담기지 않는다.
+     *
+     * <p>마감 예약 재동기화가 <b>큐를 DB 가 아니라 Redis 에 맞추려고</b> 쓴다. 판매자가 마감을
+     * 앞당기면 Redis 의 {@code endAt} 만 즉시 바뀌고 DB 는 Stream 이 반영한 뒤에야 따라오는데,
+     * 그 사이 재동기화가 DB 값으로 큐를 덮으면 앞당김이 되돌아간다(#374).
+     *
+     * @param itemIds 읽을 물품 ID. 비어 있으면 Redis 를 부르지 않는다
+     * @return 물품 ID 별 마감 시각 epoch millis
+     */
+    public Map<Long, Long> findEndAtMillis(List<Long> itemIds) {
+
+        Map<Long, Long> endAtByItemId = new HashMap<>();
+
+        for (int start = 0; start < itemIds.size(); start += END_AT_READ_CHUNK_SIZE) {
+            List<Long> chunk =
+                    itemIds.subList(start, Math.min(start + END_AT_READ_CHUNK_SIZE, itemIds.size()));
+            readEndAtChunk(chunk, endAtByItemId);
+        }
+
+        return endAtByItemId;
+    }
+
+    private void readEndAtChunk(List<Long> itemIds, Map<Long, Long> target) {
+
+        @SuppressWarnings("unchecked")
+        List<String> result = redis.execute(
+                readEndAtScript,
+                itemIds.stream().map(AuctionRedisKeys::item).toList());
+
+        if (result == null) {
+            throw new IllegalStateException("read-auction-end-at.lua가 결과를 반환하지 않았다");
+        }
+
+        for (int index = 0; index < itemIds.size() && index < result.size(); index++) {
+            String value = result.get(index);
+            if (value != null && !value.isBlank()) {
+                target.put(itemIds.get(index), Long.parseLong(value));
+            }
+        }
     }
 
     /** 입찰 판정부터 승인 이벤트 기록까지 새 Lua 계약으로 수행한다. */

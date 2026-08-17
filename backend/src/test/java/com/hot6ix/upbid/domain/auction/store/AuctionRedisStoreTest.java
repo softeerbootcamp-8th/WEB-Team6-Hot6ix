@@ -143,6 +143,44 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
     }
 
     @Test
+    @DisplayName("itemName이 없는 구버전 물품 Hash는 Seed 복구 대상으로 판단한다")
+    void missingItemNameIsNotReady() {
+
+        assertThat(store.seed(seed(List.of(11L)))).isTrue();
+        redis.opsForHash().delete(ITEM_KEY, "itemName");
+
+        // 준비됨으로 보면 Seed 복구가 조기 반환해서 아래 보충이 영영 안 돈다. 그동안 그 물품은
+        // 입찰도 마감도 Lua 에서 itemName 없음으로 실패한다 (#374).
+        assertThat(store.isSeedReady(ITEM_ID, ROOM_ID)).isFalse();
+    }
+
+    @Test
+    @DisplayName("itemName이 없는 물품 Hash를 다시 Seed하면 입찰 상태는 그대로 두고 itemName만 채운다")
+    void seedBackfillsMissingItemNameOnly() {
+
+        assertThat(store.seed(seed(List.of(11L)))).isTrue();
+        redis.opsForHash().delete(ITEM_KEY, "itemName");
+        redis.opsForHash().put(ITEM_KEY, "currentPrice", "99000");
+
+        assertThat(store.seed(seed(List.of(11L)))).isFalse();
+
+        assertThat(redis.opsForHash().get(ITEM_KEY, "itemName")).isEqualTo("한정판 피규어");
+        assertThat(redis.opsForHash().get(ITEM_KEY, "currentPrice")).isEqualTo("99000");
+        assertThat(store.isSeedReady(ITEM_ID, ROOM_ID)).isTrue();
+    }
+
+    @Test
+    @DisplayName("진행 중 물품의 마감 시각을 한 번에 읽고 Hash가 없는 물품은 빼고 돌려준다")
+    void readsEndAtMillisInBulk() {
+
+        assertThat(store.seed(seed(List.of(11L)))).isTrue();
+
+        assertThat(store.findEndAtMillis(List.of(ITEM_ID, ITEM_ID + 1)))
+                .containsOnlyKeys(ITEM_ID);
+        assertThat(store.findEndAtMillis(List.of())).isEmpty();
+    }
+
+    @Test
     @DisplayName("참여자 nickname Hash가 유실되면 Seed 복구 대상으로 판단한다")
     void missingParticipantNicknamesIsNotReady() {
 

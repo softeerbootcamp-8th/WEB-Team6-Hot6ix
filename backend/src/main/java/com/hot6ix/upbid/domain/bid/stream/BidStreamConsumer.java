@@ -105,19 +105,7 @@ public class BidStreamConsumer {
             BidStreamEvent event = BidStreamEvent.from(fields);
             metrics.recordPersistence(() -> persistenceService.persist(event));
 
-            try {
-                Long acknowledged =
-                        stream().acknowledge(properties.key(), properties.group(), record.getId());
-                if (acknowledged == null || acknowledged != 1L) {
-                    throw new IllegalStateException(
-                            "입찰 Stream 이벤트를 ACK하지 못했다: " + record.getId().getValue());
-                }
-            } catch (RuntimeException e) {
-                metrics.recordAcknowledgeFailure();
-                throw e;
-            }
-
-            stream().delete(properties.key(), record.getId());
+            acknowledgeAndDelete(record.getId());
             metrics.recordSuccess(eventType);
         } catch (RuntimeException e) {
             metrics.recordFailure(eventType);
@@ -126,33 +114,82 @@ public class BidStreamConsumer {
             if (delivery.deliveryCount() > 1) {
                 metrics.recordRetry(failure.kind().name().toLowerCase(Locale.ROOT));
             }
-            if (failure.shouldQuarantine()) {
-                try {
-                    BidStreamQuarantineStore.QuarantineResult quarantine =
-                            quarantineStore.quarantine(
-                                    properties.key(), record.getId(), fields, failure,
-                                    delivery.deliveryCount(), properties.consumer(),
-                                    clock.millis(), e);
-                    if (quarantine.created()) {
-                        metrics.recordQuarantined(eventType, failure.code().name());
-                        log.error(
-                                "입찰 Stream 이벤트를 격리했다. recordId={}, eventType={}, "
-                                        + "deliveryCount={}, failureKind={}, failureCode={}",
-                                record.getId().getValue(), eventType,
-                                delivery.deliveryCount(), failure.kind(), failure.code(), e);
-                    }
-                } catch (RuntimeException quarantineFailure) {
-                    metrics.recordQuarantineWriteFailure();
-                    e.addSuppressed(quarantineFailure);
-                    log.error(
-                            "입찰 Stream 격리 기록에 실패했다. recordId={}, eventType={}, "
-                                    + "deliveryCount={}, failureKind={}",
-                            record.getId().getValue(), eventType,
-                            delivery.deliveryCount(), failure.kind(), quarantineFailure);
-                }
+            if (!failure.shouldQuarantine()
+                    || !quarantineAndRelease(delivery, fields, eventType, failure, e)) {
+                throw e;
             }
+        }
+    }
+
+    /**
+     * 격리에 성공한 레코드를 원본 Stream에서 놓아준다. 놓아줬으면 {@code true}다.
+     *
+     * <p>격리는 <b>자동 처리를 포기하고 사람이 본다</b>는 결론이라 원본을 PEL에 남겨 둘 이유가
+     * 없다. 남겨 두면 {@link #readPendingOrNew()}가 PEL의 가장 오래된 레코드부터 집는 탓에 그
+     * 레코드가 계속 다시 집히고, <b>뒤에 쌓인 입찰과 마감이 전부 MySQL에 반영되지 않는다</b>(#374).
+     * 실제로 삭제된 물품의 마감 레코드 하나가 40분 동안 뒤의 27건을 막았다.
+     *
+     * <p>격리 기록이나 ACK가 실패하면 놓아주지 않고 {@code false}를 돌려준다. 원본이 PEL에 남아
+     * 다음 전달에서 다시 시도되고, 격리 기록은 Index로 멱등이라 두 번 쌓이지 않는다.
+     */
+    private boolean quarantineAndRelease(
+            Delivery delivery,
+            Map<String, String> fields,
+            String eventType,
+            BidStreamFailure failure,
+            RuntimeException cause) {
+
+        RecordId recordId = delivery.record().getId();
+        try {
+            BidStreamQuarantineStore.QuarantineResult quarantine = quarantineStore.quarantine(
+                    properties.key(), recordId, fields, failure,
+                    delivery.deliveryCount(), properties.consumer(), clock.millis(), cause);
+            if (quarantine.created()) {
+                metrics.recordQuarantined(eventType, failure.code().name());
+                log.error(
+                        "입찰 Stream 이벤트를 격리했다. recordId={}, eventType={}, "
+                                + "deliveryCount={}, failureKind={}, failureCode={}",
+                        recordId.getValue(), eventType,
+                        delivery.deliveryCount(), failure.kind(), failure.code(), cause);
+            }
+        } catch (RuntimeException quarantineFailure) {
+            metrics.recordQuarantineWriteFailure();
+            cause.addSuppressed(quarantineFailure);
+            log.error(
+                    "입찰 Stream 격리 기록에 실패했다. recordId={}, eventType={}, "
+                            + "deliveryCount={}, failureKind={}",
+                    recordId.getValue(), eventType,
+                    delivery.deliveryCount(), failure.kind(), quarantineFailure);
+            return false;
+        }
+
+        try {
+            acknowledgeAndDelete(recordId);
+        } catch (RuntimeException acknowledgeFailure) {
+            cause.addSuppressed(acknowledgeFailure);
+            log.error(
+                    "격리한 입찰 Stream 이벤트를 놓아주지 못했다. 다음 전달에서 다시 시도한다. "
+                            + "recordId={}, eventType={}",
+                    recordId.getValue(), eventType, acknowledgeFailure);
+            return false;
+        }
+        return true;
+    }
+
+    /** ACK가 실제로 한 건을 처리했는지 확인한 뒤에만 원본을 지운다. */
+    private void acknowledgeAndDelete(RecordId recordId) {
+        try {
+            Long acknowledged =
+                    stream().acknowledge(properties.key(), properties.group(), recordId);
+            if (acknowledged == null || acknowledged != 1L) {
+                throw new IllegalStateException(
+                        "입찰 Stream 이벤트를 ACK하지 못했다: " + recordId.getValue());
+            }
+        } catch (RuntimeException e) {
+            metrics.recordAcknowledgeFailure();
             throw e;
         }
+        stream().delete(properties.key(), recordId);
     }
 
     private long streamBacklog() {

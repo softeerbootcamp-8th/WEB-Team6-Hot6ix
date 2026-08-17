@@ -43,9 +43,13 @@ if (#ARGV - 13) % 2 ~= 0 then
 end
 
 -- 세 키와 완료 표시가 모두 준비된 정상 Seed에는 DB 스냅샷을 다시 적용하지 않는다.
+--
+-- itemName 을 조건에 함께 두는 것은, 아래 HSETNX 보충이 이 조기 반환에 막히면 안 되기
+-- 때문이다. seed-ready.lua 의 판정 조건과 같아야 한다 (#374).
 if itemType == 'hash'
         and participantsType == 'set'
         and nicknamesType == 'hash'
+        and redis.call('HEXISTS', KEYS[1], 'itemName') == 1
         and redis.call('SISMEMBER', KEYS[2], participantsReadyMarker) == 1
         and redis.call('HEXISTS', KEYS[3], nicknamesReadyMarkerField) == 1 then
     return 0
