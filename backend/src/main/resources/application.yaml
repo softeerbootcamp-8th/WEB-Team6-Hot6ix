@@ -99,6 +99,18 @@ logging:
     root: ${LOG_LEVEL:info}
     com.hot6ix.upbid: ${APP_LOG_LEVEL:info}
 
+# 문서 생성 설정이라 런타임 동작에는 닿지 않는다.
+springdoc:
+  # 컨트롤러에 produces 를 안 붙여서 응답 미디어 타입이 전부 */* 로 나간다. 여기서 기본값만
+  # 바꾼다 — @GetMapping(produces = ...) 로 붙이면 Accept 가 안 맞는 요청이 406 이 되고
+  # @ExceptionHandler 응답 경로까지 제약을 받기 때문이다. text/event-stream 을 직접 선언한
+  # SSE 구독은 그 선언이 우선이라 영향받지 않는다.
+  default-produces-media-type: application/json
+  swagger-ui:
+    # 스캔 순서를 그대로 쓰면 태그 순서가 실행마다 달라진다. 정렬 기준을 박아 고정한다.
+    tags-sorter: alpha
+    operations-sorter: alpha
+
 server:
   forward-headers-strategy: framework
   servlet:
