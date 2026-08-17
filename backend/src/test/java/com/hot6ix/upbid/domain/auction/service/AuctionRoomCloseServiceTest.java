@@ -9,12 +9,14 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.exception.SellerProfileErrorType;
@@ -122,6 +124,26 @@ class AuctionRoomCloseServiceTest {
             assertThat(auctionRoom.getStatus())
                     .as("쓰다 만 방을 정리할 수단이라 시작 전에도 닫을 수 있어야 한다")
                     .isEqualTo(AuctionRoomStatus.CLOSED);
+        }
+
+        @Test
+        @DisplayName("시작하지 않은 물품이 남아 있으면 유찰 처리하고 종료 시각을 채운다")
+        void closesUnstartedItemsAsFailed() {
+
+            givenActiveSellerProfile();
+            givenOwnedRoom();
+            AuctionRoom auctionRoom = givenLockedRoom(AuctionRoomStatus.OPEN);
+            givenInProgressCount(0);
+            AuctionItem unstartedItem = newReadyItem(auctionRoom);
+            when(auctionItemRepository.findByAuctionRoom_AuctionRoomIdAndStatus(ROOM_ID, AuctionItemStatus.READY))
+                    .thenReturn(List.of(unstartedItem));
+
+            auctionRoomCloseService.close(USER_ID, ROOM_ID);
+
+            assertThat(unstartedItem.getStatus()).isEqualTo(AuctionItemStatus.FAILED);
+            assertThat(unstartedItem.getEndAt())
+                    .as("거래 내역과 결과 목록이 end_at으로 정렬하므로 비어 있으면 안 된다")
+                    .isEqualTo(auctionRoom.getClosedAt());
         }
 
         @Test
@@ -351,6 +373,25 @@ class AuctionRoomCloseServiceTest {
 
     private void givenMaxEndAt(LocalDateTime maxEndAt) {
         when(auctionItemRepository.findMaxEndAt(ROOM_ID)).thenReturn(maxEndAt);
+    }
+
+    private AuctionItem newReadyItem(AuctionRoom auctionRoom) {
+        return AuctionItem.builder()
+                .auctionRoom(auctionRoom)
+                .product(newProduct())
+                .startingPrice(10_000L)
+                .bidIncrement(1_000L)
+                .status(AuctionItemStatus.READY)
+                .build();
+    }
+
+    private Product newProduct() {
+        return Product.builder()
+                .sellerProfile(newSellerProfile())
+                .name("한정판 피규어")
+                .description("미개봉 정품")
+                .imageUrl("https://cdn.hot6ix.com/item.png")
+                .build();
     }
 
     private AuctionRoom newRoom(AuctionRoomStatus status) {
