@@ -10,6 +10,7 @@ import com.hot6ix.upbid.domain.auction.store.AuctionRedisSeed;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.global.support.AbstractRedisContainerTest;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -52,10 +53,16 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         redis.delete(List.of(
                 AuctionRedisKeys.item(ITEM_ID),
                 AuctionRedisKeys.item(OTHER_ITEM_ID),
+                AuctionRedisKeys.leaderboard(ITEM_ID),
+                AuctionRedisKeys.leaderboard(OTHER_ITEM_ID),
                 AuctionRedisKeys.participants(ROOM_ID),
                 AuctionRedisKeys.participantNicknames(ROOM_ID),
                 AuctionRedisKeys.bidRequest("request-1"),
                 AuctionRedisKeys.stream()));
+        Set<String> requestKeys = redis.keys("auction:bid:request:*");
+        if (!requestKeys.isEmpty()) {
+            redis.delete(requestKeys);
+        }
         meterRegistry = new SimpleMeterRegistry();
         store = new AuctionRedisStore(redis, new BidStreamMetrics(meterRegistry));
     }
@@ -81,12 +88,17 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
             assertThat(accepted.acceptedAtMillis()).isBetween(before, after);
             assertThat(accepted.endAtMillis()).isEqualTo(endAt);
             assertThat(accepted.extendedSeconds()).isZero();
+            assertThat(accepted.revision()).isEqualTo(1L);
             assertThat(accepted.duplicate()).isFalse();
         });
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "currentPrice"))
                 .isEqualTo("10000");
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
                 .isEqualTo("11");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo("1");
+        assertThat(redis.opsForZSet().score(AuctionRedisKeys.leaderboard(ITEM_ID), "11"))
+                .isEqualTo(10_000D);
         assertThat(redis.opsForHash().entries(AuctionRedisKeys.bidRequest("request-1")))
                 .containsAllEntriesOf(java.util.Map.of(
                         "itemId", "101",
@@ -95,17 +107,20 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         assertThat(redis.opsForStream().size(AuctionRedisKeys.stream())).isEqualTo(1L);
         assertThat(redis.opsForStream().range(AuctionRedisKeys.stream(), Range.unbounded()))
                 .singleElement()
-                .satisfies(record -> assertThat(record.getValue()).containsAllEntriesOf(java.util.Map.of(
-                        "type", "BID_ACCEPTED",
-                        "requestId", "request-1",
-                        "itemId", "101",
-                        "roomId", "202",
-                        "bidderUserId", "11",
-                        "amount", "10000",
-                        "acceptedAt", String.valueOf(((RedisBidDecision.Accepted) decision).acceptedAtMillis()),
-                        "endAt", String.valueOf(endAt),
-                        "extendedSeconds", "0",
-                        "totalExtensionSeconds", "0")));
+                .satisfies(record -> assertThat(record.getValue()).containsAllEntriesOf(
+                        java.util.Map.ofEntries(
+                                java.util.Map.entry("type", "BID_ACCEPTED"),
+                                java.util.Map.entry("requestId", "request-1"),
+                                java.util.Map.entry("itemId", "101"),
+                                java.util.Map.entry("roomId", "202"),
+                                java.util.Map.entry("bidderUserId", "11"),
+                                java.util.Map.entry("amount", "10000"),
+                                java.util.Map.entry("acceptedAt", String.valueOf(
+                                        ((RedisBidDecision.Accepted) decision).acceptedAtMillis())),
+                                java.util.Map.entry("endAt", String.valueOf(endAt)),
+                                java.util.Map.entry("extendedSeconds", "0"),
+                                java.util.Map.entry("totalExtensionSeconds", "0"),
+                                java.util.Map.entry("revision", "1"))));
     }
 
     @Test
@@ -131,9 +146,13 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 firstAccepted.acceptedAtMillis(),
                 firstAccepted.endAtMillis(),
                 firstAccepted.extendedSeconds(),
+                firstAccepted.revision(),
                 true));
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "currentPrice"))
                 .isEqualTo("10000");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo("1");
+        assertThat(redis.opsForZSet().size(AuctionRedisKeys.leaderboard(ITEM_ID))).isEqualTo(1L);
         assertThat(redis.opsForStream().size(AuctionRedisKeys.stream())).isEqualTo(1L);
     }
 
@@ -210,7 +229,82 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 .isEqualTo("10000");
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
                 .isNull();
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo("0");
+        assertThat(redis.hasKey(AuctionRedisKeys.leaderboard(ITEM_ID))).isFalse();
         assertThat(redis.hasKey(AuctionRedisKeys.bidRequest("request-low"))).isFalse();
+        assertThat(redis.hasKey(AuctionRedisKeys.stream())).isFalse();
+    }
+
+    @Test
+    @DisplayName("리더보드는 입찰자별 최고 금액을 유지하고 상위 금액 순서로 정렬한다")
+    void leaderboardKeepsEachBidderHighestAmount() {
+
+        long endAt = System.currentTimeMillis() + 300_000L;
+        store.seed(seed(endAt, 0, 60, 60));
+        store.addParticipant(ROOM_ID, 12L, "원기");
+        store.addParticipant(ROOM_ID, 13L, "재현");
+        store.addParticipant(ROOM_ID, 14L, "승민");
+
+        store.evaluateBid(ITEM_ID, "request-1", 11L, 10_000L);
+        store.evaluateBid(ITEM_ID, "request-2", 12L, 11_000L);
+        store.evaluateBid(ITEM_ID, "request-3", 11L, 12_000L);
+        store.evaluateBid(ITEM_ID, "request-4", 13L, 13_000L);
+        store.evaluateBid(ITEM_ID, "request-5", 14L, 14_000L);
+
+        assertThat(redis.opsForZSet().reverseRangeWithScores(
+                AuctionRedisKeys.leaderboard(ITEM_ID), 0, 2))
+                .extracting(entry -> entry.getValue() + ":" + entry.getScore().longValue())
+                .containsExactly("14:14000", "13:13000", "11:12000");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo("5");
+    }
+
+    @Test
+    @DisplayName("선두 입찰자의 리더보드가 유실되면 다음 입찰을 상태 변경 전에 실패시킨다")
+    void rejectsMutationWhenCurrentLeaderIsMissingFromLeaderboard() {
+
+        long endAt = System.currentTimeMillis() + 300_000L;
+        store.seed(seed(endAt, 0, 60, 60));
+        store.addParticipant(ROOM_ID, 12L, "원기");
+        store.evaluateBid(ITEM_ID, "request-1", 11L, 10_000L);
+        redis.delete(AuctionRedisKeys.leaderboard(ITEM_ID));
+
+        assertThatThrownBy(() ->
+                store.evaluateBid(ITEM_ID, "request-2", 12L, 11_000L))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "currentPrice"))
+                .isEqualTo("10000");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
+                .isEqualTo("11");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo("1");
+        assertThat(redis.opsForStream().size(AuctionRedisKeys.stream())).isEqualTo(1L);
+        assertThat(redis.hasKey(AuctionRedisKeys.bidRequest("request-2"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("revision이 증가 범위를 넘으면 입찰 상태를 하나도 바꾸지 않는다")
+    void revisionOverflowDoesNotPartiallyAcceptBid() {
+
+        long endAt = System.currentTimeMillis() + 300_000L;
+        store.seed(seed(endAt, 0, 60, 60));
+        redis.opsForHash().put(
+                AuctionRedisKeys.item(ITEM_ID), "revision", String.valueOf(Long.MAX_VALUE));
+
+        assertThatThrownBy(() ->
+                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "currentPrice"))
+                .isEqualTo("10000");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
+                .isNull();
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo(String.valueOf(Long.MAX_VALUE));
+        assertThat(redis.hasKey(AuctionRedisKeys.leaderboard(ITEM_ID))).isFalse();
+        assertThat(redis.hasKey(AuctionRedisKeys.bidRequest("request-1"))).isFalse();
         assertThat(redis.hasKey(AuctionRedisKeys.stream())).isFalse();
     }
 
@@ -296,6 +390,8 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         });
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "totalExtensionSeconds"))
                 .isEqualTo("60");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo("1");
     }
 
     @Test

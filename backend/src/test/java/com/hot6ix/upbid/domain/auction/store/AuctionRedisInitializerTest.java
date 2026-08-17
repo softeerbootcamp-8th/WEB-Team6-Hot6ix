@@ -11,6 +11,8 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
+import com.hot6ix.upbid.domain.bid.repository.BidRepository;
+import com.hot6ix.upbid.domain.bid.repository.TopBidderProjection;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.global.support.AbstractRedisContainerTest;
 import java.time.LocalDateTime;
@@ -38,6 +40,7 @@ class AuctionRedisInitializerTest extends AbstractRedisContainerTest {
 
     private AuctionItemRepository auctionItemRepository;
     private AuctionParticipantRepository auctionParticipantRepository;
+    private BidRepository bidRepository;
     private AuctionRedisInitializer initializer;
 
     @BeforeAll
@@ -55,13 +58,16 @@ class AuctionRedisInitializerTest extends AbstractRedisContainerTest {
     void setUp() {
         redis.delete(List.of(
                 AuctionRedisKeys.item(ITEM_ID),
+                AuctionRedisKeys.leaderboard(ITEM_ID),
                 AuctionRedisKeys.participants(ROOM_ID),
                 AuctionRedisKeys.participantNicknames(ROOM_ID)));
         auctionItemRepository = mock(AuctionItemRepository.class);
         auctionParticipantRepository = mock(AuctionParticipantRepository.class);
+        bidRepository = mock(BidRepository.class);
         initializer = new AuctionRedisInitializer(
                 auctionItemRepository,
                 auctionParticipantRepository,
+                bidRepository,
                 new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry())));
     }
 
@@ -99,6 +105,12 @@ class AuctionRedisInitializerTest extends AbstractRedisContainerTest {
         when(second.getNickname()).thenReturn("원기");
         when(auctionParticipantRepository.findAgreedParticipants(ROOM_ID))
                 .thenReturn(List.of(first, second));
+        TopBidderProjection topBidder = mock(TopBidderProjection.class);
+        when(topBidder.getAuctionItemId()).thenReturn(ITEM_ID);
+        when(topBidder.getBidderUserId()).thenReturn(12L);
+        when(topBidder.getNickname()).thenReturn("원기");
+        when(topBidder.getAmount()).thenReturn(12_000L);
+        when(bidRepository.findTopBidders(List.of(ITEM_ID), 3)).thenReturn(List.of(topBidder));
 
         initializer.initialize(ITEM_ID);
 
@@ -112,6 +124,8 @@ class AuctionRedisInitializerTest extends AbstractRedisContainerTest {
                 .contains("11", "12");
         assertThat(redis.opsForHash().entries(AuctionRedisKeys.participantNicknames(ROOM_ID)))
                 .containsAllEntriesOf(java.util.Map.of("11", "한기", "12", "원기"));
+        assertThat(redis.opsForZSet().score(AuctionRedisKeys.leaderboard(ITEM_ID), "12"))
+                .isEqualTo(12_000D);
     }
 
     @Test
