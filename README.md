@@ -170,15 +170,33 @@ SNS에서 발견 → UpBid에서 입찰 → 서버가 낙찰 확정 → 외부�
 
 ## 팀원 소개
 
-| 이름 | GitHub | 담당 |
-| --- | --- | --- |
-| **기승민** `팀장` | [@KiSeungMin](https://github.com/KiSeungMin) | 경매방과 상품, 물품 생명주기 |
-| 최한기 | [@choicold](https://github.com/choicold) | 입찰과 리더보드, 입찰 동시성 |
-| 정우재 | [@Woojae-Jeong](https://github.com/Woojae-Jeong) | 회원과 세션, SSE 실시간 통신 |
-| 최서지 | [@choiseoji](https://github.com/choiseoji) | 회원과 인증, SSE 실시간 통신 |
-| 김원기 | [@cylin0201](https://github.com/cylin0201) | 도메인 이벤트와 낙찰, AWS 인프라 |
+<!-- 얼굴 사진을 받으면 아래 <img> 의 src 만 교체합니다. 지금은 GitHub 프로필 사진입니다. -->
 
-역할을 어떻게 나눴고 그레이 영역을 어떻게 정했는지는 [Wiki 1.4 팀원 및 역할](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-팀원-및-역할)에 있습니다.
+<table>
+  <tr>
+    <td align="center" width="20%"><img src="https://github.com/KiSeungMin.png" width="130" alt="기승민" /></td>
+    <td align="center" width="20%"><img src="https://github.com/choicold.png" width="130" alt="최한기" /></td>
+    <td align="center" width="20%"><img src="https://github.com/Woojae-Jeong.png" width="130" alt="정우재" /></td>
+    <td align="center" width="20%"><img src="https://github.com/choiseoji.png" width="130" alt="최서지" /></td>
+    <td align="center" width="20%"><img src="https://github.com/cylin0201.png" width="130" alt="김원기" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>기승민</b><br/><a href="https://github.com/KiSeungMin">@KiSeungMin</a></td>
+    <td align="center"><b>최한기</b><br/><a href="https://github.com/choicold">@choicold</a></td>
+    <td align="center"><b>정우재</b><br/><a href="https://github.com/Woojae-Jeong">@Woojae-Jeong</a></td>
+    <td align="center"><b>최서지</b><br/><a href="https://github.com/choiseoji">@choiseoji</a></td>
+    <td align="center"><b>김원기</b><br/><a href="https://github.com/cylin0201">@cylin0201</a></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>팀장</b><br/>경매방과 상품<br/>물품 생명주기</sub></td>
+    <td align="center"><sub>입찰과 리더보드<br/>입찰 동시성</sub></td>
+    <td align="center"><sub>회원과 세션<br/>SSE 실시간 통신</sub></td>
+    <td align="center"><sub>회원과 인증<br/>SSE 실시간 통신</sub></td>
+    <td align="center"><sub>도메인 이벤트와 낙찰<br/>AWS 인프라</sub></td>
+  </tr>
+</table>
+
+역할을 어떻게 나눴는지는 [Wiki 1.4 팀원 및 역할](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-팀원-및-역할)에 있습니다.
 
 <br>
 
