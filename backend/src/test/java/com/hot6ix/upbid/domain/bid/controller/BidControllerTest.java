@@ -40,7 +40,9 @@ class BidControllerTest extends AbstractControllerTest {
                 15_000L,
                 LocalDateTime.of(2026, 7, 30, 21, 0),
                 LocalDateTime.of(2026, 7, 30, 21, 5),
-                30);
+                30,
+                7L,
+                "bidder-a");
     }
 
     @Test
@@ -90,7 +92,9 @@ class BidControllerTest extends AbstractControllerTest {
                 .andExpect(jsonPath("$.data.amount").value(15000))
                 .andExpect(jsonPath("$.data.acceptedAt").value("2026-07-30T21:00:00"))
                 .andExpect(jsonPath("$.data.endAt").value("2026-07-30T21:05:00"))
-                .andExpect(jsonPath("$.data.extendedSeconds").value(30));
+                .andExpect(jsonPath("$.data.extendedSeconds").value(30))
+                .andExpect(jsonPath("$.data.revision").value(7))
+                .andExpect(jsonPath("$.data.bidderKey").value("bidder-a"));
 
         verify(bidService).place(2L, LOGIN_USER_ID, 15_000L, IDEMPOTENCY_KEY);
     }

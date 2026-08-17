@@ -14,6 +14,11 @@ spring:
       # base 와 같은 값이지만, base 가 바뀌어도 운영은 스키마를 자동 변경하지 않게 한 번 더 막는다.
       ddl-auto: validate
 
+upbid:
+  auction:
+    live-state:
+      bidder-key-secret: ${LIVE_BIDDER_KEY_SECRET}
+
 # 배포 서버를 재는 데 필요한 계측이다 (이슈 #266). 로컬 perf 프로파일과 같은 값을 쓴다.
 # 여기가 perf 와 어긋나면 배포에서 나온 숫자를 로컬 계단과 나란히 놓을 수 없다.
 management:

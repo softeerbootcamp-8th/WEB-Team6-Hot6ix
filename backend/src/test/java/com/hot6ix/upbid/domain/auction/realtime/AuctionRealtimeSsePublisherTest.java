@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.realtime;
 
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisKeys;
 import com.hot6ix.upbid.domain.auction.store.RedisCloseDecision;
@@ -34,12 +35,16 @@ class AuctionRealtimeSsePublisherTest {
     @Mock
     private SseEventPublisher sseEventPublisher;
 
+    @Mock
+    private BidderKeyEncoder bidderKeyEncoder;
+
     private AuctionRealtimeSsePublisher publisher;
 
     @BeforeEach
     void setUp() {
         publisher = new AuctionRealtimeSsePublisher(
                 sseEventPublisher,
+                bidderKeyEncoder,
                 Clock.fixed(Instant.parse("2026-08-17T00:00:00Z"), ZONE));
     }
 
@@ -48,6 +53,7 @@ class AuctionRealtimeSsePublisherTest {
     void publishesAcceptedBidWhenPriceAndLeaderStillMatch() {
 
         RedisBidDecision.Accepted accepted = accepted(0);
+        when(bidderKeyEncoder.encode(ROOM_ID, BIDDER_ID)).thenReturn("bidder-a");
 
         publisher.publishAccepted(ITEM_ID, accepted);
 
@@ -58,8 +64,10 @@ class AuctionRealtimeSsePublisherTest {
                 Map.of(
                         "status", "IN_PROGRESS",
                         "currentPrice", "12000",
-                        "leaderUserId", "11"),
-                new BidPlacedDto(ITEM_ID, "한정판 피규어", 12_000L, "한기"));
+                        "leaderUserId", "11",
+                        "revision", "1"),
+                new BidPlacedDto(
+                        ITEM_ID, "한정판 피규어", 12_000L, "한기", "bidder-a", 1L));
     }
 
     @Test
@@ -67,6 +75,7 @@ class AuctionRealtimeSsePublisherTest {
     void publishesSoftCloseWhenEndAtStillMatches() {
 
         RedisBidDecision.Accepted accepted = accepted(30);
+        when(bidderKeyEncoder.encode(ROOM_ID, BIDDER_ID)).thenReturn("bidder-a");
 
         publisher.publishAccepted(ITEM_ID, accepted);
 
@@ -76,12 +85,14 @@ class AuctionRealtimeSsePublisherTest {
                 AuctionRedisKeys.item(ITEM_ID),
                 Map.of(
                         "status", "IN_PROGRESS",
-                        "endAt", String.valueOf(END_AT)),
+                        "endAt", String.valueOf(END_AT),
+                        "revision", "1"),
                 new SoftCloseExtendedDto(
                         ITEM_ID,
                         "한정판 피규어",
                         30,
-                        LocalDateTime.ofInstant(Instant.ofEpochMilli(END_AT), ZONE)));
+                        LocalDateTime.ofInstant(Instant.ofEpochMilli(END_AT), ZONE),
+                        1L));
     }
 
     private static RedisBidDecision.Accepted accepted(int extendedSeconds) {
@@ -103,7 +114,7 @@ class AuctionRealtimeSsePublisherTest {
     @DisplayName("판매자 앞당기기 결과는 최신 endAt과 맞을 때 기존 DTO로 발행한다")
     void publishesSellerAdvanceWhenEndAtStillMatches() {
         RedisCloseDecision.Advanced advanced = new RedisCloseDecision.Advanced(
-                ROOM_ID, ITEM_ID, "한정판 피규어", END_AT, 60, END_AT - 60_000L);
+                ROOM_ID, ITEM_ID, "한정판 피규어", END_AT, 60, END_AT - 60_000L, 2L);
 
         publisher.publishAdvanced(advanced);
 
@@ -111,12 +122,16 @@ class AuctionRealtimeSsePublisherTest {
                 "ITEM_CLOSE_ADVANCED",
                 ROOM_ID,
                 AuctionRedisKeys.item(ITEM_ID),
-                Map.of("status", "IN_PROGRESS", "endAt", String.valueOf(END_AT)),
+                Map.of(
+                        "status", "IN_PROGRESS",
+                        "endAt", String.valueOf(END_AT),
+                        "revision", "2"),
                 new ItemCloseAdvancedDto(
                         ITEM_ID,
                         "한정판 피규어",
                         60,
-                        LocalDateTime.ofInstant(Instant.ofEpochMilli(END_AT), ZONE)));
+                        LocalDateTime.ofInstant(Instant.ofEpochMilli(END_AT), ZONE),
+                        2L));
     }
 
     @Test
@@ -124,7 +139,8 @@ class AuctionRealtimeSsePublisherTest {
     void publishesEndedItemWhenClosingSnapshotStillMatches() {
         RedisCloseDecision.Closing closing = new RedisCloseDecision.Closing(
                 ROOM_ID, ITEM_ID, "한정판 피규어", 12_000L,
-                BIDDER_ID, "한기", END_AT, END_AT + 10L);
+                BIDDER_ID, "한기", END_AT, END_AT + 10L, 3L);
+        when(bidderKeyEncoder.encode(ROOM_ID, BIDDER_ID)).thenReturn("bidder-a");
 
         publisher.publishClosing(closing);
 
@@ -136,8 +152,10 @@ class AuctionRealtimeSsePublisherTest {
                         "status", "CLOSING",
                         "currentPrice", "12000",
                         "leaderUserId", "11",
-                        "endAt", String.valueOf(END_AT)),
-                new ItemEndedDto(ITEM_ID, "한정판 피규어", 12_000L, "한기"));
+                        "endAt", String.valueOf(END_AT),
+                        "revision", "3"),
+                new ItemEndedDto(
+                        ITEM_ID, "한정판 피규어", 12_000L, "한기", "bidder-a", 3L));
     }
 
     @Test
@@ -145,7 +163,7 @@ class AuctionRealtimeSsePublisherTest {
     void publishesPassedItemAsItemEndedWithoutWinner() {
         RedisCloseDecision.Closing closing = new RedisCloseDecision.Closing(
                 ROOM_ID, ITEM_ID, "한정판 피규어", 10_000L,
-                null, null, END_AT, END_AT + 10L);
+                null, null, END_AT, END_AT + 10L, 3L);
 
         publisher.publishClosing(closing);
 
@@ -157,7 +175,8 @@ class AuctionRealtimeSsePublisherTest {
                         "status", "CLOSING",
                         "currentPrice", "10000",
                         "leaderUserId", "",
-                        "endAt", String.valueOf(END_AT)),
-                new ItemEndedDto(ITEM_ID, "한정판 피규어", null, null));
+                        "endAt", String.valueOf(END_AT),
+                        "revision", "3"),
+                new ItemEndedDto(ITEM_ID, "한정판 피규어", null, null, null, 3L));
     }
 }

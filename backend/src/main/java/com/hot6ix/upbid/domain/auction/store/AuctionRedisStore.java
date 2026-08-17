@@ -115,7 +115,7 @@ public class AuctionRedisStore {
         return Optional.of(new AuctionRedisLiveState(
                 Long.parseLong(result.get(0)),
                 Long.parseLong(result.get(1)),
-                AuctionItemStatus.valueOf(result.get(2)),
+                AuctionRedisLiveStatus.valueOf(result.get(2)),
                 Long.parseLong(result.get(3)),
                 result.get(4).isBlank() ? null : Long.parseLong(result.get(4)),
                 Long.parseLong(result.get(5)),

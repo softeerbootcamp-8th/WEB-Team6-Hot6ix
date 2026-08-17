@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.bid.dto.response;
 
 import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
+import com.hot6ix.upbid.domain.auction.realtime.BidderKeyEncoder;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -12,13 +13,16 @@ public record BidCreateResponseDto(
         Long amount,
         LocalDateTime acceptedAt,
         LocalDateTime endAt,
-        Integer extendedSeconds
+        Integer extendedSeconds,
+        Long revision,
+        String bidderKey
 ) {
 
     public static BidCreateResponseDto from(
             Long auctionItemId,
             RedisBidDecision.Accepted accepted,
-            ZoneId zoneId) {
+            ZoneId zoneId,
+            BidderKeyEncoder bidderKeyEncoder) {
 
         return new BidCreateResponseDto(
                 accepted.requestId(),
@@ -26,6 +30,8 @@ public record BidCreateResponseDto(
                 accepted.amount(),
                 LocalDateTime.ofInstant(Instant.ofEpochMilli(accepted.acceptedAtMillis()), zoneId),
                 LocalDateTime.ofInstant(Instant.ofEpochMilli(accepted.endAtMillis()), zoneId),
-                accepted.extendedSeconds());
+                accepted.extendedSeconds(),
+                accepted.revision(),
+                bidderKeyEncoder.encode(accepted.roomId(), accepted.bidderUserId()));
     }
 }
