@@ -62,12 +62,16 @@ if requestKeyType == 'hash' then
     local cachedItemId = requireHashValue(KEYS[2], 'itemId', 'bid request')
     local cachedBidderId = requireHashValue(KEYS[2], 'bidderUserId', 'bid request')
     local cachedAmount = requireHashValue(KEYS[2], 'amount', 'bid request')
+    local cachedRoomId = requireHashValue(KEYS[2], 'roomId', 'bid request')
+    local cachedItemName = requireHashValue(KEYS[2], 'itemName', 'bid request')
+    local cachedBidderNickname = requireHashValue(KEYS[2], 'bidderNickname', 'bid request')
     local cachedAcceptedAt = requireHashValue(KEYS[2], 'acceptedAt', 'bid request')
     local cachedEndAt = requireHashValue(KEYS[2], 'endAt', 'bid request')
     local cachedExtendedSeconds = requireHashValue(KEYS[2], 'extendedSeconds', 'bid request')
     parseInteger(cachedItemId, 'bid request.itemId')
     parseInteger(cachedBidderId, 'bid request.bidderUserId')
     parseInteger(cachedAmount, 'bid request.amount')
+    parseInteger(cachedRoomId, 'bid request.roomId')
     parseInteger(cachedAcceptedAt, 'bid request.acceptedAt')
     parseInteger(cachedEndAt, 'bid request.endAt')
     parseInteger(cachedExtendedSeconds, 'bid request.extendedSeconds')
@@ -78,6 +82,10 @@ if requestKeyType == 'hash' then
         return {'REJECTED', 'IDEMPOTENCY_KEY_CONFLICT'}
     end
     return {'ACCEPTED', requestId,
+        cachedRoomId,
+        cachedItemName,
+        cachedBidderId,
+        cachedBidderNickname,
         cachedAmount,
         cachedAcceptedAt,
         cachedEndAt,
@@ -95,6 +103,7 @@ requireKeyType(KEYS[3], 'stream', true, 'bid stream')
 local status = requireHashValue(KEYS[1], 'status', 'auction item')
 local sellerUserId = requireHashValue(KEYS[1], 'sellerUserId', 'auction item')
 local roomId = requireHashValue(KEYS[1], 'roomId', 'auction item')
+local itemName = requireHashValue(KEYS[1], 'itemName', 'auction item')
 local startingPrice = requireHashInteger(KEYS[1], 'startingPrice', 'auction item')
 local currentPrice = requireHashInteger(KEYS[1], 'currentPrice', 'auction item')
 local bidIncrement = requireHashInteger(KEYS[1], 'bidIncrement', 'auction item')
@@ -112,7 +121,9 @@ if bidIncrement <= 0 then
 end
 
 local participantsKey = 'auction:room:' .. roomId .. ':participants'
+local participantNicknamesKey = 'auction:room:' .. roomId .. ':participant-nicknames'
 requireKeyType(participantsKey, 'set', true, 'auction participants')
+requireKeyType(participantNicknamesKey, 'hash', true, 'auction participant nicknames')
 
 if status ~= 'IN_PROGRESS' then
     return {'REJECTED', 'ITEM_NOT_IN_PROGRESS'}
@@ -125,6 +136,9 @@ end
 if redis.call('SISMEMBER', participantsKey, bidderId) == 0 then
     return {'REJECTED', 'TERMS_NOT_AGREED'}
 end
+
+local bidderNickname = requireHashValue(
+        participantNicknamesKey, bidderId, 'auction participant nicknames')
 
 if arrivedAt >= endAt then
     return {'REJECTED', 'ITEM_CLOSED'}
@@ -186,10 +200,22 @@ redis.call('XADD', KEYS[3], '*',
 
 redis.call('HSET', KEYS[2],
         'itemId', itemId,
+        'roomId', roomId,
+        'itemName', itemName,
         'bidderUserId', bidderId,
+        'bidderNickname', bidderNickname,
         'amount', amountString,
         'acceptedAt', acceptedAtString,
         'endAt', endAtString,
         'extendedSeconds', extendedString)
 
-return {'ACCEPTED', requestId, amountString, acceptedAtString, endAtString, extendedString, '0'}
+return {'ACCEPTED', requestId,
+    roomId,
+    itemName,
+    bidderId,
+    bidderNickname,
+    amountString,
+    acceptedAtString,
+    endAtString,
+    extendedString,
+    '0'}

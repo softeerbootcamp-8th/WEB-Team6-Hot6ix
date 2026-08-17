@@ -18,10 +18,14 @@ public record AuctionRedisSeed(
         Integer softCloseExtendSeconds,
         int totalExtensionSeconds,
         int maxTotalExtensionSeconds,
-        List<Long> participantUserIds
+        String itemName,
+        List<AuctionRedisParticipant> participants
 ) {
 
     public AuctionRedisSeed {
-        participantUserIds = List.copyOf(participantUserIds);
+        if (itemName == null || itemName.isBlank()) {
+            throw new IllegalArgumentException("물품 itemName은 비어 있을 수 없다");
+        }
+        participants = List.copyOf(participants);
     }
 }

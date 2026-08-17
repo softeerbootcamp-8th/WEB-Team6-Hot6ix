@@ -1,18 +1,13 @@
 package com.hot6ix.upbid.global.event.listener;
 
-import com.hot6ix.upbid.domain.sse.dto.BidPlacedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemAddedDto;
-import com.hot6ix.upbid.domain.sse.dto.ItemCloseAdvancedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemClosingSoonDto;
-import com.hot6ix.upbid.domain.sse.dto.ItemEndedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemRemovedDto;
 import com.hot6ix.upbid.domain.sse.dto.ItemStartedDto;
 import com.hot6ix.upbid.domain.sse.dto.RoomClosedDto;
 import com.hot6ix.upbid.domain.sse.dto.RoomUpdatedDto;
-import com.hot6ix.upbid.domain.sse.dto.SoftCloseExtendedDto;
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
 import com.hot6ix.upbid.global.event.DomainEvent;
-import com.hot6ix.upbid.global.event.EventType;
 import com.hot6ix.upbid.global.event.message.EventMessages;
 import com.hot6ix.upbid.global.event.payload.BidPlaced;
 import com.hot6ix.upbid.global.event.payload.ItemAdded;
@@ -39,7 +34,8 @@ public class DomainEventSseListener {
     private final SseEventPublisher sseEventPublisher;
 
     /**
-     * 커밋된 도메인 이벤트만 화면으로 내보낸다. 롤백된 트랜잭션의 이벤트는 도달하지 않는다.
+     * 커밋된 도메인 이벤트만 화면으로 내보낸다. Redis-first 이벤트는 이미 즉시 발행됐으므로
+     * 여기서는 건너뛰고, 나머지는 롤백된 트랜잭션의 이벤트가 도달하지 않게 한다.
      *
      * <p>{@code fallbackExecution = true}는 트랜잭션 밖에서 발행된 이벤트를 위한 것이다.
      * 기본값이면 그런 이벤트는 리스너에 도달하지 않고 조용히 사라진다.
@@ -48,6 +44,10 @@ public class DomainEventSseListener {
     public void on(DomainEvent event) {
         EventMessages.of(event).ifPresent(message ->
                 log.info("domain event published: roomId={}, message={}", event.roomId(), message));
+
+        if (isRedisFirstRealtimeEvent(event)) {
+            return;
+        }
 
         Object dto = toDto(event);
 
@@ -59,17 +59,18 @@ public class DomainEventSseListener {
     }
 
     /**
-     * 화면으로 나갈 이벤트 이름. 대개 {@code EventType} 그대로지만 <b>유찰은 낙찰과 같은
-     * {@code ITEM_ENDED}로 내보낸다.</b> 화면 입장에서 둘은 "물품이 닫혔다"는 같은 사건이고,
-     * 낙찰자가 있었는지는 payload의 {@code winnerNickname}으로 갈리기 때문이다.
-     *
-     * <p>서버 안에서는 두 이벤트를 계속 나눠 둔다. 낙찰 후보 생성이 {@code ItemEnded}만
-     * 구독하므로, 합치면 입찰자가 없던 물품에도 그 로직이 돈다.
+     * 진행 중 경매에서 Redis가 이미 즉시 알린 이벤트다. DomainEvent는 낙찰 후보 생성 등 내부
+     * 후속 작업을 위해 남기되, MySQL 커밋 뒤 같은 화면 이벤트를 다시 발행하지 않는다.
      */
+    private boolean isRedisFirstRealtimeEvent(DomainEvent event) {
+        return event instanceof BidPlaced
+                || event instanceof SoftCloseExtended
+                || event instanceof ItemCloseAdvanced
+                || event instanceof ItemEnded
+                || event instanceof ItemPassed;
+    }
+
     private String sseEventName(DomainEvent event) {
-        if (event instanceof ItemPassed) {
-            return EventType.ITEM_ENDED.name();
-        }
         return event.type().name();
     }
 
@@ -83,13 +84,6 @@ public class DomainEventSseListener {
             case ItemStarted e -> new ItemStartedDto(e.itemId(), e.itemName(), e.endAt());
             case ItemClosingSoon e ->
                     new ItemClosingSoonDto(e.itemId(), e.itemName(), e.remainingSeconds());
-            case BidPlaced e -> new BidPlacedDto(e.itemId(), e.itemName(), e.bidPrice(), e.bidderNickname());
-            case SoftCloseExtended e ->
-                    new SoftCloseExtendedDto(e.itemId(), e.itemName(), e.extendSeconds(), e.endAt());
-            case ItemCloseAdvanced e ->
-                    new ItemCloseAdvancedDto(e.itemId(), e.itemName(), e.remainingSeconds(), e.endAt());
-            case ItemEnded e -> new ItemEndedDto(e.itemId(), e.itemName(), e.finalPrice(), e.winnerNickname());
-            case ItemPassed e -> new ItemEndedDto(e.itemId(), e.itemName(), null, null);
             default -> null;
         };
     }

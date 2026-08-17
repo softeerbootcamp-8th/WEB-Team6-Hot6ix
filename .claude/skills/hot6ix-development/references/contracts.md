@@ -86,13 +86,24 @@ JSON 객체의 키 순서는 계약이 아니므로 파싱에는 영향이 없�
 
 - 인증 방식과 세션 저장소
 - SSE와 WebSocket 선택
-- Redis의 구체적인 사용 범위
+- 진행 중 경매 판정 이외 Redis 사용 범위
 - Transactional Outbox 도입 여부
 - 영속성 스택(JPA·MySQL) 도입 시점과 마이그레이션 도구
 
 ## 실시간
 
-- DB 커밋 후에만 성공 이벤트를 발행한다.
+- 경매 시작 전과 마감 Stream의 MySQL 반영 완료 후에는 MySQL이 판정 원본이다.
+- `IN_PROGRESS`와 마감 Stream 반영 전 `CLOSING`에서는 Redis Lua가 판정 원본이다.
+- 입찰 HTTP 201은 Redis Lua의 상태 변경, 멱등 결과 저장, MySQL 영속화 Stream 기록이
+  한 실행에서 성공했다는 뜻이다. 해당 입찰의 MySQL 커밋 완료를 뜻하지 않는다.
+- `BID_PLACED`, `SOFT_CLOSE_EXTENDED`, `ITEM_CLOSE_ADVANCED`, `ITEM_ENDED`(유찰 포함)는
+  Redis 판정 직후 기존 SSE payload로 best-effort 발행한다.
+- Redis-first SSE 발행 실패는 이미 승인된 입찰·연장·마감을 실패로 되돌리지 않는다.
+  별도 SSE Stream을 두지 않으므로 Lua 성공 직후 프로세스가 종료되면 이벤트 한 건이
+  누락될 수 있으며, 화면은 다음 이벤트·replay·상태 재조회로 복구한다.
+- MySQL 커밋 후 DomainEvent는 낙찰 후보 생성 등 내부 후속 작업을 위해 유지하지만,
+  Redis-first 이벤트를 SSE로 다시 발행하지 않는다.
+- Redis-first 목록에 없는 성공 이벤트는 기존처럼 DB 커밋 후에만 발행한다.
 - 방 단위와 물품 단위 채널의 책임을 구분한다.
 - 클라이언트 timer는 종료 판정의 원본이 아니다.
 - SSE/WebSocket 방식은 확정 명세와 기존 구현을 따른다.

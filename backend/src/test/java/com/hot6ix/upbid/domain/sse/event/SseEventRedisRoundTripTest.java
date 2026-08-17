@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisKeys;
 import com.hot6ix.upbid.domain.sse.service.BufferedEvent;
 import com.hot6ix.upbid.domain.sse.service.SseEventBuffer;
 import com.hot6ix.upbid.domain.sse.service.SseMetrics;
@@ -44,6 +45,7 @@ import tools.jackson.databind.json.JsonMapper;
 class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
 
     private static final Long ROOM_ID = 10L;
+    private static final long ITEM_ID = 101L;
     private static final int BUFFER_SIZE = 50;
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-08-12T03:04:05Z"), ZoneOffset.UTC);
 
@@ -91,6 +93,7 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
     @BeforeEach
     void subscribeBothInstances() {
         sseEventBuffer.clear(ROOM_ID);
+        redisTemplate.delete(AuctionRedisKeys.item(ITEM_ID));
 
         listenerA = collectInto(instanceA);
         listenerB = collectInto(instanceB);
@@ -222,6 +225,45 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
         assertThat(instanceA.getFirst().message().data())
                 .isInstanceOf(java.util.Map.class)
                 .isEqualTo(java.util.Map.of("bidPrice", 12_000));
+    }
+
+    @Test
+    @DisplayName("현재 물품 상태와 같은 이벤트만 ID를 발급하고 replay 버퍼와 채널에 남긴다")
+    void publishesOnlyWhenAuctionHashMatchesExpectedState() {
+
+        String itemKey = AuctionRedisKeys.item(ITEM_ID);
+        redisTemplate.opsForHash().putAll(itemKey, java.util.Map.of(
+                "status", "IN_PROGRESS",
+                "currentPrice", "12000",
+                "leaderUserId", "11"));
+        SseEventPublisher publisher = newPublisher();
+
+        boolean currentPublished = publisher.publishIfHashMatches(
+                "BID_PLACED",
+                ROOM_ID,
+                itemKey,
+                java.util.Map.of(
+                        "status", "IN_PROGRESS",
+                        "currentPrice", "12000",
+                        "leaderUserId", "11"),
+                new TestPayload(12_000L));
+        boolean stalePublished = publisher.publishIfHashMatches(
+                "BID_PLACED",
+                ROOM_ID,
+                itemKey,
+                java.util.Map.of(
+                        "status", "IN_PROGRESS",
+                        "currentPrice", "11000",
+                        "leaderUserId", "11"),
+                new TestPayload(11_000L));
+
+        assertThat(currentPublished).isTrue();
+        assertThat(stalePublished).isFalse();
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(instanceA).hasSize(1));
+        assertThat(instanceA.getFirst().message().data())
+                .isEqualTo(java.util.Map.of("bidPrice", 12_000));
+        assertThat(redisTemplate.opsForValue().get(SseRedisKeys.sequence(ROOM_ID))).isEqualTo("1");
+        assertThat(sseEventBuffer.getEventsAfter(ROOM_ID, 0L)).hasSize(1);
     }
 
     private SseEventPublisher newPublisher() {

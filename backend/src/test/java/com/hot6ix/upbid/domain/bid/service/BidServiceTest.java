@@ -3,9 +3,12 @@ package com.hot6ix.upbid.domain.bid.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
+import com.hot6ix.upbid.domain.auction.realtime.AuctionRealtimeSsePublisher;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
 import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
@@ -30,6 +33,7 @@ class BidServiceTest {
 
     private static final Long ITEM_ID = 2L;
     private static final Long BIDDER_ID = 10L;
+    private static final Long ROOM_ID = 1L;
     private static final Long AMOUNT = 15_000L;
     private static final String REQUEST_ID = "bid-request-1";
     private static final long ARRIVED_AT = 1_786_000_000_000L;
@@ -40,13 +44,17 @@ class BidServiceTest {
     @Mock
     private AuctionRedisStore auctionRedisStore;
 
+    @Mock
+    private AuctionRealtimeSsePublisher auctionRealtimeSsePublisher;
+
     private BidService bidService;
 
     @BeforeEach
     void setUp() {
         bidService = new BidService(
                 Clock.fixed(Instant.ofEpochMilli(ARRIVED_AT), ZONE),
-                auctionRedisStore);
+                auctionRedisStore,
+                auctionRealtimeSsePublisher);
     }
 
     @Test
@@ -55,7 +63,8 @@ class BidServiceTest {
 
         when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
                 .thenReturn(new RedisBidDecision.Accepted(
-                        REQUEST_ID, AMOUNT, ACCEPTED_AT, END_AT, 30, false));
+                        REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
+                        AMOUNT, ACCEPTED_AT, END_AT, 30, false));
 
         BidCreateResponseDto response = bidService.place(
                 ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID);
@@ -69,6 +78,11 @@ class BidServiceTest {
                 30));
         verify(auctionRedisStore)
                 .evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT);
+        verify(auctionRealtimeSsePublisher).publishAccepted(
+                ITEM_ID,
+                new RedisBidDecision.Accepted(
+                        REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
+                        AMOUNT, ACCEPTED_AT, END_AT, 30, false));
     }
 
     @Test
@@ -76,7 +90,8 @@ class BidServiceTest {
     void returnsSameResponseForDuplicateDecision() {
 
         RedisBidDecision.Accepted duplicate = new RedisBidDecision.Accepted(
-                REQUEST_ID, AMOUNT, ACCEPTED_AT, END_AT, 30, true);
+                REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
+                AMOUNT, ACCEPTED_AT, END_AT, 30, true);
         when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
                 .thenReturn(duplicate);
 
@@ -90,6 +105,25 @@ class BidServiceTest {
         assertThat(response.endAt())
                 .isEqualTo(LocalDateTime.ofInstant(Instant.ofEpochMilli(END_AT), ZONE));
         assertThat(response.extendedSeconds()).isEqualTo(30);
+        verify(auctionRealtimeSsePublisher, never()).publishAccepted(ITEM_ID, duplicate);
+    }
+
+    @Test
+    @DisplayName("Redis 승인 뒤 실시간 SSE 발행이 실패해도 입찰 성공 응답을 유지한다")
+    void keepsAcceptedResponseWhenRealtimePublishFails() {
+
+        RedisBidDecision.Accepted accepted = new RedisBidDecision.Accepted(
+                REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
+                AMOUNT, ACCEPTED_AT, END_AT, 0, false);
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
+                .thenReturn(accepted);
+        doThrow(new IllegalStateException("sse unavailable"))
+                .when(auctionRealtimeSsePublisher).publishAccepted(ITEM_ID, accepted);
+
+        BidCreateResponseDto response = bidService.place(ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID);
+
+        assertThat(response.requestId()).isEqualTo(REQUEST_ID);
+        assertThat(response.amount()).isEqualTo(AMOUNT);
     }
 
     @ParameterizedTest(name = "{0}는 {1}로 응답한다")

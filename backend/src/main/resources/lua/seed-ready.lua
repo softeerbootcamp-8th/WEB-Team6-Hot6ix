@@ -1,8 +1,12 @@
 -- KEYS[1] 물품 Hash
 -- KEYS[2] 방 참여자 Set
+-- KEYS[3] 방 참여자 nickname Hash
 --
--- 복구 전에 두 Seed 키의 타입만 확인한다. 값 전체를 읽지 않으므로 정상 상태에서는
+-- 복구 전에 세 Seed 키의 타입과 완료 표시만 확인한다. 값 전체를 읽지 않으므로 정상 상태에서는
 -- DB 참여자 스냅샷 조회와 seed-auction.lua 실행을 건너뛸 수 있다.
+local participantsReadyMarker = '__seed_initialized__'
+local nicknamesReadyMarkerField = '__seed_initialized__'
+
 local function keyType(key)
     local response = redis.call('TYPE', key)
     if type(response) == 'table' then
@@ -13,6 +17,7 @@ end
 
 local itemType = keyType(KEYS[1])
 local participantsType = keyType(KEYS[2])
+local nicknamesType = keyType(KEYS[3])
 
 if itemType ~= 'none' and itemType ~= 'hash' then
     error('auction item key has invalid type: ' .. itemType)
@@ -20,8 +25,15 @@ end
 if participantsType ~= 'none' and participantsType ~= 'set' then
     error('auction participants key has invalid type: ' .. participantsType)
 end
+if nicknamesType ~= 'none' and nicknamesType ~= 'hash' then
+    error('auction participant nicknames key has invalid type: ' .. nicknamesType)
+end
 
-if itemType == 'hash' and participantsType == 'set' then
+if itemType == 'hash'
+        and participantsType == 'set'
+        and nicknamesType == 'hash'
+        and redis.call('SISMEMBER', KEYS[2], participantsReadyMarker) == 1
+        and redis.call('HEXISTS', KEYS[3], nicknamesReadyMarkerField) == 1 then
     return 1
 end
 return 0

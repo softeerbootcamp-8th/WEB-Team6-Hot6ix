@@ -20,6 +20,7 @@ import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisInitializer;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.auction.store.RedisCloseDecision;
+import com.hot6ix.upbid.domain.auction.realtime.AuctionRealtimeSsePublisher;
 import com.hot6ix.upbid.domain.product.entity.Product;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
@@ -61,6 +62,9 @@ class AuctionItemCloseServiceTest {
     @Mock
     private AuctionRedisInitializer auctionRedisInitializer;
 
+    @Mock
+    private AuctionRealtimeSsePublisher auctionRealtimeSsePublisher;
+
     @InjectMocks
     private AuctionItemCloseService auctionItemCloseService;
 
@@ -87,13 +91,16 @@ class AuctionItemCloseServiceTest {
     void closeWhenDue() {
 
         when(auctionRedisStore.requestNaturalClose(eq(ITEM_ID), anyLong()))
-                .thenReturn(new RedisCloseDecision.Closing(System.currentTimeMillis()));
+                .thenReturn(new RedisCloseDecision.Closing(
+                        ROOM_ID, ITEM_ID, "한정판 피규어", 10_000L,
+                        null, null, System.currentTimeMillis(), System.currentTimeMillis()));
 
         Optional<LocalDateTime> rescheduleAt = auctionItemCloseService.closeIfDue(ITEM_ID);
 
         assertThat(rescheduleAt).isEmpty();
         verify(auctionItemRepository, never()).findByIdForUpdate(anyLong());
         verify(domainEventPublisher, never()).publish(any());
+        verify(auctionRealtimeSsePublisher).publishClosing(any(RedisCloseDecision.Closing.class));
     }
 
     @Test
@@ -104,6 +111,7 @@ class AuctionItemCloseServiceTest {
         LocalDateTime endAt = advancedAt.plusSeconds(60);
         when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, null))
                 .thenReturn(new RedisCloseDecision.Advanced(
+                        ROOM_ID, ITEM_ID, "한정판 피규어",
                         epochMillis(endAt), 60, epochMillis(advancedAt)));
 
         AuctionItemCloseEarlyResponseDto response =
@@ -113,6 +121,7 @@ class AuctionItemCloseServiceTest {
         assertThat(response.endAt()).isEqualTo(endAt);
         verify(auctionItemRepository, never()).findByIdForUpdate(anyLong());
         verify(domainEventPublisher, never()).publish(any());
+        verify(auctionRealtimeSsePublisher).publishAdvanced(any(RedisCloseDecision.Advanced.class));
     }
 
     @Test
@@ -169,6 +178,7 @@ class AuctionItemCloseServiceTest {
                 .thenReturn(
                         new RedisCloseDecision.Rejected(RedisCloseDecision.Reason.KEY_MISSING, null),
                         new RedisCloseDecision.Advanced(
+                                ROOM_ID, ITEM_ID, "한정판 피규어",
                                 epochMillis(endAt), 60, epochMillis(endAt.minusSeconds(60))));
 
         AuctionItemCloseEarlyResponseDto response =
@@ -186,6 +196,7 @@ class AuctionItemCloseServiceTest {
         LocalDateTime endAt = advancedAt.plusSeconds(600);
         when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, 600))
                 .thenReturn(new RedisCloseDecision.Advanced(
+                        ROOM_ID, ITEM_ID, "한정판 피규어",
                         epochMillis(endAt), 600, epochMillis(advancedAt)));
 
         AuctionItemCloseEarlyResponseDto response = auctionItemCloseService.closeEarly(

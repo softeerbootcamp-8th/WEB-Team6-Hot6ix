@@ -4,6 +4,9 @@ import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.repository.AuctionParticipantRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
+import com.hot6ix.upbid.domain.user.entity.User;
+import com.hot6ix.upbid.domain.user.exception.UserErrorType;
+import com.hot6ix.upbid.domain.user.repository.UserRepository;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,6 +23,7 @@ public class AuctionParticipantService {
     private final AuctionParticipantRepository auctionParticipantRepository;
     private final AuctionRoomRepository auctionRoomRepository;
     private final AuctionRedisStore auctionRedisStore;
+    private final UserRepository userRepository;
 
     /**
      * 경매방 입장 약관 동의를 기록한다.
@@ -31,6 +35,9 @@ public class AuctionParticipantService {
     public void agree(String shareCode, Long userId) {
         Long roomId = auctionRoomRepository.findIdByShareCode(shareCode)
                 .orElseThrow(() -> new ApplicationException(AuctionErrorType.AUCTION_ROOM_NOT_FOUND));
+        User user = userRepository.findByUserIdAndDeletedAtIsNull(userId)
+                .orElseThrow(() -> new ApplicationException(UserErrorType.USER_NOT_FOUND));
+        String nickname = user.getNickname();
 
         auctionParticipantRepository.recordAgreement(roomId, userId, CURRENT_TERMS_VERSION);
 
@@ -42,14 +49,14 @@ public class AuctionParticipantService {
         // 트랜잭션 밖에서 불리면 기다릴 커밋이 없으므로 바로 넣는다. BidMetrics가 같은 방식으로
         // 동기화를 건다.
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            auctionRedisStore.addParticipant(roomId, userId);
+            auctionRedisStore.addParticipant(roomId, userId, nickname);
             return;
         }
 
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                auctionRedisStore.addParticipant(roomId, userId);
+                auctionRedisStore.addParticipant(roomId, userId, nickname);
             }
         });
     }

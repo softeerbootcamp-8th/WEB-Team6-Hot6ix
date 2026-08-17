@@ -24,6 +24,8 @@ Hot6ix는 링크·QR로 참여하는 SNS 연계 실시간 경매 서비스다.
 - `ApplicationException`, 도메인별 `ErrorType`, `GlobalExceptionHandler`를 사용한다.
 - 생성자 주입을 사용한다.
 - API Method, Path, 응답, 권한, DB schema, 이벤트 payload를 임의 변경하지 않는다.
+- 진행 중 경매의 입찰·Soft Close·마감 판정은 Redis Lua가 원본이고, 승인과 MySQL 영속화
+  Stream 기록을 원자적으로 수행한다. 마감 Stream의 MySQL 반영이 끝나면 MySQL이 다시 원본이다.
 - DB 연결이 필요한 테스트(`@DataJpaTest` 등)는 로컬 개발 DB를 직접 쓰지 않고
   Testcontainers로 격리한다. 자세한 내용은 backend.md의 "테스트" 절 참고.
 
@@ -32,7 +34,7 @@ Hot6ix는 링크·QR로 참여하는 SNS 연계 실시간 경매 서비스다.
 - Controller의 비즈니스 로직 또는 트랜잭션
 - `System.out.println()`, `e.printStackTrace()`, 필드 주입
 - 무분별한 EAGER, `CascadeType.ALL`, 양방향 연관관계
-- DB보다 Redis나 메모리를 원본으로 취급하는 구현
+- 합의된 진행 중 경매 범위 밖에서 Redis나 메모리를 원본으로 취급하는 구현
 - 동시성 검증 없는 read-modify-write
 - 팀 확인 없는 의존성·API·DB·인증·이벤트 계약 변경
 - `DROP`, `TRUNCATE`, `flyway clean`, `docker compose down -v`
