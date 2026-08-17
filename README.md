@@ -73,7 +73,6 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 
 - **링크와 QR로 바로 들어옵니다.** 공개 주소는 숫자 PK가 아니라 `share_code`를 씁니다
 - **로그인 전에도 경매방과 물품을 볼 수 있습니다.** 입찰할 때만 로그인을 요청하고, 끝나면 보던 경매방으로 돌아옵니다
-- 약관 동의는 처음 입장할 때 한 번만 받습니다
 
 ### 🔴 모두가 같은 화면을 봅니다
 
@@ -96,8 +95,7 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 ![거래 성사와 실패](https://github.com/user-attachments/assets/c67db920-ff78-4aca-9538-4270e3590a02)
 
 - **낙찰 후보를 순위대로 남깁니다.** 1순위 거래가 깨지면 2순위에게 자동으로 넘어갑니다
-- 물품별 입찰 이력과 리더보드를 그대로 보존합니다
-- 판매자는 거래 내역에서 성사와 실패를 확정합니다
+- 물품별 입찰 이력이 그대로 남아서, 왜 그 사람이 낙찰됐는지 확인할 수 있습니다
 
 <br>
 
@@ -108,8 +106,8 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 <table>
   <tr>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/01d50d20-5ec7-4bb0-b90a-8260b977721e" width="230" alt="경매방 입장" /><br/><b>경매방 입장</b><br/><sub>동의 한 번으로 들어옵니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/8325487d-2520-4ffe-9c01-3d65c3a0c638" width="230" alt="경매방" /><br/><b>경매방</b><br/><sub>물품과 실시간 이벤트를 함께 봅니다</sub></td>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/98066282-f4e8-448e-85c4-9ffebab438e2" width="230" alt="빠른 입찰" /><br/><b>빠른 입찰</b><br/><sub>바텀시트에서 진행 중인 물품에 바로 입찰합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0e08058d-a615-4591-b35b-0fe29342be0d" width="230" alt="종료 결과" /><br/><b>종료 결과</b><br/><sub>낙찰과 유찰, 총 낙찰액을 한 화면에 정리합니다</sub></td>
   </tr>
 </table>
 
@@ -141,24 +139,24 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 
 <table>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/8325487d-2520-4ffe-9c01-3d65c3a0c638" width="230" alt="실시간 이벤트" /><br/><b>실시간 이벤트</b><br/><sub>이벤트와 리더보드를 탭으로 전환합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/28092082-a80c-4df7-923e-eadb1db6906a" width="230" alt="리더보드" /><br/><b>리더보드</b><br/><sub>물품별 순위와 내 위치를 봅니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/9f1ac88e-4b98-429e-80c1-b4ec9b083735" width="230" alt="내 경매방" /><br/><b>내 경매방</b><br/><sub>만든 방과 참여한 방을 함께 봅니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f9d94d90-905b-4b3c-8fe9-0b031fdc5f2d" width="230" alt="입찰 규칙" /><br/><b>입찰 규칙</b><br/><sub>입찰 단위와 마감 연장 조건을 정합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0cc4836d-50f6-4533-a16b-38e41c3f17b9" width="230" alt="판매 물품 선택" /><br/><b>판매 물품 선택</b><br/><sub>등록해 둔 상품에서 골라 담습니다</sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/99ddd58a-e0c5-40a9-961e-fbbf1407e861" width="230" alt="공유 QR" /><br/><b>공유 QR</b><br/><sub>링크와 QR을 그 자리에서 만듭니다</sub></td>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/6dc00ba0-b424-454a-aaf5-8ee33dc23fe3" width="230" alt="물품 상세" /><br/><b>물품 상세</b><br/><sub>설명과 현재가, 남은 시간을 봅니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/28092082-a80c-4df7-923e-eadb1db6906a" width="230" alt="리더보드" /><br/><b>리더보드</b><br/><sub>물품별 순위와 내 위치를 봅니다</sub></td>
   </tr>
   <tr>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f522ba6a-daac-451c-8ea9-8bd927f071a6" width="230" alt="입찰 확정" /><br/><b>입찰 확정</b><br/><sub>금액을 확인하고 확정합니다</sub></td>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/ee6a0056-6764-4fc9-81a1-2715127700f0" width="230" alt="입찰 등록" /><br/><b>입찰 등록</b><br/><sub>서버가 승인한 뒤에 확정으로 표시합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/09df720d-ffd2-4d72-b61c-b3a00e6a878f" width="230" alt="낙찰 후보" /><br/><b>낙찰 후보</b><br/><sub>순위대로 남겨 두고 차순위로 넘깁니다</sub></td>
-  </tr>
-  <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/74c56aa4-e01f-433e-918b-51bf8de09f0d" width="230" alt="거래 완료" /><br/><b>거래 완료</b><br/><sub>성사된 거래를 기록으로 남깁니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/99ddd58a-e0c5-40a9-961e-fbbf1407e861" width="230" alt="공유 QR" /><br/><b>공유 QR</b><br/><sub>링크와 QR을 그 자리에서 만듭니다</sub></td>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/fba1cec2-3bc0-4963-ab8e-c6b0a2484646" width="230" alt="마감 앞당기기" /><br/><b>마감 앞당기기</b><br/><sub>판매자가 남길 시간을 정합니다</sub></td>
   </tr>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f9d94d90-905b-4b3c-8fe9-0b031fdc5f2d" width="230" alt="입찰 규칙" /><br/><b>입찰 규칙</b><br/><sub>입찰 단위와 마감 연장 조건을 정합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0cc4836d-50f6-4533-a16b-38e41c3f17b9" width="230" alt="판매 물품 선택" /><br/><b>판매 물품 선택</b><br/><sub>등록해 둔 상품에서 골라 담습니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/9f1ac88e-4b98-429e-80c1-b4ec9b083735" width="230" alt="내 경매방" /><br/><b>내 경매방</b><br/><sub>진행 중인 방과 참여한 방을 함께 봅니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0e08058d-a615-4591-b35b-0fe29342be0d" width="230" alt="종료 결과" /><br/><b>종료 결과</b><br/><sub>낙찰과 유찰, 총 낙찰액을 한 화면에 정리합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/09df720d-ffd2-4d72-b61c-b3a00e6a878f" width="230" alt="낙찰 후보" /><br/><b>낙찰 후보</b><br/><sub>순위대로 남겨 두고 차순위로 넘깁니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/74c56aa4-e01f-433e-918b-51bf8de09f0d" width="230" alt="거래 완료" /><br/><b>거래 완료</b><br/><sub>성사된 거래를 기록으로 남깁니다</sub></td>
   </tr>
 </table>
 
@@ -190,7 +188,7 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 
 ![ERD](https://github.com/user-attachments/assets/da9e92ab-a424-4625-ba80-852f8491a217)
 
-경매방과 물품, 입찰, 낙찰 후보가 각각 별도 테이블입니다. **낙찰은 물품 단위로 확정되고, 거래가 불발되면 `deal_candidates`에 기록된 순위대로 다음 후보에게 넘어갑니다.** 원본은 [ERDCloud](https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY)에 있습니다.
+원본은 [ERDCloud](https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY)에 있습니다.
 
 ### 디렉터리 구조
 
@@ -255,24 +253,24 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 <table>
   <tr>
     <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/508bd507-dd85-49d5-baa6-f250ce1141c8" width="130" alt="기승민" /></td>
-    <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/b17f8a7f-a966-4d58-a193-ab9b36826ed2" width="130" alt="최한기" /></td>
+    <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/6c4f3fea-b740-4e93-9f1a-cd9f4fbddb8c" width="130" alt="김원기" /></td>
     <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/2895de91-b51d-4a7a-afcb-ff57f09a7f30" width="130" alt="정우재" /></td>
     <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/c00b45ee-9954-4f84-8120-c44b0544dbbd" width="130" alt="최서지" /></td>
-    <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/6c4f3fea-b740-4e93-9f1a-cd9f4fbddb8c" width="130" alt="김원기" /></td>
+    <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/b17f8a7f-a966-4d58-a193-ab9b36826ed2" width="130" alt="최한기" /></td>
   </tr>
   <tr>
     <td align="center"><b>기승민</b><br/><a href="https://github.com/KiSeungMin">@KiSeungMin</a></td>
-    <td align="center"><b>최한기</b><br/><a href="https://github.com/choicold">@choicold</a></td>
+    <td align="center"><b>김원기</b><br/><a href="https://github.com/cylin0201">@cylin0201</a></td>
     <td align="center"><b>정우재</b><br/><a href="https://github.com/Woojae-Jeong">@Woojae-Jeong</a></td>
     <td align="center"><b>최서지</b><br/><a href="https://github.com/choiseoji">@choiseoji</a></td>
-    <td align="center"><b>김원기</b><br/><a href="https://github.com/cylin0201">@cylin0201</a></td>
+    <td align="center"><b>최한기</b><br/><a href="https://github.com/choicold">@choicold</a></td>
   </tr>
   <tr>
     <td align="center"><sub><b>팀장</b><br/>경매방과 상품<br/>물품 생명주기</sub></td>
-    <td align="center"><sub>입찰과 리더보드<br/>입찰 동시성</sub></td>
+    <td align="center"><sub>도메인 이벤트와 낙찰<br/>AWS 인프라</sub></td>
     <td align="center"><sub>회원과 세션<br/>SSE 실시간 통신</sub></td>
     <td align="center"><sub>회원과 인증<br/>SSE 실시간 통신</sub></td>
-    <td align="center"><sub>도메인 이벤트와 낙찰<br/>AWS 인프라</sub></td>
+    <td align="center"><sub>입찰과 리더보드<br/>입찰 동시성</sub></td>
   </tr>
 </table>
 
