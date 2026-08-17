@@ -22,4 +22,9 @@ public final class SseRedisKeys {
     public static String events(Long roomId) {
         return PREFIX + roomId + "}:events";
     }
+
+    /** 참여자 수 전역 집계 HASH (필드 = 서버 식별자, 값 = 그 서버의 로컬 참여자 수). */
+    public static String counts(Long roomId) {
+        return PREFIX + roomId + "}:counts";
+    }
 }

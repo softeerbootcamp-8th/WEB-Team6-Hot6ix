@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.bid.stream;
 
 import com.hot6ix.upbid.domain.bid.config.BidStreamProperties;
 import com.hot6ix.upbid.domain.bid.service.BidStreamPersistenceService;
+import com.hot6ix.upbid.domain.bid.stream.BidStreamMetrics.DrainLimit;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
@@ -27,6 +29,11 @@ import org.springframework.stereotype.Component;
 
 /** Redis Stream 승인 이벤트를 MySQL에 at-least-once로 전달한다. */
 @Component
+@ConditionalOnProperty(
+        prefix = "upbid.bid-stream",
+        name = "consumer-enabled",
+        havingValue = "true",
+        matchIfMissing = true)
 @RequiredArgsConstructor
 @Slf4j
 public class BidStreamConsumer {
@@ -39,25 +46,57 @@ public class BidStreamConsumer {
     private final BidStreamQuarantineStore quarantineStore;
     private final Clock clock;
 
-    /**
-     * 한 tick에서 Pending 또는 새 이벤트 한 건만 처리한다.
-     *
-     * <p>예외를 잡아 다음 레코드로 넘어가지 않는다. DB 반영이나 ACK가 실패한 레코드는 PEL에
-     * 남아 다음 tick의 최우선 대상이 된다. Scheduled 실행기는 예외를 기록한 뒤 다음 tick을
-     * 계속 실행한다.
-     */
+    /** Pending 우선 단건 읽기를 유지하면서 설정한 건수 또는 시간 상한까지 연속 처리한다. */
     @Scheduled(fixedDelayString = "${upbid.bid-stream.poll-delay:100ms}")
     @SchedulerLock(
             name = "bid-stream-consumer",
             lockAtMostFor = "${upbid.bid-stream.lock-at-most-for:60s}")
     public void poll() {
+        long startedAt = clock.millis();
+        int succeeded = 0;
+        DrainLimit limit = DrainLimit.NONE;
+        RuntimeException failure = null;
 
-        Delivery delivery = readPendingOrNew();
-        if (delivery == null) {
-            metrics.recordLagMillis(0);
-            return;
+        try {
+            while (true) {
+                Delivery delivery = readPendingOrNew();
+                if (delivery == null) {
+                    if (succeeded == 0) {
+                        metrics.recordIdleLag();
+                    }
+                    break;
+                }
+
+                process(delivery);
+                succeeded++;
+
+                if (succeeded >= properties.maxRecordsPerPoll()) {
+                    limit = DrainLimit.RECORDS;
+                    break;
+                }
+                if (clock.millis() - startedAt >= properties.maxDrainDuration().toMillis()) {
+                    limit = DrainLimit.DURATION;
+                    break;
+                }
+            }
+        } catch (RuntimeException e) {
+            failure = e;
+            throw e;
+        } finally {
+            if (succeeded > 0) {
+                metrics.recordDrain(
+                        succeeded,
+                        Duration.ofMillis(Math.max(clock.millis() - startedAt, 0)),
+                        limit);
+            }
+            if (failure == null) {
+                metrics.recordBacklog(streamBacklog());
+            }
         }
+    }
 
+    /** 한 레코드의 MySQL 반영, ACK, 삭제를 끝낸 뒤에만 반환한다. */
+    private void process(Delivery delivery) {
         MapRecord<String, Object, Object> record = delivery.record();
         Map<String, String> fields = stringFields(record);
         String eventType = fields.get("type");
@@ -114,6 +153,11 @@ public class BidStreamConsumer {
             }
             throw e;
         }
+    }
+
+    private long streamBacklog() {
+        Long size = stream().size(properties.key());
+        return size == null ? 0 : size;
     }
 
     @SuppressWarnings("unchecked")

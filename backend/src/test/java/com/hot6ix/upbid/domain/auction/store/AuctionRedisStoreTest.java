@@ -1,8 +1,10 @@
 package com.hot6ix.upbid.domain.auction.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
 import com.hot6ix.upbid.global.support.AbstractRedisContainerTest;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +24,8 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
     private static final long ROOM_ID = 202L;
     private static final String ITEM_KEY = "auction:item:101";
     private static final String PARTICIPANTS_KEY = "auction:room:202:participants";
+    private static final String PARTICIPANT_NICKNAMES_KEY =
+            "auction:room:202:participant-nicknames";
 
     private static LettuceConnectionFactory connectionFactory;
     private static StringRedisTemplate redis;
@@ -41,7 +45,7 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
 
     @BeforeEach
     void clearKeys() {
-        redis.delete(List.of(ITEM_KEY, PARTICIPANTS_KEY));
+        redis.delete(List.of(ITEM_KEY, PARTICIPANTS_KEY, PARTICIPANT_NICKNAMES_KEY));
         store = new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry()));
     }
 
@@ -65,7 +69,7 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
                 Map.entry("totalExtensionSeconds", "0"),
                 Map.entry("maxTotalExtensionSeconds", "3600")));
         assertThat(redis.opsForSet().members(PARTICIPANTS_KEY))
-                .containsExactlyInAnyOrder("11", "12");
+                .contains("11", "12");
     }
 
     @Test
@@ -75,12 +79,98 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
         assertThat(store.seed(seed(List.of(11L)))).isTrue();
         redis.opsForHash().put(ITEM_KEY, "currentPrice", "15000");
         redis.opsForHash().put(ITEM_KEY, "leaderUserId", "11");
+        redis.opsForHash().delete(ITEM_KEY, "itemName");
+        redis.delete(PARTICIPANT_NICKNAMES_KEY);
 
         boolean createdAgain = store.seed(seed(List.of(11L, 12L)));
 
         assertThat(createdAgain).isFalse();
         assertThat(redis.opsForHash().get(ITEM_KEY, "currentPrice")).isEqualTo("15000");
         assertThat(redis.opsForHash().get(ITEM_KEY, "leaderUserId")).isEqualTo("11");
+        assertThat(redis.opsForHash().get(ITEM_KEY, "itemName")).isEqualTo("한정판 피규어");
+        assertThat(redis.opsForSet().members(PARTICIPANTS_KEY))
+                .contains("11", "12");
+        assertThat(redis.opsForHash().entries(PARTICIPANT_NICKNAMES_KEY))
+                .containsAllEntriesOf(Map.of("11", "user-11", "12", "user-12"));
+    }
+
+    @Test
+    @DisplayName("정상 Seed를 다시 요청해도 새 DB 스냅샷의 참여자를 다시 넣지 않는다")
+    void seedSkipsParticipantRewriteWhenStateIsReady() {
+
+        assertThat(store.seed(seed(List.of(11L)))).isTrue();
+
+        boolean createdAgain = store.seed(seed(List.of(11L, 12L)));
+
+        assertThat(createdAgain).isFalse();
+        assertThat(redis.opsForSet().members(PARTICIPANTS_KEY)).contains("11").doesNotContain("12");
+    }
+
+    @Test
+    @DisplayName("동의 참여자가 없어도 참여자 Seed 준비 상태를 Redis에 남긴다")
+    void seedMarksEmptyParticipantsAsReady() {
+
+        assertThat(store.seed(seed(List.of()))).isTrue();
+
+        assertThat(redis.hasKey(PARTICIPANTS_KEY)).isTrue();
+        assertThat(redis.hasKey(PARTICIPANT_NICKNAMES_KEY)).isTrue();
+        assertThat(store.isSeedReady(ITEM_ID, ROOM_ID)).isTrue();
+    }
+
+    @Test
+    @DisplayName("초기화 표시자가 실제 입찰 참여자를 대신하지 않는다")
+    void seedMarkerDoesNotAuthorizeBidder() {
+
+        assertThat(store.seed(seed(List.of()))).isTrue();
+
+        RedisBidDecision decision = store.evaluateBid(ITEM_ID, "request-1", 11L, 10_000L);
+
+        assertThat(decision).isEqualTo(
+                new RedisBidDecision.Rejected(RedisBidDecision.Reason.TERMS_NOT_AGREED));
+    }
+
+    @Test
+    @DisplayName("참여자 추가로 키만 생기고 Seed 표시자가 없으면 복구 대상으로 판단한다")
+    void participantKeysWithoutSeedMarkerAreNotReady() {
+
+        redis.opsForHash().putAll(ITEM_KEY, Map.of(
+                "status", "IN_PROGRESS",
+                "itemName", "한정판 피규어"));
+        redis.opsForSet().add(PARTICIPANTS_KEY, "11");
+        redis.opsForHash().put(PARTICIPANT_NICKNAMES_KEY, "11", "user-11");
+
+        assertThat(store.isSeedReady(ITEM_ID, ROOM_ID)).isFalse();
+    }
+
+    @Test
+    @DisplayName("참여자 nickname Hash가 유실되면 Seed 복구 대상으로 판단한다")
+    void missingParticipantNicknamesIsNotReady() {
+
+        assertThat(store.seed(seed(List.of(11L)))).isTrue();
+        redis.delete(PARTICIPANT_NICKNAMES_KEY);
+
+        assertThat(store.isSeedReady(ITEM_ID, ROOM_ID)).isFalse();
+    }
+
+    @Test
+    @DisplayName("물품 Seed 키 타입이 잘못되면 준비 상태로 숨기지 않고 실패한다")
+    void seedReadinessRejectsInvalidItemKeyType() {
+
+        redis.opsForValue().set(ITEM_KEY, "invalid");
+
+        assertThatThrownBy(() -> store.isSeedReady(ITEM_ID, ROOM_ID))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    @DisplayName("참여자 Seed 키 타입이 잘못되면 준비 상태로 숨기지 않고 실패한다")
+    void seedReadinessRejectsInvalidParticipantsKeyType() {
+
+        redis.opsForHash().put(ITEM_KEY, "status", "IN_PROGRESS");
+        redis.opsForValue().set(PARTICIPANTS_KEY, "invalid");
+
+        assertThatThrownBy(() -> store.isSeedReady(ITEM_ID, ROOM_ID))
+                .isInstanceOf(RuntimeException.class);
     }
 
     @Test
@@ -96,7 +186,7 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
 
         assertThat(createdAgain).isFalse();
         assertThat(redis.opsForSet().members(PARTICIPANTS_KEY))
-                .containsExactlyInAnyOrder("11", "12");
+                .contains("11", "12");
         assertThat(redis.opsForHash().get(ITEM_KEY, "currentPrice")).isEqualTo("15000");
         assertThat(redis.opsForHash().get(ITEM_KEY, "leaderUserId")).isEqualTo("11");
     }
@@ -116,6 +206,9 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
                 60,
                 0,
                 3_600,
-                participantUserIds);
+                "한정판 피규어",
+                participantUserIds.stream()
+                        .map(userId -> new AuctionRedisParticipant(userId, "user-" + userId))
+                        .toList());
     }
 }

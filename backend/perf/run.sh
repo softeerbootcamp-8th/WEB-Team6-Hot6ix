@@ -965,6 +965,11 @@ for _ in $(seq 1 10); do
                 upbid_auction_close_lock_wait_seconds_bucket \
                 upbid_auction_close_lock_hold_seconds_bucket \
                 upbid_deal_award_seconds_bucket \
+                upbid_bid_stream_backlog \
+                upbid_bid_stream_delivery_lag_milliseconds_bucket \
+                upbid_bid_stream_persist_seconds_bucket \
+                upbid_bid_stream_drain_records_bucket \
+                upbid_bid_stream_drain_duration_seconds_bucket \
                 executor_queued_tasks; do
     # 파이프를 쓰면 안 된다. grep -q 는 일치를 찾자마자 끝나는데, 그러면 앞 명령이
     # SIGPIPE 로 죽고 set -o pipefail 이 그걸 파이프라인 실패로 본다. 그래서 출력 앞쪽에

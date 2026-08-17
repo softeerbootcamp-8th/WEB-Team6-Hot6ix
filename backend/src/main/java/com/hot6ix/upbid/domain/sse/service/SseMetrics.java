@@ -216,6 +216,11 @@ public class SseMetrics {
                 .increment();
     }
 
+    public void recordPublishSkipped(String eventName, String reason) {
+        registry.counter("upbid.sse.publish.skipped", "event", eventName, "reason", reason)
+                .increment();
+    }
+
     public void recordQueueSaturated() {
         queueSaturated.increment();
         recordRejected("queue_saturated");

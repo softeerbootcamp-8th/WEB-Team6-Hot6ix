@@ -57,7 +57,11 @@ management:
 # 설정이다. Spring profile로 바뀌지 않으므로 배포 체크리스트에서 redis-cli와 mount로 검증한다.
 # 주요 시계열:
 # upbid_bid_stream_processed_total, upbid_bid_stream_pending,
-# upbid_bid_stream_lag_milliseconds, upbid_bid_stream_persist_seconds,
+# upbid_bid_stream_backlog, upbid_bid_stream_lag_milliseconds,
+# upbid_bid_stream_delivery_lag_milliseconds_bucket,
+# upbid_bid_stream_persist_seconds, upbid_bid_stream_drain_records_bucket,
+# upbid_bid_stream_drain_duration_seconds_bucket,
+# upbid_bid_stream_drain_limited_total,
 # upbid_bid_stream_ack_failures_total, upbid_bid_lua_decisions_total,
 # upbid_auction_redis_seed_failures_total, upbid_bid_stream_retries_total,
 # upbid_bid_stream_quarantined_total,
@@ -68,7 +72,9 @@ management:
 # 변수만 바꿔 재빌드 없이 poll 주기와 단건 처리 락 상한을 조정한다.
 # BID_STREAM_POLL_DELAY, BID_STREAM_BLOCK_TIMEOUT, BID_STREAM_LOCK_AT_MOST_FOR,
 # BID_STREAM_RETRY_DELAY, BID_STREAM_MAX_FAST_ATTEMPTS,
-# BID_STREAM_HALTED_RETRY_DELAY, BID_STREAM_TRANSACTION_TIMEOUT_SECONDS
+# BID_STREAM_HALTED_RETRY_DELAY, BID_STREAM_TRANSACTION_TIMEOUT_SECONDS,
+# BID_STREAM_CONSUMER_ENABLED, BID_STREAM_MAX_RECORDS_PER_POLL,
+# BID_STREAM_MAX_DRAIN_DURATION
 
 server:
   tomcat:

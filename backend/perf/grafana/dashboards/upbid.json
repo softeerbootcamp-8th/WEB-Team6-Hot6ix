@@ -1696,6 +1696,63 @@
         { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "jvm_gc_pause_seconds_max{run=~\"$run\", action=\"end of major GC\"} * 1000", "legendFormat": "Full GC 최대 정지 (ms)", "range": true, "refId": "A" },
         { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "jvm_gc_pause_seconds_count{run=~\"$run\", action=\"end of major GC\"}", "legendFormat": "Full GC 누적 횟수", "range": true, "refId": "B" }
       ]
+    },
+    {
+      "type": "timeseries",
+      "title": "입찰 Stream backlog·Pending·중단",
+      "description": "backlog는 아직 삭제되지 않은 전체 Stream 길이다. Pending은 이미 Consumer에게 전달된 이벤트만 포함하므로 Consumer OFF에서는 Pending=0이어도 backlog가 증가한다. halted=1이면 가장 오래된 격리 이벤트가 순서를 막는 상태다.",
+      "id": 39,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 0, "y": 127, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "max(upbid_bid_stream_backlog{run=~\"$run\"})", "legendFormat": "backlog", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "max(upbid_bid_stream_pending{run=~\"$run\"})", "legendFormat": "pending", "range": true, "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "max(upbid_bid_stream_halted{run=~\"$run\"})", "legendFormat": "halted", "range": true, "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "입찰 Stream 승인·DB 반영률",
+      "description": "Lua 승인 유입률과 MySQL 반영 성공률을 비교한다. 승인률이 지속해서 더 높으면 backlog가 계속 증가한다.",
+      "id": 40,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 12, "y": 127, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(upbid_bid_lua_decisions_total{run=~\"$run\", result=\"accepted\"}[30s]))", "legendFormat": "Lua accepted/s", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "sum(rate(upbid_bid_stream_processed_total{run=~\"$run\", result=\"success\"}[30s]))", "legendFormat": "MySQL persisted/s", "range": true, "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "입찰 Stream lag·MySQL 반영 p95 (ms)",
+      "description": "delivery lag는 XADD부터 Consumer 처리까지의 대기시간이고 persist는 한 이벤트의 MySQL 트랜잭션 시간이다. lag만 증가하면 Consumer 공급 부족, persist도 함께 증가하면 DB 반영 비용 증가를 의심한다.",
+      "id": 41,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 0, "y": 135, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "ms" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_stream_delivery_lag_milliseconds_bucket{run=~\"$run\"}[30s])))", "legendFormat": "delivery lag p95", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_stream_persist_seconds_bucket{run=~\"$run\"}[30s]))) * 1000", "legendFormat": "persist p95", "range": true, "refId": "B" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "입찰 Stream drain tick p95",
+      "description": "한 Scheduler tick이 처리한 레코드 수와 실행시간이다. records가 50 근처면 건수 상한, duration이 1초 근처면 시간 상한에 자주 도달한 것이다. idle poll은 histogram에 기록하지 않는다.",
+      "id": 42,
+      "datasource": { "type": "prometheus", "uid": "upbid-prometheus" },
+      "gridPos": { "x": 12, "y": 135, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never", "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_stream_drain_records_bucket{run=~\"$run\"}[30s])))", "legendFormat": "records p95", "range": true, "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "upbid-prometheus" }, "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le) (rate(upbid_bid_stream_drain_duration_seconds_bucket{run=~\"$run\"}[30s])))", "legendFormat": "duration p95 (s)", "range": true, "refId": "B" }
+      ]
     }
   ],
   "templating": {

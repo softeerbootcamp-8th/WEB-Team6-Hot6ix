@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisKeys;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisParticipant;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisSeed;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.global.support.AbstractRedisContainerTest;
@@ -52,6 +53,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 AuctionRedisKeys.item(ITEM_ID),
                 AuctionRedisKeys.item(OTHER_ITEM_ID),
                 AuctionRedisKeys.participants(ROOM_ID),
+                AuctionRedisKeys.participantNicknames(ROOM_ID),
                 AuctionRedisKeys.bidRequest("request-1"),
                 AuctionRedisKeys.stream()));
         meterRegistry = new SimpleMeterRegistry();
@@ -67,11 +69,15 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         long before = redisTimeMillis();
 
         RedisBidDecision decision =
-                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, before);
+                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L);
 
         long after = redisTimeMillis();
         assertThat(decision).isInstanceOfSatisfying(RedisBidDecision.Accepted.class, accepted -> {
             assertThat(accepted.requestId()).isEqualTo("request-1");
+            assertThat(accepted.roomId()).isEqualTo(ROOM_ID);
+            assertThat(accepted.itemName()).isEqualTo("한정판 피규어");
+            assertThat(accepted.bidderUserId()).isEqualTo(BIDDER_ID);
+            assertThat(accepted.bidderNickname()).isEqualTo("한기");
             assertThat(accepted.acceptedAtMillis()).isBetween(before, after);
             assertThat(accepted.endAtMillis()).isEqualTo(endAt);
             assertThat(accepted.extendedSeconds()).isZero();
@@ -109,14 +115,18 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         long endAt = System.currentTimeMillis() + 300_000L;
         store.seed(seed(endAt, 0, 60, 60));
         RedisBidDecision first =
-                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L);
 
         RedisBidDecision retried =
-                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L);
 
         RedisBidDecision.Accepted firstAccepted = (RedisBidDecision.Accepted) first;
         assertThat(retried).isEqualTo(new RedisBidDecision.Accepted(
                 firstAccepted.requestId(),
+                ROOM_ID,
+                "한정판 피규어",
+                BIDDER_ID,
+                "한기",
                 10_000L,
                 firstAccepted.acceptedAtMillis(),
                 firstAccepted.endAtMillis(),
@@ -133,10 +143,10 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
 
         long endAt = System.currentTimeMillis() + 300_000L;
         store.seed(seed(ITEM_ID, endAt, 0, 60, 60));
-        store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+        store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L);
 
         RedisBidDecision retried =
-                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 20_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 20_000L);
 
         assertThat(retried).isInstanceOfSatisfying(RedisBidDecision.Rejected.class,
                 rejected -> assertThat(rejected.reason().name()).isEqualTo("IDEMPOTENCY_KEY_CONFLICT"));
@@ -152,10 +162,10 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         long endAt = System.currentTimeMillis() + 300_000L;
         store.seed(seed(ITEM_ID, endAt, 0, 60, 60));
         redis.opsForSet().add(AuctionRedisKeys.participants(ROOM_ID), "12");
-        store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+        store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L);
 
         RedisBidDecision retried =
-                store.evaluateBid(ITEM_ID, "request-1", 12L, 10_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-1", 12L, 10_000L);
 
         assertThat(retried).isInstanceOfSatisfying(RedisBidDecision.Rejected.class,
                 rejected -> assertThat(rejected.reason())
@@ -172,10 +182,10 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         long endAt = System.currentTimeMillis() + 300_000L;
         store.seed(seed(ITEM_ID, endAt, 0, 60, 60));
         store.seed(seed(OTHER_ITEM_ID, endAt, 0, 60, 60));
-        store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+        store.evaluateBid(ITEM_ID, "request-1", BIDDER_ID, 10_000L);
 
         RedisBidDecision retried =
-                store.evaluateBid(OTHER_ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis());
+                store.evaluateBid(OTHER_ITEM_ID, "request-1", BIDDER_ID, 10_000L);
 
         assertThat(retried).isInstanceOfSatisfying(RedisBidDecision.Rejected.class,
                 rejected -> assertThat(rejected.reason().name()).isEqualTo("IDEMPOTENCY_KEY_CONFLICT"));
@@ -192,7 +202,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         store.seed(seed(endAt, 0, 60, 60));
 
         RedisBidDecision decision =
-                store.evaluateBid(ITEM_ID, "request-low", BIDDER_ID, 9_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-low", BIDDER_ID, 9_000L);
 
         assertThat(decision).isEqualTo(
                 new RedisBidDecision.Rejected(RedisBidDecision.Reason.BID_AMOUNT_TOO_LOW));
@@ -213,7 +223,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         redis.opsForValue().set(AuctionRedisKeys.stream(), "wrong-type");
 
         assertThatThrownBy(() -> store.evaluateBid(
-                ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis()))
+                ITEM_ID, "request-1", BIDDER_ID, 10_000L))
                 .isInstanceOf(RuntimeException.class);
 
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "currentPrice"))
@@ -238,7 +248,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 AuctionRedisKeys.item(ITEM_ID), "softCloseTriggerSeconds", "not-a-number");
 
         assertThatThrownBy(() -> store.evaluateBid(
-                ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis()))
+                ITEM_ID, "request-1", BIDDER_ID, 10_000L))
                 .isInstanceOf(RuntimeException.class);
 
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
@@ -262,7 +272,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 "extendedSeconds", "0"));
 
         assertThatThrownBy(() -> store.evaluateBid(
-                ITEM_ID, "request-1", BIDDER_ID, 10_000L, System.currentTimeMillis()))
+                ITEM_ID, "request-1", BIDDER_ID, 10_000L))
                 .isInstanceOf(RuntimeException.class);
 
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
@@ -278,7 +288,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         store.seed(seed(endAt, 0, 60, 60));
 
         RedisBidDecision decision =
-                store.evaluateBid(ITEM_ID, "request-extend", BIDDER_ID, 10_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-extend", BIDDER_ID, 10_000L);
 
         assertThat(decision).isInstanceOfSatisfying(RedisBidDecision.Accepted.class, accepted -> {
             assertThat(accepted.endAtMillis()).isEqualTo(endAt + 60_000L);
@@ -296,7 +306,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         store.seed(seed(endAt, 0, 60, 60));
 
         RedisBidDecision decision =
-                store.evaluateBid(ITEM_ID, "request-early", BIDDER_ID, 10_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-early", BIDDER_ID, 10_000L);
 
         assertThat(decision).isInstanceOfSatisfying(RedisBidDecision.Accepted.class, accepted -> {
             assertThat(accepted.endAtMillis()).isEqualTo(endAt);
@@ -312,7 +322,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         store.seed(seed(endAt, 3_550, 60, 60));
 
         RedisBidDecision decision =
-                store.evaluateBid(ITEM_ID, "request-cap", BIDDER_ID, 10_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-cap", BIDDER_ID, 10_000L);
 
         assertThat(decision).isInstanceOfSatisfying(RedisBidDecision.Accepted.class, accepted -> {
             assertThat(accepted.endAtMillis()).isEqualTo(endAt);
@@ -330,7 +340,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         store.seed(seed(endAt, 3_540, 60, 60));
 
         RedisBidDecision decision =
-                store.evaluateBid(ITEM_ID, "request-exact-cap", BIDDER_ID, 10_000L, System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-exact-cap", BIDDER_ID, 10_000L);
 
         assertThat(decision).isInstanceOfSatisfying(RedisBidDecision.Accepted.class, accepted -> {
             assertThat(accepted.endAtMillis()).isEqualTo(endAt + 60_000L);
@@ -348,8 +358,7 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
         store.seed(seed(endAt, 0, null, null));
 
         RedisBidDecision decision =
-                store.evaluateBid(ITEM_ID, "request-no-soft-close", BIDDER_ID, 10_000L,
-                        System.currentTimeMillis());
+                store.evaluateBid(ITEM_ID, "request-no-soft-close", BIDDER_ID, 10_000L);
 
         assertThat(decision).isInstanceOfSatisfying(RedisBidDecision.Accepted.class, accepted -> {
             assertThat(accepted.endAtMillis()).isEqualTo(endAt);
@@ -358,17 +367,21 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
     }
 
     @Test
-    @DisplayName("도착 시각이 기존 마감 시각과 같으면 입찰을 거절한다")
-    void rejectsWhenArrivedAtEqualsEndAt() {
+    @DisplayName("앱 시계가 뒤처져도 Redis 마감 시각이 지났으면 입찰을 거절한다")
+    void rejectsAfterRedisDeadlineEvenWhenApplicationClockIsBehind() {
 
-        long endAt = System.currentTimeMillis() + 300_000L;
+        long endAt = redisTimeMillis() - 100L;
         store.seed(seed(endAt, 0, 60, 60));
 
         RedisBidDecision decision =
-                store.evaluateBid(ITEM_ID, "request-deadline", BIDDER_ID, 10_000L, endAt);
+                store.evaluateBid(ITEM_ID, "request-clock-skew", BIDDER_ID, 10_000L);
 
         assertThat(decision).isEqualTo(
                 new RedisBidDecision.Rejected(RedisBidDecision.Reason.ITEM_CLOSED));
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "leaderUserId"))
+                .isNull();
+        assertThat(redis.hasKey(AuctionRedisKeys.bidRequest("request-clock-skew"))).isFalse();
+        assertThat(redis.hasKey(AuctionRedisKeys.stream())).isFalse();
     }
 
     private static AuctionRedisSeed seed(long endAtMillis, int totalExtensionSeconds,
@@ -392,7 +405,8 @@ class RedisBidLuaIntegrationTest extends AbstractRedisContainerTest {
                 extendSeconds,
                 totalExtensionSeconds,
                 3_600,
-                List.of(BIDDER_ID));
+                "한정판 피규어",
+                List.of(new AuctionRedisParticipant(BIDDER_ID, "한기")));
     }
 
     private static long redisTimeMillis() {
