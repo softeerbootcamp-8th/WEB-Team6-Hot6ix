@@ -46,22 +46,22 @@
 
 ## 프로젝트 소개
 
-> **SNS에서 이미 벌어지고 있는 경매를, 댓글 대신 서버가 판정하게 합니다.**
+> **인스타/유튜브 라이브 경매에서 댓글과 DM으로 입찰을 관리하고 낙찰자를 선정해야 했던 SNS 경매 운영 과정을 자동화한 서비스**
 
-인스타그램 라이브와 오픈채팅에서 굿즈와 중고 의류가 경매로 거래됩니다. 경매할 공간이 없어서가 아니라, **그 경매를 댓글과 캡처로 판정하는 것**이 문제입니다.
+판매자는 SNS 채널 이동 없이 링크나 QR 코드만 공유하면 경매를 시작할 수 있으며, 입찰 접수, 마감, 낙찰자 선정 과정을 시스템이 자동으로 처리해 경매 운영을 줄이고자 합니다.
 
 | | 💬 댓글로 하는 경매 | 🛎️ UpBid |
 | --- | --- | --- |
 | **최고가** | 댓글을 거슬러 올라가 확인 | 화면 위에 고정 |
-| **입찰 순서** | 정렬과 지연으로 뒤집힘 | 서버가 받은 순서로 확정 |
-| **마감** | 판매자가 눈으로 끊음 | 서버 시간 기준 자동 |
-| **낙찰자** | 최고가와 순서를 수동 대조 | 최고 입찰자 자동 확정 |
-| **거래 불발** | 차순위를 다시 찾아 연락 | 기록된 순위로 자동 승계 |
-| **기록** | 끝나면 흩어짐 | 입찰 이력과 결과가 남음 |
+| **입찰 순서** | 정렬과 지연으로 순서가 지켜지지 못함 | 서버가 받은 순서로 확정 |
+| **마감** | 판매자가 수동으로 마감 | 서버 시간 기준 자동 |
+| **낙찰자** | 판매자가 최고가 직접 확인 | 최고 입찰자 자동 확정 |
+| **차순위 승계** | 차순위를 다시 찾아 연락 | 기록된 순위로 자동 승계 |
+| **기록** | 별도로 기록을 하지 않으면 사라짐 | 입찰 이력과 결과가 남음 |
 
 ![UpBid 핵심 Flow](https://github.com/user-attachments/assets/3ebce61e-d68b-44c9-85aa-13a2544f7af3)
 
-**판매자가 경매방을 만들어 SNS에 공유하면, 구매자가 링크로 들어와 입찰합니다.** 입찰 판정과 마감, 낙찰은 서버가 맡고, 거래는 서비스 밖에서 이어집니다.
+> **판매자가 경매방을 개설해 SNS에 공유하면, 구매자는 공유된 링크를 통해 경매에 참여할 수 있습니다.** 서비스는 입찰 판정, 경매 마감, 낙찰자 선정 등 경매 과정만 지원하며, 실제 거래는 낙찰 이후 판매자와 구매자가 서비스 외부에서 직접 진행합니다.
 
 <br>
 
@@ -71,8 +71,8 @@
 
 ![링크로 참여](https://github.com/user-attachments/assets/70ed7fc7-3116-4aec-bc03-ef54adb36c8d)
 
-- **링크와 QR로 바로 들어옵니다.** 공개 주소는 숫자 PK가 아니라 `share_code`를 씁니다
-- **로그인 전에도 경매방과 물품을 볼 수 있습니다.** 입찰할 때만 로그인을 요청하고, 끝나면 보던 경매방으로 돌아옵니다
+- **링크와 QR을 통해 바로 경매방에 들어올 수 있습니다=.**
+- **비로그인 상태에서 경매를 둘러볼 수 있습니다** (입찰할 때만 로그인을 합니다)
 
 ### 🔴 모두가 같은 화면을 봅니다
 
@@ -168,8 +168,8 @@
 
 | 영역 | 스택 |
 | --- | --- |
-| **Backend** | ![Java 21](https://img.shields.io/badge/Java%2021-007396?style=flat-square&logo=openjdk&logoColor=white) ![Spring Boot 4.x](https://img.shields.io/badge/Spring%20Boot%204.x-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Spring Data JPA](https://img.shields.io/badge/Spring%20Data%20JPA-6DB33F?style=flat-square&logo=spring&logoColor=white) ![QueryDSL](https://img.shields.io/badge/QueryDSL-0769AD?style=flat-square) ![Flyway](https://img.shields.io/badge/Flyway-CC0200?style=flat-square&logo=flyway&logoColor=white) |
-| **Database** | ![MySQL 8.4](https://img.shields.io/badge/MySQL%208.4-4479A1?style=flat-square&logo=mysql&logoColor=white) ![Redis](https://img.shields.io/badge/Redis-FF4438?style=flat-square&logo=redis&logoColor=white) ![ShedLock](https://img.shields.io/badge/ShedLock-555555?style=flat-square) |
+| **Backend** | ![Java 21](https://img.shields.io/badge/Java%2021-007396?style=flat-square&logo=openjdk&logoColor=white) ![Spring Boot 4.x](https://img.shields.io/badge/Spring%20Boot%204.x-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Spring Data JPA](https://img.shields.io/badge/Spring%20Data%20JPA-6DB33F?style=flat-square&logo=spring&logoColor=white) ![QueryDSL](https://img.shields.io/badge/QueryDSL-0769AD?style=flat-square) |
+| **Database** | ![MySQL 8.4](https://img.shields.io/badge/MySQL%208.4-4479A1?style=flat-square&logo=mysql&logoColor=white) ![Redis](https://img.shields.io/badge/Redis-FF4438?style=flat-square&logo=redis&logoColor=white) | ![Flyway](https://img.shields.io/badge/Flyway-CC0200?style=flat-square&logo=flyway&logoColor=white) |
 | **실시간 통신** | ![SSE](https://img.shields.io/badge/SSE-5B21B6?style=flat-square) ![Redis Pub%2FSub](https://img.shields.io/badge/Redis%20Pub%2FSub-FF4438?style=flat-square&logo=redis&logoColor=white) ![Redis Stream](https://img.shields.io/badge/Redis%20Stream-FF4438?style=flat-square&logo=redis&logoColor=white) |
 | **Frontend** | ![React 19](https://img.shields.io/badge/React%2019-61DAFB?style=flat-square&logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white) ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white) ![TanStack Router%2FQuery](https://img.shields.io/badge/TanStack%20Router%2FQuery-FF4154?style=flat-square&logo=reactquery&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white) ![shadcn%2Fui](https://img.shields.io/badge/shadcn%2Fui-000000?style=flat-square&logo=shadcnui&logoColor=white) ![Orval](https://img.shields.io/badge/Orval-1E1E1E?style=flat-square) |
 | **Infra** | ![AWS](https://img.shields.io/badge/AWS-232F3E?style=flat-square&logo=amazonwebservices&logoColor=white) ![EC2](https://img.shields.io/badge/EC2-FF9900?style=flat-square&logo=amazonec2&logoColor=white) ![RDS](https://img.shields.io/badge/RDS-527FFF?style=flat-square&logo=amazonrds&logoColor=white) ![S3](https://img.shields.io/badge/S3-569A31?style=flat-square&logo=amazons3&logoColor=white) ![CloudFront](https://img.shields.io/badge/CloudFront-8C4FFF?style=flat-square&logo=amazoncloudfront&logoColor=white) ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white) ![Nginx](https://img.shields.io/badge/Nginx-009639?style=flat-square&logo=nginx&logoColor=white) ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white) |
@@ -182,13 +182,14 @@
 
 ## 시스템 구조
 
-> 🚧 Redis 도입과 다중 인스턴스 구성을 반영한 아키텍처 다이어그램은 교체 예정입니다.
+<img width="5136" height="1920" alt="image (1)" src="https://github.com/user-attachments/assets/5a377051-dc0c-4878-b49b-5285655bace2" />
+
 
 ### 데이터 모델
 
 ![ERD](https://github.com/user-attachments/assets/da9e92ab-a424-4625-ba80-852f8491a217)
 
-원본은 [ERDCloud](https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY)에 있습니다.
+원본은 [링크](https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY)에 있습니다.
 
 ### 디렉터리 구조
 
