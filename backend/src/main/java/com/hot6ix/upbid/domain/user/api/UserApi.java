@@ -37,7 +37,8 @@ public interface UserApi {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
-            @ApiResponse(responseCode = "400", description = "입력값 오류 또는 허용되지 않는 이미지 주소 (code 5001)"),
+            @ApiResponse(responseCode = "400", description = "요청 필드 형식 위반 (code 2002) 또는 "
+                    + "허용되지 않는 이미지 주소 (code 10002)"),
             @ApiResponse(responseCode = "401", description = "로그인이 필요함 (code 1005)"),
             @ApiResponse(responseCode = "404", description = "존재하지 않는 회원 (code 9001)")
     })
