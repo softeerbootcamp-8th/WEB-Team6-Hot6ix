@@ -10,9 +10,10 @@
  * OpenAPI spec version: v1
  */
 
-export interface AuctionItemCloseEarlyResponseDto {
-  auctionItemId?: number;
-  endAt?: string;
-  remainingSeconds?: number;
-  revision?: number;
+export interface AuctionLiveLeaderboardEntryResponseDto {
+  rank?: number;
+  bidderKey?: string;
+  nickname?: string;
+  amount?: number;
+  isMe?: boolean;
 }

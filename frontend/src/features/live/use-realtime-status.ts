@@ -21,8 +21,14 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 export type RealtimeStatus =
   'connecting' | 'connected' | 'reconnecting' | 'failed' | 'closed'
 
-export type SseEventPayload =
-  | { kind: 'ItemStarted'; itemId: number; itemName: string; endedTime: string }
+type SseEventData =
+  | {
+      kind: 'ItemStarted'
+      itemId: number
+      itemName: string
+      endedTime: string
+      revision: number
+    }
   /**
    * 마감이 임박했다. **이 이벤트가 오는 순간부터가 Soft Close 연장 구간**이다.
    *
@@ -46,6 +52,8 @@ export type SseEventPayload =
       itemName: string
       bidPrice: number
       bidderNickname: string
+      bidderKey: string
+      revision: number
     }
   /**
    * 마감 직전 입찰이 들어와 마감이 뒤로 밀렸다.
@@ -61,6 +69,7 @@ export type SseEventPayload =
       itemName: string
       extendSeconds: number
       endedTime: string
+      revision: number
     }
   /**
    * 판매자가 마감을 앞당겼다. **이 이벤트가 오는 순간부터가 Soft Close 연장 구간**이라
@@ -78,6 +87,7 @@ export type SseEventPayload =
       itemName: string
       remainingSeconds: number
       endedTime: string
+      revision: number
     }
   // 유찰도 이 이벤트로 온다. 입찰이 없었으면 낙찰가·낙찰자가 둘 다 null 이다.
   | {
@@ -86,6 +96,8 @@ export type SseEventPayload =
       itemName: string
       finalPrice: number | null
       winnerNickname: string | null
+      winnerBidderKey: string | null
+      revision: number
     }
   /**
    * 판매자가 방송을 끝냈다. 물품별 마감 이벤트가 먼저 오고 이게 마지막에 온다.
@@ -117,6 +129,8 @@ export type SseEventPayload =
    * payload 가 비어 있고, 화면은 방 정보를 통째로 다시 읽는다.
    */
   | { kind: 'RoomUpdated' }
+
+export type SseEventPayload = SseEventData & { eventId?: number }
 
 /**
  * 실시간 SSE 연결과 상태.
@@ -179,7 +193,14 @@ export function useRealtimeStatus(
         console.log('[SSE] received', kind, e.data)
         try {
           const data = JSON.parse(e.data as string)
-          onEventRef.current({ kind, ...data } as SseEventPayload)
+          const eventId = Number(e.lastEventId)
+          onEventRef.current({
+            kind,
+            ...data,
+            ...(Number.isSafeInteger(eventId) && eventId > 0
+              ? { eventId }
+              : {}),
+          } as SseEventPayload)
         } catch (err) {
           console.error('[SSE] parse error', kind, e.data, err)
         }

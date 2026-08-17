@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   getGetSummariesQueryKey,
   useGetDetail1,
+  useGetLiveStates,
   useGetSummaries,
 } from '@/api/generated/경매-물품/경매-물품'
 import { usePlace } from '@/api/generated/입찰/입찰'
@@ -15,9 +16,11 @@ import { LiveItemList } from '@/features/live/components/live-item-list'
 import { RouteError, RoutePending } from '@/components/route-states'
 import {
   emptyItem,
-  toAuctionItemDetail,
+  mergeItemDetail,
   toAuctionItems,
 } from '@/features/live/adapt-item'
+import { applyAcceptedBid, applyLiveEvent } from '@/features/live/live-state'
+import { useLiveItems } from '@/features/live/use-live-items'
 import { toBidErrorMessage } from '@/features/live/bid-error'
 import { createBidRequestIdTracker } from '@/features/live/bid-request-id'
 import {
@@ -40,7 +43,7 @@ import {
   useRealtimeStatus,
   type SseEventPayload,
 } from '@/features/live/use-realtime-status'
-import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
+import type { RoomEvent } from '@/types/domain'
 
 /**
  * 물품 상세 (Figma `WEB-13 · 구매자 · 물품 상세 (LIVE)`).
@@ -96,9 +99,21 @@ function AuctionItemPage() {
     [summaries.data, roomBidUnit],
   )
 
+  const liveStates = useGetLiveStates(shareCode)
+  const liveSnapshots = useMemo(
+    () => liveStates.data?.data ?? [],
+    [liveStates.data],
+  )
+  const [roomItems, setItems] = useLiveItems(
+    serverItems,
+    summaries.dataUpdatedAt,
+    liveSnapshots,
+    liveStates.dataUpdatedAt,
+  )
+
   const room = useMemo(
-    () => toAuctionRoomDetail(roomQuery.data?.data ?? {}, serverItems),
-    [roomQuery.data, serverItems],
+    () => toAuctionRoomDetail(roomQuery.data?.data ?? {}, roomItems),
+    [roomQuery.data, roomItems],
   )
   const isGuest = user === null
 
@@ -109,8 +124,6 @@ function AuctionItemPage() {
     message: string
   } | null>(null)
 
-  /** 데모 입찰이 반영된 물품. 실시간 연동 전까지만 쓴다. */
-  const [override, setOverride] = useState<AuctionItemDetail | null>(null)
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
 
   /*
@@ -123,13 +136,13 @@ function AuctionItemPage() {
   const detailDto = detailQuery.data?.data
   const base = useMemo(() => {
     const listItem =
-      serverItems.find((candidate) => candidate.id === auctionItemId) ??
+      roomItems.find((candidate) => candidate.id === auctionItemId) ??
       emptyItem(auctionItemId)
     if (!detailDto || detailDto.auctionItemId !== auctionItemId) return listItem
-    return toAuctionItemDetail(detailDto, roomBidUnit)
-  }, [serverItems, detailDto, auctionItemId, roomBidUnit])
+    return mergeItemDetail(detailDto, listItem)
+  }, [roomItems, detailDto, auctionItemId])
 
-  const item = override?.id === base.id ? override : base
+  const item = base
 
   const handleSseEvent = useCallback(
     (payload: SseEventPayload) => {
@@ -138,6 +151,23 @@ function AuctionItemPage() {
        * 없어서 보여줄 자리도 없으니 물품 필터보다 먼저 걸러낸다.
        */
       if (payload.kind === 'ParticipantCount') return
+
+      switch (payload.kind) {
+        case 'ItemStarted':
+        case 'SoftCloseExtended':
+        case 'ItemCloseAdvanced':
+        case 'ItemEnded':
+          setItems((prev) => applyLiveEvent(prev, payload))
+          break
+        case 'BidPlaced':
+          setItems((prev) =>
+            applyLiveEvent(prev, {
+              ...payload,
+              isMe: ownBids.has(payload.itemId, payload.bidPrice),
+            }),
+          )
+          break
+      }
 
       /*
        * 현재 보고 있는 물품과 관계없는 이벤트는 무시한다.
@@ -148,7 +178,7 @@ function AuctionItemPage() {
        */
       if ('itemId' in payload && payload.itemId !== item.id) return
 
-      const eventId = Date.now()
+      const eventId = payload.eventId ?? Date.now()
 
       switch (payload.kind) {
         case 'ItemStarted':
@@ -161,11 +191,6 @@ function AuctionItemPage() {
               message: '경매가 시작됐어요',
             },
           ])
-          setOverride((prev) => ({
-            ...(prev ?? item),
-            status: 'ACTIVE' as const,
-            endsAt: payload.endedTime,
-          }))
           break
 
         case 'ItemClosingSoon':
@@ -192,29 +217,6 @@ function AuctionItemPage() {
               emphasized: true,
             },
           ])
-          setOverride((prev) => {
-            const base = prev ?? item
-            return {
-              ...base,
-              currentPrice: payload.bidPrice,
-              topBidderNickname: payload.bidderNickname,
-              leaderboard: [
-                {
-                  rank: 1,
-                  nickname: payload.bidderNickname,
-                  amount: payload.bidPrice,
-                  isMe: ownBids.has(payload.itemId, payload.bidPrice),
-                },
-                ...base.leaderboard.filter(
-                  (entry) => entry.nickname !== payload.bidderNickname,
-                ),
-              ]
-                // 서버 리더보드도 상위 3명이다. 더 들고 있으면 서버 값이 다시
-                // 올 때 줄 수가 줄어들어 화면이 들썩인다.
-                .slice(0, 3)
-                .map((entry, index) => ({ ...entry, rank: index + 1 })),
-            }
-          })
           break
 
         case 'SoftCloseExtended':
@@ -230,10 +232,6 @@ function AuctionItemPage() {
           ])
           // 서버가 준 마감 시각을 그대로 쓴다. 직접 더하면 이벤트가 두 번 오거나
           // 유실됐을 때 화면 카운트다운만 서버와 어긋난 채로 남는다.
-          setOverride((prev) => ({
-            ...(prev ?? item),
-            endsAt: payload.endedTime,
-          }))
           break
 
         /*
@@ -253,10 +251,6 @@ function AuctionItemPage() {
               emphasized: true,
             },
           ])
-          setOverride((prev) => ({
-            ...(prev ?? item),
-            endsAt: payload.endedTime,
-          }))
           break
 
         /*
@@ -304,19 +298,19 @@ function AuctionItemPage() {
               emphasized: true,
             },
           ])
-          setOverride((prev) => ({
-            ...(prev ?? item),
-            status: 'CLOSED' as const,
-            // 낙찰자가 실렸으면 낙찰, 비었으면 유찰이다.
-            sold: payload.winnerNickname !== null,
-          }))
           break
       }
     },
-    [item, shareCode, navigate, queryClient, ownBids],
+    [item.id, shareCode, navigate, queryClient, ownBids, setItems],
   )
 
   const { status } = useRealtimeStatus(shareCode, handleSseEvent)
+  const refetchLiveStates = liveStates.refetch
+
+  useEffect(() => {
+    if (status !== 'connected') return
+    void refetchLiveStates()
+  }, [status, refetchLiveStates])
 
   const disconnectNotifiedRef = useRef(false)
   useEffect(() => {
@@ -402,18 +396,24 @@ function AuctionItemPage() {
     ])
 
     if (!shuffle) return
-    setOverride({
-      ...item,
-      currentPrice: next,
-      topBidderNickname: nickname,
-      leaderboard: [
-        { rank: 1, nickname, amount: next, isMe: false },
-        ...item.leaderboard.map((entry) => ({
-          ...entry,
-          rank: entry.rank + 1,
-        })),
-      ].slice(0, 5),
-    })
+    setItems((prev) =>
+      prev.map((entry) =>
+        entry.id === item.id
+          ? {
+              ...entry,
+              currentPrice: next,
+              topBidderNickname: nickname,
+              leaderboard: [
+                { rank: 1, nickname, amount: next, isMe: false },
+                ...entry.leaderboard.map((ranked) => ({
+                  ...ranked,
+                  rank: ranked.rank + 1,
+                })),
+              ].slice(0, 5),
+            }
+          : entry,
+      ),
+    )
   }
 
   const bidBlocked = closed || ready || amount < minimum
@@ -424,7 +424,7 @@ function AuctionItemPage() {
 
     try {
       const requestId = bidRequestIds.acquire(item.id, amount)
-      await trackOwnBidAttempt(ownBids, item.id, amount, () =>
+      const response = await trackOwnBidAttempt(ownBids, item.id, amount, () =>
         placeBid.mutateAsync({
           auctionItemId: item.id,
           data: { amount },
@@ -432,6 +432,10 @@ function AuctionItemPage() {
         }),
       )
       bidRequestIds.complete(requestId)
+      const accepted = response.data
+      if (accepted && user) {
+        setItems((prev) => applyAcceptedBid(prev, accepted, user.nickname))
+      }
 
       // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       setFeedback({

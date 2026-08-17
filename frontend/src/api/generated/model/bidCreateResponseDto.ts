@@ -17,4 +17,6 @@ export interface BidCreateResponseDto {
   acceptedAt?: string;
   endAt?: string;
   extendedSeconds?: number;
+  revision?: number;
+  bidderKey?: string;
 }

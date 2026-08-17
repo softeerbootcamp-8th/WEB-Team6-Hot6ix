@@ -24,6 +24,8 @@ export interface AuctionRoomSummary {
 
 export interface LeaderboardEntry {
   rank: number
+  /** 같은 닉네임의 서로 다른 입찰자를 구분하는 방 단위 익명 식별값. */
+  bidderKey?: string | null
   nickname: string
   amount: number
   /** 나인지 여부. 서버가 내려주는 값을 그대로 쓴다. */
@@ -74,6 +76,8 @@ export interface AuctionItemDetail {
   endsAt: string | null
   topBidderNickname: string | null
   leaderboard: LeaderboardEntry[]
+  /** Redis Live State의 단조 증가 버전. MySQL 기반 값은 0이다. */
+  revision: number
 }
 
 export interface AuctionRoomDetail {

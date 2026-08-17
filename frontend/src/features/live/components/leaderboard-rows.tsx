@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { formatWon } from '@/lib/format'
 import type { LeaderboardEntry } from '@/types/domain'
+import { leaderboardEntryKey } from '@/features/live/leaderboard-key'
 
 /** 방금 무슨 일이 있었는지. 배지로 잠깐 보여준다. */
 type Movement = { kind: 'up' | 'down' | 'new'; delta: number }
@@ -21,8 +22,8 @@ const MOVEMENT_MS = 2600
  * 2. 올라온 사람은 튕기며 잠깐 밝아지고, 밀려난 사람은 한 박자 늦게 내려앉는다
  * 3. `▲2` `▼1` `NEW` 배지가 몇 초간 붙는다
  *
- * 위치를 **닉네임**으로 기억하는 게 핵심이다. 등수로 기억하면 "1등 칸"의
- * 좌표는 늘 같아서 움직일 거리가 0 이 되고, 결국 글자만 바뀐다.
+ * 위치를 **bidderKey**로 기억하는 게 핵심이다. 등수로 기억하면 "1등 칸"의
+ * 좌표는 늘 같고, 닉네임으로 기억하면 동명이인 두 줄이 하나로 합쳐진다.
  */
 export function LeaderboardRows({
   entries,
@@ -33,7 +34,7 @@ export function LeaderboardRows({
 }) {
   const top3 = entries.slice(0, 3)
   const signature = top3
-    .map((entry) => `${entry.nickname}:${entry.rank}`)
+    .map((entry) => `${leaderboardEntryKey(entry)}:${entry.rank}`)
     .join('|')
 
   const rows = useRef(new Map<string, HTMLLIElement>())
@@ -54,23 +55,26 @@ export function LeaderboardRows({
     const changed = new Map<string, Movement>()
     if (!first) {
       top3.forEach((entry) => {
-        const before = ranks.current.get(entry.nickname)
+        const key = leaderboardEntryKey(entry)
+        const before = ranks.current.get(key)
         if (before === undefined) {
-          changed.set(entry.nickname, { kind: 'new', delta: 0 })
+          changed.set(key, { kind: 'new', delta: 0 })
         } else if (before > entry.rank) {
-          changed.set(entry.nickname, {
+          changed.set(key, {
             kind: 'up',
             delta: before - entry.rank,
           })
         } else if (before < entry.rank) {
-          changed.set(entry.nickname, {
+          changed.set(key, {
             kind: 'down',
             delta: entry.rank - before,
           })
         }
       })
     }
-    ranks.current = new Map(top3.map((entry) => [entry.nickname, entry.rank]))
+    ranks.current = new Map(
+      top3.map((entry) => [leaderboardEntryKey(entry), entry.rank]),
+    )
 
     rows.current.forEach((element, nickname) => {
       /*
@@ -195,16 +199,17 @@ export function LeaderboardRows({
   return (
     <ol className="space-y-1">
       {top3.map((entry) => {
+        const entryKey = leaderboardEntryKey(entry)
         const first = entry.rank === 1
-        const move = movements.get(entry.nickname)
+        const move = movements.get(entryKey)
         const rising = move?.kind === 'up' || move?.kind === 'new'
 
         return (
           <li
-            key={entry.nickname}
+            key={entryKey}
             ref={(element) => {
-              if (element) rows.current.set(entry.nickname, element)
-              else rows.current.delete(entry.nickname)
+              if (element) rows.current.set(entryKey, element)
+              else rows.current.delete(entryKey)
             }}
             className={cn(
               'flex h-[30px] items-center gap-2 rounded-lg px-2',

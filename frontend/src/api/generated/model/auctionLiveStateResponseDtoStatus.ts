@@ -10,9 +10,11 @@
  * OpenAPI spec version: v1
  */
 
-export interface AuctionItemCloseEarlyResponseDto {
-  auctionItemId?: number;
-  endAt?: string;
-  remainingSeconds?: number;
-  revision?: number;
-}
+export type AuctionLiveStateResponseDtoStatus = typeof AuctionLiveStateResponseDtoStatus[keyof typeof AuctionLiveStateResponseDtoStatus];
+
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AuctionLiveStateResponseDtoStatus = {
+  IN_PROGRESS: 'IN_PROGRESS',
+  CLOSING: 'CLOSING',
+} as const;
