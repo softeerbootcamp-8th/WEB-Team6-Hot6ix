@@ -46,6 +46,10 @@ import {
 import { toBidErrorMessage } from '@/features/live/bid-error'
 import { createBidRequestIdTracker } from '@/features/live/bid-request-id'
 import {
+  createOwnBidTracker,
+  trackOwnBidAttempt,
+} from '@/features/live/own-bid-tracker'
+import {
   sellerActionMessageByCode,
   toSellerActionErrorMessage,
 } from '@/features/live/seller-action-error'
@@ -176,10 +180,7 @@ function LiveRoomPage() {
    * 서버 조회로 받은 리더보드는 서버가 판정한 `isMe` 를 그대로 쓴다. 이건 다음
    * 응답이 오기 전까지 덧칠한 줄에만 쓰인다.
    */
-  const myBidsRef = useRef<Set<string>>(new Set())
-  const rememberMyBid = (itemId: number, amount: number) => {
-    myBidsRef.current.add(`${itemId}:${amount}`)
-  }
+  const ownBids = useRef(createOwnBidTracker()).current
 
   const [keyword, setKeyword] = useState('')
   const [panel, setPanel] = useState<RightPanel>('leaderboard')
@@ -483,9 +484,7 @@ function LiveRoomPage() {
                         rank: 1,
                         nickname: payload.bidderNickname,
                         amount: payload.bidPrice,
-                        isMe: myBidsRef.current.has(
-                          `${payload.itemId}:${payload.bidPrice}`,
-                        ),
+                        isMe: ownBids.has(payload.itemId, payload.bidPrice),
                       },
                       ...item.leaderboard.filter(
                         (entry) => entry.nickname !== payload.bidderNickname,
@@ -667,7 +666,7 @@ function LiveRoomPage() {
           break
       }
     },
-    [roomItems, shareCode, queryClient],
+    [roomItems, shareCode, queryClient, ownBids],
   )
 
   const { status } = useRealtimeStatus(shareCode, handleSseEvent)
@@ -1172,14 +1171,14 @@ function LiveRoomPage() {
 
     try {
       const requestId = bidRequestIds.acquire(detailItem.id, detailAmount)
-      await placeBid.mutateAsync({
-        auctionItemId: detailItem.id,
-        data: { amount: detailAmount },
-        headers: { 'Idempotency-Key': requestId },
-      })
+      await trackOwnBidAttempt(ownBids, detailItem.id, detailAmount, () =>
+        placeBid.mutateAsync({
+          auctionItemId: detailItem.id,
+          data: { amount: detailAmount },
+          headers: { 'Idempotency-Key': requestId },
+        }),
+      )
       bidRequestIds.complete(requestId)
-
-      rememberMyBid(detailItem.id, detailAmount)
 
       // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       setDetailFeedback({
@@ -1190,7 +1189,7 @@ function LiveRoomPage() {
         description: `${detailItem.name} · ${formatWon(detailAmount)}`,
         motion: 'bidAccepted',
       })
-      refreshItems(detailItem.id)
+      // MySQL 반영은 비동기다. 즉시 재조회해 먼저 온 SSE 상태를 되돌리지 않는다.
     } catch (error) {
       const { title, description } = toBidErrorMessage(error)
       setDetailFeedback({ tone: 'error', message: `${title}. ${description}` })
@@ -1353,21 +1352,21 @@ function LiveRoomPage() {
 
     try {
       const requestId = bidRequestIds.acquire(item.id, amount)
-      await placeBid.mutateAsync({
-        auctionItemId: item.id,
-        data: { amount },
-        headers: { 'Idempotency-Key': requestId },
-      })
+      await trackOwnBidAttempt(ownBids, item.id, amount, () =>
+        placeBid.mutateAsync({
+          auctionItemId: item.id,
+          data: { amount },
+          headers: { 'Idempotency-Key': requestId },
+        }),
+      )
       bidRequestIds.complete(requestId)
-
-      rememberMyBid(item.id, amount)
 
       // 서버가 확정해 준 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       toast.success('입찰이 등록됐어요', {
         description: `${item.name} · ${formatWon(amount)}`,
         motion: 'bidAccepted',
       })
-      refreshItems(item.id)
+      // MySQL 반영은 비동기다. 즉시 재조회해 먼저 온 SSE 상태를 되돌리지 않는다.
     } catch (error) {
       const { title, description } = toBidErrorMessage(error)
       toast.error(title, { description })
