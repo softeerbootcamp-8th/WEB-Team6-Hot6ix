@@ -10,7 +10,32 @@ import { useGetDeals } from '@/api/generated/거래-내역/거래-내역'
 import { toDeals } from '@/features/trades/adapt-deal'
 import { cn } from '@/lib/utils'
 import { formatDate, formatWon } from '@/lib/format'
-import type { RoomResult } from '@/features/live/adapt-result'
+import { toast } from '@/lib/toast'
+import type { ItemResult, RoomResult } from '@/features/live/adapt-result'
+
+/**
+ * 낙찰자 줄 뒤에 내 입찰 결과를 덧붙인다.
+ *
+ * 서버는 내 순위(`myRank`)와 내가 부른 최고가(`myAmount`)를 주는데 화면 어디에서도
+ * 쓰지 않아서, 결과를 열어도 내가 입찰했던 물품인지 알 수 없었다.
+ * 내가 낙찰받은 줄은 `내 낙찰` 알약이 이미 있으므로 겹쳐 적지 않는다.
+ */
+function winnerLine(item: ItemResult, fallback: string): string {
+  const winner = item.winnerNickname ?? fallback
+  if (item.isMyWin || item.myRank == null) return winner
+
+  const amount = item.myAmount == null ? '' : ` ${formatWon(item.myAmount)}`
+  return `${winner} · 내 입찰 ${item.myRank}위${amount}`
+}
+
+/**
+ * 데스크톱 표에서 쓰는 짧은 표기. 그쪽 낙찰자 칸은 머리글이 "낙찰자"라 내 입찰을
+ * 같이 적으면 뜻이 어긋나서, 물품명 옆에 알약으로 붙인다.
+ */
+function myBidLabel(item: ItemResult): string | null {
+  if (item.isMyWin || item.myRank == null) return null
+  return `내 입찰 ${item.myRank}위`
+}
 
 /**
  * 종료된 경매방 (Figma `WEB-20 · 구매자 · 종료된 경매방`).
@@ -43,7 +68,26 @@ function ResultRow({
   className?: string
   children: ReactNode
 }) {
-  if (!canLink) return <div className={className}>{children}</div>
+  /*
+   * 볼 수 없는 줄도 누를 수는 있게 두고 이유를 알린다. 예전처럼 `div` 로 두면
+   * 눌러도 아무 반응이 없어서 고장난 것처럼 보인다. 링크로 열어 주면 서버가
+   * 403 을 내서 "내 거래가 아니에요" 화면까지 갔다가 돌아와야 한다.
+   */
+  if (!canLink)
+    return (
+      <button
+        type="button"
+        onClick={() =>
+          toast.info('거래 당사자만 볼 수 있어요', {
+            description:
+              '이 물품의 판매자와 낙찰 후보만 거래 내용을 열 수 있어요.',
+          })
+        }
+        className={cn('w-full text-left', className)}
+      >
+        {children}
+      </button>
+    )
 
   return (
     <Link
@@ -252,8 +296,12 @@ export function ClosedRoomView({
                             </span>
                           )}
                         </span>
-                        <span className="mt-0.5 block truncate text-[11px] font-medium text-neutral-tertiary">
-                          {item.winnerNickname ?? '낙찰자 없음'}
+                        {/*
+                          내 입찰까지 붙으면 한 줄에 안 들어가서 금액이 잘린다.
+                          잘라 버리는 것보다 두 줄로 접히는 편이 낫다.
+                        */}
+                        <span className="mt-0.5 block text-[11px] font-medium break-keep text-neutral-tertiary">
+                          {winnerLine(item, '낙찰자 없음')}
                         </span>
                       </span>
 
@@ -385,7 +433,7 @@ export function ClosedRoomView({
                               {item.productName}
                             </span>
                             <span className="mt-1 block text-[11px] font-medium text-neutral-tertiary">
-                              {item.winnerNickname ?? '입찰자 없음'}
+                              {winnerLine(item, '입찰자 없음')}
                             </span>
                             <span
                               className={cn(
@@ -525,8 +573,15 @@ export function ClosedRoomView({
                               }
                               className="flex h-14 items-center rounded-[10px] border bg-card px-4 text-[13px]"
                             >
-                              <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                                {item.productName}
+                              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                                <span className="min-w-0 truncate font-medium text-foreground">
+                                  {item.productName}
+                                </span>
+                                {myBidLabel(item) && (
+                                  <span className="shrink-0 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-600">
+                                    {myBidLabel(item)}
+                                  </span>
+                                )}
                               </span>
 
                               <span className="hidden w-[120px] shrink-0 truncate font-medium text-neutral-tertiary sm:block">
