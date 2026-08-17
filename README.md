@@ -2,16 +2,16 @@
 
 # UpBid
 
-### 입찰은 빠르게, 낙찰은 정확하게
+### SNS 경매를 위한 실시간 입찰 서비스
 
-링크와 QR 하나로 참여하는 SNS 연계 실시간 경매 서비스
+링크나 QR로 간편하게 참여할 수 있는 SNS 연계 실시간 경매 서비스입니다.
 
 ![UpBid](https://github.com/user-attachments/assets/41de22a8-c9ff-4021-93dd-c0a7ce8162f3)
 
 <table>
   <tr>
     <td align="center" width="240">
-      <b>🛎️&nbsp; 서비스 열기</b><br/>
+      <b>🛎️&nbsp; 서비스</b><br/>
       <a href="https://www.upbid.store">upbid.store</a>
     </td>
     <td align="center" width="240">
@@ -33,81 +33,81 @@
 
 ## 목차
 
-- [프로젝트 소개](#프로젝트-소개)
-- [핵심 기능](#핵심-기능)
-- [서비스 화면](#서비스-화면)
+- [UpBid가 해결하려는 문제](#upbid가-해결하려는-문제)
+- [주요 기능](#주요-기능)
+- [화면 구성](#화면-구성)
 - [기술 스택](#기술-스택)
-- [시스템 구조](#시스템-구조)
-- [문서](#문서)
-- [팀원 소개](#팀원-소개)
-- [실행 방법](#실행-방법)
+- [시스템 구성](#시스템-구성)
+- [관련 문서](#관련-문서)
+- [팀 구성](#팀-구성)
+- [로컬 실행](#로컬-실행)
 
 <br>
 
-## 프로젝트 소개
+## UpBid가 해결하려는 문제
 
-> **인스타/유튜브 라이브 경매에서 댓글과 DM으로 입찰을 관리하고 낙찰자를 선정해야 했던 SNS 경매 운영 과정을 자동화한 서비스**
+인스타그램이나 유튜브 라이브에서는 굿즈와 중고 물품을 판매하기 위한 경매가 자주 열립니다. 경매를 진행할 공간은 이미 있지만, 댓글과 DM만으로 입찰 순서와 낙찰자를 판단해야 한다는 문제가 있습니다.
 
-판매자는 SNS 채널 이동 없이 링크나 QR 코드만 공유하면 경매를 시작할 수 있으며, 입찰 접수, 마감, 낙찰자 선정 과정을 시스템이 자동으로 처리해 경매 운영을 줄이고자 합니다.
+UpBid는 판매자가 직접 확인하던 입찰 순서와 최고가, 마감 시점, 낙찰자를 서버에서 처리합니다.
 
 | | 💬 댓글로 하는 경매 | 🛎️ UpBid |
 | --- | --- | --- |
-| **최고가** | 댓글을 거슬러 올라가 확인 | 화면 위에 고정 |
-| **입찰 순서** | 정렬과 지연으로 순서가 지켜지지 못함 | 서버가 받은 순서로 확정 |
-| **마감** | 판매자가 수동으로 마감 | 서버 시간 기준 자동 |
-| **낙찰자** | 판매자가 최고가 직접 확인 | 최고 입찰자 자동 확정 |
-| **차순위 승계** | 차순위를 다시 찾아 연락 | 기록된 순위로 자동 승계 |
-| **기록** | 별도로 기록을 하지 않으면 사라짐 | 입찰 이력과 결과가 남음 |
+| **최고가 확인** | 이전 댓글을 거슬러 올라가며 확인 | 현재 최고가를 화면 상단에 표시 |
+| **입찰 순서** | 댓글 정렬이나 네트워크 지연에 따라 달라질 수 있음 | 서버에 도착한 순서대로 확정 |
+| **마감 시점** | 판매자가 상황을 보고 직접 결정 | 서버 시간을 기준으로 자동 마감 |
+| **낙찰자 선정** | 최고 입찰 금액과 작성 순서를 직접 대조 | 서버에서 최고 입찰자를 자동 선정 |
+| **차순위 승계** | 차순위 입찰자를 다시 찾아 연락 | 저장된 순위에 따라 차순위 후보로 승계 |
+| **경매 기록** | 별도로 남기지 않으면 사라짐 | 입찰 내역과 최종 결과를 서비스에 보관 |
 
 ![UpBid 핵심 Flow](https://github.com/user-attachments/assets/3ebce61e-d68b-44c9-85aa-13a2544f7af3)
 
-> **판매자가 경매방을 개설해 SNS에 공유하면, 구매자는 공유된 링크를 통해 경매에 참여할 수 있습니다.** 서비스는 입찰 판정, 경매 마감, 낙찰자 선정 등 경매 과정만 지원하며, 실제 거래는 낙찰 이후 판매자와 구매자가 서비스 외부에서 직접 진행합니다.
+판매자가 경매방을 만든 뒤 SNS에 링크나 QR을 공유하면, 구매자는 해당 경매방에 들어와 입찰할 수 있습니다. 입찰 검증과 마감, 낙찰자 선정은 UpBid가 담당하며, 실제 거래는 서비스 밖에서 판매자와 구매자가 진행합니다.
 
 <br>
 
-## 핵심 기능
+## 주요 기능
 
-### ⚡ 링크 하나로 참여
+### 링크와 QR을 이용한 경매 참여
 
 ![링크로 참여](https://github.com/user-attachments/assets/70ed7fc7-3116-4aec-bc03-ef54adb36c8d)
 
-- **링크와 QR을 통해 바로 경매방에 들어올 수 있습니다=.**
-- **비로그인 상태에서 경매를 둘러볼 수 있습니다** (입찰할 때만 로그인을 합니다)
+- 판매자는 경매방 링크와 QR을 만들어 SNS에 바로 공유할 수 있습니다. 외부에 공개되는 주소에는 숫자 PK 대신 `share_code`를 사용합니다.
+- 로그인하지 않은 사용자도 경매방과 판매 물품을 먼저 확인할 수 있습니다. 로그인이 필요한 시점은 입찰할 때이며, 로그인 후에는 기존에 보고 있던 경매방으로 돌아옵니다.
 
-### 🔴 모두가 같은 화면을 봅니다
+### 실시간 입찰 반영
 
 ![동시 입찰](https://github.com/user-attachments/assets/462cf48e-efa6-4a1f-ab09-27fa293c2ddc)
 
-- **입찰이 몰려도 현재가와 리더보드가 접속자 전원에게 같은 순서로 반영됩니다.** 위 화면은 14초 동안 59건이 들어오는 상황입니다
-- 한 경매방에서 물품 최대 3개가 독립적인 현재가와 카운트다운으로 동시에 돕니다
-- SSE로 밀어 주고, 서버가 여러 대여도 Redis Pub/Sub으로 같은 이벤트가 나갑니다
+- 여러 입찰이 동시에 들어와도 현재가와 리더보드는 서버에서 확정한 순서대로 모든 접속자에게 전달됩니다. 위 화면은 14초 동안 59건의 입찰이 발생한 상황입니다.
+- 하나의 경매방에는 최대 3개의 물품을 등록할 수 있으며, 물품마다 현재가와 마감 시간이 독립적으로 관리됩니다.
+- 서버에서 발생한 변경 사항은 SSE로 전달합니다. 서버가 여러 대로 구성된 환경에서는 Redis Pub/Sub을 통해 각 서버에 같은 이벤트를 전파합니다.
 
-### 🎯 마감은 서버가 정합니다
+### 서버 시간을 기준으로 한 마감
 
 ![Soft Close](https://github.com/user-attachments/assets/9aca3784-d250-43e4-9deb-dcd702dd2f86)
 
-- **사용자 기기가 아니라 서버 시간 기준**으로 카운트다운하고 마감합니다
-- **Soft Close.** 마감 직전에 입찰이 들어오면 그 물품만 자동으로 연장합니다. 위 화면에서 60초가 늘어납니다
-- 현재가 이하, 입찰 단위 불일치, 마감 후, 판매자 본인 입찰은 서버가 거절합니다
+- 경매 종료 시점은 사용자 기기의 시간이 아닌 서버 시간을 기준으로 계산합니다.
+- 마감 직전에 입찰이 들어오면 해당 물품의 종료 시간만 자동으로 연장하는 Soft Close 방식을 적용했습니다. 위 화면에서는 입찰 후 남은 시간이 60초로 연장됩니다.
+- 현재가 이하의 입찰, 입찰 단위에 맞지 않는 금액, 마감 이후의 입찰, 판매자 본인의 입찰은 서버에서 거절합니다.
 
-### 📋 불발되면 차순위로 넘어갑니다
+### 차순위 낙찰 후보 승계
 
 ![거래 성사와 실패](https://github.com/user-attachments/assets/c67db920-ff78-4aca-9538-4270e3590a02)
 
-- **낙찰 후보를 순위대로 남깁니다.** 1순위 거래가 깨지면 2순위에게 자동으로 넘어갑니다
-- 물품별 입찰 이력이 그대로 남아서, 왜 그 사람이 낙찰됐는지 확인할 수 있습니다
+- 경매가 끝나면 물품별 낙찰 후보를 입찰 순위대로 저장합니다. 1순위 후보와의 거래가 성사되지 않으면 다음 순위 후보에게 거래 기회가 넘어갑니다.
+- 물품별 입찰 내역이 함께 보관되기 때문에 낙찰 후보가 결정된 과정을 확인할 수 있습니다.
 
 <br>
 
-## 서비스 화면
+## 화면 구성
 
-모바일에서도 같은 경매방에 그대로 들어옵니다.
+PC와 모바일에서 같은 경매방에 접속할 수 있으며, 화면 크기에 맞춰 동일한 기능을 제공합니다.
 
 <table>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/01d50d20-5ec7-4bb0-b90a-8260b977721e" width="230" alt="경매방 입장" /><br/><b>경매방 입장</b><br/><sub>동의 한 번으로 들어옵니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/8325487d-2520-4ffe-9c01-3d65c3a0c638" width="230" alt="경매방" /><br/><b>경매방</b><br/><sub>물품과 실시간 이벤트를 함께 봅니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/98066282-f4e8-448e-85c4-9ffebab438e2" width="230" alt="빠른 입찰" /><br/><b>빠른 입찰</b><br/><sub>바텀시트에서 진행 중인 물품에 바로 입찰합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/01d50d20-5ec7-4bb0-b90a-8260b977721e" width="230" alt="경매방 입장" /><br/><b>경매방 입장</b><br/><sub>입장 동의를 마치면 경매방에 참여합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/8325487d-2520-4ffe-9c01-3d65c3a0c638" width="230" alt="경매방" /><br/><b>경매방</b><br/><sub>판매 물품과 실시간 이벤트를 함께 확인합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/98066282-f4e8-448e-85c4-9ffebab438e2" width="230" alt="빠른 입찰" /><br/><b>빠른 입찰</b><br/><sub>진행 중인 물품을 바텀시트에서 선택해 입찰합니다</sub></td>
   </tr>
 </table>
 
@@ -116,13 +116,13 @@
 
 <br/>
 
-### 입찰
+### 입찰 과정
 
 ![입찰하기](https://github.com/user-attachments/assets/934160d1-6e10-4b2d-857b-616bb272cc40)
 
-**입찰 단위 버튼으로 금액을 올리고, 확정 전에 한 번 더 확인합니다.** 승인되면 이벤트 피드와 리더보드, 현재가가 접속 중인 모든 참여자에게 즉시 반영됩니다.
+입찰 단위 버튼으로 금액을 조정한 뒤, 최종 확인 화면에서 입찰을 확정합니다. 서버가 입찰을 승인하면 이벤트 피드와 리더보드, 현재가가 갱신되고 현재 접속 중인 모든 참여자에게 같은 내용이 전달됩니다.
 
-### 판매자
+### 판매자 기능
 
 <table>
   <tr>
@@ -130,33 +130,33 @@
     <td width="50%"><img src="https://github.com/user-attachments/assets/3d5defaa-8392-4498-ac24-32224eb29868" alt="경매방 종료" /></td>
   </tr>
   <tr>
-    <td align="center"><b>마감 앞당기기</b><br/><sub>남길 시간을 지정해 앞당깁니다. 그 사이 입찰이 들어오면 다시 연장됩니다</sub></td>
-    <td align="center"><b>경매방 종료</b><br/><sub>낙찰과 유찰 건수, 총 낙찰액을 정산해 결과 화면으로 남깁니다</sub></td>
+    <td align="center"><b>마감 앞당기기</b><br/><sub>남길 시간을 지정해 마감을 앞당깁니다. 직전에 입찰이 들어오면 다시 연장됩니다</sub></td>
+    <td align="center"><b>경매방 종료</b><br/><sub>낙찰 및 유찰 건수와 총 낙찰 금액을 집계해 결과 화면에 표시합니다</sub></td>
   </tr>
 </table>
 
-### 모바일
+### 모바일 화면
 
 <table>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/9f1ac88e-4b98-429e-80c1-b4ec9b083735" width="230" alt="내 경매방" /><br/><b>내 경매방</b><br/><sub>만든 방과 참여한 방을 함께 봅니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f9d94d90-905b-4b3c-8fe9-0b031fdc5f2d" width="230" alt="입찰 규칙" /><br/><b>입찰 규칙</b><br/><sub>입찰 단위와 마감 연장 조건을 정합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0cc4836d-50f6-4533-a16b-38e41c3f17b9" width="230" alt="판매 물품 선택" /><br/><b>판매 물품 선택</b><br/><sub>등록해 둔 상품에서 골라 담습니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/9f1ac88e-4b98-429e-80c1-b4ec9b083735" width="230" alt="내 경매방" /><br/><b>내 경매방</b><br/><sub>만든 경매방과 참여한 경매방을 한곳에서 확인합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f9d94d90-905b-4b3c-8fe9-0b031fdc5f2d" width="230" alt="입찰 규칙" /><br/><b>입찰 규칙</b><br/><sub>입찰 단위와 마감 연장 조건을 설정합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0cc4836d-50f6-4533-a16b-38e41c3f17b9" width="230" alt="판매 물품 선택" /><br/><b>판매 물품 선택</b><br/><sub>등록한 상품 중 경매에 올릴 물품을 선택합니다</sub></td>
   </tr>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/99ddd58a-e0c5-40a9-961e-fbbf1407e861" width="230" alt="공유 QR" /><br/><b>공유 QR</b><br/><sub>링크와 QR을 그 자리에서 만듭니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/1174c5ed-7648-4e06-a31b-d077432989e7" width="230" alt="물품 상세" /><br/><b>물품 상세</b><br/><sub>설명과 현재가, 남은 시간을 봅니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/28092082-a80c-4df7-923e-eadb1db6906a" width="230" alt="리더보드" /><br/><b>리더보드</b><br/><sub>물품별 순위와 내 위치를 봅니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/99ddd58a-e0c5-40a9-961e-fbbf1407e861" width="230" alt="공유 QR" /><br/><b>공유 QR</b><br/><sub>경매방 링크와 QR을 생성해 공유합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/1174c5ed-7648-4e06-a31b-d077432989e7" width="230" alt="물품 상세" /><br/><b>물품 상세</b><br/><sub>상품 설명과 현재가, 남은 시간을 확인합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/28092082-a80c-4df7-923e-eadb1db6906a" width="230" alt="리더보드" /><br/><b>리더보드</b><br/><sub>물품별 입찰 순위와 사용자의 현재 순위를 확인합니다</sub></td>
   </tr>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f522ba6a-daac-451c-8ea9-8bd927f071a6" width="230" alt="입찰 확정" /><br/><b>입찰 확정</b><br/><sub>금액을 확인하고 확정합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/ee6a0056-6764-4fc9-81a1-2715127700f0" width="230" alt="입찰 등록" /><br/><b>입찰 등록</b><br/><sub>서버가 승인한 뒤에 확정으로 표시합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/fba1cec2-3bc0-4963-ab8e-c6b0a2484646" width="230" alt="마감 앞당기기" /><br/><b>마감 앞당기기</b><br/><sub>판매자가 남길 시간을 정합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/f522ba6a-daac-451c-8ea9-8bd927f071a6" width="230" alt="입찰 확정" /><br/><b>입찰 확정</b><br/><sub>제출하기 전에 입찰 금액을 다시 확인합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/ee6a0056-6764-4fc9-81a1-2715127700f0" width="230" alt="입찰 등록" /><br/><b>입찰 등록</b><br/><sub>서버가 승인한 이후에만 등록 완료로 표시합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/fba1cec2-3bc0-4963-ab8e-c6b0a2484646" width="230" alt="마감 앞당기기" /><br/><b>마감 앞당기기</b><br/><sub>판매자가 남길 시간을 지정해 마감 시간을 조정합니다</sub></td>
   </tr>
   <tr>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0e08058d-a615-4591-b35b-0fe29342be0d" width="230" alt="종료 결과" /><br/><b>종료 결과</b><br/><sub>낙찰과 유찰, 총 낙찰액을 한 화면에 정리합니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/09df720d-ffd2-4d72-b61c-b3a00e6a878f" width="230" alt="낙찰 후보" /><br/><b>낙찰 후보</b><br/><sub>순위대로 남겨 두고 차순위로 넘깁니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/74c56aa4-e01f-433e-918b-51bf8de09f0d" width="230" alt="거래 완료" /><br/><b>거래 완료</b><br/><sub>성사된 거래를 기록으로 남깁니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/0e08058d-a615-4591-b35b-0fe29342be0d" width="230" alt="종료 결과" /><br/><b>종료 결과</b><br/><sub>낙찰 및 유찰 건수와 총 낙찰 금액을 정리합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/09df720d-ffd2-4d72-b61c-b3a00e6a878f" width="230" alt="낙찰 후보" /><br/><b>낙찰 후보</b><br/><sub>낙찰 후보의 순위와 차순위 승계를 관리합니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/74c56aa4-e01f-433e-918b-51bf8de09f0d" width="230" alt="거래 완료" /><br/><b>거래 완료</b><br/><sub>판매자와 구매자 사이에 성사된 거래를 기록합니다</sub></td>
   </tr>
 </table>
 
@@ -169,18 +169,18 @@
 | 영역 | 스택 |
 | --- | --- |
 | **Backend** | ![Java 21](https://img.shields.io/badge/Java%2021-007396?style=flat-square&logo=openjdk&logoColor=white) ![Spring Boot 4.x](https://img.shields.io/badge/Spring%20Boot%204.x-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Spring Data JPA](https://img.shields.io/badge/Spring%20Data%20JPA-6DB33F?style=flat-square&logo=spring&logoColor=white) ![QueryDSL](https://img.shields.io/badge/QueryDSL-0769AD?style=flat-square) |
-| **Database** | ![MySQL 8.4](https://img.shields.io/badge/MySQL%208.4-4479A1?style=flat-square&logo=mysql&logoColor=white) ![Redis](https://img.shields.io/badge/Redis-FF4438?style=flat-square&logo=redis&logoColor=white) | ![Flyway](https://img.shields.io/badge/Flyway-CC0200?style=flat-square&logo=flyway&logoColor=white) |
+| **Database** | ![MySQL 8.4](https://img.shields.io/badge/MySQL%208.4-4479A1?style=flat-square&logo=mysql&logoColor=white) ![Redis](https://img.shields.io/badge/Redis-FF4438?style=flat-square&logo=redis&logoColor=white) ![Flyway](https://img.shields.io/badge/Flyway-CC0200?style=flat-square&logo=flyway&logoColor=white) |
 | **실시간 통신** | ![SSE](https://img.shields.io/badge/SSE-5B21B6?style=flat-square) ![Redis Pub%2FSub](https://img.shields.io/badge/Redis%20Pub%2FSub-FF4438?style=flat-square&logo=redis&logoColor=white) ![Redis Stream](https://img.shields.io/badge/Redis%20Stream-FF4438?style=flat-square&logo=redis&logoColor=white) |
 | **Frontend** | ![React 19](https://img.shields.io/badge/React%2019-61DAFB?style=flat-square&logo=react&logoColor=black) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white) ![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white) ![TanStack Router%2FQuery](https://img.shields.io/badge/TanStack%20Router%2FQuery-FF4154?style=flat-square&logo=reactquery&logoColor=white) ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white) ![shadcn%2Fui](https://img.shields.io/badge/shadcn%2Fui-000000?style=flat-square&logo=shadcnui&logoColor=white) ![Orval](https://img.shields.io/badge/Orval-1E1E1E?style=flat-square) |
 | **Infra** | ![AWS](https://img.shields.io/badge/AWS-232F3E?style=flat-square&logo=amazonwebservices&logoColor=white) ![EC2](https://img.shields.io/badge/EC2-FF9900?style=flat-square&logo=amazonec2&logoColor=white) ![RDS](https://img.shields.io/badge/RDS-527FFF?style=flat-square&logo=amazonrds&logoColor=white) ![S3](https://img.shields.io/badge/S3-569A31?style=flat-square&logo=amazons3&logoColor=white) ![CloudFront](https://img.shields.io/badge/CloudFront-8C4FFF?style=flat-square&logo=amazoncloudfront&logoColor=white) ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white) ![Nginx](https://img.shields.io/badge/Nginx-009639?style=flat-square&logo=nginx&logoColor=white) ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white) |
 | **관측** | ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white) ![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat-square&logo=grafana&logoColor=white) ![Loki](https://img.shields.io/badge/Loki-F46800?style=flat-square&logo=grafana&logoColor=white) ![Slack](https://img.shields.io/badge/Slack-4A154B?style=flat-square&logo=slack&logoColor=white) |
 | **Test · 측정** | ![JUnit 5](https://img.shields.io/badge/JUnit%205-25A162?style=flat-square&logo=junit5&logoColor=white) ![Testcontainers](https://img.shields.io/badge/Testcontainers-291A54?style=flat-square&logo=testcontainers&logoColor=white) ![k6](https://img.shields.io/badge/k6-7D64FF?style=flat-square&logo=k6&logoColor=white) |
 
-주요 선택의 근거는 [고른 것들](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-기술-스택)과 [기술 선택의 변화](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회고-기술-선택의-변화)에 있습니다. 처음 정한 것과 최종이 달라진 항목을 왜 바꿨는지까지 정리했습니다.
+기술을 선택한 이유는 Wiki의 [고른 것들](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-기술-스택)과 [기술 선택의 변화](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회고-기술-선택의-변화)에 정리했습니다. 프로젝트를 시작할 때 선택한 기술과 최종 구성이 달라진 경우에는 변경한 이유도 함께 기록했습니다.
 
 <br>
 
-## 시스템 구조
+## 시스템 구성
 
 <img width="5136" height="1920" alt="image (1)" src="https://github.com/user-attachments/assets/5a377051-dc0c-4878-b49b-5285655bace2" />
 
@@ -189,7 +189,7 @@
 
 ![ERD](https://github.com/user-attachments/assets/da9e92ab-a424-4625-ba80-852f8491a217)
 
-원본은 [링크](https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY)에 있습니다.
+ERD 원본은 [ERDCloud](https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY)에서 확인할 수 있습니다.
 
 ### 디렉터리 구조
 
@@ -213,15 +213,15 @@
         └── lib/                    session, toast, format, route-guards
 ```
 
-**도메인마다 `controller → service → repository`를 그대로 반복합니다.** 다만 입찰과 마감처럼 동시성이 걸리는 도메인은 `store`를 하나 더 두어, Redis Lua 로 판정하는 부분을 Service 에서 분리했습니다.
+대부분의 도메인은 `controller → service → repository` 구조를 따릅니다. 입찰과 마감처럼 동시성 처리가 필요한 영역에는 `store` 계층을 추가해 Redis Lua에서 수행하는 판정 로직을 Service와 분리했습니다.
 
 <br>
 
-## 문서
+## 관련 문서
 
 ### 기술 문서
 
-**[GitHub Wiki](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki)에 있습니다.** "무엇을 만들었나"보다 "왜 이렇게 만들었나"를 남긴 아카이브입니다.
+기술 문서는 [GitHub Wiki](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki)에 정리했습니다. 구현 결과뿐 아니라 기술을 선택한 이유와 변경 과정도 함께 기록하고 있습니다.
 
 | 분류 | 내용 |
 | --- | --- |
@@ -251,7 +251,7 @@
 
 <br>
 
-## 팀원 소개
+## 팀 구성
 
 <table>
   <tr>
@@ -277,13 +277,13 @@
   </tr>
 </table>
 
-역할을 어떻게 나눴는지는 [누가 뭐를 맡았나](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-팀원-및-역할)에 있습니다.
+구체적인 역할 분담은 Wiki의 [누가 뭐를 맡았나](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-팀원-및-역할)에서 확인할 수 있습니다.
 
 <br>
 
-## 실행 방법
+## 로컬 실행
 
-Docker Desktop과 Java 21, pnpm이 필요합니다.
+로컬 실행에는 Docker Desktop, Java 21, pnpm이 필요합니다.
 
 ```bash
 # 1. 백엔드 (MySQL 컨테이너 + 애플리케이션)
@@ -297,8 +297,8 @@ pnpm install
 pnpm dev
 ```
 
-`http://localhost:5173`으로 접속합니다. 백엔드는 8080, Swagger UI는 `http://localhost:8080/swagger-ui/index.html`입니다.
+프론트엔드는 `http://localhost:5173`, 백엔드는 8080 포트에서 실행됩니다. 로컬 Swagger UI는 `http://localhost:8080/swagger-ui/index.html`에서 확인할 수 있습니다.
 
-**Redis는 별도로 띄워야 합니다.** 기본값은 `localhost:6379`이고, 세션과 입찰 판정, 마감 예약이 여기에 의존합니다.
+Redis는 별도로 실행해야 합니다. 기본 연결 주소는 `localhost:6379`이며, 세션 관리와 입찰 판정, 마감 예약 기능이 Redis에 의존합니다.
 
-macOS에서는 `backend/UpBid 개발환경 켜기.command`를 더블클릭하면 MySQL과 Grafana, 프론트, 백엔드를 한 번에 띄웁니다. 자세한 내용은 [로컬에서 띄우기](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Dev-로컬-실행-방법)를 참고하세요.
+macOS에서는 `backend/UpBid 개발환경 켜기.command` 파일을 실행하면 MySQL, Grafana, 프론트엔드, 백엔드를 한 번에 시작할 수 있습니다. 자세한 실행 방법은 Wiki의 [로컬에서 띄우기](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Dev-로컬-실행-방법)에 정리되어 있습니다.
