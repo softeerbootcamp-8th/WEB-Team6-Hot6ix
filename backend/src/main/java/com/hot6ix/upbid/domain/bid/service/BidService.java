@@ -33,7 +33,7 @@ public class BidService {
             String requestId) {
 
         RedisBidDecision decision = auctionRedisStore.evaluateBid(
-                auctionItemId, requestId, bidderUserId, amount, clock.millis());
+                auctionItemId, requestId, bidderUserId, amount);
 
         return switch (decision) {
             case RedisBidDecision.Accepted accepted -> {

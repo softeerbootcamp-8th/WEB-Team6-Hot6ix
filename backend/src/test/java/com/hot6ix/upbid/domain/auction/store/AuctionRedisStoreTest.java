@@ -123,7 +123,7 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
 
         assertThat(store.seed(seed(List.of()))).isTrue();
 
-        RedisBidDecision decision = store.evaluateBid(ITEM_ID, "request-1", 11L, 10_000L, 0L);
+        RedisBidDecision decision = store.evaluateBid(ITEM_ID, "request-1", 11L, 10_000L);
 
         assertThat(decision).isEqualTo(
                 new RedisBidDecision.Rejected(RedisBidDecision.Reason.TERMS_NOT_AGREED));

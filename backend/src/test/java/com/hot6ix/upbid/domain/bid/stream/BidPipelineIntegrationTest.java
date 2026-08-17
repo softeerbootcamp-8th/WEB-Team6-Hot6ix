@@ -9,6 +9,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
 import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.repository.AuctionRoomRepository;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisKeys;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisSeed;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisParticipant;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
@@ -158,7 +159,7 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
 
         RedisBidDecision decision = store.evaluateBid(
                 fixture.item().getAuctionItemId(), "pipeline-request-1",
-                fixture.bidder().getUserId(), 10_000L, System.currentTimeMillis());
+                fixture.bidder().getUserId(), 10_000L);
 
         assertThat(decision).isInstanceOf(RedisBidDecision.Accepted.class);
         assertThat(bidRepository.findByRequestId("pipeline-request-1")).isEmpty();
@@ -183,7 +184,7 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
         seed(fixture);
         RedisBidDecision.Accepted accepted = (RedisBidDecision.Accepted) store.evaluateBid(
                 fixture.item().getAuctionItemId(), "pipeline-ack-gap",
-                fixture.bidder().getUserId(), 10_000L, System.currentTimeMillis());
+                fixture.bidder().getUserId(), 10_000L);
 
         List<MapRecord<String, Object, Object>> delivered = redis.opsForStream().read(
                 Consumer.from(GROUP, "crashed-writer"),
@@ -209,7 +210,7 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
         seed(fixture);
         Callable<RedisBidDecision> request = () -> store.evaluateBid(
                 fixture.item().getAuctionItemId(), "pipeline-duplicate",
-                fixture.bidder().getUserId(), 10_000L, System.currentTimeMillis());
+                fixture.bidder().getUserId(), 10_000L);
 
         try (var executor = Executors.newFixedThreadPool(8)) {
             List<RedisBidDecision> decisions = executor.invokeAll(java.util.Collections.nCopies(20, request))
@@ -272,15 +273,23 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
                 .nickname("두 번째 입찰자")
                 .build());
         createdUserIds.add(secondBidder.getUserId());
-        store.addParticipant(fixture.room().getAuctionRoomId(), secondBidder.getUserId());
+        store.addParticipant(
+                fixture.room().getAuctionRoomId(),
+                secondBidder.getUserId(),
+                secondBidder.getNickname());
 
         store.evaluateBid(
                 fixture.item().getAuctionItemId(), "pipeline-first",
-                fixture.bidder().getUserId(), 10_000L, System.currentTimeMillis());
-        RedisBidDecision.Accepted second = (RedisBidDecision.Accepted) store.evaluateBid(
+                fixture.bidder().getUserId(), 10_000L);
+        assertThat(store.evaluateBid(
                 fixture.item().getAuctionItemId(), "pipeline-second",
-                secondBidder.getUserId(), 20_000L, System.currentTimeMillis());
-        store.requestNaturalClose(fixture.item().getAuctionItemId(), second.endAtMillis());
+                secondBidder.getUserId(), 20_000L))
+                .isInstanceOf(RedisBidDecision.Accepted.class);
+        redis.opsForHash().put(
+                AuctionRedisKeys.item(fixture.item().getAuctionItemId()),
+                "endAt",
+                String.valueOf(System.currentTimeMillis() - 1_000L));
+        store.requestNaturalClose(fixture.item().getAuctionItemId());
 
         consumer().poll();
 
@@ -301,10 +310,15 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
                 "requestId", "malformed-with-missing-fields")).withStreamKey(STREAM));
         Fixture fixture = fixture();
         seed(fixture);
-        RedisBidDecision.Accepted accepted = (RedisBidDecision.Accepted) store.evaluateBid(
+        assertThat(store.evaluateBid(
                 fixture.item().getAuctionItemId(), "pipeline-after-malformed",
-                fixture.bidder().getUserId(), 10_000L, System.currentTimeMillis());
-        store.requestNaturalClose(fixture.item().getAuctionItemId(), accepted.endAtMillis());
+                fixture.bidder().getUserId(), 10_000L))
+                .isInstanceOf(RedisBidDecision.Accepted.class);
+        redis.opsForHash().put(
+                AuctionRedisKeys.item(fixture.item().getAuctionItemId()),
+                "endAt",
+                String.valueOf(System.currentTimeMillis() - 1_000L));
+        store.requestNaturalClose(fixture.item().getAuctionItemId());
 
         assertThatThrownBy(() -> consumer().poll()).isInstanceOf(RuntimeException.class);
 

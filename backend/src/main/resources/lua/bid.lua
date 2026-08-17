@@ -6,7 +6,6 @@
 -- ARGV[1] requestId
 -- ARGV[2] bidderUserId
 -- ARGV[3] amount
--- ARGV[4] arrivedAt epoch millis
 
 local requestId = ARGV[1]
 local bidderId = ARGV[2]
@@ -114,7 +113,8 @@ local total = requireHashInteger(KEYS[1], 'totalExtensionSeconds', 'auction item
 local maximum = requireHashInteger(KEYS[1], 'maxTotalExtensionSeconds', 'auction item')
 local leaderUserId = redis.call('HGET', KEYS[1], 'leaderUserId')
 local amount = parseInteger(amountArgument, 'bid amount')
-local arrivedAt = parseInteger(ARGV[4], 'bid arrivedAt')
+local redisTime = redis.call('TIME')
+local decisionAt = tonumber(redisTime[1]) * 1000 + math.floor(tonumber(redisTime[2]) / 1000)
 
 if bidIncrement <= 0 then
     error('auction item.bidIncrement must be positive')
@@ -140,7 +140,7 @@ end
 local bidderNickname = requireHashValue(
         participantNicknamesKey, bidderId, 'auction participant nicknames')
 
-if arrivedAt >= endAt then
+if decisionAt >= endAt then
     return {'REJECTED', 'ITEM_CLOSED'}
 end
 
@@ -162,9 +162,8 @@ if (amount - startingPrice) % bidIncrement ~= 0 then
     return {'REJECTED', 'INVALID_BID_UNIT'}
 end
 
-local redisTime = redis.call('TIME')
-local acceptedAt = tonumber(redisTime[1]) * 1000 + math.floor(tonumber(redisTime[2]) / 1000)
 local extendedSeconds = 0
+local acceptedAt = decisionAt
 
 if trigger ~= nil and extend ~= nil
         and acceptedAt >= endAt - trigger * 1000

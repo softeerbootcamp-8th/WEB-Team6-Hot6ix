@@ -1,7 +1,7 @@
 -- 자연 마감 또는 판매자 마감 앞당기기와 Stream 기록을 한 번에 수행한다.
 -- KEYS[1] item Hash, KEYS[2] bid/closing Stream
 -- ARGV[1] NATURAL | SELLER_ADVANCE
--- ARGV[2] NATURAL이면 poll 시각 epoch millis, SELLER_ADVANCE면 요청 userId
+-- ARGV[2] SELLER_ADVANCE 요청 userId
 -- ARGV[3] SELLER_ADVANCE에서 마감까지 남길 초. 비면 연장 트리거 초 (#336)
 
 local function keyType(key)
@@ -106,7 +106,9 @@ if mode ~= 'NATURAL' then
     error('unsupported close mode: ' .. mode)
 end
 
-local closedAt = tonumber(ARGV[2])
+local redisTime = redis.call('TIME')
+local closedAt = tonumber(redisTime[1]) * 1000
+        + math.floor(tonumber(redisTime[2]) / 1000)
 if closedAt < endAt then
     return {'REJECTED', 'NOT_DUE', endAtString}
 end
