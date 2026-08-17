@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { Minus, Store } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { EmptyState, PageHeader } from '@/components/page-header'
@@ -84,6 +84,22 @@ function AuctionRoomNewPage() {
   // 커버를 S3 에 올리는 동안도 "만드는 중"이다. 빼면 그 사이 버튼이 살아 있어
   // 두 번 누를 수 있고, 그러면 업로드가 두 번 나간다.
   const creating = uploading || createRoom.isPending || addItems.isPending
+
+  /*
+   * 프로필이 없으면 아래에서 안내 화면으로 갈린다. 다만 목록에서 "경매방 만들기"
+   * 를 누른 사람에게는 화면만 바뀐 것으로 보여서 왜 못 만드는지 놓치기 쉽다.
+   * 토스트로 한 번 더 알린다. 조회가 끝나기 전에는 아직 없는 것이 아니므로
+   * `profilePending` 이 풀린 뒤에만 띄우고, 다시 그려질 때 또 뜨지 않게 막는다.
+   */
+  const missingProfile = !profilePending && !profile
+  const noticed = useRef(false)
+  useEffect(() => {
+    if (!missingProfile || noticed.current) return
+    noticed.current = true
+    toast.info('판매자 프로필을 먼저 등록해 주세요', {
+      description: '경매방은 프로필을 등록한 뒤에 만들 수 있어요.',
+    })
+  }, [missingProfile])
 
   if (profilePending) return <RoutePending />
 
