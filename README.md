@@ -40,7 +40,6 @@
 - [시스템 구성](#시스템-구성)
 - [관련 문서](#관련-문서)
 - [팀 구성](#팀-구성)
-- [로컬 실행](#로컬-실행)
 
 <br>
 
@@ -71,8 +70,8 @@ UpBid는 판매자가 직접 확인하던 입찰 순서와 최고가, 마감 시
 
 ![링크로 참여](https://github.com/user-attachments/assets/70ed7fc7-3116-4aec-bc03-ef54adb36c8d)
 
-- 판매자는 경매방 링크와 QR을 만들어 SNS에 바로 공유할 수 있습니다. 외부에 공개되는 주소에는 숫자 PK 대신 `share_code`를 사용합니다.
-- 로그인하지 않은 사용자도 경매방과 판매 물품을 먼저 확인할 수 있습니다. 로그인이 필요한 시점은 입찰할 때이며, 로그인 후에는 기존에 보고 있던 경매방으로 돌아옵니다.
+- 판매자는 경매방 링크와 QR을 만들어 SNS에 바로 공유할 수 있습니다.
+- 로그인하지 않은 사용자도 경매방과 판매 물품을 먼저 확인할 수 있습니다. 입찰하려면 로그인이 필요합니다.
 
 ### 실시간 입찰 반영
 
@@ -176,7 +175,7 @@ PC와 모바일에서 같은 경매방에 접속할 수 있으며, 화면 크기
 | **관측** | ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white) ![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat-square&logo=grafana&logoColor=white) ![Loki](https://img.shields.io/badge/Loki-F46800?style=flat-square&logo=grafana&logoColor=white) ![Slack](https://img.shields.io/badge/Slack-4A154B?style=flat-square&logo=slack&logoColor=white) |
 | **Test · 측정** | ![JUnit 5](https://img.shields.io/badge/JUnit%205-25A162?style=flat-square&logo=junit5&logoColor=white) ![Testcontainers](https://img.shields.io/badge/Testcontainers-291A54?style=flat-square&logo=testcontainers&logoColor=white) ![k6](https://img.shields.io/badge/k6-7D64FF?style=flat-square&logo=k6&logoColor=white) |
 
-기술을 선택한 이유는 Wiki의 [고른 것들](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-기술-스택)과 [기술 선택의 변화](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회고-기술-선택의-변화)에 정리했습니다. 프로젝트를 시작할 때 선택한 기술과 최종 구성이 달라진 경우에는 변경한 이유도 함께 기록했습니다.
+기술을 선택한 이유는 Wiki의 [고른 것들](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-기술-스택)과 [기술 선택의 변화](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회고-기술-선택의-변화)에 정리했습니다.
 
 <br>
 
@@ -213,7 +212,7 @@ ERD 원본은 [ERDCloud](https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY)에서 확
         └── lib/                    session, toast, format, route-guards
 ```
 
-대부분의 도메인은 `controller → service → repository` 구조를 따릅니다. 입찰과 마감처럼 동시성 처리가 필요한 영역에는 `store` 계층을 추가해 Redis Lua에서 수행하는 판정 로직을 Service와 분리했습니다.
+대부분의 도메인은 `controller → service → repository` 구조를 따릅니다.
 
 <br>
 
@@ -277,28 +276,4 @@ ERD 원본은 [ERDCloud](https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY)에서 확
   </tr>
 </table>
 
-구체적인 역할 분담은 Wiki의 [누가 뭐를 맡았나](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-팀원-및-역할)에서 확인할 수 있습니다.
-
-<br>
-
-## 로컬 실행
-
-로컬 실행에는 Docker Desktop, Java 21, pnpm이 필요합니다.
-
-```bash
-# 1. 백엔드 (MySQL 컨테이너 + 애플리케이션)
-cd backend
-docker compose up -d
-./gradlew bootRun
-
-# 2. 프론트엔드
-cd frontend
-pnpm install
-pnpm dev
-```
-
-프론트엔드는 `http://localhost:5173`, 백엔드는 8080 포트에서 실행됩니다. 로컬 Swagger UI는 `http://localhost:8080/swagger-ui/index.html`에서 확인할 수 있습니다.
-
-Redis는 별도로 실행해야 합니다. 기본 연결 주소는 `localhost:6379`이며, 세션 관리와 입찰 판정, 마감 예약 기능이 Redis에 의존합니다.
-
-macOS에서는 `backend/UpBid 개발환경 켜기.command` 파일을 실행하면 MySQL, Grafana, 프론트엔드, 백엔드를 한 번에 시작할 수 있습니다. 자세한 실행 방법은 Wiki의 [로컬에서 띄우기](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Dev-로컬-실행-방법)에 정리되어 있습니다.
+구체적인 팀원 및 역할은 Wiki의 [팀원 및 역할](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-팀원-및-역할)에서 확인할 수 있습니다.
