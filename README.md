@@ -218,7 +218,9 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 
 ## 문서
 
-**기술 문서는 [GitHub Wiki](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki)에 있습니다.** "무엇을 만들었나"보다 "왜 이렇게 만들었나"를 남긴 아카이브입니다.
+### 기술 문서
+
+**[GitHub Wiki](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki)에 있습니다.** "무엇을 만들었나"보다 "왜 이렇게 만들었나"를 남긴 아카이브입니다.
 
 | 분류 | 내용 |
 | --- | --- |
@@ -237,14 +239,14 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
 | 🗒️ [회의록](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회의록-목록) | 날짜별 스크럼과 주간 회의 |
 | 🔄 [회고](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회고-주간-회고) | 주간 회고, 기술 선택의 변화, 잘한 점과 아쉬운 점 |
 
-그 밖의 자료입니다.
+### 주요 링크
 
 | 구분 | 링크 |
 | --- | --- |
-| 서비스 | <https://www.upbid.store> |
-| API 명세 (Swagger UI) | <https://api.upbid.store/swagger-ui/index.html> |
-| ERD | <https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY> |
-| 상세 기획안 (Notion) | <https://amethyst-naranja-aac.notion.site/UpBid-3a64960319768083b497e9ef3596939c> |
+| **서비스** | <https://www.upbid.store> |
+| **API 명세** | <https://api.upbid.store/swagger-ui/index.html> (Swagger UI) |
+| **ERD** | <https://www.erdcloud.com/d/4FRa83M5MbkZsMeYY> (ERDCloud) |
+| **기획안** | <https://amethyst-naranja-aac.notion.site/UpBid-3a64960319768083b497e9ef3596939c> (Notion) |
 
 <br>
 
