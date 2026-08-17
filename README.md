@@ -145,7 +145,7 @@ SNS에서 발견  →  UpBid에서 입찰  →  서버가 낙찰 확정  →  �
   </tr>
   <tr>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/99ddd58a-e0c5-40a9-961e-fbbf1407e861" width="230" alt="공유 QR" /><br/><b>공유 QR</b><br/><sub>링크와 QR을 그 자리에서 만듭니다</sub></td>
-    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/6dc00ba0-b424-454a-aaf5-8ee33dc23fe3" width="230" alt="물품 상세" /><br/><b>물품 상세</b><br/><sub>설명과 현재가, 남은 시간을 봅니다</sub></td>
+    <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/1174c5ed-7648-4e06-a31b-d077432989e7" width="230" alt="물품 상세" /><br/><b>물품 상세</b><br/><sub>설명과 현재가, 남은 시간을 봅니다</sub></td>
     <td width="33%" align="center"><img src="https://github.com/user-attachments/assets/28092082-a80c-4df7-923e-eadb1db6906a" width="230" alt="리더보드" /><br/><b>리더보드</b><br/><sub>물품별 순위와 내 위치를 봅니다</sub></td>
   </tr>
   <tr>
