@@ -145,6 +145,52 @@ class AuctionItemTest {
 
 
     @Nested
+    @DisplayName("closeUnstarted")
+    class CloseUnstarted {
+
+        @Test
+        @DisplayName("시작하지 않은 물품을 유찰로 넘기고 종료 시각을 채운다")
+        void closesAsFailedWithClosedAt() {
+
+            AuctionRoom auctionRoom = newRoom(TRIGGER_SECONDS, EXTEND_SECONDS);
+            AuctionItem auctionItem = AuctionItem.builder()
+                    .auctionRoom(auctionRoom)
+                    .product(newProduct(auctionRoom.getSellerProfile()))
+                    .startingPrice(10_000L)
+                    .bidIncrement(1_000L)
+                    .status(AuctionItemStatus.READY)
+                    .build();
+            LocalDateTime closedAt = END_AT;
+
+            auctionItem.closeUnstarted(closedAt);
+
+            assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.FAILED);
+            assertThat(auctionItem.getEndAt()).isEqualTo(closedAt);
+        }
+
+        @Test
+        @DisplayName("최고 입찰자가 없어도 낙찰로 처리하지 않는다")
+        void doesNotResolveAsSoldEvenWithoutLeader() {
+
+            AuctionRoom auctionRoom = newRoom(TRIGGER_SECONDS, EXTEND_SECONDS);
+            AuctionItem auctionItem = AuctionItem.builder()
+                    .auctionRoom(auctionRoom)
+                    .product(newProduct(auctionRoom.getSellerProfile()))
+                    .startingPrice(10_000L)
+                    .bidIncrement(1_000L)
+                    .status(AuctionItemStatus.READY)
+                    .build();
+
+            auctionItem.closeUnstarted(END_AT);
+
+            assertThat(auctionItem.getLeaderUser())
+                    .as("close()의 낙찰/유찰 판정과 무관하다는 것을 확인한다")
+                    .isNull();
+            assertThat(auctionItem.getStatus()).isEqualTo(AuctionItemStatus.FAILED);
+        }
+    }
+
+    @Nested
     @DisplayName("applyPersistedBid")
     class ApplyPersistedBid {
 

@@ -168,6 +168,18 @@ public class AuctionItem extends BaseTimeEntity {
     }
 
     /**
+     * 시작한 적 없는 물품을 방 종료 시각 기준으로 유찰 처리한다. {@code close()}와 달리
+     * {@code leaderUser}로 낙찰/유찰을 가르지 않는다 — 입찰 자체가 없어 볼 값이 없다.
+     *
+     * <p>{@code end_at}을 방 종료 시각으로 채운다. 거래 내역과 결과 목록이 이 값으로
+     * 정렬하는데, 비워 두면 날짜가 빈칸이고 목록 맨 뒤로 밀린다.
+     */
+    public void closeUnstarted(LocalDateTime closedAt) {
+        this.status = AuctionItemStatus.FAILED;
+        this.endAt = closedAt;
+    }
+
+    /**
      * 이 물품이 속한 경매방의 Soft Close 트리거 초. 값이 없으면
      * {@link #DEFAULT_SOFT_CLOSE_TRIGGER_SECONDS}다.
      *
