@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -43,6 +44,7 @@ public interface AuctionItemApi {
             @ApiResponse(responseCode = "200", description = "조회 성공. 물품이 없으면 빈 배열"),
             @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
     })
+    @SecurityRequirements
     ResponseEntity<CommonResponse<List<AuctionItemSummaryResponseDto>>> getSummaries(
             @Parameter(description = "조회할 경매방의 공유 코드", required = true)
             @PathVariable String shareCode,
@@ -63,6 +65,7 @@ public interface AuctionItemApi {
             @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002), "
                     + "물품이 없거나 그 경매방 소속이 아님 (code 4001)")
     })
+    @SecurityRequirements
     ResponseEntity<CommonResponse<AuctionItemDetailResponseDto>> getDetail(
             @Parameter(description = "물품이 속한 경매방의 공유 코드", required = true)
             @PathVariable String shareCode,

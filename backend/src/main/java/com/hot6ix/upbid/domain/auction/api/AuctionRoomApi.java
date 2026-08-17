@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
@@ -110,6 +111,7 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
     })
+    @SecurityRequirements
     ResponseEntity<CommonResponse<AuctionRoomResultResponseDto>> getResults(
             @Parameter(description = "결과를 조회할 경매방의 공유 코드", required = true)
             @PathVariable String shareCode,
@@ -147,6 +149,7 @@ public interface AuctionRoomApi {
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
     })
+    @SecurityRequirements
     ResponseEntity<CommonResponse<AuctionRoomPublicResponseDto>> getRoomByShareCode(
             @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "경매방 공유 코드", required = true)

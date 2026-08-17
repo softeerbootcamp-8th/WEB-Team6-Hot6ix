@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
@@ -34,6 +35,7 @@ public interface SseApi {
             @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)"),
             @ApiResponse(responseCode = "409", description = "이미 종료된 경매방 (code 4004)")
     })
+    @SecurityRequirements
     SseEmitter subscribe(
             @Parameter(hidden = true) @LoginUserId Long userId,
             @Parameter(description = "구독할 경매방의 공유 코드", required = true)
@@ -52,6 +54,7 @@ public interface SseApi {
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
     })
+    @SecurityRequirements
     ResponseEntity<CommonResponse<List<RecentRoomEventDto>>> getRecentEvents(
             @Parameter(description = "조회할 경매방의 공유 코드", required = true)
             @PathVariable String shareCode);
