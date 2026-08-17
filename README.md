@@ -158,7 +158,7 @@ SNS에서 발견 → UpBid에서 입찰 → 서버가 낙찰 확정 → 외부�
 | **관측** | ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white) ![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat-square&logo=grafana&logoColor=white) ![Loki](https://img.shields.io/badge/Loki-F46800?style=flat-square&logo=grafana&logoColor=white) ![Slack](https://img.shields.io/badge/Slack-4A154B?style=flat-square&logo=slack&logoColor=white) |
 | **Test · 측정** | ![JUnit 5](https://img.shields.io/badge/JUnit%205-25A162?style=flat-square&logo=junit5&logoColor=white) ![Testcontainers](https://img.shields.io/badge/Testcontainers-291A54?style=flat-square&logo=testcontainers&logoColor=white) ![k6](https://img.shields.io/badge/k6-7D64FF?style=flat-square&logo=k6&logoColor=white) |
 
-주요 선택의 근거는 [Wiki 1.5 기술 스택](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-기술-스택)과 [14.2 기술 선택의 변화](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회고-기술-선택의-변화)에 있습니다. 처음 정한 것과 최종이 달라진 항목을 왜 바꿨는지까지 정리했습니다.
+주요 선택의 근거는 [고른 것들](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-기술-스택)과 [기술 선택의 변화](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회고-기술-선택의-변화)에 있습니다. 처음 정한 것과 최종이 달라진 항목을 왜 바꿨는지까지 정리했습니다.
 
 <br>
 
@@ -170,15 +170,15 @@ SNS에서 발견 → UpBid에서 입찰 → 서버가 낙찰 확정 → 외부�
 
 ## 팀원 소개
 
-<!-- 얼굴 사진을 받으면 아래 <img> 의 src 만 교체합니다. 지금은 GitHub 프로필 사진입니다. -->
+<!-- 정우재님 사진을 받으면 아래 <img> 의 src 만 교체합니다. 나머지는 실제 사진입니다. -->
 
 <table>
   <tr>
-    <td align="center" width="20%"><img src="https://github.com/KiSeungMin.png" width="130" alt="기승민" /></td>
-    <td align="center" width="20%"><img src="https://github.com/choicold.png" width="130" alt="최한기" /></td>
+    <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/508bd507-dd85-49d5-baa6-f250ce1141c8" width="130" alt="기승민" /></td>
+    <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/b17f8a7f-a966-4d58-a193-ab9b36826ed2" width="130" alt="최한기" /></td>
     <td align="center" width="20%"><img src="https://github.com/Woojae-Jeong.png" width="130" alt="정우재" /></td>
-    <td align="center" width="20%"><img src="https://github.com/choiseoji.png" width="130" alt="최서지" /></td>
-    <td align="center" width="20%"><img src="https://github.com/cylin0201.png" width="130" alt="김원기" /></td>
+    <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/c00b45ee-9954-4f84-8120-c44b0544dbbd" width="130" alt="최서지" /></td>
+    <td align="center" width="20%"><img src="https://github.com/user-attachments/assets/6c4f3fea-b740-4e93-9f1a-cd9f4fbddb8c" width="130" alt="김원기" /></td>
   </tr>
   <tr>
     <td align="center"><b>기승민</b><br/><a href="https://github.com/KiSeungMin">@KiSeungMin</a></td>
@@ -196,7 +196,7 @@ SNS에서 발견 → UpBid에서 입찰 → 서버가 낙찰 확정 → 외부�
   </tr>
 </table>
 
-역할을 어떻게 나눴는지는 [Wiki 1.4 팀원 및 역할](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-팀원-및-역할)에 있습니다.
+역할을 어떻게 나눴는지는 [누가 뭐를 맡았나](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-팀원-및-역할)에 있습니다.
 
 <br>
 
@@ -204,22 +204,20 @@ SNS에서 발견 → UpBid에서 입찰 → 서버가 낙찰 확정 → 외부�
 
 **기술 문서는 [GitHub Wiki](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki)에 있습니다.** "무엇을 만들었나"보다 "왜 이렇게 만들었나"를 남긴 아카이브입니다.
 
-| 섹션 | 내용 |
+| 묶음 | 내용 |
 | --- | --- |
-| [1. Project](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-서비스-소개) | 서비스 소개, 기획 배경, 팀원과 역할, 기술 스택 |
-| [2. Architecture](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Architecture-전체-시스템-아키텍처) | 시스템 구성, 백엔드와 프론트 구조, API 계약 |
-| [3. 실시간 경매](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/실시간-경매-상태와-전이-규칙) | 상태 전이, 입찰 정책, 동시성, Soft Close, 마감 스케줄링 |
-| [4. 실시간 통신](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/실시간-통신-SSE-도입-이유) | SSE 선택 근거, 이벤트 계약, 재연결, 팬아웃 |
-| [5. Redis](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Redis-도입-배경) | 도입 배경, Key 설계, 지연 큐, 분산 락, 정합성 |
-| [6. Performance](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Performance-부하-테스트-전략) | 측정 전략과 규약, 병목 분석, 개선 결과 |
-| [7. Auth & Security](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Auth-인증-구조-개요) | 세션과 JWT, 카카오 OAuth, 전화번호 인증, 권한 |
-| [8. Database](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Database-MySQL-스키마) | 스키마, 도메인 모델, 인덱스, Flyway |
-| [9. Infrastructure](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Infra-AWS-구성) | AWS 구성, CI/CD, 환경 분리 |
-| [10. Monitoring](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Monitoring-Prometheus-지표) | 지표, 대시보드, 로그 수집, 장애 알림 |
-| [11. Trouble Shooting](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/TS-운영-서버-OOM) | OOM, Full GC, 타임존, 데이터 소실 등 14건 |
-| [12. Development](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Dev-팀-협업-규칙) | 협업 규칙, 브랜치와 컨벤션, 로컬 실행, AI 활용 |
-| [13. 회의록](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회의록-목록) | 날짜별 스크럼과 회의 기록 |
-| [14. 회고](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회고-주간-회고) | 주간 회고, 기술 선택의 변화 |
+| [이 서비스는 무엇인가](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Project-서비스-소개) | 만든 것, 풀려는 문제, 고른 것들, 누가 뭐를 맡았나 |
+| [무엇으로 짜여 있나](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Architecture-전체-시스템-아키텍처) | 전체 구조, 백엔드와 프론트, 입찰 한 건이 지나가는 길, API 계약 |
+| [경매가 도는 방식](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/실시간-경매-상태와-전이-규칙) | 상태와 규칙, 입찰 판정, Soft Close, 마감, 낙찰 |
+| [모두가 같은 화면을 보게 하기](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/실시간-통신-SSE-도입-이유) | SSE를 고른 이유, 이벤트 계약, 재연결, 팬아웃, 서버 여러 대 |
+| [Redis를 원장으로 쓴 이유](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Redis-도입-배경) | 캐시가 아니라 원장이 된 과정, Key 설계, 지연 큐, 정합성 |
+| [누구인지 확인하기](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Auth-인증-구조-개요) | 세션이냐 JWT냐, 카카오 로그인, 전화번호 인증, 게스트 경계 |
+| [무엇을 남기나](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Database-MySQL-스키마) | 스키마, 도메인 모델, 인덱스 설계, Flyway |
+| [재보기](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Performance-부하-테스트-전략) | 측정 규약, 병목 분석, 개선 결과 |
+| [운영하기](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Infra-AWS-구성) | AWS 구성, CI/CD, 환경 분리, 지표와 로그, 장애 알림 |
+| [고장 기록](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/TS-운영-서버-OOM) | OOM, Full GC, 타임존, 데이터 소실 등 14건 |
+| [같이 일한 방식](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Dev-팀-협업-규칙) | 협업 규칙, 브랜치와 컨벤션, 로컬 실행, AI 활용, 회의록 |
+| [돌아보기](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/회고-주간-회고) | 주간 회고, 기술 선택의 변화 |
 
 그 밖의 자료입니다.
 
@@ -252,4 +250,4 @@ pnpm dev
 
 **Redis는 별도로 띄워야 합니다.** 기본값은 `localhost:6379`이고, 세션과 입찰 판정, 마감 예약이 여기에 의존합니다.
 
-macOS에서는 `backend/UpBid 개발환경 켜기.command`를 더블클릭하면 MySQL과 Grafana, 프론트, 백엔드를 한 번에 띄웁니다. 자세한 내용은 [Wiki 12.5 로컬 실행 방법](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Dev-로컬-실행-방법)을 참고하세요.
+macOS에서는 `backend/UpBid 개발환경 켜기.command`를 더블클릭하면 MySQL과 Grafana, 프론트, 백엔드를 한 번에 띄웁니다. 자세한 내용은 [로컬에서 띄우기](https://github.com/softeerbootcamp-8th/WEB-Team6-Hot6ix/wiki/Dev-로컬-실행-방법)를 참고하세요.
