@@ -5,6 +5,11 @@
 -- ARGV[1..13] 물품의 고정 필드 값(itemName 포함)
 -- ARGV[14..]   약관에 동의한 참여자의 userId, nickname 쌍
 --
+-- 참여자가 없어도 Set이 준비됐음을 나타내는 내부 값이다. 실제 회원 ID는 숫자 문자열이라
+-- bid.lua의 SISMEMBER 판정과 겹치지 않는다.
+local participantsReadyMarker = '__seed_initialized__'
+local nicknamesReadyMarkerField = '__seed_initialized__'
+
 local function keyType(key)
     local response = redis.call('TYPE', key)
     if type(response) == 'table' then
@@ -14,11 +19,12 @@ local function keyType(key)
 end
 
 local itemType = keyType(KEYS[1])
+local participantsType = keyType(KEYS[2])
+
 if itemType ~= 'none' and itemType ~= 'hash' then
     error('auction item key has invalid type: ' .. itemType)
 end
 
-local participantsType = keyType(KEYS[2])
 if participantsType ~= 'none' and participantsType ~= 'set' then
     error('auction participants key has invalid type: ' .. participantsType)
 end
@@ -36,7 +42,17 @@ if (#ARGV - 13) % 2 ~= 0 then
     error('auction participant metadata must be userId/nickname pairs')
 end
 
+-- 세 키와 완료 표시가 모두 준비된 정상 Seed에는 DB 스냅샷을 다시 적용하지 않는다.
+if itemType == 'hash'
+        and participantsType == 'set'
+        and nicknamesType == 'hash'
+        and redis.call('SISMEMBER', KEYS[2], participantsReadyMarker) == 1
+        and redis.call('HEXISTS', KEYS[3], nicknamesReadyMarkerField) == 1 then
+    return 0
+end
+
 -- 입찰 Lua가 물품 Hash를 발견했을 때 참여자 ID와 nickname이 모두 준비돼 있도록 먼저 쓴다.
+redis.call('HSET', KEYS[3], nicknamesReadyMarkerField, '1')
 for index = 14, #ARGV, 2 do
     if ARGV[index + 1] == '' then
         error('auction participant nickname is missing')
@@ -44,6 +60,7 @@ for index = 14, #ARGV, 2 do
     redis.call('HSET', KEYS[3], ARGV[index], ARGV[index + 1])
     redis.call('SADD', KEYS[2], ARGV[index])
 end
+redis.call('SADD', KEYS[2], participantsReadyMarker)
 
 -- 재실행이면 현재가·리더·마감 시각 같은 최신 상태는 보존하고, 구버전 Hash에 없던
 -- 표시 메타데이터만 보충한다. 참여자 Set/Hash는 위에서 항상 DB 스냅샷으로 보충한다.

@@ -45,6 +45,7 @@ public class AuctionRedisStore {
     private final RedisScript<List> bidScript;
     private final RedisScript<Long> seedScript;
     private final RedisScript<Long> addParticipantScript;
+    private final RedisScript<Long> seedReadyScript;
     @SuppressWarnings("rawtypes")
     private final RedisScript<List> closeScript;
 
@@ -57,6 +58,7 @@ public class AuctionRedisStore {
         this.seedScript = new DefaultRedisScript<>(readScript("lua/seed-auction.lua"), Long.class);
         this.addParticipantScript = new DefaultRedisScript<>(
                 readScript("lua/add-auction-participant.lua"), Long.class);
+        this.seedReadyScript = new DefaultRedisScript<>(readScript("lua/seed-ready.lua"), Long.class);
         this.closeScript = new DefaultRedisScript<>(readScript("lua/close-auction.lua"), List.class);
     }
 
@@ -188,6 +190,24 @@ public class AuctionRedisStore {
             throw e;
         }
 
+        return Long.valueOf(1L).equals(result);
+    }
+
+    /** 물품 Hash와 방 참여자 Set·nickname Hash가 모두 준비됐는지 값 전체를 읽지 않고 확인한다. */
+    public boolean isSeedReady(long itemId, long roomId) {
+
+        Long result;
+        try {
+            result = redis.execute(
+                    seedReadyScript,
+                    List.of(
+                            AuctionRedisKeys.item(itemId),
+                            AuctionRedisKeys.participants(roomId),
+                            AuctionRedisKeys.participantNicknames(roomId)));
+        } catch (RuntimeException e) {
+            metrics.recordSeedFailure();
+            throw e;
+        }
         return Long.valueOf(1L).equals(result);
     }
 
