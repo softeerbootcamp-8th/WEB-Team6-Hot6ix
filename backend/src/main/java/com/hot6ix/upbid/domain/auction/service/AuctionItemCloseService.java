@@ -139,11 +139,11 @@ public class AuctionItemCloseService {
     }
 
     private RedisCloseDecision requestNaturalCloseWithSeed(Long itemId) {
-        RedisCloseDecision decision = auctionRedisStore.requestNaturalClose(itemId, System.currentTimeMillis());
+        RedisCloseDecision decision = auctionRedisStore.requestNaturalClose(itemId);
         if (decision instanceof RedisCloseDecision.Rejected rejected
                 && rejected.reason() == RedisCloseDecision.Reason.KEY_MISSING) {
             auctionRedisInitializer.initialize(itemId);
-            return auctionRedisStore.requestNaturalClose(itemId, System.currentTimeMillis());
+            return auctionRedisStore.requestNaturalClose(itemId);
         }
         return decision;
     }

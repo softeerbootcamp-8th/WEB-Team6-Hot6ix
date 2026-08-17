@@ -11,6 +11,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import com.hot6ix.upbid.domain.bid.stream.BidStreamMetrics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -58,7 +60,7 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
         long endAt = System.currentTimeMillis() - 1_000L;
         seed(endAt);
 
-        RedisCloseDecision decision = store.requestNaturalClose(ITEM_ID, System.currentTimeMillis());
+        RedisCloseDecision decision = store.requestNaturalClose(ITEM_ID);
 
         assertThat(decision).isInstanceOf(RedisCloseDecision.Closing.class);
         assertThat(decision).isInstanceOfSatisfying(RedisCloseDecision.Closing.class, closing -> {
@@ -85,12 +87,27 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
     }
 
     @Test
+    @DisplayName("Redis 마감 시각 전이면 자연 마감하지 않는다")
+    void rejectsNaturalCloseBeforeRedisDeadline() {
+        long endAt = redisTimeMillis() + 60_000L;
+        seed(endAt);
+
+        RedisCloseDecision decision = store.requestNaturalClose(ITEM_ID);
+
+        assertThat(decision).isEqualTo(new RedisCloseDecision.Rejected(
+                RedisCloseDecision.Reason.NOT_DUE, endAt));
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "status"))
+                .isEqualTo("IN_PROGRESS");
+        assertThat(streamRecords()).isEmpty();
+    }
+
+    @Test
     @DisplayName("낡은 예약은 마감하지 않고 Redis의 최신 endAt을 돌려준다")
     void rejectsNaturalCloseBeforeLatestEndAt() {
         long endAt = System.currentTimeMillis() + 60_000L;
         seed(endAt);
 
-        RedisCloseDecision decision = store.requestNaturalClose(ITEM_ID, System.currentTimeMillis());
+        RedisCloseDecision decision = store.requestNaturalClose(ITEM_ID);
 
         assertThat(decision).isEqualTo(new RedisCloseDecision.Rejected(
                 RedisCloseDecision.Reason.NOT_DUE, endAt));
@@ -202,7 +219,7 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
         long endAt = System.currentTimeMillis() - 1_000L;
         seed(endAt, 12_000L, BIDDER_ID);
 
-        RedisCloseDecision decision = store.requestNaturalClose(ITEM_ID, System.currentTimeMillis());
+        RedisCloseDecision decision = store.requestNaturalClose(ITEM_ID);
 
         assertThat(decision).isInstanceOfSatisfying(RedisCloseDecision.Closing.class, closing -> {
             assertThat(closing.currentPrice()).isEqualTo(12_000L);
@@ -226,11 +243,11 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
                 Future<RedisBidDecision> bid = executor.submit(() -> {
                     start.await();
                     return store.evaluateBid(ITEM_ID, "request-" + requestNumber, BIDDER_ID,
-                            10_000L, dueAt - 1);
+                            10_000L);
                 });
                 Future<RedisCloseDecision> close = executor.submit(() -> {
                     start.await();
-                    return store.requestNaturalClose(ITEM_ID, dueAt);
+                    return store.requestNaturalClose(ITEM_ID);
                 });
                 start.countDown();
 
@@ -244,10 +261,16 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
                                     .isEqualTo(RedisCloseDecision.Reason.NOT_DUE));
                     assertThat(records).extracting(record -> record.getValue().get("type"))
                             .containsExactly("BID_ACCEPTED");
-                } else {
+                } else if (closeResult instanceof RedisCloseDecision.Closing) {
                     assertThat(closeResult).isInstanceOf(RedisCloseDecision.Closing.class);
                     assertThat(records).extracting(record -> record.getValue().get("type"))
                             .containsExactly("ITEM_CLOSING");
+                } else {
+                    assertThat(bidResult).isEqualTo(new RedisBidDecision.Rejected(
+                            RedisBidDecision.Reason.ITEM_CLOSED));
+                    assertThat(closeResult).isEqualTo(new RedisCloseDecision.Rejected(
+                            RedisCloseDecision.Reason.NOT_DUE, dueAt));
+                    assertThat(records).isEmpty();
                 }
             }
         }
@@ -268,5 +291,14 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
 
     private List<MapRecord<String, Object, Object>> streamRecords() {
         return redis.opsForStream().range(AuctionRedisKeys.stream(), Range.unbounded());
+    }
+
+    private static long redisTimeMillis() {
+        Long time = redis.execute((RedisCallback<Long>) connection ->
+                connection.serverCommands().time(TimeUnit.MILLISECONDS));
+        if (time == null) {
+            throw new IllegalStateException("Redis TIME이 null을 반환했다");
+        }
+        return time;
     }
 }

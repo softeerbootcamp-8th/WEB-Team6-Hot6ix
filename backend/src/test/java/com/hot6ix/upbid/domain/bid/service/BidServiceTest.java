@@ -61,7 +61,7 @@ class BidServiceTest {
     @DisplayName("Lua가 승인하면 Redis 판정 결과를 입찰 응답으로 반환한다")
     void returnsAcceptedRedisDecision() {
 
-        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(new RedisBidDecision.Accepted(
                         REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
                         AMOUNT, ACCEPTED_AT, END_AT, 30, false));
@@ -77,7 +77,7 @@ class BidServiceTest {
                 LocalDateTime.ofInstant(Instant.ofEpochMilli(END_AT), ZONE),
                 30));
         verify(auctionRedisStore)
-                .evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT);
+                .evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT);
         verify(auctionRealtimeSsePublisher).publishAccepted(
                 ITEM_ID,
                 new RedisBidDecision.Accepted(
@@ -92,7 +92,7 @@ class BidServiceTest {
         RedisBidDecision.Accepted duplicate = new RedisBidDecision.Accepted(
                 REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
                 AMOUNT, ACCEPTED_AT, END_AT, 30, true);
-        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(duplicate);
 
         BidCreateResponseDto response = bidService.place(
@@ -115,7 +115,7 @@ class BidServiceTest {
         RedisBidDecision.Accepted accepted = new RedisBidDecision.Accepted(
                 REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
                 AMOUNT, ACCEPTED_AT, END_AT, 0, false);
-        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(accepted);
         doThrow(new IllegalStateException("sse unavailable"))
                 .when(auctionRealtimeSsePublisher).publishAccepted(ITEM_ID, accepted);
@@ -133,7 +133,7 @@ class BidServiceTest {
             RedisBidDecision.Reason reason,
             BidErrorType expectedErrorType) {
 
-        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(new RedisBidDecision.Rejected(reason));
 
         assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID))
@@ -146,7 +146,7 @@ class BidServiceTest {
     @DisplayName("멱등 키가 다른 요청 내용에 재사용되면 충돌 오류로 변환한다")
     void mapsIdempotencyKeyConflict() {
 
-        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT, ARRIVED_AT))
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(new RedisBidDecision.Rejected(
                         RedisBidDecision.Reason.IDEMPOTENCY_KEY_CONFLICT));
 

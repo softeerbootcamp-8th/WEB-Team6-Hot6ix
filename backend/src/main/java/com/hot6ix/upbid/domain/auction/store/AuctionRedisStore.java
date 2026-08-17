@@ -64,7 +64,7 @@ public class AuctionRedisStore {
 
     /** 입찰 판정부터 승인 이벤트 기록까지 새 Lua 계약으로 수행한다. */
     public RedisBidDecision evaluateBid(long itemId, String requestId, long bidderUserId,
-                                        long amount, long arrivedAtMillis) {
+                                        long amount) {
 
         List<String> result;
         try {
@@ -77,8 +77,7 @@ public class AuctionRedisStore {
                             AuctionRedisKeys.stream()),
                     requestId,
                     String.valueOf(bidderUserId),
-                    String.valueOf(amount),
-                    String.valueOf(arrivedAtMillis));
+                    String.valueOf(amount));
             result = executed;
         } catch (RuntimeException e) {
             metrics.recordLuaFailure("execution");
@@ -222,8 +221,8 @@ public class AuctionRedisStore {
                 nickname);
     }
 
-    public RedisCloseDecision requestNaturalClose(long itemId, long nowMillis) {
-        return executeClose(itemId, "NATURAL", String.valueOf(nowMillis));
+    public RedisCloseDecision requestNaturalClose(long itemId) {
+        return executeClose(itemId, "NATURAL");
     }
 
     /**

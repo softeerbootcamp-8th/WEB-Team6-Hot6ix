@@ -40,7 +40,7 @@ class AuctionRedisStoreFailureMetricsTest {
         when(redis.execute(any(RedisScript.class), anyList(), any(Object[].class)))
                 .thenReturn(List.of("ACCEPTED", "request-1"));
 
-        assertThatThrownBy(() -> store.evaluateBid(101L, "request-1", 11L, 10_000L, 1_000L))
+        assertThatThrownBy(() -> store.evaluateBid(101L, "request-1", 11L, 10_000L))
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(registry.find("upbid.bid.lua.failures")
