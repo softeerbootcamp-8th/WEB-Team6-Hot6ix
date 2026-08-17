@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.service;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionRoomPublicResponseDto;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoomStatus;
@@ -47,8 +48,9 @@ public class AuctionRoomCloseService {
      * 확정되기까지 Soft Close 트리거 초만큼 기다리게 된다. 그 사이 종료가 손이 묶이는 대신,
      * 판매자가 방치한 방은 {@link #closeIfIdle}이 12시간 뒤에 닫는다.
      *
-     * <p>아직 시작하지 않은 {@code READY} 물품은 <b>건드리지 않는다.</b> 시작한 적 없는 물품을
-     * 유찰로 적으면 "입찰자가 없어 유찰"과 "아예 올리지도 않음"이 결과 집계에서 섞인다.
+     * <p>아직 시작하지 않은 {@code READY} 물품은 <b>유찰({@code FAILED})로 넘긴다.</b> 방이
+     * 닫히면 다시 시작할 길이 없어 READY로 남겨두면 재등록·삭제가 막히고 결과·거래 내역에서도
+     * 빠진다. "입찰자가 없어 유찰"과 구분되지 않지만, 결과 집계는 어차피 유찰로 합친다.
      * {@code BEFORE} 상태(물품을 하나도 시작하지 않은) 방도 그대로 종료할 수 있다. 쓰다 만 방을
      * 정리하는 수단이기도 하다.
      *
@@ -153,11 +155,19 @@ public class AuctionRoomCloseService {
     /**
      * 방 행 락을 잡고 종료 대상임을 확인한 방을 실제로 닫는다.
      *
+     * <p>물품을 먼저 정리하고 방을 닫는다. 남은 {@code READY} 물품을 유찰 처리하는 것이
+     * 그 정리다 — {@link #closeIfIdle}은 이 시점에 READY 물품이 없음을 이미 보장하므로 여기서는
+     * no-op이다.
+     *
      * <p>공개 조회 캐시를 여기서 버리는 것은 <b>자동 종료도 같은 경로를 타게 하려는 것</b>이다
      * (#326에서는 수동 종료 쪽에만 있었다). 안 버리면 방이 닫힌 뒤에도 공개 화면이 담아 둔
      * {@code OPEN}을 계속 보여준다.
      */
     private void closeLocked(AuctionRoom auctionRoom, LocalDateTime closedAt) {
+
+        List<AuctionItem> unstartedItems = auctionItemRepository.findByAuctionRoom_AuctionRoomIdAndStatus(
+                auctionRoom.getAuctionRoomId(), AuctionItemStatus.READY);
+        unstartedItems.forEach(item -> item.closeUnstarted(closedAt));
 
         auctionRoom.close(closedAt);
         auctionRoomPublicCacheService.evict(auctionRoom.getShareCode());
