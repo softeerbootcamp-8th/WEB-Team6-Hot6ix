@@ -323,18 +323,24 @@ function SellerHomePage() {
               />
             </div>
           ) : products.products.length === 0 ? (
-            <EmptyState
-              title="등록한 상품이 없어요"
-              description="상품을 먼저 등록하면 경매방에 물품으로 넣을 수 있어요."
-              action={
-                <Link
-                  to="/seller/products/new"
-                  className="ease-soft inline-block rounded-[14px] bg-brand-500 px-6 py-3.5 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
-                >
-                  상품 등록하기
-                </Link>
-              }
-            />
+            /*
+              이 분기만 툴바가 없어서 제목 바로 밑에 붙는다. 조건에 맞는 상품이
+              없을 때와 같은 간격을 둔다.
+            */
+            <div className="mt-4">
+              <EmptyState
+                title="등록한 상품이 없어요"
+                description="상품을 먼저 등록하면 경매방에 물품으로 넣을 수 있어요."
+                action={
+                  <Link
+                    to="/seller/products/new"
+                    className="ease-soft inline-block rounded-[14px] bg-brand-500 px-6 py-3.5 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
+                  >
+                    상품 등록하기
+                  </Link>
+                }
+              />
+            </div>
           ) : (
             <>
               {/*
