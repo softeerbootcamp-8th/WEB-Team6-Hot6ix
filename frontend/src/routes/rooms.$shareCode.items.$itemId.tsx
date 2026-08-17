@@ -20,6 +20,10 @@ import {
 } from '@/features/live/adapt-item'
 import { toBidErrorMessage } from '@/features/live/bid-error'
 import { createBidRequestIdTracker } from '@/features/live/bid-request-id'
+import {
+  createOwnBidTracker,
+  trackOwnBidAttempt,
+} from '@/features/live/own-bid-tracker'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import {
   getGetRoomByShareCodeQueryKey,
@@ -74,7 +78,7 @@ function AuctionItemPage() {
    * 내가 접수시킨 입찰의 `물품id:금액`. 실시간 입찰 이벤트가 내 것인지 가린다.
    * 자세한 이유는 경매방 화면(`rooms.$shareCode.index.tsx`)에 적어 두었다.
    */
-  const myBidsRef = useRef<Set<string>>(new Set())
+  const ownBids = useRef(createOwnBidTracker()).current
 
   /*
    * 방 정보도 서버에서 받는다. 예전에는 제목·판매자명만 쓴다고 목업으로
@@ -199,9 +203,7 @@ function AuctionItemPage() {
                   rank: 1,
                   nickname: payload.bidderNickname,
                   amount: payload.bidPrice,
-                  isMe: myBidsRef.current.has(
-                    `${payload.itemId}:${payload.bidPrice}`,
-                  ),
+                  isMe: ownBids.has(payload.itemId, payload.bidPrice),
                 },
                 ...base.leaderboard.filter(
                   (entry) => entry.nickname !== payload.bidderNickname,
@@ -311,7 +313,7 @@ function AuctionItemPage() {
           break
       }
     },
-    [item, shareCode, navigate, queryClient],
+    [item, shareCode, navigate, queryClient, ownBids],
   )
 
   const { status } = useRealtimeStatus(shareCode, handleSseEvent)
@@ -422,14 +424,14 @@ function AuctionItemPage() {
 
     try {
       const requestId = bidRequestIds.acquire(item.id, amount)
-      await placeBid.mutateAsync({
-        auctionItemId: item.id,
-        data: { amount },
-        headers: { 'Idempotency-Key': requestId },
-      })
+      await trackOwnBidAttempt(ownBids, item.id, amount, () =>
+        placeBid.mutateAsync({
+          auctionItemId: item.id,
+          data: { amount },
+          headers: { 'Idempotency-Key': requestId },
+        }),
+      )
       bidRequestIds.complete(requestId)
-
-      myBidsRef.current.add(`${item.id}:${amount}`)
 
       // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       setFeedback({
@@ -439,10 +441,7 @@ function AuctionItemPage() {
       toast.success('입찰이 등록됐어요', {
         description: `${item.name} · ${formatWon(amount)}`,
       })
-      // 데모 입찰로 덮어쓴 값을 비워야 서버가 준 현재가가 보인다.
-      setOverride(null)
-      void detailQuery.refetch()
-      void summaries.refetch()
+      // MySQL 반영은 비동기다. 즉시 재조회해 먼저 온 SSE 상태를 되돌리지 않는다.
     } catch (error) {
       const { title, description } = toBidErrorMessage(error)
       setFeedback({ tone: 'error', message: `${title}. ${description}` })
