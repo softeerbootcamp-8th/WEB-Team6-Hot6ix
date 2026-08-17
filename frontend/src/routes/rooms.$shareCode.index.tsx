@@ -990,7 +990,26 @@ function LiveRoomPage() {
       toast.success('마감을 앞당겼어요', {
         description: `${item.name} · ${formatClosingLead(response.data?.remainingSeconds ?? closeEarlySeconds)} 뒤 마감`,
       })
-      refreshItems(item.id)
+
+      /*
+       * 서버가 돌려준 새 마감 시각을 그대로 적는다. **목록을 다시 읽어 맞추면 안 된다**
+       * (#374). 앞당김은 Redis 에 먼저 반영되고 MySQL 에는 Stream 이 옮긴 뒤에야 들어오는데,
+       * 목록 API 는 MySQL 을 읽는다. 게다가 서버는 SSE 를 HTTP 응답보다 먼저 내보내므로
+       * `refreshItems` 의 `setItems(null)` 이 방금 SSE 로 맞춰 둔 값까지 버린다. 그러면
+       * 카운트다운이 옛 시각으로 돌아가고, 더 올 이벤트가 없어 새로고침 전까지 그대로 남는다.
+       */
+      const advancedEndAt = response.data?.endAt
+      if (advancedEndAt) {
+        setItems((prev) =>
+          (prev ?? roomItems).map((entry) =>
+            entry.id === item.id ? { ...entry, endsAt: advancedEndAt } : entry,
+          ),
+        )
+      }
+      // 상세는 화면 편성과 무관하므로 그대로 무효화해 다음에 열 때 새로 읽는다.
+      void queryClient.invalidateQueries({
+        queryKey: getGetDetail1QueryKey(shareCode, item.id),
+      })
     } catch (error) {
       const { title, description } = toSellerActionErrorMessage(
         error,
