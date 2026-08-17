@@ -71,11 +71,29 @@ export function ClosedRoomView({
   const [keyword, setKeyword] = useState('')
 
   const items = result.items
+
+  /*
+   * 결과를 열면 낙찰된 물품부터 찾게 된다. 서버 순서는 낙찰과 유찰이 섞여 있어
+   * 여기서 낙찰만 앞으로 당긴다. 같은 무리 안에서는 서버 순서를 그대로 둔다
+   * (`sort` 는 안정 정렬이다). `PENDING` 은 아래 배지도 유찰로 그리므로 뒤에 둔다.
+   *
+   * 목록이 세 군데(모바일 결과·데스크톱 왼쪽 목록·데스크톱 전체 결과)라 순서는
+   * 여기서 한 번만 정하고 셋이 같이 쓴다.
+   */
+  const orderedItems = useMemo(
+    () =>
+      [...items].sort(
+        (a, b) => Number(b.outcome === 'SOLD') - Number(a.outcome === 'SOLD'),
+      ),
+    [items],
+  )
+
+  /** 검색은 데스크톱 왼쪽 목록에만 있다. 위 순서를 그대로 이어받는다. */
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
-    if (!trimmed) return items
-    return items.filter((item) => item.productName.includes(trimmed))
-  }, [items, keyword])
+    if (!trimmed) return orderedItems
+    return orderedItems.filter((item) => item.productName.includes(trimmed))
+  }, [orderedItems, keyword])
 
   const closedAtLabel = result.closedAt ? formatDate(result.closedAt) : null
 
@@ -203,7 +221,7 @@ export function ClosedRoomView({
             </p>
 
             <ul className="mt-3 space-y-2">
-              {items.map((item) => {
+              {orderedItems.map((item) => {
                 const won = item.outcome === 'SOLD'
 
                 return (
@@ -493,7 +511,7 @@ export function ClosedRoomView({
                     </div>
 
                     <ul className="space-y-2">
-                      {items.map((item) => {
+                      {orderedItems.map((item) => {
                         const won = item.outcome === 'SOLD'
 
                         return (
