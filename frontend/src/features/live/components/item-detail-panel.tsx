@@ -122,7 +122,7 @@ export function ItemDetailPanel({
 
   return (
     <div className="animate-rise rounded-[20px] border bg-card p-5 lg:min-h-0 lg:flex-1 lg:overflow-hidden">
-      <div className="grid gap-5 lg:h-full xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:h-full xl:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
         {/* 왼쪽 · 상품 정보 */}
         <div className="min-w-0 overflow-y-auto">
           <div className="relative">

@@ -161,7 +161,12 @@ function SellerHomePage() {
         </Link>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
+      {/*
+        모바일에서도 컬럼을 `minmax(0,1fr)` 로 못 박는다. 안 그러면 한 칸짜리
+        auto 트랙이 내용의 min-content 까지 부풀어서, 안쪽이 조금만 넓어도
+        화면 전체가 가로로 밀린다 (`lg:` 에만 걸어 두면 폰에서 무방비다).
+      */}
+      <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[380px_minmax(0,1fr)]">
         {/* 판매자 프로필 — 380×560 */}
         <section className="flex flex-col rounded-[20px] border bg-card p-7 lg:h-[calc(100svh-14rem)] lg:min-h-[560px]">
           <h2 className="text-[18px] font-extrabold text-foreground">
@@ -318,18 +323,24 @@ function SellerHomePage() {
               />
             </div>
           ) : products.products.length === 0 ? (
-            <EmptyState
-              title="등록한 상품이 없어요"
-              description="상품을 먼저 등록하면 경매방에 물품으로 넣을 수 있어요."
-              action={
-                <Link
-                  to="/seller/products/new"
-                  className="ease-soft inline-block rounded-[14px] bg-brand-500 px-6 py-3.5 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
-                >
-                  상품 등록하기
-                </Link>
-              }
-            />
+            /*
+              이 분기만 툴바가 없어서 제목 바로 밑에 붙는다. 조건에 맞는 상품이
+              없을 때와 같은 간격을 둔다.
+            */
+            <div className="mt-4">
+              <EmptyState
+                title="등록한 상품이 없어요"
+                description="상품을 먼저 등록하면 경매방에 물품으로 넣을 수 있어요."
+                action={
+                  <Link
+                    to="/seller/products/new"
+                    className="ease-soft inline-block rounded-[14px] bg-brand-500 px-6 py-3.5 text-[15px] font-bold text-white transition-all duration-150 hover:opacity-90 active:scale-95"
+                  >
+                    상품 등록하기
+                  </Link>
+                }
+              />
+            </div>
           ) : (
             <>
               {/*

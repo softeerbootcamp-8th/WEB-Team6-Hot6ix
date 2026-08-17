@@ -239,7 +239,11 @@ export function MobileLiveView({
             {participantCount ?? room.participantCount}명 참여 중
           </span>
 
-          <RoomRuleChips room={room} />
+          <RoomRuleChips
+            bidUnit={room.bidUnit}
+            softCloseTriggerSeconds={room.softCloseTriggerSeconds}
+            softCloseSeconds={room.softCloseSeconds}
+          />
         </div>
 
         {/* 개발용 조작 — 데스크톱 헤더의 버튼들과 같은 역할이다 */}

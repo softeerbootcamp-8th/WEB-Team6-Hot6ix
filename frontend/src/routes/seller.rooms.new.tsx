@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { Minus, Store } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { AppShell } from '@/components/layout/page-shell'
 import { EmptyState, PageHeader } from '@/components/page-header'
@@ -84,6 +84,22 @@ function AuctionRoomNewPage() {
   // 커버를 S3 에 올리는 동안도 "만드는 중"이다. 빼면 그 사이 버튼이 살아 있어
   // 두 번 누를 수 있고, 그러면 업로드가 두 번 나간다.
   const creating = uploading || createRoom.isPending || addItems.isPending
+
+  /*
+   * 프로필이 없으면 아래에서 안내 화면으로 갈린다. 다만 목록에서 "경매방 만들기"
+   * 를 누른 사람에게는 화면만 바뀐 것으로 보여서 왜 못 만드는지 놓치기 쉽다.
+   * 토스트로 한 번 더 알린다. 조회가 끝나기 전에는 아직 없는 것이 아니므로
+   * `profilePending` 이 풀린 뒤에만 띄우고, 다시 그려질 때 또 뜨지 않게 막는다.
+   */
+  const missingProfile = !profilePending && !profile
+  const noticed = useRef(false)
+  useEffect(() => {
+    if (!missingProfile || noticed.current) return
+    noticed.current = true
+    toast.info('판매자 프로필을 먼저 등록해 주세요', {
+      description: '경매방은 프로필을 등록한 뒤에 만들 수 있어요.',
+    })
+  }, [missingProfile])
 
   if (profilePending) return <RoutePending />
 
@@ -235,7 +251,7 @@ function AuctionRoomNewPage() {
         onSubmit={(event) => void handleSubmit(event)}
         className="mt-6 flex flex-col gap-6"
       >
-        <div className="grid gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-2">
           {/* 기본 정보 */}
           <section className="rounded-[20px] border bg-card p-7">
             <h2 className="text-[19px] font-extrabold text-foreground">
@@ -257,7 +273,7 @@ function AuctionRoomNewPage() {
               />
             </div>
 
-            <div className="mt-6 grid gap-6 sm:grid-cols-[240px_minmax(0,1fr)]">
+            <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 sm:grid-cols-[240px_minmax(0,1fr)]">
               {/*
                 지우기는 넘기지 않는다(`onRemove` 없음). 방 수정 요청은 값이 없으면
                 기존 값을 유지해서 "커버를 없앰"을 표현할 방법이 없다. 삭제 버튼만
@@ -312,7 +328,7 @@ function AuctionRoomNewPage() {
               종료 직전 입찰이 발생하면 마감 시간을 자동으로 연장합니다.
             </p>
 
-            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
               <NumberField
                 label="마감 임박 기준"
                 unit="분"

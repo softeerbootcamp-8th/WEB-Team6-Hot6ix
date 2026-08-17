@@ -283,7 +283,12 @@ function TradesPage() {
               />
             </div>
           ) : (
-            <ul className="mt-4 grid gap-4 md:mt-6 md:gap-6 xl:grid-cols-2">
+            <ul className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 md:mt-6 md:gap-6 xl:grid-cols-2">
+              {/*
+                한 칸일 때도 컬럼을 `minmax(0,1fr)` 로 못 박는다. `xl:` 에만 걸어 두면
+                그 아래에서는 auto 트랙이 내용의 min-content 까지 부풀어서, 상품명이
+                길면 카드가 화면 밖으로 나가고 화면 전체가 가로로 밀린다.
+              */}
               {visible.map((trade) => {
                 const style = STATUS_STYLE[trade.status]
                 const isSeller = trade.role === 'SELLER'

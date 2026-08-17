@@ -192,7 +192,11 @@ export function LiveShell({
               {participantCount ?? room.participantCount}명 참여 중
             </p>
 
-            <RoomRuleChips room={room} />
+            <RoomRuleChips
+              bidUnit={room.bidUnit}
+              softCloseTriggerSeconds={room.softCloseTriggerSeconds}
+              softCloseSeconds={room.softCloseSeconds}
+            />
           </div>
         </div>
       </div>

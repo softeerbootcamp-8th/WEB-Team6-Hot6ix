@@ -197,7 +197,7 @@ export function ProductForm({
     <form
       onSubmit={(event) => void handleSubmit(event)}
       className={cn(
-        'grid gap-8 rounded-[20px] border bg-card p-8 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-10',
+        'grid grid-cols-[minmax(0,1fr)] gap-8 rounded-[20px] border bg-card p-8 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-10',
         className,
       )}
     >
