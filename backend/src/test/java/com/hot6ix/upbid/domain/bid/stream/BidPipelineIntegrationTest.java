@@ -303,8 +303,8 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
     }
 
     @Test
-    @DisplayName("파싱할 수 없는 pending 이벤트는 ACK하지 않고 뒤의 정상 이벤트도 처리하지 않는다")
-    void stopsAtMalformedPendingEvent() {
+    @DisplayName("파싱할 수 없는 이벤트를 격리하고 놓아주어 뒤에 밀린 입찰과 마감이 반영된다")
+    void releasesMalformedEventSoLaterEventsProceed() {
         redis.opsForStream().add(StreamRecords.mapBacked(Map.of(
                 "type", "BID_ACCEPTED",
                 "requestId", "malformed-with-missing-fields")).withStreamKey(STREAM));
@@ -320,13 +320,16 @@ class BidPipelineIntegrationTest extends AbstractMySqlContainerTest {
                 String.valueOf(System.currentTimeMillis() - 1_000L));
         store.requestNaturalClose(fixture.item().getAuctionItemId());
 
-        assertThatThrownBy(() -> consumer().poll()).isInstanceOf(RuntimeException.class);
+        consumer().poll();
 
-        assertThat(bidRepository.findByRequestId("pipeline-after-malformed")).isEmpty();
-        assertThat(auctionItemRepository.findById(fixture.item().getAuctionItemId()).orElseThrow()
-                .getStatus()).isEqualTo(AuctionItemStatus.IN_PROGRESS);
-        assertThat(redis.opsForStream().size(STREAM)).isEqualTo(3L);
-        assertThat(redis.opsForStream().pending(STREAM, GROUP).getTotalPendingMessages()).isEqualTo(1L);
+        // 격리한 레코드를 PEL 에 남기면 컨슈머가 그것만 다시 집어서 뒤의 입찰과 마감이 영영
+        // MySQL 에 안 들어간다. 운영에서 40분 동안 27건이 그렇게 밀렸다 (#374).
+        AuctionItem closed = auctionItemRepository
+                .findById(fixture.item().getAuctionItemId()).orElseThrow();
+        assertThat(bidRepository.findByRequestId("pipeline-after-malformed")).isPresent();
+        assertThat(closed.getStatus()).isEqualTo(AuctionItemStatus.SOLD);
+        assertThat(redis.opsForStream().size(STREAM)).isZero();
+        assertThat(redis.opsForStream().pending(STREAM, GROUP).getTotalPendingMessages()).isZero();
         assertThat(redis.opsForStream().size(QUARANTINE_STREAM)).isEqualTo(1L);
         assertThat(redis.opsForHash().size(QUARANTINE_INDEX)).isEqualTo(1L);
     }
