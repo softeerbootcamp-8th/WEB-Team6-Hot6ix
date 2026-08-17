@@ -1,8 +1,10 @@
 package com.hot6ix.upbid.domain.auction.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
+import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
 import com.hot6ix.upbid.global.support.AbstractRedisContainerTest;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +67,7 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
                 Map.entry("totalExtensionSeconds", "0"),
                 Map.entry("maxTotalExtensionSeconds", "3600")));
         assertThat(redis.opsForSet().members(PARTICIPANTS_KEY))
-                .containsExactlyInAnyOrder("11", "12");
+                .contains("11", "12");
     }
 
     @Test
@@ -84,6 +86,70 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
     }
 
     @Test
+    @DisplayName("정상 Seed를 다시 요청해도 새 DB 스냅샷의 참여자를 다시 넣지 않는다")
+    void seedSkipsParticipantRewriteWhenStateIsReady() {
+
+        assertThat(store.seed(seed(List.of(11L)))).isTrue();
+
+        boolean createdAgain = store.seed(seed(List.of(11L, 12L)));
+
+        assertThat(createdAgain).isFalse();
+        assertThat(redis.opsForSet().members(PARTICIPANTS_KEY)).contains("11").doesNotContain("12");
+    }
+
+    @Test
+    @DisplayName("동의 참여자가 없어도 참여자 Seed 준비 상태를 Redis에 남긴다")
+    void seedMarksEmptyParticipantsAsReady() {
+
+        assertThat(store.seed(seed(List.of()))).isTrue();
+
+        assertThat(redis.hasKey(PARTICIPANTS_KEY)).isTrue();
+    }
+
+    @Test
+    @DisplayName("초기화 표시자가 실제 입찰 참여자를 대신하지 않는다")
+    void seedMarkerDoesNotAuthorizeBidder() {
+
+        assertThat(store.seed(seed(List.of()))).isTrue();
+
+        RedisBidDecision decision = store.evaluateBid(ITEM_ID, "request-1", 11L, 10_000L, 0L);
+
+        assertThat(decision).isEqualTo(
+                new RedisBidDecision.Rejected(RedisBidDecision.Reason.TERMS_NOT_AGREED));
+    }
+
+    @Test
+    @DisplayName("표시자가 없는 기존 참여자 Set도 준비된 Seed로 판단한다")
+    void legacyParticipantSetIsReadyWithoutMarker() {
+
+        redis.opsForHash().put(ITEM_KEY, "status", "IN_PROGRESS");
+        redis.opsForSet().add(PARTICIPANTS_KEY, "11");
+
+        assertThat(store.isSeedReady(ITEM_ID, ROOM_ID)).isTrue();
+    }
+
+    @Test
+    @DisplayName("물품 Seed 키 타입이 잘못되면 준비 상태로 숨기지 않고 실패한다")
+    void seedReadinessRejectsInvalidItemKeyType() {
+
+        redis.opsForValue().set(ITEM_KEY, "invalid");
+
+        assertThatThrownBy(() -> store.isSeedReady(ITEM_ID, ROOM_ID))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    @DisplayName("참여자 Seed 키 타입이 잘못되면 준비 상태로 숨기지 않고 실패한다")
+    void seedReadinessRejectsInvalidParticipantsKeyType() {
+
+        redis.opsForHash().put(ITEM_KEY, "status", "IN_PROGRESS");
+        redis.opsForValue().set(PARTICIPANTS_KEY, "invalid");
+
+        assertThatThrownBy(() -> store.isSeedReady(ITEM_ID, ROOM_ID))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
     @DisplayName("물품 Hash가 이미 있어도 누락된 참여자 Set은 DB 스냅샷으로 다시 채운다")
     void seedRestoresMissingParticipantsWithoutOverwritingBidState() {
 
@@ -96,7 +162,7 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
 
         assertThat(createdAgain).isFalse();
         assertThat(redis.opsForSet().members(PARTICIPANTS_KEY))
-                .containsExactlyInAnyOrder("11", "12");
+                .contains("11", "12");
         assertThat(redis.opsForHash().get(ITEM_KEY, "currentPrice")).isEqualTo("15000");
         assertThat(redis.opsForHash().get(ITEM_KEY, "leaderUserId")).isEqualTo("11");
     }

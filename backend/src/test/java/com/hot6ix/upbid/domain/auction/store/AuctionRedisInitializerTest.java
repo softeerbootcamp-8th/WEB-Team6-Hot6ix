@@ -2,6 +2,8 @@ package com.hot6ix.upbid.domain.auction.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
@@ -89,7 +91,37 @@ class AuctionRedisInitializerTest extends AbstractRedisContainerTest {
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "endAt"))
                 .isEqualTo(String.valueOf(END_AT.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()));
         assertThat(redis.opsForSet().members(AuctionRedisKeys.participants(ROOM_ID)))
-                .containsExactlyInAnyOrder("11", "12");
+                .contains("11", "12");
+    }
+
+    @Test
+    @DisplayName("정상 Redis Seed가 있으면 전체 참여자를 DB에서 다시 읽지 않는다")
+    void skipsParticipantSnapshotWhenSeedIsReady() {
+
+        AuctionRoom room = mock(AuctionRoom.class);
+        when(room.getAuctionRoomId()).thenReturn(ROOM_ID);
+        when(room.getSoftCloseTriggerSeconds()).thenReturn(60);
+        when(room.getSoftCloseExtendSeconds()).thenReturn(90);
+
+        AuctionItem item = mock(AuctionItem.class);
+        when(item.getAuctionItemId()).thenReturn(ITEM_ID);
+        when(item.getAuctionRoom()).thenReturn(room);
+        when(item.getStatus()).thenReturn(AuctionItemStatus.IN_PROGRESS);
+        when(item.getStartingPrice()).thenReturn(10_000L);
+        when(item.getCurrentPrice()).thenReturn(10_000L);
+        when(item.getBidIncrement()).thenReturn(1_000L);
+        when(item.getEndAt()).thenReturn(END_AT);
+        when(item.getTotalExtensionSeconds()).thenReturn(0);
+
+        when(auctionItemRepository.findById(ITEM_ID)).thenReturn(Optional.of(item));
+        when(auctionItemRepository.findSellerUserId(ITEM_ID)).thenReturn(Optional.of(303L));
+        when(auctionParticipantRepository.findAgreedUserIds(ROOM_ID)).thenReturn(List.of(11L, 12L));
+
+        initializer.initialize(ITEM_ID);
+        initializer.initialize(ITEM_ID);
+
+        verify(auctionItemRepository, times(1)).findSellerUserId(ITEM_ID);
+        verify(auctionParticipantRepository, times(1)).findAgreedUserIds(ROOM_ID);
     }
 
     @Test
