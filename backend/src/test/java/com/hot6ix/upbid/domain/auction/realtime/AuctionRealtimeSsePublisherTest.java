@@ -95,6 +95,7 @@ class AuctionRealtimeSsePublisherTest {
                 1_786_000_000_123L,
                 END_AT,
                 extendedSeconds,
+                1L,
                 false);
     }
 

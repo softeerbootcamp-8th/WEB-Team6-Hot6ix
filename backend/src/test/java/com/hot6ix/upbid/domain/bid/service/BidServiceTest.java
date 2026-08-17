@@ -64,7 +64,7 @@ class BidServiceTest {
         when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(new RedisBidDecision.Accepted(
                         REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
-                        AMOUNT, ACCEPTED_AT, END_AT, 30, false));
+                        AMOUNT, ACCEPTED_AT, END_AT, 30, 1L, false));
 
         BidCreateResponseDto response = bidService.place(
                 ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID);
@@ -82,7 +82,7 @@ class BidServiceTest {
                 ITEM_ID,
                 new RedisBidDecision.Accepted(
                         REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
-                        AMOUNT, ACCEPTED_AT, END_AT, 30, false));
+                        AMOUNT, ACCEPTED_AT, END_AT, 30, 1L, false));
     }
 
     @Test
@@ -91,7 +91,7 @@ class BidServiceTest {
 
         RedisBidDecision.Accepted duplicate = new RedisBidDecision.Accepted(
                 REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
-                AMOUNT, ACCEPTED_AT, END_AT, 30, true);
+                AMOUNT, ACCEPTED_AT, END_AT, 30, 1L, true);
         when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(duplicate);
 
@@ -114,7 +114,7 @@ class BidServiceTest {
 
         RedisBidDecision.Accepted accepted = new RedisBidDecision.Accepted(
                 REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
-                AMOUNT, ACCEPTED_AT, END_AT, 0, false);
+                AMOUNT, ACCEPTED_AT, END_AT, 0, 1L, false);
         when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(accepted);
         doThrow(new IllegalStateException("sse unavailable"))

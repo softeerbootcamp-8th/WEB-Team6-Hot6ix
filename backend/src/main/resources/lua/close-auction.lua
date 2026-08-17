@@ -43,6 +43,8 @@ end
 
 local endAtString = requireHashValue(KEYS[1], 'endAt', 'auction item')
 local endAt = parseInteger(endAtString, 'auction item.endAt')
+local revision = parseInteger(
+        requireHashValue(KEYS[1], 'revision', 'auction item'), 'auction item.revision')
 if requireHashValue(KEYS[1], 'status', 'auction item') ~= 'IN_PROGRESS' then
     return {'REJECTED', 'ITEM_NOT_IN_PROGRESS', endAtString or ''}
 end
@@ -85,6 +87,8 @@ if mode == 'SELLER_ADVANCE' then
     local advancedAtResult = string.format('%d', advancedAt)
     local advancedEndAtResult = string.format('%d', advancedEndAt)
     local remainingResult = string.format('%d', remaining)
+    revision = redis.call('HINCRBY', KEYS[1], 'revision', 1)
+    local revisionResult = string.format('%d', revision)
     redis.call('HSET', KEYS[1], 'endAt', advancedEndAtResult)
     redis.call('XADD', KEYS[2], '*',
             'type', 'ITEM_CLOSE_ADVANCED',
@@ -92,14 +96,16 @@ if mode == 'SELLER_ADVANCE' then
             'roomId', roomId,
             'endAt', advancedEndAtResult,
             'remainingSeconds', remainingResult,
-            'advancedAt', advancedAtResult)
+            'advancedAt', advancedAtResult,
+            'revision', revisionResult)
     return {'ADVANCED',
         roomId,
         itemId,
         itemName,
         advancedEndAtResult,
         remainingResult,
-        advancedAtResult}
+        advancedAtResult,
+        revisionResult}
 end
 
 if mode ~= 'NATURAL' then
@@ -132,6 +138,8 @@ if leaderUserId ~= '' then
             participantNicknamesKey, leaderUserId, 'auction participant nicknames')
 end
 
+revision = redis.call('HINCRBY', KEYS[1], 'revision', 1)
+local revisionResult = string.format('%d', revision)
 redis.call('HSET', KEYS[1], 'status', 'CLOSING')
 redis.call('XADD', KEYS[2], '*',
         'type', 'ITEM_CLOSING',
@@ -142,7 +150,8 @@ redis.call('XADD', KEYS[2], '*',
         'endAt', endAtString,
         'totalExtensionSeconds', totalExtensionSeconds,
         'closeReason', 'NATURAL',
-        'closedAt', closedAtString)
+        'closedAt', closedAtString,
+        'revision', revisionResult)
 
 return {'CLOSING',
     roomId,
@@ -152,4 +161,5 @@ return {'CLOSING',
     leaderUserId,
     winnerNickname,
     endAtString,
-    closedAtString}
+    closedAtString,
+    revisionResult}

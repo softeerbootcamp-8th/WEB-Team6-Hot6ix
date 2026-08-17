@@ -3,6 +3,7 @@
 -- KEYS[1] auction:item:{itemId} Hash
 -- KEYS[2] auction:bid:request:{requestId} Hash
 -- KEYS[3] auction:bid:stream Stream
+-- KEYS[4] auction:item:{itemId}:leaderboard ZSET
 -- ARGV[1] requestId
 -- ARGV[2] bidderUserId
 -- ARGV[3] amount
@@ -67,6 +68,7 @@ if requestKeyType == 'hash' then
     local cachedAcceptedAt = requireHashValue(KEYS[2], 'acceptedAt', 'bid request')
     local cachedEndAt = requireHashValue(KEYS[2], 'endAt', 'bid request')
     local cachedExtendedSeconds = requireHashValue(KEYS[2], 'extendedSeconds', 'bid request')
+    local cachedRevision = redis.call('HGET', KEYS[2], 'revision') or '0'
     parseInteger(cachedItemId, 'bid request.itemId')
     parseInteger(cachedBidderId, 'bid request.bidderUserId')
     parseInteger(cachedAmount, 'bid request.amount')
@@ -74,6 +76,7 @@ if requestKeyType == 'hash' then
     parseInteger(cachedAcceptedAt, 'bid request.acceptedAt')
     parseInteger(cachedEndAt, 'bid request.endAt')
     parseInteger(cachedExtendedSeconds, 'bid request.extendedSeconds')
+    parseInteger(cachedRevision, 'bid request.revision')
 
     if cachedItemId ~= itemId
             or cachedBidderId ~= bidderId
@@ -89,6 +92,7 @@ if requestKeyType == 'hash' then
         cachedAcceptedAt,
         cachedEndAt,
         cachedExtendedSeconds,
+        cachedRevision,
         '1'}
 end
 
@@ -98,6 +102,7 @@ if itemKeyType == 'none' then
 end
 
 requireKeyType(KEYS[3], 'stream', true, 'bid stream')
+local leaderboardType = requireKeyType(KEYS[4], 'zset', true, 'auction leaderboard')
 
 local status = requireHashValue(KEYS[1], 'status', 'auction item')
 local sellerUserId = requireHashValue(KEYS[1], 'sellerUserId', 'auction item')
@@ -111,7 +116,20 @@ local trigger = optionalHashInteger(KEYS[1], 'softCloseTriggerSeconds', 'auction
 local extend = optionalHashInteger(KEYS[1], 'softCloseExtendSeconds', 'auction item')
 local total = requireHashInteger(KEYS[1], 'totalExtensionSeconds', 'auction item')
 local maximum = requireHashInteger(KEYS[1], 'maxTotalExtensionSeconds', 'auction item')
+local revision = requireHashInteger(KEYS[1], 'revision', 'auction item')
+if requireHashValue(KEYS[1], 'leaderboardSeeded', 'auction item') ~= '1' then
+    error('auction item leaderboard is not seeded')
+end
 local leaderUserId = redis.call('HGET', KEYS[1], 'leaderUserId')
+if leaderUserId ~= false then
+    if leaderboardType ~= 'zset' then
+        error('auction leaderboard is missing for current leader')
+    end
+    local leaderAmount = redis.call('ZSCORE', KEYS[4], leaderUserId)
+    if leaderAmount == false or tonumber(leaderAmount) ~= currentPrice then
+        error('auction leaderboard current leader does not match item state')
+    end
+end
 local amount = parseInteger(amountArgument, 'bid amount')
 local redisTime = redis.call('TIME')
 local decisionAt = tonumber(redisTime[1]) * 1000 + math.floor(tonumber(redisTime[2]) / 1000)
@@ -178,12 +196,15 @@ local endAtString = string.format('%d', endAt)
 local acceptedAtString = string.format('%d', acceptedAt)
 local totalString = string.format('%d', total)
 local extendedString = string.format('%d', extendedSeconds)
+revision = redis.call('HINCRBY', KEYS[1], 'revision', 1)
+local revisionString = string.format('%d', revision)
 
 redis.call('HSET', KEYS[1],
         'currentPrice', amountString,
         'leaderUserId', bidderId,
         'endAt', endAtString,
         'totalExtensionSeconds', totalString)
+redis.call('ZADD', KEYS[4], amountString, bidderId)
 
 redis.call('XADD', KEYS[3], '*',
         'type', 'BID_ACCEPTED',
@@ -195,7 +216,8 @@ redis.call('XADD', KEYS[3], '*',
         'acceptedAt', acceptedAtString,
         'endAt', endAtString,
         'extendedSeconds', extendedString,
-        'totalExtensionSeconds', totalString)
+        'totalExtensionSeconds', totalString,
+        'revision', revisionString)
 
 redis.call('HSET', KEYS[2],
         'itemId', itemId,
@@ -206,7 +228,8 @@ redis.call('HSET', KEYS[2],
         'amount', amountString,
         'acceptedAt', acceptedAtString,
         'endAt', endAtString,
-        'extendedSeconds', extendedString)
+        'extendedSeconds', extendedString,
+        'revision', revisionString)
 
 return {'ACCEPTED', requestId,
     roomId,
@@ -217,4 +240,5 @@ return {'ACCEPTED', requestId,
     acceptedAtString,
     endAtString,
     extendedString,
+    revisionString,
     '0'}
