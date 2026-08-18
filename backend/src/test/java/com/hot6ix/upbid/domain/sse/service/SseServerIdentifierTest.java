@@ -13,7 +13,7 @@ import org.springframework.boot.web.server.context.WebServerInitializedEvent;
 
 class SseServerIdentifierTest {
 
-    private static final SseProperties PROPS = new SseProperties(30_000L, 3_600_000L, 50, "test-host", 128);
+    private static final SseProperties PROPS = new SseProperties(30_000L, 3_600_000L, 50, "test-host", 128, 1_000L);
 
     private final SseServerIdentifier identifier = new SseServerIdentifier(PROPS);
 

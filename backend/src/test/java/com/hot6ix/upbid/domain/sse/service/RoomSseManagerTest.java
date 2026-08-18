@@ -16,7 +16,10 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -30,11 +33,15 @@ class RoomSseManagerTest {
 
     private static final Long ROOM_ID = 1L;
     private static final String EVENT_NAME = "TEST_EVENT";
+    /** {@code EventType.ROOM_CLOSED} 와 같은 값. 이 클래스는 이벤트 이름의 의미를 모른다. */
+    private static final String ROOM_CLOSED_EVENT = "ROOM_CLOSED";
     private static final long EMITTER_TIMEOUT_MS = 60 * 60 * 1000L;
     private static final int QUEUE_CAPACITY = 128;
+    /** 대부분의 테스트는 강제 종료 폴백이 끼어들지 않아야 한다. 테스트가 끝날 일이 없는 값을 준다. */
+    private static final long CLOSE_FLUSH_TIMEOUT_MS = 30_000L;
 
-    private static final SseProperties PROPS =
-            new SseProperties(30_000L, EMITTER_TIMEOUT_MS, 50, "local", QUEUE_CAPACITY);
+    private static final SseProperties PROPS = new SseProperties(
+            30_000L, EMITTER_TIMEOUT_MS, 50, "local", QUEUE_CAPACITY, CLOSE_FLUSH_TIMEOUT_MS);
 
     private final RoomSseManager roomSseManager = newRoomSseManager();
 
@@ -62,12 +69,51 @@ class RoomSseManagerTest {
      */
     private static RoomSseManager newRoomSseManager(
             SseEventBuffer buffer, ParticipantCountPublisher publisher, SimpleMeterRegistry registry) {
-        return new RoomSseManager(PROPS, new SseMetrics(registry), buffer, publisher, Runnable::run) {
+        return newRoomSseManager(PROPS, Runnable::run, registry, buffer, publisher);
+    }
+
+    /**
+     * 전송 시점 자체를 보는 테스트용. {@code Runnable::run} 은 {@code deliverLocal} 이 돌아오기
+     * 전에 전송을 끝내 버려서 <b>"큐에 넣은 뒤 닫기"의 순서 문제를 원리적으로 못 본다.</b>
+     * 그런 테스트는 실행 시점을 손에 쥔 executor 를 넣는다({@link ManualExecutor}).
+     */
+    private static RoomSseManager newRoomSseManager(
+            SseProperties props, Executor executor, SimpleMeterRegistry registry) {
+        return newRoomSseManager(props, executor, registry,
+                mock(SseEventBuffer.class), mock(ParticipantCountPublisher.class));
+    }
+
+    private static RoomSseManager newRoomSseManager(
+            SseProperties props, Executor executor, SimpleMeterRegistry registry,
+            SseEventBuffer buffer, ParticipantCountPublisher publisher) {
+        return new RoomSseManager(props, new SseMetrics(registry), buffer, publisher, executor) {
             @Override
             SseEmitter createEmitter() {
                 return new FakeMvcEmitter();
             }
         };
+    }
+
+    /**
+     * 제출된 작업을 모아 두고 테스트가 부를 때 실행한다. 운영의 가상 스레드처럼
+     * <b>제출과 실행 사이에 틈이 있는</b> 상태를 만드는 데 쓴다.
+     */
+    private static final class ManualExecutor implements Executor {
+
+        private final Queue<Runnable> pending = new ConcurrentLinkedQueue<>();
+
+        @Override
+        public void execute(Runnable command) {
+            pending.add(command);
+        }
+
+        /** 실행 중에 다시 제출되는 작업(순차 drain의 다음 항목)까지 모두 소진한다. */
+        void runAll() {
+            Runnable task;
+            while ((task = pending.poll()) != null) {
+                task.run();
+            }
+        }
     }
 
     /**
@@ -94,9 +140,26 @@ class RoomSseManagerTest {
         private Consumer<Throwable> errorCallback;
         private boolean completed;
         private boolean clientGone;
+        /** 종료를 기다리는 테스트용. 비동기로 닫히므로 단언 전에 기다릴 지점이 필요하다. */
+        private final CountDownLatch closed = new CountDownLatch(1);
+        /** null 이 아니면 write 가 이 latch 가 열릴 때까지 반환하지 않는다. */
+        private volatile CountDownLatch sendGate;
 
         void killClient() {
             this.clientGone = true;
+        }
+
+        /** 클라이언트가 응답하지 않아 write 가 반환하지 않는 상태를 만든다. */
+        void blockSend(CountDownLatch gate) {
+            this.sendGate = gate;
+        }
+
+        synchronized boolean isCompleted() {
+            return completed;
+        }
+
+        boolean awaitClosed(long timeout, TimeUnit unit) throws InterruptedException {
+            return closed.await(timeout, unit);
         }
 
         @Override
@@ -121,12 +184,31 @@ class RoomSseManagerTest {
 
         @Override
         public void send(SseEventBuilder builder) throws IOException {
+            awaitGate();
             requireWritable();
         }
 
         @Override
         public void send(Object object) throws IOException {
+            awaitGate();
             requireWritable();
+        }
+
+        /**
+         * lock 밖에서 기다린다. {@code synchronized} 안에서 멈추면 다른 스레드의
+         * {@code complete()}까지 같이 막혀서, 재현하려던 상태가 아니라 교착이 된다.
+         */
+        private void awaitGate() {
+            CountDownLatch gate = this.sendGate;
+
+            if (gate == null) {
+                return;
+            }
+            try {
+                gate.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         /**
@@ -146,6 +228,8 @@ class RoomSseManagerTest {
                 completion = completionCallback;
                 error = errorCallback;
             }
+
+            closed.countDown();
 
             if (ex != null) {
                 if (error != null) {
@@ -367,6 +451,94 @@ class RoomSseManagerTest {
         // 실제로 닫힌다 — 닫힌 emitter 에 쓰면 IllegalStateException 이 난다.
         assertThatThrownBy(() -> first.send("payload")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> second.send("payload")).isInstanceOf(IllegalStateException.class);
+    }
+
+    /**
+     * <b>#307.</b> {@code ROOM_CLOSED}는 큐에 들어간 직후 같은 스레드에서 방 종료가 이어진다.
+     * 예전에는 그 종료가 큐를 버리고 emitter 를 바로 닫아서, 클라이언트는 종료 이벤트를 못 받고
+     * 연결이 끊긴 것만 관찰했다 — 재구독은 종료된 방이라 거절되고 replay 버퍼도 함께 지워져
+     * 복구할 방법이 없다.
+     *
+     * <p>이 순서는 {@code Runnable::run} executor 로는 볼 수 없다. 그건 {@code deliverLocal} 이
+     * 돌아오기 전에 전송을 끝내 버려서 "제출과 실행 사이의 틈"이 아예 없다. 그래서 실행 시점을
+     * 테스트가 쥐는 {@link ManualExecutor}를 쓴다.
+     */
+    @Test
+    @DisplayName("방을 닫아도 큐에 남은 ROOM_CLOSED 를 보낸 뒤에 연결을 닫는다")
+    void flushesRoomClosedBeforeClosingConnection() {
+
+        ManualExecutor executor = new ManualExecutor();
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RoomSseManager manager = newRoomSseManager(PROPS, executor, registry);
+
+        FakeMvcEmitter emitter = (FakeMvcEmitter) manager.subscribe(ROOM_ID, null);
+
+        manager.deliverLocal(ROOM_ID, ROOM_CLOSED_EVENT, 1L, "payload");
+        manager.closeRoom(ROOM_ID);
+
+        assertThat(emitter.isCompleted())
+                .as("전송이 실행되기 전에 닫으면 종료 이벤트가 사라진다")
+                .isFalse();
+
+        executor.runAll();
+
+        assertThat(sendSuccesses(registry, ROOM_CLOSED_EVENT))
+                .as("종료 이벤트가 실제로 나갔다")
+                .isEqualTo(1);
+        assertThat(sendFailures(registry))
+                .as("닫힌 emitter 에 쓰려 한 흔적이 없다")
+                .isZero();
+        assertThat(emitter.isCompleted())
+                .as("전송이 끝난 뒤에 닫힌다")
+                .isTrue();
+    }
+
+    /**
+     * 종료를 큐 소비 쪽으로 넘긴 대가. 클라이언트 소켓이 멈춰 있으면 {@code send}가 반환하지
+     * 않아 상한이 없으면 그 연결이 emitter 타임아웃(기본 1시간)까지 남는다.
+     */
+    @Test
+    @DisplayName("클라이언트가 응답하지 않으면 유예 시간 뒤에 강제로 닫는다")
+    void forcesCloseWhenFlushDoesNotFinish() throws Exception {
+
+        SseProperties props = new SseProperties(
+                30_000L, EMITTER_TIMEOUT_MS, 50, "local", QUEUE_CAPACITY, 50L);
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+        CountDownLatch stuckClient = new CountDownLatch(1);
+
+        try {
+            RoomSseManager manager = newRoomSseManager(props, executor, registry);
+            FakeMvcEmitter emitter = (FakeMvcEmitter) manager.subscribe(ROOM_ID, null);
+
+            emitter.blockSend(stuckClient);
+
+            manager.deliverLocal(ROOM_ID, ROOM_CLOSED_EVENT, 1L, "payload");
+            manager.closeRoom(ROOM_ID);
+
+            assertThat(emitter.awaitClosed(5, TimeUnit.SECONDS))
+                    .as("전송이 끝나지 않아도 유예 시간 뒤에는 닫는다")
+                    .isTrue();
+            assertThat(registry.get("upbid.sse.rejected")
+                    .tag("reason", "close_flush_timeout")
+                    .counter().count())
+                    .as("종료 이벤트를 못 준 연결은 지표로 드러나야 한다")
+                    .isEqualTo(1);
+
+        } finally {
+            stuckClient.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    private static double sendSuccesses(SimpleMeterRegistry registry, String eventName) {
+        return registry.get("upbid.sse.send.successes").tag("event", eventName).counter().count();
+    }
+
+    private static double sendFailures(SimpleMeterRegistry registry) {
+        return registry.find("upbid.sse.send.failures").counters().stream()
+                .mapToDouble(io.micrometer.core.instrument.Counter::count)
+                .sum();
     }
 
     @Test

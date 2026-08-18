@@ -270,9 +270,14 @@ public class RoomSseManager {
     /**
      * 경매방 종료 처리.
      *
-     * <p>dispatcher 를 먼저 닫아 큐에 남은 이벤트를 버리고, emitter 를 완료시킨다.
-     * 단순히 emitter를 Map에서 제거하면 HTTP 연결은 살아있고
-     * EventSource가 자동 재연결할 수 있으므로 {@code complete()}를 호출한다.
+     * <p><b>큐에 남은 이벤트를 먼저 흘려보낸다.</b> {@code ROOM_CLOSED}는 이 메서드가 불리기
+     * 직전에 같은 스레드에서 큐에 들어가는데({@code SseEventSubscriber}), 큐를 버리고 닫으면
+     * 클라이언트는 종료 이벤트 없이 연결만 끊긴 것으로 관찰한다(#307). 그래서 여기서
+     * {@code complete()}를 부르지 않고, 전송을 끝낸 {@link EmitterSubscriber}가 닫게 한다.
+     *
+     * <p>단순히 emitter를 Map에서 제거하는 것으로는 부족하다. HTTP 연결은 살아있고
+     * EventSource가 자동 재연결할 수 있어 반드시 닫혀야 한다. 클라이언트가 응답하지 않아
+     * 전송이 끝나지 않는 경우는 {@code close-flush-timeout-ms} 뒤에 강제로 닫는다.
      *
      * <p>종료된 방에 대한 재연결은 구독 시점의 방 상태 검증으로 차단한다.
      *
@@ -286,11 +291,14 @@ public class RoomSseManager {
         if (closing != null) {
             closing.forEach(emitter -> {
                 EmitterDispatcher dispatcher = dispatchers.remove(emitter);
-                if (dispatcher != null) {
-                    dispatcher.close();
-                }
                 sseMetrics.recordConnectionClosed(SseMetrics.CLOSE_ROOM_CLOSED);
-                complete(emitter);
+
+                if (dispatcher != null) {
+                    dispatcher.closeAfterFlush(sseProperties.closeFlushTimeoutMs());
+                } else {
+                    // 흘려보낼 큐가 없으면 기다릴 이유도 없다.
+                    complete(emitter);
+                }
             });
         }
 

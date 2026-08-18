@@ -1,7 +1,10 @@
 package com.hot6ix.upbid.domain.sse.service;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.SubmissionPublisher;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -24,12 +27,25 @@ class EmitterDispatcher {
 
     private final SseMetrics sseMetrics;
 
+    private final Executor vtExecutor;
+
+    private final Long roomId;
+
+    /**
+     * emitter 가 종료 상태에 도달했는지. {@link #closeAfterFlush(long)}의 폴백이 이미 끝난 일에
+     * 대고 강제 종료 지표를 남기지 않게 하는 용도다.
+     */
+    private final AtomicBoolean terminated = new AtomicBoolean();
+
     EmitterDispatcher(Executor vtExecutor, int queueCapacity, Long roomId, SseEmitter emitter,
             SseMetrics sseMetrics) {
         this.emitter = emitter;
         this.sseMetrics = sseMetrics;
+        this.vtExecutor = vtExecutor;
+        this.roomId = roomId;
         this.publisher = new SubmissionPublisher<>(vtExecutor, queueCapacity);
-        this.publisher.subscribe(new EmitterSubscriber(roomId, emitter, sseMetrics));
+        this.publisher.subscribe(
+                new EmitterSubscriber(roomId, emitter, sseMetrics, () -> terminated.set(true)));
     }
 
     /**
@@ -73,6 +89,49 @@ class EmitterDispatcher {
      */
     void close() {
         publisher.closeExceptionally(new IllegalStateException("emitter closed"));
+    }
+
+    /**
+     * <b>큐에 남은 이벤트를 전송한 뒤</b> emitter 를 닫는다. 방 종료 경로가 쓴다.
+     *
+     * <p>{@code ROOM_CLOSED} 는 이 큐에 들어간 직후 같은 스레드에서 방 종료가 이어진다
+     * ({@code SseEventSubscriber}). 그래서 {@link #close()}처럼 대기 항목을 버리면
+     * <b>클라이언트는 종료 이벤트를 못 받고 연결만 끊긴 것으로 관찰한다.</b> 재구독은 종료된
+     * 방이라 거절되고 replay 버퍼도 함께 지워져 복구 경로가 없다(#307).
+     *
+     * <p>{@code closeExceptionally}와 달리 {@code close()}는 남은 항목을 전달한 뒤
+     * {@code onComplete}을 준다. emitter 를 닫는 것은 그 {@code onComplete}을 받은
+     * {@link EmitterSubscriber}다 — 전송 중인 가상 스레드와 겹치지 않게 하려면 닫는 일도
+     * 그쪽 순서에 있어야 한다.
+     *
+     * @param graceMs 이 시간이 지나도 전송이 끝나지 않으면 강제로 닫는다. 클라이언트 소켓이
+     *                멈춰 있으면 {@code send}가 반환하지 않아 emitter 타임아웃(기본 1시간)까지
+     *                남기 때문이다.
+     */
+    void closeAfterFlush(long graceMs) {
+        publisher.close();
+
+        CompletableFuture.delayedExecutor(graceMs, TimeUnit.MILLISECONDS, vtExecutor)
+                .execute(this::forceCompleteIfStillOpen);
+    }
+
+    /**
+     * 유예 시간이 지나도 안 닫힌 emitter 를 닫는다. 여기까지 온 연결은 종료 이벤트를 받지
+     * 못했으므로 지표로 남긴다 — 조용히 버려지면 모니터링에서 정상 종료와 구분되지 않는다.
+     */
+    private void forceCompleteIfStillOpen() {
+        if (terminated.get()) {
+            return;
+        }
+
+        log.warn("sse 종료 이벤트 전송이 유예 시간 안에 끝나지 않아 강제 종료: roomId={}", roomId);
+        sseMetrics.recordRejected("close_flush_timeout");
+
+        try {
+            emitter.complete();
+        } catch (IllegalStateException ignored) {
+            // 폴백과 정상 종료가 겹칠 수 있다. 이미 닫혔으면 할 일이 없다.
+        }
     }
 
     static final class QueueSaturatedException extends IllegalStateException {
