@@ -3,17 +3,13 @@ package com.hot6ix.upbid.domain.auction.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionLiveStateResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionLiveLeaderboardEntryResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionLiveStatus;
-import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
-import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.realtime.BidderKeyEncoder;
-import com.hot6ix.upbid.domain.auction.repository.AuctionItemRepository;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisInitializer;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisLeaderboardEntry;
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisLiveState;
@@ -42,7 +38,7 @@ class AuctionLiveStateServiceTest {
     @Mock
     private AuctionRoomShareService auctionRoomShareService;
     @Mock
-    private AuctionItemRepository auctionItemRepository;
+    private AuctionLiveStateItemReader auctionLiveStateItemReader;
     @Mock
     private AuctionRedisInitializer auctionRedisInitializer;
     @Mock
@@ -59,7 +55,7 @@ class AuctionLiveStateServiceTest {
     void setUp() {
         auctionLiveStateService = new AuctionLiveStateService(
                 auctionRoomShareService,
-                auctionItemRepository,
+                auctionLiveStateItemReader,
                 auctionRedisInitializer,
                 auctionRedisStore,
                 bidderKeyEncoder,
@@ -69,11 +65,8 @@ class AuctionLiveStateServiceTest {
     @Test
     @DisplayName("진행 중 물품은 MySQL이 아니라 Redis 한 시점의 상태와 익명 리더보드를 반환한다")
     void returnsRedisLiveStates() {
-        AuctionItem item = mock(AuctionItem.class);
-        when(item.getAuctionItemId()).thenReturn(ITEM_ID);
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
-        when(auctionItemRepository.findByAuctionRoom_AuctionRoomIdAndStatus(
-                ROOM_ID, AuctionItemStatus.IN_PROGRESS)).thenReturn(List.of(item));
+        when(auctionLiveStateItemReader.findInProgressItemIds(ROOM_ID)).thenReturn(List.of(ITEM_ID));
         when(auctionRedisStore.findLiveState(ITEM_ID)).thenReturn(Optional.of(
                 new AuctionRedisLiveState(
                         ITEM_ID,
@@ -112,8 +105,7 @@ class AuctionLiveStateServiceTest {
     @DisplayName("진행 중 물품이 없으면 Redis를 읽지 않고 빈 Snapshot을 반환한다")
     void returnsEmptyWhenNoLiveItems() {
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
-        when(auctionItemRepository.findByAuctionRoom_AuctionRoomIdAndStatus(
-                ROOM_ID, AuctionItemStatus.IN_PROGRESS)).thenReturn(List.of());
+        when(auctionLiveStateItemReader.findInProgressItemIds(ROOM_ID)).thenReturn(List.of());
 
         assertThat(auctionLiveStateService.getLiveStates(SHARE_CODE, null)).isEmpty();
 
@@ -123,11 +115,8 @@ class AuctionLiveStateServiceTest {
     @Test
     @DisplayName("Seed 뒤에도 Redis 상태가 없으면 낡은 MySQL 값으로 대체하지 않는다")
     void failsWhenRedisStateIsStillMissing() {
-        AuctionItem item = mock(AuctionItem.class);
-        when(item.getAuctionItemId()).thenReturn(ITEM_ID);
         when(auctionRoomShareService.resolveRoomId(SHARE_CODE)).thenReturn(ROOM_ID);
-        when(auctionItemRepository.findByAuctionRoom_AuctionRoomIdAndStatus(
-                ROOM_ID, AuctionItemStatus.IN_PROGRESS)).thenReturn(List.of(item));
+        when(auctionLiveStateItemReader.findInProgressItemIds(ROOM_ID)).thenReturn(List.of(ITEM_ID));
         when(auctionRedisStore.findLiveState(ITEM_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> auctionLiveStateService.getLiveStates(SHARE_CODE, 42L))
