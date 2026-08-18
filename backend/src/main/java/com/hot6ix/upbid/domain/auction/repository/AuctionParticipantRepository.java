@@ -2,6 +2,7 @@ package com.hot6ix.upbid.domain.auction.repository;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionParticipant;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +13,13 @@ public interface AuctionParticipantRepository extends JpaRepository<AuctionParti
     interface AgreedParticipant {
 
         Long getUserId();
+
+        String getNickname();
+    }
+
+    interface AgreedParticipantForItem {
+
+        Long getRoomId();
 
         String getNickname();
     }
@@ -52,4 +60,13 @@ public interface AuctionParticipantRepository extends JpaRepository<AuctionParti
     @Query("select ap.user.userId as userId, ap.user.nickname as nickname from AuctionParticipant ap "
             + "where ap.auctionRoom.auctionRoomId = :roomId and ap.agreedAt is not null")
     List<AgreedParticipant> findAgreedParticipants(@Param("roomId") Long roomId);
+
+    /** Redis 입찰 판정에서 누락된 참여자 한 명을 복구할 때 DB 동의 정보를 읽는다. */
+    @Query("select ap.auctionRoom.auctionRoomId as roomId, ap.user.nickname as nickname "
+            + "from AuctionParticipant ap "
+            + "where ap.user.userId = :userId and ap.agreedAt is not null "
+            + "and exists (select ai.auctionItemId from AuctionItem ai "
+            + "where ai.auctionItemId = :itemId and ai.auctionRoom = ap.auctionRoom)")
+    Optional<AgreedParticipantForItem> findAgreedParticipantForItem(
+            @Param("itemId") Long itemId, @Param("userId") Long userId);
 }

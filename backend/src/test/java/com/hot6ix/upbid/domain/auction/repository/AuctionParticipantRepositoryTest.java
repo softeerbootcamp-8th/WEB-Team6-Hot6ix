@@ -2,7 +2,11 @@ package com.hot6ix.upbid.domain.auction.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
+import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.entity.AuctionRoom;
+import com.hot6ix.upbid.domain.product.entity.Product;
+import com.hot6ix.upbid.domain.product.repository.ProductRepository;
 import com.hot6ix.upbid.domain.user.entity.SellerProfile;
 import com.hot6ix.upbid.domain.user.entity.User;
 import com.hot6ix.upbid.domain.user.repository.SellerProfileRepository;
@@ -33,6 +37,12 @@ class AuctionParticipantRepositoryTest extends AbstractMySqlContainerTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private AuctionItemRepository auctionItemRepository;
+
+    @Autowired
+    private ProductRepository productRepository;
 
     private User newUser(String email) {
         return userRepository.saveAndFlush(User.builder()
@@ -116,5 +126,36 @@ class AuctionParticipantRepositoryTest extends AbstractMySqlContainerTest {
 
         assertThat(inserted).isZero();
         assertThat(auctionParticipantRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("물품과 사용자가 같은 방에 있고 동의했으면 Redis 복구 정보를 조회한다")
+    void findAgreedParticipantForItem_returnsAgreement() {
+
+        AuctionRoom room = newAuctionRoom("PARTICIPANT00005");
+        User user = newUser("buyer5@hot6ix.com");
+        Product product = productRepository.saveAndFlush(Product.builder()
+                .sellerProfile(room.getSellerProfile())
+                .name("한정판 피규어")
+                .description("미개봉")
+                .build());
+        AuctionItem item = auctionItemRepository.saveAndFlush(AuctionItem.builder()
+                .auctionRoom(room)
+                .product(product)
+                .startingPrice(10_000L)
+                .bidIncrement(1_000L)
+                .status(AuctionItemStatus.IN_PROGRESS)
+                .endAt(LocalDateTime.now().plusMinutes(10))
+                .build());
+        auctionParticipantRepository.recordAgreement(room.getAuctionRoomId(), user.getUserId(), "v1");
+
+        var participant = auctionParticipantRepository
+                .findAgreedParticipantForItem(item.getAuctionItemId(), user.getUserId());
+
+        assertThat(participant).isPresent().get()
+                .satisfies(found -> {
+                    assertThat(found.getRoomId()).isEqualTo(room.getAuctionRoomId());
+                    assertThat(found.getNickname()).isEqualTo(user.getNickname());
+                });
     }
 }
