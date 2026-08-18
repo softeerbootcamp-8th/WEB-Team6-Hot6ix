@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.auction.store;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
@@ -71,6 +72,7 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
             assertThat(closing.leaderUserId()).isNull();
             assertThat(closing.winnerNickname()).isNull();
             assertThat(closing.endAtMillis()).isEqualTo(endAt);
+            assertThat(closing.revision()).isEqualTo(1L);
         });
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "status"))
                 .isEqualTo("CLOSING");
@@ -83,7 +85,10 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
                         "leaderUserId", "",
                         "endAt", String.valueOf(endAt),
                         "totalExtensionSeconds", "0",
-                        "closeReason", "NATURAL")));
+                        "closeReason", "NATURAL",
+                        "revision", "1")));
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo("1");
     }
 
     @Test
@@ -98,6 +103,8 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
                 RedisCloseDecision.Reason.NOT_DUE, endAt));
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "status"))
                 .isEqualTo("IN_PROGRESS");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo("0");
         assertThat(streamRecords()).isEmpty();
     }
 
@@ -144,11 +151,52 @@ class RedisCloseLuaIntegrationTest extends AbstractRedisContainerTest {
             assertThat(advanced.itemName()).isEqualTo("한정판 피규어");
             assertThat(advanced.remainingSeconds()).isEqualTo(60);
             assertThat(advanced.endAtMillis() - advanced.advancedAtMillis()).isEqualTo(60_000L);
+            assertThat(advanced.revision()).isEqualTo(1L);
         });
         assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "status"))
                 .isEqualTo("IN_PROGRESS");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo("1");
         assertThat(streamRecords()).singleElement().satisfies(record ->
-                assertThat(record.getValue().get("type")).isEqualTo("ITEM_CLOSE_ADVANCED"));
+                assertThat(record.getValue()).containsAllEntriesOf(Map.of(
+                        "type", "ITEM_CLOSE_ADVANCED",
+                        "revision", "1")));
+    }
+
+    @Test
+    @DisplayName("revision이 증가 범위를 넘으면 마감 앞당기기 상태를 하나도 바꾸지 않는다")
+    void revisionOverflowDoesNotPartiallyAdvanceEndAt() {
+        long endAt = System.currentTimeMillis() + 600_000L;
+        seed(endAt);
+        redis.opsForHash().put(
+                AuctionRedisKeys.item(ITEM_ID), "revision", String.valueOf(Long.MAX_VALUE));
+
+        assertThatThrownBy(() -> store.requestSellerAdvance(ITEM_ID, SELLER_ID, null))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "endAt"))
+                .isEqualTo(String.valueOf(endAt));
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo(String.valueOf(Long.MAX_VALUE));
+        assertThat(streamRecords()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("revision이 증가 범위를 넘으면 자연 마감 상태를 하나도 바꾸지 않는다")
+    void revisionOverflowDoesNotPartiallyCloseItem() {
+        long endAt = System.currentTimeMillis() - 1_000L;
+        seed(endAt);
+        redis.opsForHash().put(
+                AuctionRedisKeys.item(ITEM_ID), "revision", String.valueOf(Long.MAX_VALUE));
+
+        assertThatThrownBy(() -> store.requestNaturalClose(ITEM_ID))
+                .isInstanceOf(RuntimeException.class);
+
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "status"))
+                .isEqualTo("IN_PROGRESS");
+        assertThat(redis.opsForHash().get(AuctionRedisKeys.item(ITEM_ID), "revision"))
+                .isEqualTo(String.valueOf(Long.MAX_VALUE));
+        assertThat(streamRecords()).isEmpty();
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.sse.service;
 
+import com.hot6ix.upbid.domain.sse.dto.SseEventsLostDto;
 import com.hot6ix.upbid.domain.sse.event.SseEventEnvelope;
 import com.hot6ix.upbid.domain.sse.event.SseEventMessage;
 import com.hot6ix.upbid.domain.sse.event.SseRedisKeys;
@@ -42,23 +43,28 @@ public class SseEventBuffer {
      * {@code lastEventId} 이후에 저장된 이벤트를 ID 순서대로 반환한다.
      *
      * <p>{@code lastEventId}가 버퍼에서 이미 밀려난 경우에도 자연스럽게 처리된다. 남아 있는 것을
-     * 최대한 돌려주고, 유실 규모는 로그로 남겨 버퍼 크기 튜닝의 근거로 쓴다.
+     * 최대한 돌려주고, <b>메우지 못한 구간이 있으면 그 사실을 함께 돌려준다.</b> 받는 쪽은 그때
+     * 클라이언트에게 상태를 다시 조회하라고 알린다 — 로그만 남기면 화면은 낡은 채로 남는다.
      *
-     * <p>범위 질의({@code ZRANGEBYSCORE}) 대신 전체를 읽고 거른다. 유실 로그가 어차피 버퍼의
+     * <p>범위 질의({@code ZRANGEBYSCORE}) 대신 전체를 읽고 거른다. 유실 판정이 어차피 버퍼의
      * 시작 ID 를 알아야 해서 질의를 두 번 하게 되는데, 최대 N개(기본 50)를 한 번에 읽는 편이 싸다.
      */
-    public List<BufferedEvent> getEventsAfter(Long roomId, long lastEventId) {
+    public ReplayResult getEventsAfter(Long roomId, long lastEventId) {
         List<BufferedEvent> buffered = getAllEvents(roomId);
 
         if (buffered.isEmpty()) {
-            return List.of();
+            return emptyBufferResult(roomId, lastEventId);
         }
 
-        logIfLoss(roomId, lastEventId, buffered.getFirst().id());
-
-        return buffered.stream()
+        List<BufferedEvent> replayable = buffered.stream()
                 .filter(event -> event.id() > lastEventId)
                 .toList();
+
+        String lostReason = detectLoss(roomId, lastEventId, buffered);
+
+        return lostReason == null
+                ? ReplayResult.intact(replayable)
+                : ReplayResult.lost(replayable, lostReason);
     }
 
     /**
@@ -105,14 +111,61 @@ public class SseEventBuffer {
                 envelope.id(), message.eventName(), message.data(), message.occurredAt());
     }
 
-    private void logIfLoss(Long roomId, long lastEventId, long bufferStart) {
-        if (lastEventId >= bufferStart) {
-            return;
+    /**
+     * 버퍼가 비어 있는데 클라이언트가 ID를 들고 온 상황.
+     *
+     * <p><b>유실로 본다.</b> {@code Last-Event-ID}는 ID가 달린 이벤트를 실제로 받은 뒤에만
+     * 나가므로, 이벤트가 한 건도 없던 방이 이 분기로 들어올 수는 없다. 즉 버퍼가 있었는데
+     * 사라진 것이다 — Redis 재시작·failover·TTL 만료가 여기다.
+     *
+     * <p>예전에는 여기서 빈 목록만 돌려주고 판정 자체를 건너뛰었다. 유실 규모가 가장 큰
+     * 경우인데 로그 한 줄도 남지 않았다.
+     */
+    private ReplayResult emptyBufferResult(Long roomId, long lastEventId) {
+        // 받은 이벤트가 없다고 들고 온 경우는 놓친 것도 없다. 실제 브라우저는 ID 가 붙은
+        // 이벤트를 받은 뒤에만 헤더를 보내므로 여기 오지 않지만, 0 을 유실로 세면
+        // 이벤트가 한 건도 없는 방에 붙는 것만으로 재조회가 돈다.
+        if (lastEventId <= 0) {
+            return ReplayResult.intact(List.of());
+        }
+
+        log.warn("sse 이벤트 유실(버퍼 없음): roomId={}, lastEventId={}", roomId, lastEventId);
+
+        return ReplayResult.lost(List.of(), SseEventsLostDto.BUFFER_MISSING);
+    }
+
+    /**
+     * 버퍼에 남은 구간과 클라이언트가 든 ID를 견줘 메우지 못한 구간을 판정한다.
+     *
+     * <p>두 방향을 본다.
+     * <ul>
+     *   <li>ID가 버퍼 시작보다 <b>뒤처진</b> 경우: 끊긴 사이 이벤트가 버퍼 크기를 넘겨
+     *       오래된 것부터 밀려났다. 몇 개가 사라졌는지는 계산되므로 로그에 남긴다.
+     *   <li>ID가 버퍼 끝보다 <b>앞선</b> 경우: 순차 ID 카운터가 되감겼다(Redis 초기화).
+     *       이때 남은 이벤트는 전부 ID가 작아 필터에 걸러지므로, 판정하지 않으면 클라이언트가
+     *       아무것도 못 받은 채 조용히 낡는다.
+     * </ul>
+     */
+    private String detectLoss(Long roomId, long lastEventId, List<BufferedEvent> buffered) {
+        long bufferStart = buffered.getFirst().id();
+        long bufferEnd = buffered.getLast().id();
+
+        if (lastEventId > bufferEnd) {
+            log.warn("sse 이벤트 유실(ID 역행): roomId={}, lastEventId={}, bufferEnd={}",
+                    roomId, lastEventId, bufferEnd);
+
+            return SseEventsLostDto.SEQUENCE_RESET;
         }
 
         long lostCount = bufferStart - lastEventId - 1;
 
+        if (lostCount <= 0) {
+            return null;
+        }
+
         log.warn("sse 이벤트 유실: roomId={}, lastEventId={}, bufferStart={}, 유실={}개",
                 roomId, lastEventId, bufferStart, lostCount);
+
+        return SseEventsLostDto.BUFFER_OVERFLOW;
     }
 }

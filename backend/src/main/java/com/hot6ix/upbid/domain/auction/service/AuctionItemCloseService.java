@@ -108,7 +108,8 @@ public class AuctionItemCloseService {
                 yield new AuctionItemCloseEarlyResponseDto(
                         auctionItemId,
                         toLocalDateTime(advanced.endAtMillis()),
-                        advanced.remainingSeconds());
+                        advanced.remainingSeconds(),
+                        advanced.revision());
             }
             case RedisCloseDecision.Rejected rejected
                     when rejected.reason() == RedisCloseDecision.Reason.NOT_OWNER ->

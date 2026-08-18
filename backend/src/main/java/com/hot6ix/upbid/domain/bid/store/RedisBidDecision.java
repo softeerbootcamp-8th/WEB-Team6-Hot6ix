@@ -13,6 +13,7 @@ public sealed interface RedisBidDecision {
             long acceptedAtMillis,
             long endAtMillis,
             int extendedSeconds,
+            long revision,
             boolean duplicate
     ) implements RedisBidDecision {
     }

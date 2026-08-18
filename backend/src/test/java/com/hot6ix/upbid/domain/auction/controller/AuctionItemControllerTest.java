@@ -15,6 +15,9 @@ import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemBulkAddRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemCloseEarlyRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.request.AuctionItemStartRequestDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionLiveStateResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionLiveLeaderboardEntryResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionLiveStatus;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
@@ -22,6 +25,7 @@ import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.auction.exception.AuctionErrorType;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemService;
+import com.hot6ix.upbid.domain.auction.service.AuctionLiveStateService;
 import com.hot6ix.upbid.domain.product.exception.ProductErrorType;
 import com.hot6ix.upbid.global.exception.ApplicationException;
 import com.hot6ix.upbid.global.exception.GlobalExceptionHandler;
@@ -47,6 +51,9 @@ class AuctionItemControllerTest extends AbstractControllerTest {
 
     @MockitoBean
     private AuctionItemCloseService auctionItemCloseService;
+
+    @MockitoBean
+    private AuctionLiveStateService auctionLiveStateService;
 
     /** 공개 조회는 숫자 PK를 받지 않는다. 방을 지목하는 값은 항상 이 공유 코드다. */
     private static final String SHARE_CODE = "abcdefghij123456";
@@ -128,6 +135,42 @@ class AuctionItemControllerTest extends AbstractControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray())
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @DisplayName("Live Snapshot 조회는 Redis revision과 익명 리더보드를 반환한다")
+    void getLiveStates() throws Exception {
+        when(auctionLiveStateService.getLiveStates(SHARE_CODE, LOGIN_USER_ID)).thenReturn(List.of(
+                new AuctionLiveStateResponseDto(
+                        1L,
+                        AuctionLiveStatus.IN_PROGRESS,
+                        70_000L,
+                        LocalDateTime.of(2026, 8, 17, 21, 5),
+                        7L,
+                        List.of(new AuctionLiveLeaderboardEntryResponseDto(
+                                1, "bidder-a", "민수", 70_000L, true)))));
+
+        mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/live-states", SHARE_CODE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].auctionItemId").value(1))
+                .andExpect(jsonPath("$.data[0].status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data[0].currentPrice").value(70000))
+                .andExpect(jsonPath("$.data[0].endAt").value("2026-08-17T21:05:00"))
+                .andExpect(jsonPath("$.data[0].revision").value(7))
+                .andExpect(jsonPath("$.data[0].leaderboard[0].bidderKey").value("bidder-a"))
+                .andExpect(jsonPath("$.data[0].leaderboard[0].isMe").value(true));
+    }
+
+    @Test
+    @DisplayName("비로그인 사용자도 Live Snapshot을 조회할 수 있다")
+    void getLiveStatesAllowsGuest() throws Exception {
+        비로그인_상태로_바꾼다();
+        when(auctionLiveStateService.getLiveStates(SHARE_CODE, null)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/auction-rooms/share/{shareCode}/live-states", SHARE_CODE))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isEmpty());
     }
 
@@ -651,14 +694,15 @@ class AuctionItemControllerTest extends AbstractControllerTest {
         AuctionItemCloseEarlyRequestDto request = new AuctionItemCloseEarlyRequestDto(600);
         when(auctionItemCloseService.closeEarly(LOGIN_USER_ID, 30L, request))
                 .thenReturn(new AuctionItemCloseEarlyResponseDto(
-                        30L, LocalDateTime.now().plusSeconds(600), 600));
+                        30L, LocalDateTime.now().plusSeconds(600), 600, 4L));
 
         mockMvc.perform(post("/api/v1/auction-items/30/close-early")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.remainingSeconds").value(600));
+                .andExpect(jsonPath("$.data.remainingSeconds").value(600))
+                .andExpect(jsonPath("$.data.revision").value(4));
     }
 
     @Test

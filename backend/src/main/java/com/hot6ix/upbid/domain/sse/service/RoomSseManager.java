@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.sse.service;
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.event.ParticipantCountPublisher;
 import jakarta.annotation.PostConstruct;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -27,6 +28,14 @@ public class RoomSseManager {
      * {@code ParticipantCountPublisher}(다른 패키지)도 발행 지표 태그로 같은 값을 쓴다.
      */
     public static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
+
+    /**
+     * 재연결 replay 로 메울 수 없는 구간이 있었음을 알리는 이벤트 이름.
+     *
+     * <p>{@code EventType}에 넣지 않는다. 도메인에서 일어난 사건이 아니고 Redis 발행·구독을
+     * 타지도 않는다 — 유실을 감지한 인스턴스가 그 연결 하나에만 직접 내보낸다.
+     */
+    public static final String EVENTS_LOST_EVENT = "SYSTEM_EVENTS_LOST";
 
     private static final int PARTICIPANT_JOINED = 1;
     private static final int PARTICIPANT_LEFT = -1;
@@ -55,6 +64,20 @@ public class RoomSseManager {
      * <p>재연결({@code lastEventId != null})이면 버퍼에서 그 ID 이후 이벤트를 replay한다. 아래
      * 참여자 수 브로드캐스트는 id 없이 나가므로(#311) {@code Last-Event-ID}에는 영향을 주지
      * 않는다 — 최초 연결이든 재연결이든 이 값이 {@code Last-Event-ID}의 시작점이 되지 않는다.
+     *
+     * <p><b>{@code register()}를 제일 먼저 한다(#378).</b> 그 순간부터 이 emitter는
+     * {@code roomEmitters}에 존재해 라이브 이벤트를 받을 자격이 생기지만, {@code dispatcher}는
+     * 아직 "준비 중(warmup)" 상태라 그 사이 들어오는 라이브 이벤트를 즉시 보내지 않고 임시로
+     * 붙잡아 둔다({@link EmitterDispatcher#enqueue}). 버퍼 조회(Redis I/O)가 끝나면
+     * {@link EmitterDispatcher#becomeReady}가 놓친 이벤트를 먼저 내보내고, 그 사이 붙잡아 둔
+     * 라이브 이벤트를(이미 놓친 목록에 포함된 건 걸러내고) 이어서 내보낸 뒤에야 "준비 완료"로
+     * 전환한다. register가 먼저이므로 이 emitter가 이벤트를 통째로 놓치는 경우가 없고, 전송
+     * 순서는 항상 replay → 그 사이 라이브 순으로 고정된다.
+     *
+     * <p>replay 로 메울 수 없는 구간이 있었으면 <b>남은 이벤트보다 먼저</b> 유실을 알린다(#390).
+     * 순서가 중요하다 — 화면이 "지금부터 오는 것만으로는 상태를 맞출 수 없다"를 먼저 알아야
+     * 재조회를 걸 수 있다. 이 알림도 {@link EmitterDispatcher#becomeReady} 한 번의 호출 안에서
+     * 놓친 이벤트 목록의 맨 앞에 실려 나가므로, 위 register-먼저 순서 보장이 그대로 유지된다.
      */
     public SseEmitter subscribe(Long roomId, Long lastEventId) {
         SseEmitter emitter = createEmitter();
@@ -65,15 +88,12 @@ public class RoomSseManager {
         emitter.onTimeout(() -> disconnect(roomId, emitter, SseMetrics.CLOSE_TIMEOUT));
         emitter.onError(e -> disconnect(roomId, emitter, closeReason(e)));
 
-        if (lastEventId != null) {
-            List<BufferedEvent> missed = sseEventBuffer.getEventsAfter(roomId, lastEventId);
-            EmitterDispatcher dispatcher = dispatchers.get(emitter);
-            for (BufferedEvent event : missed) {
-                if (dispatcher != null) {
-                    dispatcher.enqueue(new SseDispatchTask.Event(
-                            roomId, event.eventName(), event.id(), event.data()));
-                }
-            }
+        EmitterDispatcher dispatcher = dispatchers.get(emitter);
+        if (dispatcher != null) {
+            List<SseDispatchTask> replayEvents = lastEventId != null
+                    ? replayTasks(roomId, lastEventId)
+                    : List.of();
+            dispatcher.becomeReady(replayEvents);
         }
 
         incrementParticipantCount(roomId, PARTICIPANT_JOINED);
@@ -81,6 +101,68 @@ public class RoomSseManager {
         log.info("sse 연결 완료: roomId={}, lastEventId={}", roomId, lastEventId);
 
         return emitter;
+    }
+
+    /**
+     * Redis pub/sub 재연결이 감지되면, 이 인스턴스에 붙어 있는 모든 방·모든 emitter를 각자
+     * 자기 {@code lastDeliveredEventId} 기준으로 다시 캐치업시킨다(#378).
+     *
+     * <p>emitter 단위로 기준을 잡는 이유는, 같은 방 emitter라도 그 사이 개별 SSE 재연결로
+     * 이미 스스로 캐치업을 마친 emitter가 섞여 있을 수 있어서다 — 방 단위로 한 기준만 쓰면
+     * 이미 최신인 emitter에게 중복으로 다시 보내게 된다.
+     *
+     * <p><b>{@code lastDeliveredEventId}가 -1인 emitter는 건너뛴다.</b> -1은 "아직 Event를
+     * 하나도 못 받았다"는 뜻인데, 이게 정상적으로 최근에 접속해 놓친 게 없는 흔한 경우인지,
+     * 하필 끊긴 동안 접속했는데 그 사이 뭔가 발생해 실제로 놓친 경우인지 구분할 수 없다.
+     * 구분 못 하는 채로 버퍼 전체를 보내면, 흔한 전자의 경우마다 이 emitter가 접속하기 전의
+     * 과거 역사까지 잘못 다시 보내게 되는 부작용이 더 크다. 드문 후자의 손해(이벤트 하나를
+     * 못 받는 것)는 다음 라이브 이벤트나 클라이언트의 새로고침(recent-events 재조회)으로
+     * 자연히 정정된다.
+     *
+     * <p>{@code pauseForReplay()}로 다시 준비 중 상태를 만든 뒤 버퍼를 조회하는 것은 1번
+     * (재연결 시 순서 역전)과 같은 이유다 — 조회하는 동안 들어오는 라이브 이벤트가 이번에
+     * 계산한 replay보다 먼저 나가지 않게 막는다.
+     */
+    public void replayAfterReconnect() {
+        roomEmitters.forEach((roomId, emitters) -> {
+            for (SseEmitter emitter : emitters) {
+                EmitterDispatcher dispatcher = dispatchers.get(emitter);
+                if (dispatcher == null) {
+                    continue;
+                }
+
+                long lastDeliveredEventId = dispatcher.lastDeliveredEventId();
+                if (lastDeliveredEventId == -1) {
+                    continue;
+                }
+
+                dispatcher.pauseForReplay();
+                dispatcher.becomeReady(replayTasks(roomId, lastDeliveredEventId));
+            }
+        });
+    }
+
+    /**
+     * 버퍼에서 {@code lastEventId} 이후 이벤트를 조회해 dispatcher에 넘길 작업 목록을 만든다.
+     * 메울 수 없는 구간이 있었으면(#390) 유실 알림을 맨 앞에 붙여, 남은 이벤트보다 먼저
+     * 나가게 한다.
+     *
+     * <p>직접 {@code enqueue}하지 않고 목록만 만들어 돌려주는 이유는, 호출하는 쪽
+     * ({@code subscribe}·{@code replayAfterReconnect} 둘 다)이 이 목록을
+     * {@link EmitterDispatcher#becomeReady}에 그대로 넘겨야 하기 때문이다(#378) — 그래야
+     * dispatcher가 그 사이 붙잡아 둔 라이브 이벤트와 병합하며 순서를 보장한다.
+     */
+    private List<SseDispatchTask> replayTasks(Long roomId, long lastEventId) {
+        ReplayResult result = sseEventBuffer.getEventsAfter(roomId, lastEventId);
+
+        List<SseDispatchTask> tasks = new ArrayList<>();
+        if (result.hasLoss()) {
+            sseMetrics.recordEventsLost(result.lostReason());
+            tasks.add(new SseDispatchTask.EventsLost(roomId, result.lostReason()));
+        }
+        result.events().forEach(event -> tasks.add(new SseDispatchTask.Event(
+                roomId, event.eventName(), event.id(), event.data())));
+        return tasks;
     }
 
     /**

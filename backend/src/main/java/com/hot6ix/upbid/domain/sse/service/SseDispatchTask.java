@@ -4,10 +4,12 @@ package com.hot6ix.upbid.domain.sse.service;
  * emitter 하나에 전달할 SSE 작업 단위.
  *
  * <p>실제 이벤트({@link Event}), 연결 유지용 heartbeat({@link Heartbeat}), 참여자 수
- * 알림({@link ParticipantCount})을 구분한다. subscriber에서 {@code switch}로 분기하여 처리한다.
+ * 알림({@link ParticipantCount}), 유실 알림({@link EventsLost})을 구분한다. subscriber에서
+ * {@code switch}로 분기하여 처리한다.
  */
 public sealed interface SseDispatchTask
-        permits SseDispatchTask.Event, SseDispatchTask.Heartbeat, SseDispatchTask.ParticipantCount {
+        permits SseDispatchTask.Event, SseDispatchTask.Heartbeat, SseDispatchTask.ParticipantCount,
+                SseDispatchTask.EventsLost {
 
     Long roomId();
 
@@ -35,5 +37,17 @@ public sealed interface SseDispatchTask
      * 주면 안 되기 때문이다.
      */
     record ParticipantCount(Long roomId, int count)
+            implements SseDispatchTask {}
+
+    /**
+     * 재연결 replay 로 메울 수 없는 구간이 있었다는 알림. 재연결한 <b>그 연결 하나</b>에만
+     * 나가고, replay 이벤트보다 먼저 큐에 들어간다.
+     *
+     * <p>{@link Event}와 달리 id 가 없다. 버퍼에 없는 이벤트라 순차 번호 자체가 없고, 여기에
+     * 번호를 붙이면 {@code Last-Event-ID}가 오염되어 <b>다음 재연결의 replay 기준이 깨진다.</b>
+     *
+     * @param reason 유실 사유({@link com.hot6ix.upbid.domain.sse.dto.SseEventsLostDto} 참고)
+     */
+    record EventsLost(Long roomId, String reason)
             implements SseDispatchTask {}
 }
