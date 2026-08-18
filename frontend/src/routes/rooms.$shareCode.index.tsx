@@ -1413,21 +1413,31 @@ function LiveRoomPage() {
    * 예전에는 데스크톱 분기에만 있어서 모바일에서는 눌러도 아무 일이 없었다.
    */
   /*
-   * 진행 중인 물품은 마감 시각이 남아 있어도 함께 닫힌다(`AuctionRoomCloseService`).
-   * 몇 개가 딸려 닫히는지 세어 보여준다 — 그걸 모르고 누르면 아직 입찰을 받고 있던
-   * 물품이 그대로 마감되고, 되돌릴 방법이 없다.
+   * **진행 중인 물품이 하나라도 있으면 서버가 종료를 거절한다**(4012,
+   * `AuctionRoomCloseService`). 그래서 확인이 아니라 안내로 바꾸고 확인 버튼을 막는다.
+   *
+   * 예전 문구는 "진행 중인 물품 N개가 지금 마감되고 낙찰 결과가 확정됩니다" 였다.
+   * #230 시점에는 맞았지만 #325 에서 서버가 거절하도록 바뀌면서 반대가 됐고,
+   * 경고를 읽고 눌러도 방이 안 닫히고 에러 토스트만 떴다.
+   *
+   * `liveItems`(`ACTIVE`)는 서버의 `IN_PROGRESS` 와 1:1 이라 거절 조건을 화면이
+   * 그대로 안다. 다만 판정은 서버가 다시 하므로, 열어 둔 사이에 물품이 시작되면
+   * 4012 토스트로 걸린다.
    */
+  const hasLiveItems = liveItems.length > 0
   const closeRoomDialog = (
     <ConfirmDialog
       open={closingRoom}
       tone="danger"
-      title="경매방을 종료할까요?"
+      title={hasLiveItems ? '아직 종료할 수 없어요' : '경매방을 종료할까요?'}
       description={
-        liveItems.length > 0
-          ? `진행 중인 물품 ${liveItems.length}개가 마감 시각과 상관없이 지금 마감되고 낙찰 결과가 확정됩니다. 되돌릴 수 없어요.`
+        hasLiveItems
+          ? `진행 중인 물품이 ${liveItems.length}개 남아 있어요. 물품마다 마감을 앞당겨 모두 마감한 뒤에 경매방을 종료할 수 있어요.`
           : '경매방이 종료되고 참여자는 더 이상 입장할 수 없어요. 되돌릴 수 없어요.'
       }
       confirmLabel="경매방 종료"
+      confirmDisabled={hasLiveItems}
+      cancelLabel={hasLiveItems ? '닫기' : '취소'}
       onCancel={() => setClosingRoom(false)}
       pending={closeRoom.isPending}
       onConfirm={() => void handleCloseRoom()}
