@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { eventIdFromLastEventId } from '@/features/live/sse-event-id'
 import { toast } from '@/lib/toast'
 
 /**
@@ -35,8 +36,14 @@ const RETRY_BASE_MS = 1000
 export type RealtimeStatus =
   'connecting' | 'connected' | 'reconnecting' | 'failed' | 'closed'
 
-export type SseEventPayload =
-  | { kind: 'ItemStarted'; itemId: number; itemName: string; endedTime: string }
+type SseEventData =
+  | {
+      kind: 'ItemStarted'
+      itemId: number
+      itemName: string
+      endedTime: string
+      revision: number
+    }
   /**
    * 마감이 임박했다. **이 이벤트가 오는 순간부터가 Soft Close 연장 구간**이다.
    *
@@ -60,6 +67,9 @@ export type SseEventPayload =
       itemName: string
       bidPrice: number
       bidderNickname: string
+      bidderKey: string
+      endedTime: string
+      revision: number
     }
   /**
    * 마감 직전 입찰이 들어와 마감이 뒤로 밀렸다.
@@ -75,6 +85,7 @@ export type SseEventPayload =
       itemName: string
       extendSeconds: number
       endedTime: string
+      revision: number
     }
   /**
    * 판매자가 마감을 앞당겼다. **이 이벤트가 오는 순간부터가 Soft Close 연장 구간**이라
@@ -92,6 +103,7 @@ export type SseEventPayload =
       itemName: string
       remainingSeconds: number
       endedTime: string
+      revision: number
     }
   // 유찰도 이 이벤트로 온다. 입찰이 없었으면 낙찰가·낙찰자가 둘 다 null 이다.
   | {
@@ -100,6 +112,8 @@ export type SseEventPayload =
       itemName: string
       finalPrice: number | null
       winnerNickname: string | null
+      winnerBidderKey: string | null
+      revision: number
     }
   /**
    * 판매자가 방송을 끝냈다. 물품별 마감 이벤트가 먼저 오고 이게 마지막에 온다.
@@ -132,6 +146,8 @@ export type SseEventPayload =
    */
   | { kind: 'RoomUpdated' }
 
+export type SseEventPayload = SseEventData & { eventId?: number }
+
 /**
  * 실시간 SSE 연결과 상태.
  *
@@ -142,41 +158,30 @@ export type SseEventPayload =
  * shareCode 가 바뀌거나, 자동 재시도가 걸리거나, retry() 를 호출하면 EventSource 를
  * 닫고 다시 연다. 브라우저가 재접속을 포기하면(`readyState === CLOSED`) 훅이 대신
  * `MAX_RETRIES` 번까지 다시 열고, 다 소진해야 `failed` 에서 멈춘다.
- * onEvent·onReconnect 는 매 렌더에서 ref 로 최신값을 유지하므로 바뀌어도
- * 재연결하지 않는다. **effect 의존성에 넣으면 매 렌더마다 구독이 다시 열린다.**
+ * onEvent 는 매 렌더에서 ref 로 최신값을 유지하므로 바뀌어도 재연결하지 않는다.
  * 언마운트 시 EventSource 를 닫아 구독을 정리한다.
  *
  * 방이 종료되면(`ROOM_CLOSED`) 상태가 `closed` 가 되고 연결을 닫는다. 이유는 아래
  * 리스너 주석 참고 — 닫지 않으면 정상 종료가 연결 실패처럼 보인다.
- *
- * @param onReconnect 끊겼다가 다시 붙었을 때 한 번 불린다. **첫 연결에는 불리지
- *   않는다.** 끊긴 동안의 이벤트는 다시 오지 않으므로 호출부가 여기서 서버 값을
- *   다시 읽어 현재가와 리더보드를 맞춰야 한다.
  */
 export function useRealtimeStatus(
   shareCode: string,
   onEvent: (payload: SseEventPayload) => void,
-  onReconnect?: () => void,
 ) {
   const [status, setStatus] = useState<RealtimeStatus>('connecting')
   const [retryKey, setRetryKey] = useState(0)
   const onEventRef = useRef(onEvent)
-  const onReconnectRef = useRef(onReconnect)
   /** 마지막으로 붙은 뒤 연속으로 실패한 횟수. `onopen` 에서 0 으로 돌아간다. */
   const attemptsRef = useRef(0)
-  /** 한 번이라도 끊겼는지. 첫 연결과 재연결을 가르는 데만 쓴다. */
-  const brokenRef = useRef(false)
 
   // 콜백이 바뀌어도 EventSource 를 다시 열지 않는다.
   useEffect(() => {
     onEventRef.current = onEvent
-    onReconnectRef.current = onReconnect
   })
 
-  // 다른 방으로 옮기면 이전 방의 실패 횟수와 단절 이력을 들고 가지 않는다.
+  // 다른 방으로 옮기면 이전 방의 실패 횟수를 들고 가지 않는다.
   useEffect(() => {
     attemptsRef.current = 0
-    brokenRef.current = false
   }, [shareCode])
 
   useEffect(() => {
@@ -193,15 +198,6 @@ export function useRealtimeStatus(
       console.log('[SSE] connected')
       setStatus('connected')
       attemptsRef.current = 0
-      /*
-       * 끊겨 있는 동안 온 이벤트는 다시 오지 않는다. 붙었다고 끝내면 현재가와
-       * 리더보드가 조용히 틀린 채로 남고, 그 값으로 입찰하면 최소가가 옛 현재가
-       * 기준이라 서버가 계속 거절한다.
-       */
-      if (brokenRef.current) {
-        brokenRef.current = false
-        onReconnectRef.current?.()
-      }
     }
     /**
      * `readyState` 로 영구 실패와 일시 단절을 가른다.
@@ -214,10 +210,12 @@ export function useRealtimeStatus(
      *
      * 재시도가 무한이 아닌 이유는 위 `MAX_RETRIES` 주석 참고. 다 소진하면 `failed`
      * 에서 멈추고, 그다음은 `retry()` 를 부르는 쪽이 살린다.
+     *
+     * 다시 붙은 뒤의 재동기화는 호출부가 한다. 화면이 `connected` 가 될 때마다
+     * Redis Live Snapshot 을 다시 읽어 `revision` 으로 병합하는 흐름(#387)이다.
      */
     es.onerror = (e) => {
       console.error('[SSE] error', e)
-      brokenRef.current = true
 
       if (es.readyState !== EventSource.CLOSED) {
         setStatus('reconnecting')
@@ -240,7 +238,12 @@ export function useRealtimeStatus(
         console.log('[SSE] received', kind, e.data)
         try {
           const data = JSON.parse(e.data as string)
-          onEventRef.current({ kind, ...data } as SseEventPayload)
+          const eventId = eventIdFromLastEventId(kind, e.lastEventId)
+          onEventRef.current({
+            kind,
+            ...data,
+            ...(eventId === undefined ? {} : { eventId }),
+          } as SseEventPayload)
         } catch (err) {
           console.error('[SSE] parse error', kind, e.data, err)
         }

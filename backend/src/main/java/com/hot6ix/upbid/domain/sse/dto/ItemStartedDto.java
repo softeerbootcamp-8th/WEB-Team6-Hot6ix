@@ -5,6 +5,10 @@ import java.time.LocalDateTime;
 public record ItemStartedDto(
         Long itemId,
         String itemName,
-        LocalDateTime endedTime
+        LocalDateTime endedTime,
+        Long revision
 ) {
+    public ItemStartedDto(Long itemId, String itemName, LocalDateTime endedTime) {
+        this(itemId, itemName, endedTime, 0L);
+    }
 }

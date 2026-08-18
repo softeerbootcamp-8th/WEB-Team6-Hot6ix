@@ -65,9 +65,10 @@ class AuctionRedisInitializerTest extends AbstractRedisContainerTest {
         auctionParticipantRepository = mock(AuctionParticipantRepository.class);
         bidRepository = mock(BidRepository.class);
         initializer = new AuctionRedisInitializer(
-                auctionItemRepository,
-                auctionParticipantRepository,
-                bidRepository,
+                new AuctionRedisSeedSnapshotLoader(
+                        auctionItemRepository,
+                        auctionParticipantRepository,
+                        bidRepository),
                 new AuctionRedisStore(redis, new BidStreamMetrics(new SimpleMeterRegistry())));
     }
 

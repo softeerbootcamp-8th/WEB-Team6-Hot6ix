@@ -14,4 +14,5 @@ export interface AuctionItemCloseEarlyResponseDto {
   auctionItemId?: number;
   endAt?: string;
   remainingSeconds?: number;
+  revision?: number;
 }

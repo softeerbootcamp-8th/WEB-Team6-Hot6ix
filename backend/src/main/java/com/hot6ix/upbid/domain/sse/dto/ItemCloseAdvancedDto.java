@@ -6,6 +6,11 @@ public record ItemCloseAdvancedDto(
         Long itemId,
         String itemName,
         int remainingSeconds,
-        LocalDateTime endedTime
+        LocalDateTime endedTime,
+        Long revision
 ) {
+    public ItemCloseAdvancedDto(
+            Long itemId, String itemName, int remainingSeconds, LocalDateTime endedTime) {
+        this(itemId, itemName, remainingSeconds, endedTime, 0L);
+    }
 }

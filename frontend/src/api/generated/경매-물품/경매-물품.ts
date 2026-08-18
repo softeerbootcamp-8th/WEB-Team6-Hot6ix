@@ -37,6 +37,7 @@ import type {
   CommonResponseAuctionItemCloseEarlyResponseDto,
   CommonResponseAuctionItemDetailResponseDto,
   CommonResponseListAuctionItemSummaryResponseDto,
+  CommonResponseListAuctionLiveStateResponseDto,
   CommonResponseVoid
 } from '.././model';
 
@@ -66,7 +67,7 @@ export const add = (
     },
       options);
     }
-  
+
 
 
 export const getAddMutationOptions = <TError = ErrorType<CommonResponseAuctionItemDetailResponseDto>,
@@ -321,6 +322,99 @@ export const useCloseEarly = <TError = ErrorType<CommonResponseAuctionItemCloseE
       return useMutation(mutationOptions, queryClient);
     }
     /**
+ * 진행 중이거나 MySQL 마감 저장을 기다리는 물품의 현재가, 상태, 마감 시각, revision, 리더보드 Top 3를 Redis 기준으로 반환한다. 최초 SSE 연결과 재연결 뒤 화면 상태를 맞출 때 사용한다. 비로그인으로 조회할 수 있다.
+ * @summary 경매방 물품 Live Snapshot 조회
+ */
+export const getLiveStates = (
+    shareCode: string,
+ options?: SecondParameter<typeof customInstance>,signal?: AbortSignal
+) => {
+
+
+      return customInstance<CommonResponseListAuctionLiveStateResponseDto>(
+      {url: `/api/v1/auction-rooms/share/${shareCode}/live-states`, method: 'GET', signal
+    },
+      options);
+    }
+
+
+
+
+export const getGetLiveStatesQueryKey = (shareCode?: string,) => {
+    return [
+    `/api/v1/auction-rooms/share/${shareCode}/live-states`
+    ] as const;
+    }
+
+
+export const getGetLiveStatesQueryOptions = <TData = Awaited<ReturnType<typeof getLiveStates>>, TError = ErrorType<CommonResponseListAuctionLiveStateResponseDto>>(shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveStates>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLiveStatesQueryKey(shareCode);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLiveStates>>> = ({ signal }) => getLiveStates(shareCode, requestOptions, signal);
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(shareCode), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLiveStates>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetLiveStatesQueryResult = NonNullable<Awaited<ReturnType<typeof getLiveStates>>>
+export type GetLiveStatesQueryError = ErrorType<CommonResponseListAuctionLiveStateResponseDto>
+
+
+export function useGetLiveStates<TData = Awaited<ReturnType<typeof getLiveStates>>, TError = ErrorType<CommonResponseListAuctionLiveStateResponseDto>>(
+ shareCode: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveStates>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLiveStates>>,
+          TError,
+          Awaited<ReturnType<typeof getLiveStates>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLiveStates<TData = Awaited<ReturnType<typeof getLiveStates>>, TError = ErrorType<CommonResponseListAuctionLiveStateResponseDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveStates>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getLiveStates>>,
+          TError,
+          Awaited<ReturnType<typeof getLiveStates>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetLiveStates<TData = Awaited<ReturnType<typeof getLiveStates>>, TError = ErrorType<CommonResponseListAuctionLiveStateResponseDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveStates>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary 경매방 물품 Live Snapshot 조회
+ */
+
+export function useGetLiveStates<TData = Awaited<ReturnType<typeof getLiveStates>>, TError = ErrorType<CommonResponseListAuctionLiveStateResponseDto>>(
+ shareCode: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveStates>>, TError, TData>>, request?: SecondParameter<typeof customInstance>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetLiveStatesQueryOptions(shareCode,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+/**
  * 경매방의 물품을 진행중 → 대기 → 낙찰 → 유찰 순으로 조회한다. 페이지네이션이 없으며 한 응답에 최대 100건까지 담긴다. 물품마다 `leaderboard`에 상위 입찰자 3명이 순위·닉네임·금액으로 담긴다. 한 사람이 여러 번 입찰해도 그 사람의 최고가로 한 줄만 나오고, 탈퇴한 회원은 순위에서 빠진다. 입찰이 없으면 빈 배열이다. 비로그인으로 조회할 수 있다.
 
 리더보드의 `isMe`는 그 줄이 조회한 본인인지를 서버가 판정해 담은 값이다. 입찰자의 회원 ID를 응답에 싣지 않으려는 것이고, 닉네임에 unique 제약이 없어 화면이 닉네임으로 비교하면 동명이인이 본인으로 강조되기 때문이다. 비로그인 조회에서는 모든 줄이 `false`다.
@@ -582,4 +676,3 @@ export const useRemove = <TError = ErrorType<CommonResponseVoid>,
 
       return useMutation(mutationOptions, queryClient);
     }
-    

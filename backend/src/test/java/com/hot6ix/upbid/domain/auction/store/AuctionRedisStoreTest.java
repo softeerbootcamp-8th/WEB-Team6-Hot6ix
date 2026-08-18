@@ -307,7 +307,7 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
         assertThat(store.findLiveState(ITEM_ID)).contains(new AuctionRedisLiveState(
                 ITEM_ID,
                 ROOM_ID,
-                AuctionItemStatus.IN_PROGRESS,
+                AuctionRedisLiveStatus.IN_PROGRESS,
                 14_000L,
                 14L,
                 1_786_636_800_000L,
@@ -317,6 +317,21 @@ class AuctionRedisStoreTest extends AbstractRedisContainerTest {
                         new AuctionRedisLeaderboardEntry(14L, "승민", 14_000L),
                         new AuctionRedisLeaderboardEntry(13L, "재현", 13_000L),
                         new AuctionRedisLeaderboardEntry(12L, "원기", 12_000L))));
+    }
+
+    @Test
+    @DisplayName("MySQL 저장 대기인 CLOSING 상태도 Live Snapshot으로 읽는다")
+    void readsClosingLiveState() {
+        assertThat(store.seed(seed(List.of(11L)))).isTrue();
+        redis.opsForHash().put(ITEM_KEY, "status", "CLOSING");
+        redis.opsForHash().put(ITEM_KEY, "revision", "3");
+
+        assertThat(store.findLiveState(ITEM_ID))
+                .get()
+                .satisfies(state -> {
+                    assertThat(state.status()).isEqualTo(AuctionRedisLiveStatus.CLOSING);
+                    assertThat(state.revision()).isEqualTo(3L);
+                });
     }
 
     @Test
