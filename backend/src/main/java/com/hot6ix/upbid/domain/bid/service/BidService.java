@@ -1,8 +1,9 @@
 package com.hot6ix.upbid.domain.bid.service;
 
-import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.auction.realtime.AuctionRealtimeSsePublisher;
 import com.hot6ix.upbid.domain.auction.realtime.BidderKeyEncoder;
+import com.hot6ix.upbid.domain.auction.service.AuctionParticipantRedisReconciler;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
 import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
@@ -22,6 +23,7 @@ public class BidService {
     private final AuctionRedisStore auctionRedisStore;
     private final AuctionRealtimeSsePublisher auctionRealtimeSsePublisher;
     private final BidderKeyEncoder bidderKeyEncoder;
+    private final AuctionParticipantRedisReconciler participantRedisReconciler;
 
     /**
      * Redis에서 입찰 판정, 상태 갱신, 승인 이벤트 기록을 한 번에 수행한다.
@@ -36,6 +38,12 @@ public class BidService {
 
         RedisBidDecision decision = auctionRedisStore.evaluateBid(
                 auctionItemId, requestId, bidderUserId, amount);
+        if (decision instanceof RedisBidDecision.Rejected rejected
+                && rejected.reason() == RedisBidDecision.Reason.TERMS_NOT_AGREED
+                && participantRedisReconciler.restoreIfAgreed(auctionItemId, bidderUserId)) {
+            decision = auctionRedisStore.evaluateBid(
+                    auctionItemId, requestId, bidderUserId, amount);
+        }
 
         return switch (decision) {
             case RedisBidDecision.Accepted accepted -> {
