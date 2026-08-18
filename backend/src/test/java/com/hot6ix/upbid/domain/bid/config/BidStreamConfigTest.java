@@ -73,6 +73,8 @@ class BidStreamConfigTest extends AbstractRedisContainerTest {
                 .get();
 
         assertThat(properties.consumerEnabled()).isTrue();
+        assertThat(properties.pollDelay()).isEqualTo(Duration.ofMillis(250));
+        assertThat(properties.blockTimeout()).isEqualTo(Duration.ofSeconds(2));
         assertThat(properties.maxRecordsPerPoll()).isEqualTo(50);
         assertThat(properties.maxDrainDuration()).isEqualTo(Duration.ofSeconds(1));
     }

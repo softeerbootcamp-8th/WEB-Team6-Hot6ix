@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  getGetDetail1QueryKey,
   getGetSummariesQueryKey,
   useGetDetail1,
   useGetLiveStates,
@@ -47,6 +48,7 @@ import { useCurrentUser } from '@/lib/session'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import {
   useRealtimeStatus,
+  useRealtimeStatusToast,
   type SseEventPayload,
 } from '@/features/live/use-realtime-status'
 import type { RoomEvent } from '@/types/domain'
@@ -292,6 +294,26 @@ function AuctionItemPage() {
           })
           break
 
+        /*
+         * 끊긴 사이의 이벤트를 서버가 다 못 돌려줬다. 세 가지를 모두 다시 읽는다 —
+         * 이 물품(상세), 왼쪽 목록, 그리고 **방 정보**. 입찰 단위가 방 정보에서
+         * 나오므로 그게 낡으면 최소 입찰가가 서버 기준과 어긋나 입찰이 거절된다.
+         *
+         * 재조회 결과는 `useLiveItems` 가 화면 상태에 다시 얹는다. 이벤트로 고쳐 둔
+         * 값이 남아 있어도 서버에서 새로 읽은 값이 이긴다.
+         */
+        case 'EventsLost':
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetDetail1QueryKey(shareCode, auctionItemId),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(shareCode),
+          })
+          break
+
         case 'ItemEnded':
           setExtraEvents((prev) => [
             ...prev,
@@ -312,6 +334,7 @@ function AuctionItemPage() {
     },
     [
       item.id,
+      auctionItemId,
       shareCode,
       navigate,
       queryClient,
@@ -361,19 +384,34 @@ function AuctionItemPage() {
     }
   }, [status, refetchLiveStates, liveEventBuffer, setItems])
 
-  const disconnectNotifiedRef = useRef(false)
+  useRealtimeStatusToast(status)
+
+  /*
+   * 재구독이 거절됐다(`failed`). **끊긴 사이에 방이 종료된 경우가 여기다.**
+   *
+   * 서버가 종료된 방 구독을 409 로 막으므로 `RoomClosed` 도 유실 알림도 도달하지
+   * 못한다. 이 화면은 진행 중인 방 전용인데 LIVE 인 채로 멈춰 있게 된다.
+   *
+   * 방 정보를 다시 읽어서 정말 종료됐을 때만 결과 화면으로 옮긴다. `failed` 자체로
+   * 바로 넘기면 안 된다 — 서버가 잠깐 죽은 경우까지 경매가 끝난 것처럼 보인다.
+   */
   useEffect(() => {
-    if (status === 'reconnecting' || status === 'failed') {
-      if (!disconnectNotifiedRef.current) {
-        disconnectNotifiedRef.current = true
-        toast.error(
-          '실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.',
-        )
-      }
-    } else if (status === 'connected') {
-      disconnectNotifiedRef.current = false
-    }
-  }, [status])
+    if (status !== 'failed') return
+
+    void queryClient.invalidateQueries({
+      queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+    })
+  }, [status, queryClient, shareCode])
+
+  useEffect(() => {
+    if (status !== 'failed' || room.status !== 'CLOSED') return
+
+    void navigate({
+      to: '/rooms/$shareCode/result',
+      params: { shareCode },
+      replace: true,
+    })
+  }, [status, room.status, navigate, shareCode])
 
   const remaining = useCountdown(item.endsAt)
   const closed = item.status === 'CLOSED'

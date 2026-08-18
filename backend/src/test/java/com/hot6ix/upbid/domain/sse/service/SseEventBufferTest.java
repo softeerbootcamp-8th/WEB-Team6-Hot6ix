@@ -3,6 +3,7 @@ package com.hot6ix.upbid.domain.sse.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
+import com.hot6ix.upbid.domain.sse.dto.SseEventsLostDto;
 import com.hot6ix.upbid.domain.sse.event.SseEventEnvelope;
 import com.hot6ix.upbid.domain.sse.event.SseEventMessage;
 import com.hot6ix.upbid.domain.sse.event.SseEventPublisher;
@@ -96,7 +97,7 @@ class SseEventBufferTest extends AbstractRedisContainerTest {
         publish(ROOM_A);
         publish(ROOM_A);  // id=1이 밀려남
 
-        List<BufferedEvent> result = buffer.getEventsAfter(ROOM_A, 0);
+        List<BufferedEvent> result = buffer.getEventsAfter(ROOM_A, 0).events();
 
         assertThat(result).hasSize(BUFFER_SIZE);
         assertThat(result).extracting(BufferedEvent::id).containsExactly(2L, 3L, 4L);
@@ -109,9 +110,12 @@ class SseEventBufferTest extends AbstractRedisContainerTest {
         publish(ROOM_A);
         publish(ROOM_A);
 
-        List<BufferedEvent> result = buffer.getEventsAfter(ROOM_A, 1);
+        ReplayResult result = buffer.getEventsAfter(ROOM_A, 1);
 
-        assertThat(result).extracting(BufferedEvent::id).containsExactly(2L, 3L);
+        assertThat(result.events()).extracting(BufferedEvent::id).containsExactly(2L, 3L);
+        assertThat(result.hasLoss())
+                .as("버퍼가 lastEventId 바로 다음부터 이어지면 놓친 구간이 없다")
+                .isFalse();
     }
 
     /**
@@ -129,13 +133,13 @@ class SseEventBufferTest extends AbstractRedisContainerTest {
         addDirectly(ROOM_A, 6L);
         addDirectly(ROOM_A, 5L);
 
-        List<BufferedEvent> result = buffer.getEventsAfter(ROOM_A, 5);
+        List<BufferedEvent> result = buffer.getEventsAfter(ROOM_A, 5).events();
 
         assertThat(result).extracting(BufferedEvent::id).containsExactly(6L);
     }
 
     @Test
-    @DisplayName("lastEventId가 버퍼에서 밀려난 경우 남아 있는 이벤트를 전부 반환한다")
+    @DisplayName("lastEventId가 버퍼에서 밀려난 경우 남아 있는 이벤트를 전부 반환하고 유실을 알린다")
     void getEventsAfter_returnsAllWhenLastIdEvicted() {
         publish(ROOM_A);
         publish(ROOM_A);
@@ -144,9 +148,12 @@ class SseEventBufferTest extends AbstractRedisContainerTest {
         publish(ROOM_A);  // id=1, 2가 밀려남
 
         // id=1은 이미 버퍼에 없음 → 가능한 이벤트를 최대한 복구
-        List<BufferedEvent> result = buffer.getEventsAfter(ROOM_A, 1);
+        ReplayResult result = buffer.getEventsAfter(ROOM_A, 1);
 
-        assertThat(result).extracting(BufferedEvent::id).containsExactly(3L, 4L, 5L);
+        assertThat(result.events()).extracting(BufferedEvent::id).containsExactly(3L, 4L, 5L);
+        assertThat(result.lostReason())
+                .as("id=2 를 메울 수 없으므로 화면이 상태를 다시 읽어야 한다")
+                .isEqualTo(SseEventsLostDto.BUFFER_OVERFLOW);
     }
 
     @Test
@@ -155,13 +162,56 @@ class SseEventBufferTest extends AbstractRedisContainerTest {
         publish(ROOM_A);
         publish(ROOM_A);
 
-        assertThat(buffer.getEventsAfter(ROOM_A, 2)).isEmpty();
+        ReplayResult result = buffer.getEventsAfter(ROOM_A, 2);
+
+        assertThat(result.events()).isEmpty();
+        assertThat(result.hasLoss()).isFalse();
     }
 
     @Test
     @DisplayName("버퍼가 없는 방은 빈 리스트를 반환한다")
     void getEventsAfter_returnsEmptyForUnknownRoom() {
-        assertThat(buffer.getEventsAfter(ROOM_A, 0)).isEmpty();
+        ReplayResult result = buffer.getEventsAfter(ROOM_A, 0);
+
+        assertThat(result.events()).isEmpty();
+        assertThat(result.hasLoss())
+                .as("받은 이벤트가 없다고 들고 왔으면 놓친 것도 없다")
+                .isFalse();
+    }
+
+    /**
+     * 유실 규모가 가장 큰 경우다. Redis 재시작·failover·TTL 만료로 버퍼가 통째로 사라지면
+     * 남은 이벤트가 없어 replay 로 아무것도 메울 수 없다.
+     *
+     * <p>예전에는 이 분기에서 빈 목록만 돌려주고 유실 판정을 건너뛰어서 로그 한 줄도
+     * 남지 않았다.
+     */
+    @Test
+    @DisplayName("버퍼가 비었는데 클라이언트가 ID를 들고 오면 유실로 판정한다")
+    void getEventsAfter_reportsLossWhenBufferGone() {
+        ReplayResult result = buffer.getEventsAfter(ROOM_A, 57);
+
+        assertThat(result.events()).isEmpty();
+        assertThat(result.lostReason()).isEqualTo(SseEventsLostDto.BUFFER_MISSING);
+    }
+
+    /**
+     * Redis 가 데이터 없이 올라오면 순차 ID 카운터가 1부터 다시 시작한다. 이때 클라이언트가
+     * 든 ID 가 버퍼의 마지막 ID 보다 커서, <b>필터가 남은 이벤트를 전부 걸러낸다.</b>
+     *
+     * <p>버퍼 시작 ID 만 보던 판정은 이 방향을 못 잡아서(57 ≥ 1) 클라이언트가 아무것도 받지
+     * 못한 채 조용히 낡았다.
+     */
+    @Test
+    @DisplayName("순차 ID가 되감겨 클라이언트 ID가 더 크면 유실로 판정한다")
+    void getEventsAfter_reportsLossWhenSequenceRewound() {
+        publish(ROOM_A);
+        publish(ROOM_A);
+
+        ReplayResult result = buffer.getEventsAfter(ROOM_A, 57);
+
+        assertThat(result.events()).isEmpty();
+        assertThat(result.lostReason()).isEqualTo(SseEventsLostDto.SEQUENCE_RESET);
     }
 
     @Test

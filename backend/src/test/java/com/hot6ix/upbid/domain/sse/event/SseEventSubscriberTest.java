@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -87,6 +88,40 @@ class SseEventSubscriberTest {
                 .doesNotThrowAnyException();
 
         verify(roomSseManager, never()).deliverLocal(any(), any(), anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("최초 구독은 재연결이 아니므로 방 단위 replay를 트리거하지 않는다")
+    void doesNotReplayOnFirstSubscription() {
+
+        subscriber.onChannelSubscribed("upbid:sse:events:v2".getBytes(StandardCharsets.UTF_8), 1L);
+
+        verify(roomSseManager, never()).replayAfterReconnect();
+    }
+
+    @Test
+    @DisplayName("두 번째부터의 구독 성공은 재연결로 보고 방 단위 replay를 트리거한다")
+    void replaysOnReconnectSubscription() {
+
+        byte[] channel = "upbid:sse:events:v2".getBytes(StandardCharsets.UTF_8);
+
+        subscriber.onChannelSubscribed(channel, 1L);   // 최초
+        subscriber.onChannelSubscribed(channel, 1L);   // 재연결
+
+        verify(roomSseManager, times(1)).replayAfterReconnect();
+    }
+
+    @Test
+    @DisplayName("재구독이 반복되면 그때마다 다시 방 단위 replay를 트리거한다")
+    void replaysOnEveryReconnectSubscription() {
+
+        byte[] channel = "upbid:sse:events:v2".getBytes(StandardCharsets.UTF_8);
+
+        subscriber.onChannelSubscribed(channel, 1L);   // 최초
+        subscriber.onChannelSubscribed(channel, 1L);   // 재연결 1
+        subscriber.onChannelSubscribed(channel, 1L);   // 재연결 2
+
+        verify(roomSseManager, times(2)).replayAfterReconnect();
     }
 
     private Message message(long id, SseEventMessage event) {

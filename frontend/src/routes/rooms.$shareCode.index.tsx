@@ -95,6 +95,7 @@ import { useCurrentUser } from '@/lib/session'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import {
   useRealtimeStatus,
+  useRealtimeStatusToast,
   type SseEventPayload,
 } from '@/features/live/use-realtime-status'
 import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
@@ -614,6 +615,29 @@ function LiveRoomPage() {
             queryKey: getGetRoomByShareCodeQueryKey(shareCode),
           })
           break
+
+        /*
+         * 끊긴 사이의 이벤트를 서버가 다 못 돌려줬다. **놓친 이벤트를 따라잡는 게
+         * 아니라 상태를 통째로 다시 읽는다** — 무엇이 사라졌는지는 서버도 모른다.
+         *
+         * **방 정보까지 다시 읽어야 한다.** 물품만 무효화하면 입찰 단위(`bidUnit`)가
+         * 낡은 채로 남고, 그러면 화면이 제시하는 최소 입찰가가 서버 기준과 어긋나서
+         * 입찰이 계속 거절된다.
+         *
+         * 다시 읽은 값을 화면에 얹는 일은 `useLiveItems` 가 한다. 이벤트로 고쳐 둔
+         * 값이 남아 있어도 서버 응답이 이긴다.
+         *
+         * 놓친 알림 피드는 복구하지 않는다. 서버 버퍼에도 남아 있지 않고, 자리를
+         * 비운 사이의 입찰 수십 건을 뒤늦게 쏟아붓는 편이 더 이상하다.
+         */
+        case 'EventsLost':
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(shareCode),
+          })
+          break
       }
     },
     [shareCode, queryClient, ownBids, roomEventIds, setItems],
@@ -659,19 +683,31 @@ function LiveRoomPage() {
     }
   }, [status, refetchLiveStates, liveEventBuffer, setItems])
 
-  const disconnectNotifiedRef = useRef(false)
+  useRealtimeStatusToast(status)
+
+  /*
+   * 재구독이 거절됐다(`failed`). **끊긴 사이에 방이 종료된 경우가 여기다.**
+   *
+   * 서버는 종료된 방 구독을 409 로 막는데, 그러면 `ROOM_CLOSED` 도 유실 알림도
+   * 도달할 방법이 없다. 이 화면은 계속 진행 중으로 남고, 사용자는 새로고침해야
+   * 경매가 끝난 걸 알게 된다.
+   *
+   * 그래서 여기서 방 정보를 한 번 다시 읽는다. 정말 종료됐으면 `roomClosed` 가 되어
+   * 종료 화면으로 바뀌고, 다른 이유(없는 방 등)면 응답이 그걸 알려준다.
+   *
+   * `failed` 는 브라우저가 재접속을 포기한 상태라 한 번만 발생한다 — `reconnecting`
+   * 과 달리 이 조회가 반복되지 않는다.
+   */
   useEffect(() => {
-    if (status === 'reconnecting' || status === 'failed') {
-      if (!disconnectNotifiedRef.current) {
-        disconnectNotifiedRef.current = true
-        toast.error(
-          '실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.',
-        )
-      }
-    } else if (status === 'connected') {
-      disconnectNotifiedRef.current = false
-    }
-  }, [status])
+    if (status !== 'failed') return
+
+    void queryClient.invalidateQueries({
+      queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+    })
+    void queryClient.invalidateQueries({
+      queryKey: getGetSummariesQueryKey(shareCode),
+    })
+  }, [status, queryClient, shareCode])
 
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()
@@ -1407,21 +1443,31 @@ function LiveRoomPage() {
    * 예전에는 데스크톱 분기에만 있어서 모바일에서는 눌러도 아무 일이 없었다.
    */
   /*
-   * 진행 중인 물품은 마감 시각이 남아 있어도 함께 닫힌다(`AuctionRoomCloseService`).
-   * 몇 개가 딸려 닫히는지 세어 보여준다 — 그걸 모르고 누르면 아직 입찰을 받고 있던
-   * 물품이 그대로 마감되고, 되돌릴 방법이 없다.
+   * **진행 중인 물품이 하나라도 있으면 서버가 종료를 거절한다**(4012,
+   * `AuctionRoomCloseService`). 그래서 확인이 아니라 안내로 바꾸고 확인 버튼을 막는다.
+   *
+   * 예전 문구는 "진행 중인 물품 N개가 지금 마감되고 낙찰 결과가 확정됩니다" 였다.
+   * #230 시점에는 맞았지만 #325 에서 서버가 거절하도록 바뀌면서 반대가 됐고,
+   * 경고를 읽고 눌러도 방이 안 닫히고 에러 토스트만 떴다.
+   *
+   * `liveItems`(`ACTIVE`)는 서버의 `IN_PROGRESS` 와 1:1 이라 거절 조건을 화면이
+   * 그대로 안다. 다만 판정은 서버가 다시 하므로, 열어 둔 사이에 물품이 시작되면
+   * 4012 토스트로 걸린다.
    */
+  const hasLiveItems = liveItems.length > 0
   const closeRoomDialog = (
     <ConfirmDialog
       open={closingRoom}
       tone="danger"
-      title="경매방을 종료할까요?"
+      title={hasLiveItems ? '아직 종료할 수 없어요' : '경매방을 종료할까요?'}
       description={
-        liveItems.length > 0
-          ? `진행 중인 물품 ${liveItems.length}개가 마감 시각과 상관없이 지금 마감되고 낙찰 결과가 확정됩니다. 되돌릴 수 없어요.`
+        hasLiveItems
+          ? `진행 중인 물품이 ${liveItems.length}개 남아 있어요. 물품마다 마감을 앞당겨 모두 마감한 뒤에 경매방을 종료할 수 있어요.`
           : '경매방이 종료되고 참여자는 더 이상 입장할 수 없어요. 되돌릴 수 없어요.'
       }
       confirmLabel="경매방 종료"
+      confirmDisabled={hasLiveItems}
+      cancelLabel={hasLiveItems ? '닫기' : '취소'}
       onCancel={() => setClosingRoom(false)}
       pending={closeRoom.isPending}
       onConfirm={() => void handleCloseRoom()}
@@ -1518,6 +1564,7 @@ function LiveRoomPage() {
       <>
         <MobileLiveView
           room={room}
+          shareCode={shareCode}
           isGuest={isGuest}
           participantCount={participantCount}
           events={roomEvents}

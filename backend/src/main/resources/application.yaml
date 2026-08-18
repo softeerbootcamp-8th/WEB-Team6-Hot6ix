@@ -167,8 +167,8 @@ upbid:
     # 전체 PEL에서 먼저 claim하므로 이름이 바뀌어도 이벤트가 고립되지 않는다.
     consumer: ${HOSTNAME:local}-bid-writer
     consumer-enabled: ${BID_STREAM_CONSUMER_ENABLED:true}
-    poll-delay: ${BID_STREAM_POLL_DELAY:100ms}
-    block-timeout: ${BID_STREAM_BLOCK_TIMEOUT:50ms}
+    poll-delay: ${BID_STREAM_POLL_DELAY:250ms}
+    block-timeout: ${BID_STREAM_BLOCK_TIMEOUT:2s}
     # Stream 단건 DB 트랜잭션의 최대 처리시간보다 길어야 한다. 운영 실측 뒤 조정한다.
     lock-at-most-for: ${BID_STREAM_LOCK_AT_MOST_FOR:60s}
     retry-delay: ${BID_STREAM_RETRY_DELAY:5s}

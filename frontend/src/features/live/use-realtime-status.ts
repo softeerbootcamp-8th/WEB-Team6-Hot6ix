@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { eventIdFromLastEventId } from '@/features/live/sse-event-id'
+import { toast } from '@/lib/toast'
 
 /**
  * SSE 는 axios 를 타지 않아 `custom-instance.ts` 의 baseURL 이 적용되지 않는다.
@@ -15,6 +16,18 @@ import { eventIdFromLastEventId } from '@/features/live/sse-event-id'
  * 그러면 지금까지처럼 상대경로 + dev proxy 로 동작한다.
  */
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+
+/**
+ * 브라우저가 재접속을 포기했을 때(`readyState === CLOSED`) 훅이 대신 다시 여는 횟수.
+ *
+ * `EventSource` 로는 HTTP 상태를 읽을 수 없어서, 서버 재배포처럼 곧 돌아오는 실패와
+ * 없는 방(404)·종료된 방(409)처럼 다시 열어도 소용없는 실패를 구분할 방법이 없다.
+ * 그래서 무한히 붙지 않고 횟수를 막아 둔다. 다 소진하면 `failed` 로 두고 멈춘다.
+ */
+const MAX_RETRIES = 5
+
+/** 재시도 간격. 시도마다 두 배로 늘어 1s → 2s → 4s → 8s → 16s 다. */
+const RETRY_BASE_MS = 1000
 
 /**
  * `closed` 는 **정상 종료**다. 방이 끝나서 더 받을 이벤트가 없는 상태이므로
@@ -132,6 +145,23 @@ type SseEventData =
    * payload 가 비어 있고, 화면은 방 정보를 통째로 다시 읽는다.
    */
   | { kind: 'RoomUpdated' }
+  /**
+   * 재연결했지만 **끊긴 사이의 이벤트를 서버가 다 돌려주지 못했다.**
+   *
+   * 서버는 방마다 최근 이벤트를 정해진 개수(기본 50)만 들고 있다. 끊긴 동안 그보다
+   * 많이 쌓였거나 Redis 가 재시작되면 중간이 비는데, 그걸 알려주는 신호다.
+   *
+   * **놓친 이벤트를 되살릴 방법은 없다.** 서버도 무엇이 사라졌는지 모른다 — 밀려난
+   * 이벤트는 이름조차 남지 않는다. 그래서 이벤트를 하나씩 따라잡는 게 아니라
+   * **상태를 통째로 다시 읽는다.** 이벤트는 화면을 조금씩 고치는 지시일 뿐이고
+   * 정답은 서버에 있으므로, 지시를 몇 개 놓쳤든 정답을 다시 읽으면 화면이 맞는다.
+   *
+   * 반대로 알림 피드에 안 쌓인 줄은 복구 대상이 아니다. 자리를 비운 사이의 입찰
+   * 수십 건을 뒤늦게 쏟아붓는 편이 더 이상하다.
+   *
+   * `reason` 은 운영에서 유실 경로를 구분하는 값이고 화면 동작은 값과 무관하다.
+   */
+  | { kind: 'EventsLost'; reason: string }
 
 export type SseEventPayload = SseEventData & { eventId?: number }
 
@@ -142,7 +172,9 @@ export type SseEventPayload = SseEventData & { eventId?: number }
  * 숫자 ID 를 받던 시절에는 링크를 못 받은 사람도 1, 2, 3... 을 훑어 남의 방 이벤트를
  * 구독할 수 있었다.
  *
- * shareCode 가 바뀌거나 retry() 를 호출하면 EventSource 를 닫고 다시 연다.
+ * shareCode 가 바뀌거나, 자동 재시도가 걸리거나, retry() 를 호출하면 EventSource 를
+ * 닫고 다시 연다. 브라우저가 재접속을 포기하면(`readyState === CLOSED`) 훅이 대신
+ * `MAX_RETRIES` 번까지 다시 열고, 다 소진해야 `failed` 에서 멈춘다.
  * onEvent 는 매 렌더에서 ref 로 최신값을 유지하므로 바뀌어도 재연결하지 않는다.
  * 언마운트 시 EventSource 를 닫아 구독을 정리한다.
  *
@@ -156,14 +188,23 @@ export function useRealtimeStatus(
   const [status, setStatus] = useState<RealtimeStatus>('connecting')
   const [retryKey, setRetryKey] = useState(0)
   const onEventRef = useRef(onEvent)
+  /** 마지막으로 붙은 뒤 연속으로 실패한 횟수. `onopen` 에서 0 으로 돌아간다. */
+  const attemptsRef = useRef(0)
 
   // 콜백이 바뀌어도 EventSource 를 다시 열지 않는다.
   useEffect(() => {
     onEventRef.current = onEvent
   })
 
+  // 다른 방으로 옮기면 이전 방의 실패 횟수를 들고 가지 않는다.
+  useEffect(() => {
+    attemptsRef.current = 0
+  }, [shareCode])
+
   useEffect(() => {
     setStatus('connecting')
+
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
 
     const es = new EventSource(
       `${API_BASE_URL}/api/v1/auction-rooms/share/${shareCode}/subscribe`,
@@ -173,22 +214,40 @@ export function useRealtimeStatus(
     es.onopen = () => {
       console.log('[SSE] connected')
       setStatus('connected')
+      attemptsRef.current = 0
     }
     /**
      * `readyState` 로 영구 실패와 일시 단절을 가른다.
      *
-     * `CLOSED` 면 브라우저가 재접속을 포기한 것이다 — 서버가 200 이 아닌 응답을 준
-     * 경우(없는 방 404, 종료된 방 409)가 여기다. `CONNECTING` 이면 잠시 뒤 스스로
-     * 다시 붙으므로 그때만 '재연결 중' 이다.
+     * `CONNECTING` 이면 브라우저가 잠시 뒤 스스로 다시 붙으므로 상태만 바꾸고 둔다.
      *
-     * 구분하지 않으면 다시 붙을 일이 없는데도 `reconnecting` 에 영구히 박혀,
-     * "재연결 중" 표시와 경고 토스트가 사라지지 않는다.
+     * `CLOSED` 면 브라우저가 재접속을 포기한 것이다 — 서버가 200 이 아닌 응답을 준
+     * 경우(없는 방 404, 종료된 방 409, 재배포 중 502)가 여기다. **이때 가만히 두면
+     * 화면이 영구히 굳는다.** 그래서 훅이 대신 EventSource 를 다시 만든다.
+     *
+     * 재시도가 무한이 아닌 이유는 위 `MAX_RETRIES` 주석 참고. 다 소진하면 `failed`
+     * 에서 멈추고, 그다음은 `retry()` 를 부르는 쪽이 살린다.
+     *
+     * 다시 붙은 뒤의 재동기화는 호출부가 한다. 화면이 `connected` 가 될 때마다
+     * Redis Live Snapshot 을 다시 읽어 `revision` 으로 병합하는 흐름(#387)이다.
      */
     es.onerror = (e) => {
       console.error('[SSE] error', e)
-      setStatus(
-        es.readyState === EventSource.CLOSED ? 'failed' : 'reconnecting',
-      )
+
+      if (es.readyState !== EventSource.CLOSED) {
+        setStatus('reconnecting')
+        return
+      }
+
+      if (attemptsRef.current >= MAX_RETRIES) {
+        setStatus('failed')
+        return
+      }
+
+      const delay = RETRY_BASE_MS * 2 ** attemptsRef.current
+      attemptsRef.current += 1
+      setStatus('reconnecting')
+      retryTimer = setTimeout(() => setRetryKey((k) => k + 1), delay)
     }
 
     function makeHandler(kind: SseEventPayload['kind']) {
@@ -238,14 +297,63 @@ export function useRealtimeStatus(
       'PARTICIPANT_COUNT_UPDATED',
       makeHandler('ParticipantCount'),
     )
+    /*
+     * 서버가 replay 로 못 메운 구간이 있다고 알려준다. 재연결 직후 replay 이벤트보다
+     * 먼저 도착하므로, 화면은 뒤이어 오는 이벤트를 처리하기 전에 재조회를 걸 수 있다.
+     *
+     * id 없이 오기 때문에 `Last-Event-ID` 에 영향을 주지 않는다 — 버퍼에 없는
+     * 이벤트라 번호 자체가 없고, 번호가 붙으면 다음 재연결의 replay 기준이 깨진다.
+     */
+    es.addEventListener('SYSTEM_EVENTS_LOST', makeHandler('EventsLost'))
 
-    return () => es.close()
+    return () => {
+      clearTimeout(retryTimer)
+      es.close()
+    }
   }, [shareCode, retryKey])
 
+  /** 자동 재시도를 다 쓴 뒤(`failed`) 사용자가 직접 다시 붙일 때 쓴다. */
   const retry = useCallback(() => {
+    attemptsRef.current = 0
     setStatus('reconnecting')
     setRetryKey((k) => k + 1)
   }, [])
 
   return { status, retry }
+}
+
+/**
+ * 연결이 끊겼을 때 띄우는 경고 토스트.
+ *
+ * 라이브 방과 물품 상세가 같은 문구를 쓰고, `status` 한 값만 보고 판단하므로
+ * 훅 옆에 둔다. 화면마다 복사해 두면 문구와 조건이 조용히 갈라진다.
+ *
+ * `reconnecting` 과 `failed` 를 나눠 알린다. 전자는 훅이 아직 다시 붙는 중이라
+ * 기다리면 되고, 후자는 자동 재시도를 다 쓴 뒤라 사용자가 새로고침해야 한다.
+ * `closed`(정상 종료)에는 아무것도 띄우지 않는다.
+ */
+export function useRealtimeStatusToast(status: RealtimeStatus) {
+  const notifiedRef = useRef<RealtimeStatus | null>(null)
+
+  useEffect(() => {
+    if (status === 'connected') {
+      notifiedRef.current = null
+      return
+    }
+    if (status !== 'reconnecting' && status !== 'failed') return
+    if (notifiedRef.current === status) return
+    notifiedRef.current = status
+
+    if (status === 'reconnecting') {
+      toast.error('실시간 연결이 끊겼어요. 다시 연결하는 중이에요.', {
+        description: '표시된 금액이 최신이 아닐 수 있어요.',
+      })
+      return
+    }
+    // 자동 재시도를 다 썼다. 사용자가 움직여야 하므로 스스로 닫히지 않게 둔다.
+    toast.error('실시간 연결을 되살리지 못했어요.', {
+      description: '새로고침하면 다시 연결해요.',
+      duration: 0,
+    })
+  }, [status])
 }

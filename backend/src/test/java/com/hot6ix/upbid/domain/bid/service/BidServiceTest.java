@@ -2,14 +2,16 @@ package com.hot6ix.upbid.domain.bid.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.auction.realtime.AuctionRealtimeSsePublisher;
 import com.hot6ix.upbid.domain.auction.realtime.BidderKeyEncoder;
+import com.hot6ix.upbid.domain.auction.service.AuctionParticipantRedisReconciler;
+import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
 import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
@@ -51,6 +53,9 @@ class BidServiceTest {
     @Mock
     private BidderKeyEncoder bidderKeyEncoder;
 
+    @Mock
+    private AuctionParticipantRedisReconciler participantRedisReconciler;
+
     private BidService bidService;
 
     @BeforeEach
@@ -59,7 +64,8 @@ class BidServiceTest {
                 Clock.fixed(Instant.ofEpochMilli(ARRIVED_AT), ZONE),
                 auctionRedisStore,
                 auctionRealtimeSsePublisher,
-                bidderKeyEncoder);
+                bidderKeyEncoder,
+                participantRedisReconciler);
     }
 
     @Test
@@ -136,6 +142,45 @@ class BidServiceTest {
 
         assertThat(response.requestId()).isEqualTo(REQUEST_ID);
         assertThat(response.amount()).isEqualTo(AMOUNT);
+    }
+
+    @Test
+    @DisplayName("Redis 참여자가 누락됐으면 DB 동의를 복구하고 입찰을 한 번 다시 판정한다")
+    void retriesAfterRestoringAgreedParticipant() {
+
+        RedisBidDecision.Accepted accepted = new RedisBidDecision.Accepted(
+                REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
+                AMOUNT, ACCEPTED_AT, END_AT, 0, 1L, false);
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
+                .thenReturn(
+                        new RedisBidDecision.Rejected(RedisBidDecision.Reason.TERMS_NOT_AGREED),
+                        accepted);
+        when(participantRedisReconciler.restoreIfAgreed(ITEM_ID, BIDDER_ID)).thenReturn(true);
+        when(bidderKeyEncoder.encode(ROOM_ID, BIDDER_ID)).thenReturn("bidder-a");
+
+        BidCreateResponseDto response = bidService.place(ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID);
+
+        assertThat(response.requestId()).isEqualTo(REQUEST_ID);
+        verify(auctionRedisStore, times(2))
+                .evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT);
+        verify(participantRedisReconciler).restoreIfAgreed(ITEM_ID, BIDDER_ID);
+    }
+
+    @Test
+    @DisplayName("DB에도 동의가 없으면 Redis 입찰을 다시 판정하지 않는다")
+    void doesNotRetryWhenAgreementCannotBeRestored() {
+
+        when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
+                .thenReturn(new RedisBidDecision.Rejected(RedisBidDecision.Reason.TERMS_NOT_AGREED));
+        when(participantRedisReconciler.restoreIfAgreed(ITEM_ID, BIDDER_ID)).thenReturn(false);
+
+        assertThatThrownBy(() -> bidService.place(ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID))
+                .isInstanceOf(ApplicationException.class)
+                .extracting("errorType")
+                .isEqualTo(BidErrorType.TERMS_NOT_AGREED);
+        verify(auctionRedisStore)
+                .evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT);
+        verify(participantRedisReconciler).restoreIfAgreed(ITEM_ID, BIDDER_ID);
     }
 
     @ParameterizedTest(name = "{0}는 {1}로 응답한다")

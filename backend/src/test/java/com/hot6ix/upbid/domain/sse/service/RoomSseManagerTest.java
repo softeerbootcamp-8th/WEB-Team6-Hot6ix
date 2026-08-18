@@ -3,17 +3,23 @@ package com.hot6ix.upbid.domain.sse.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
+import com.hot6ix.upbid.domain.sse.dto.SseEventsLostDto;
 import com.hot6ix.upbid.domain.sse.event.ParticipantCountPublisher;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
@@ -134,7 +140,19 @@ class RoomSseManagerTest {
         ((FakeMvcEmitter) emitter).killClient();
     }
 
+    /**
+     * 이 연결로 실제 나간 SSE 프레임을 나간 순서대로 준다.
+     *
+     * <p>{@code SseEventBuilder}가 만든 조각({@code id:5}, {@code event:이름} …)을 이어 붙인
+     * 것이라, 이름·id 유무·<b>순서</b>를 한 번에 볼 수 있다.
+     */
+    private static List<String> sentFrames(SseEmitter emitter) {
+        return ((FakeMvcEmitter) emitter).sentFrames;
+    }
+
     private static class FakeMvcEmitter extends SseEmitter {
+
+        private final List<String> sentFrames = new ArrayList<>();
 
         private Runnable completionCallback;
         private Consumer<Throwable> errorCallback;
@@ -186,6 +204,10 @@ class RoomSseManagerTest {
         public void send(SseEventBuilder builder) throws IOException {
             awaitGate();
             requireWritable();
+
+            StringBuilder frame = new StringBuilder();
+            builder.build().forEach(part -> frame.append(part.getData()));
+            sentFrames.add(frame.toString());
         }
 
         @Override
@@ -247,6 +269,62 @@ class RoomSseManagerTest {
                 throw new IllegalStateException("ResponseBodyEmitter has already completed");
             }
         }
+    }
+
+    /**
+     * 유실 알림은 <b>replay 보다 먼저</b> 나가야 한다. 화면이 "지금부터 오는 것만으로는 상태를
+     * 맞출 수 없다"를 먼저 알아야 재조회를 걸 수 있다.
+     */
+    @Test
+    @DisplayName("메울 수 없는 구간이 있으면 유실 알림을 replay 앞에 보낸다")
+    void subscribe_sendsLostNoticeBeforeReplay() {
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        when(buffer.getEventsAfter(ROOM_ID, 57L)).thenReturn(ReplayResult.lost(
+                List.of(new BufferedEvent(88L, EVENT_NAME, "data", Instant.EPOCH)),
+                SseEventsLostDto.BUFFER_OVERFLOW));
+
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        SseEmitter emitter = manager.subscribe(ROOM_ID, 57L);
+
+        assertThat(sentFrames(emitter)).hasSize(2);
+        assertThat(sentFrames(emitter).getFirst()).contains(RoomSseManager.EVENTS_LOST_EVENT);
+        assertThat(sentFrames(emitter).getLast()).contains(EVENT_NAME);
+    }
+
+    /**
+     * 유실 알림에 id 를 붙이면 {@code Last-Event-ID}가 오염되어 <b>다음 재연결의 replay
+     * 기준이 깨진다.</b> 버퍼에 없는 이벤트라 애초에 순차 번호가 없다.
+     */
+    @Test
+    @DisplayName("유실 알림에는 id를 붙이지 않는다")
+    void subscribe_lostNoticeCarriesNoId() {
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        when(buffer.getEventsAfter(ROOM_ID, 57L))
+                .thenReturn(ReplayResult.lost(List.of(), SseEventsLostDto.BUFFER_MISSING));
+
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        SseEmitter emitter = manager.subscribe(ROOM_ID, 57L);
+
+        assertThat(sentFrames(emitter)).hasSize(1);
+        assertThat(sentFrames(emitter).getFirst()).doesNotContain("id:");
+    }
+
+    @Test
+    @DisplayName("메울 수 없는 구간이 없으면 유실 알림을 보내지 않는다")
+    void subscribe_sendsNoLostNoticeWhenReplayIsIntact() {
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        when(buffer.getEventsAfter(ROOM_ID, 87L)).thenReturn(ReplayResult.intact(
+                List.of(new BufferedEvent(88L, EVENT_NAME, "data", Instant.EPOCH))));
+
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        SseEmitter emitter = manager.subscribe(ROOM_ID, 87L);
+
+        assertThat(sentFrames(emitter)).hasSize(1);
+        assertThat(sentFrames(emitter).getFirst())
+                .doesNotContain(RoomSseManager.EVENTS_LOST_EVENT);
     }
 
     @Test
@@ -494,6 +572,40 @@ class RoomSseManagerTest {
     }
 
     /**
+     * 구독이 끝나기 전(#378 warmup)에 방이 닫히는 경우. 그 사이 들어온 라이브 이벤트는 publisher
+     * 큐가 아니라 dispatcher 안쪽 대기열에 있어서, {@code publisher.close()} 만으로는 흘러나가지
+     * 않는다. 그대로 닫으면 #307 을 다른 경로로 다시 만드는 셈이라 종료 시 함께 넘긴다.
+     *
+     * <p>{@code subscribe()}가 warmup 을 그 안에서 끝내 버려서 이 상태는 매니저 API 로 만들 수
+     * 없다. 그래서 dispatcher 를 직접 만든다 — 갓 만든 dispatcher 가 곧 warmup 상태다.
+     * 도우미({@link ManualExecutor}, {@link FakeMvcEmitter})가 여기 있어 이 클래스에 둔다.
+     */
+    @Test
+    @DisplayName("구독이 끝나기 전에 방이 닫혀도 붙잡아 둔 ROOM_CLOSED 를 보낸다")
+    void flushesWarmupQueueOnClose() {
+
+        ManualExecutor executor = new ManualExecutor();
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        FakeMvcEmitter emitter = new FakeMvcEmitter();
+
+        EmitterDispatcher dispatcher = new EmitterDispatcher(
+                executor, QUEUE_CAPACITY, ROOM_ID, emitter, new SseMetrics(registry));
+
+        // becomeReady 를 부르지 않았다. 이 시점의 이벤트는 dispatcher 안쪽에 붙잡힌다.
+        dispatcher.enqueue(new SseDispatchTask.Event(ROOM_ID, ROOM_CLOSED_EVENT, 1L, "payload"));
+        dispatcher.closeAfterFlush(CLOSE_FLUSH_TIMEOUT_MS);
+
+        executor.runAll();
+
+        assertThat(sendSuccesses(registry, ROOM_CLOSED_EVENT))
+                .as("warmup 대기열에 있던 종료 이벤트도 나가야 한다")
+                .isEqualTo(1);
+        assertThat(emitter.isCompleted())
+                .as("전송이 끝난 뒤에 닫힌다")
+                .isTrue();
+    }
+
+    /**
      * 종료를 큐 소비 쪽으로 넘긴 대가. 클라이언트 소켓이 멈춰 있으면 {@code send}가 반환하지
      * 않아 상한이 없으면 그 연결이 emitter 타임아웃(기본 1시간)까지 남는다.
      */
@@ -660,5 +772,85 @@ class RoomSseManagerTest {
 
         assertThat(emitters).doesNotContainNull();
         assertThat(roomSseManager.getParticipantCount(ROOM_ID)).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("재연결(Last-Event-ID 있음)로 구독하면 그 이후 이벤트를 버퍼에서 조회한다")
+    void queriesBufferOnReconnectSubscribe() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        when(buffer.getEventsAfter(any(), anyLong())).thenReturn(ReplayResult.intact(List.of()));
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        manager.subscribe(ROOM_ID, 10L);
+
+        verify(buffer, times(1)).getEventsAfter(ROOM_ID, 10L);
+    }
+
+    @Test
+    @DisplayName("최초 연결(Last-Event-ID 없음)은 버퍼 조회 자체를 하지 않는다")
+    void skipsBufferQueryOnFreshSubscribe() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        manager.subscribe(ROOM_ID, null);
+
+        verify(buffer, never()).getEventsAfter(any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("재연결 시 아직 아무 이벤트도 못 받은 emitter는 버퍼 조회 자체를 건너뛴다")
+    void skipsNeverDeliveredEmitterOnReconnectReplay() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        manager.subscribe(ROOM_ID, null);
+
+        manager.replayAfterReconnect();
+
+        // lastDeliveredEventId가 -1(아직 아무것도 못 받음)이면, 접속 전 역사를 잘못
+        // 재전송하는 걸 막기 위해 이 emitter에 대한 버퍼 조회 자체를 하지 않는다.
+        verify(buffer, never()).getEventsAfter(any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("emitter마다 자기 lastDeliveredEventId 기준으로 개별적으로 replay를 조회한다")
+    void queriesReplayPerEmitterUsingItsOwnLastDeliveredEventId() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        when(buffer.getEventsAfter(any(), anyLong())).thenReturn(ReplayResult.intact(List.of()));
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        manager.subscribe(ROOM_ID, null);                          // emitter B: 아직 -1
+        manager.deliverLocal(ROOM_ID, EVENT_NAME, 5L, "payload");  // B만 5까지 받음(A는 아직 구독 전)
+        manager.subscribe(ROOM_ID, null);                          // emitter A: 여전히 -1
+
+        manager.replayAfterReconnect();
+
+        verify(buffer, times(1)).getEventsAfter(ROOM_ID, 5L);
+        verify(buffer, never()).getEventsAfter(eq(ROOM_ID), eq(-1L));
+    }
+
+    @Test
+    @DisplayName("이 인스턴스가 갖고 있는 모든 방에 대해 각각 재연결 replay를 수행한다")
+    void replaysAcrossAllRoomsOnThisInstance() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        when(buffer.getEventsAfter(any(), anyLong())).thenReturn(ReplayResult.intact(List.of()));
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        Long roomA = 1L;
+        Long roomB = 2L;
+        manager.subscribe(roomA, null);
+        manager.deliverLocal(roomA, EVENT_NAME, 3L, "payload");
+        manager.subscribe(roomB, null);
+        manager.deliverLocal(roomB, EVENT_NAME, 9L, "payload");
+
+        manager.replayAfterReconnect();
+
+        verify(buffer).getEventsAfter(roomA, 3L);
+        verify(buffer).getEventsAfter(roomB, 9L);
     }
 }
