@@ -76,6 +76,7 @@ export function applyLiveSnapshots(
   return items.map((item) => {
     const snapshot = byItemId.get(item.id)
     if (!snapshot) return item
+    if (item.status === 'CLOSED') return item
 
     const revision = revisionOf(snapshot.revision)
     if (!canApply(item, revision)) return item

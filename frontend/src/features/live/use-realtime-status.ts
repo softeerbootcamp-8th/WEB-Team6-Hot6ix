@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { eventIdFromLastEventId } from '@/features/live/sse-event-id'
+
 /**
  * SSE 는 axios 를 타지 않아 `custom-instance.ts` 의 baseURL 이 적용되지 않는다.
  * 그래서 여기서 직접 붙인다.
@@ -194,13 +196,11 @@ export function useRealtimeStatus(
         console.log('[SSE] received', kind, e.data)
         try {
           const data = JSON.parse(e.data as string)
-          const eventId = Number(e.lastEventId)
+          const eventId = eventIdFromLastEventId(kind, e.lastEventId)
           onEventRef.current({
             kind,
             ...data,
-            ...(Number.isSafeInteger(eventId) && eventId > 0
-              ? { eventId }
-              : {}),
+            ...(eventId === undefined ? {} : { eventId }),
           } as SseEventPayload)
         } catch (err) {
           console.error('[SSE] parse error', kind, e.data, err)

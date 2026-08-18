@@ -37,3 +37,17 @@ test('최초 연결과 재연결에서 snapshot 전 이벤트를 ID 순서로 �
     '재연결 두 번째',
   ])
 })
+
+test('snapshot 대기 중 terminal 이벤트가 오면 앞선 이벤트까지 즉시 처리한다', () => {
+  const delivered: string[] = []
+  const buffer = createLiveEventBuffer<Event>(
+    (event) => delivered.push(event.name),
+    (event) => event.name === '방 종료',
+  )
+
+  buffer.receive({ eventId: 2, name: '두 번째' })
+  buffer.receive({ eventId: 1, name: '첫 번째' })
+  buffer.receive({ eventId: 3, name: '방 종료' })
+
+  assert.deepEqual(delivered, ['첫 번째', '두 번째', '방 종료'])
+})

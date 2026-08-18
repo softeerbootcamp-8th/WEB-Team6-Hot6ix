@@ -325,9 +325,12 @@ function AuctionItemPage() {
   processSseEventRef.current = processSseEvent
   const liveEventBuffer = useMemo(
     () =>
-      createLiveEventBuffer<SseEventPayload>((payload) => {
-        processSseEventRef.current(payload)
-      }),
+      createLiveEventBuffer<SseEventPayload>(
+        (payload) => {
+          processSseEventRef.current(payload)
+        },
+        (payload) => payload.kind === 'RoomClosed',
+      ),
     [],
   )
   const handleSseEvent = useCallback(

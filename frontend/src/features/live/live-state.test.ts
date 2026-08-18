@@ -103,6 +103,33 @@ test('낮은 revision의 Snapshot과 SSE는 최신 화면을 되돌리지 않는
   assert.equal(afterEvent[0]?.revision, 7)
 })
 
+test('MySQL CLOSED 확정 뒤에는 같은 revision의 늦은 Snapshot도 무시한다', () => {
+  const closed = item(10, {
+    status: 'CLOSED',
+    sold: true,
+    currentPrice: 30_000,
+    revision: 7,
+  })
+
+  const result = applyLiveSnapshots(
+    [closed],
+    [
+      {
+        auctionItemId: 10,
+        status: 'IN_PROGRESS',
+        currentPrice: 20_000,
+        endAt: '2026-08-17T22:00:00',
+        revision: 7,
+        leaderboard: [],
+      },
+    ],
+  )
+
+  assert.equal(result[0]?.status, 'CLOSED')
+  assert.equal(result[0]?.sold, true)
+  assert.equal(result[0]?.currentPrice, 30_000)
+})
+
 test('같은 revision의 입찰과 연장 이벤트는 모두 적용하고 동명이인은 bidderKey로 구분한다', () => {
   const initial = item(10, {
     revision: 6,
