@@ -35,6 +35,7 @@ import type {
  */
 export function MobileLiveView({
   room,
+  shareCode,
   isGuest,
   participantCount,
   isOwner = false,
@@ -64,6 +65,13 @@ export function MobileLiveView({
   onBid,
 }: {
   room: AuctionRoomDetail
+  /**
+   * 방을 지목하는 공유 코드. 라우트가 주소에서 읽어 내려준다.
+   *
+   * **`room.shareCode` 를 쓸 수 없다** — `adapt-room.ts` 가 그 필드를 늘 빈
+   * 문자열로 둔다. 숫자 ID 를 쓰면 로그인 뒤 `/rooms/17` 로 착지해 404 가 된다.
+   */
+  shareCode: string
   isGuest: boolean
   /**
    * SSE 로 받은 실시간 참여자 수. 아직 못 받았으면 방 정보의 값을 쓴다.
@@ -294,7 +302,7 @@ export function MobileLiveView({
         )}
 
         <main className="flex min-h-0 flex-1 flex-col px-4 pt-4">
-          {isGuest && <GuestNotice redirectTo={`/rooms/${room.id}`} />}
+          {isGuest && <GuestNotice redirectTo={`/rooms/${shareCode}`} />}
 
           {/*
            * 데스크톱과 같은 목록을 쓴다. 진행 중만 보여주면 시작 전·종료 물품을

@@ -1534,6 +1534,7 @@ function LiveRoomPage() {
       <>
         <MobileLiveView
           room={room}
+          shareCode={shareCode}
           isGuest={isGuest}
           participantCount={participantCount}
           events={roomEvents}
