@@ -20,6 +20,12 @@ public record SseProperties(
          * emitter 별 이벤트 큐의 최대 크기. 포화 시 이벤트를 drop하고 해당 emitter를 종료한다.
          * 포화는 느린 구독자의 신호다.
          */
-        int emitterQueueCapacity
+        int emitterQueueCapacity,
+        /**
+         * 방 종료 시 큐에 남은 이벤트(특히 {@code ROOM_CLOSED})를 전송할 유예 시간. 이 시간이
+         * 지나도 전송이 끝나지 않으면 연결을 강제로 닫는다. 클라이언트 소켓이 멈춰 있으면
+         * {@code send}가 반환하지 않아, 이 상한이 없으면 emitter 타임아웃까지 남는다(#307).
+         */
+        long closeFlushTimeoutMs
 ) {
 }
