@@ -47,6 +47,7 @@ import { useCurrentUser } from '@/lib/session'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import {
   useRealtimeStatus,
+  useRealtimeStatusToast,
   type SseEventPayload,
 } from '@/features/live/use-realtime-status'
 import type { RoomEvent } from '@/types/domain'
@@ -361,19 +362,7 @@ function AuctionItemPage() {
     }
   }, [status, refetchLiveStates, liveEventBuffer, setItems])
 
-  const disconnectNotifiedRef = useRef(false)
-  useEffect(() => {
-    if (status === 'reconnecting' || status === 'failed') {
-      if (!disconnectNotifiedRef.current) {
-        disconnectNotifiedRef.current = true
-        toast.error(
-          '실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.',
-        )
-      }
-    } else if (status === 'connected') {
-      disconnectNotifiedRef.current = false
-    }
-  }, [status])
+  useRealtimeStatusToast(status)
 
   const remaining = useCountdown(item.endsAt)
   const closed = item.status === 'CLOSED'
