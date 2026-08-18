@@ -145,6 +145,23 @@ type SseEventData =
    * payload 가 비어 있고, 화면은 방 정보를 통째로 다시 읽는다.
    */
   | { kind: 'RoomUpdated' }
+  /**
+   * 재연결했지만 **끊긴 사이의 이벤트를 서버가 다 돌려주지 못했다.**
+   *
+   * 서버는 방마다 최근 이벤트를 정해진 개수(기본 50)만 들고 있다. 끊긴 동안 그보다
+   * 많이 쌓였거나 Redis 가 재시작되면 중간이 비는데, 그걸 알려주는 신호다.
+   *
+   * **놓친 이벤트를 되살릴 방법은 없다.** 서버도 무엇이 사라졌는지 모른다 — 밀려난
+   * 이벤트는 이름조차 남지 않는다. 그래서 이벤트를 하나씩 따라잡는 게 아니라
+   * **상태를 통째로 다시 읽는다.** 이벤트는 화면을 조금씩 고치는 지시일 뿐이고
+   * 정답은 서버에 있으므로, 지시를 몇 개 놓쳤든 정답을 다시 읽으면 화면이 맞는다.
+   *
+   * 반대로 알림 피드에 안 쌓인 줄은 복구 대상이 아니다. 자리를 비운 사이의 입찰
+   * 수십 건을 뒤늦게 쏟아붓는 편이 더 이상하다.
+   *
+   * `reason` 은 운영에서 유실 경로를 구분하는 값이고 화면 동작은 값과 무관하다.
+   */
+  | { kind: 'EventsLost'; reason: string }
 
 export type SseEventPayload = SseEventData & { eventId?: number }
 
@@ -280,6 +297,14 @@ export function useRealtimeStatus(
       'PARTICIPANT_COUNT_UPDATED',
       makeHandler('ParticipantCount'),
     )
+    /*
+     * 서버가 replay 로 못 메운 구간이 있다고 알려준다. 재연결 직후 replay 이벤트보다
+     * 먼저 도착하므로, 화면은 뒤이어 오는 이벤트를 처리하기 전에 재조회를 걸 수 있다.
+     *
+     * id 없이 오기 때문에 `Last-Event-ID` 에 영향을 주지 않는다 — 버퍼에 없는
+     * 이벤트라 번호 자체가 없고, 번호가 붙으면 다음 재연결의 replay 기준이 깨진다.
+     */
+    es.addEventListener('SYSTEM_EVENTS_LOST', makeHandler('EventsLost'))
 
     return () => {
       clearTimeout(retryTimer)

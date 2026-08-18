@@ -615,6 +615,29 @@ function LiveRoomPage() {
             queryKey: getGetRoomByShareCodeQueryKey(shareCode),
           })
           break
+
+        /*
+         * 끊긴 사이의 이벤트를 서버가 다 못 돌려줬다. **놓친 이벤트를 따라잡는 게
+         * 아니라 상태를 통째로 다시 읽는다** — 무엇이 사라졌는지는 서버도 모른다.
+         *
+         * **방 정보까지 다시 읽어야 한다.** 물품만 무효화하면 입찰 단위(`bidUnit`)가
+         * 낡은 채로 남고, 그러면 화면이 제시하는 최소 입찰가가 서버 기준과 어긋나서
+         * 입찰이 계속 거절된다.
+         *
+         * 다시 읽은 값을 화면에 얹는 일은 `useLiveItems` 가 한다. 이벤트로 고쳐 둔
+         * 값이 남아 있어도 서버 응답이 이긴다.
+         *
+         * 놓친 알림 피드는 복구하지 않는다. 서버 버퍼에도 남아 있지 않고, 자리를
+         * 비운 사이의 입찰 수십 건을 뒤늦게 쏟아붓는 편이 더 이상하다.
+         */
+        case 'EventsLost':
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(shareCode),
+          })
+          break
       }
     },
     [shareCode, queryClient, ownBids, roomEventIds, setItems],
@@ -661,6 +684,30 @@ function LiveRoomPage() {
   }, [status, refetchLiveStates, liveEventBuffer, setItems])
 
   useRealtimeStatusToast(status)
+
+  /*
+   * 재구독이 거절됐다(`failed`). **끊긴 사이에 방이 종료된 경우가 여기다.**
+   *
+   * 서버는 종료된 방 구독을 409 로 막는데, 그러면 `ROOM_CLOSED` 도 유실 알림도
+   * 도달할 방법이 없다. 이 화면은 계속 진행 중으로 남고, 사용자는 새로고침해야
+   * 경매가 끝난 걸 알게 된다.
+   *
+   * 그래서 여기서 방 정보를 한 번 다시 읽는다. 정말 종료됐으면 `roomClosed` 가 되어
+   * 종료 화면으로 바뀌고, 다른 이유(없는 방 등)면 응답이 그걸 알려준다.
+   *
+   * `failed` 는 브라우저가 재접속을 포기한 상태라 한 번만 발생한다 — `reconnecting`
+   * 과 달리 이 조회가 반복되지 않는다.
+   */
+  useEffect(() => {
+    if (status !== 'failed') return
+
+    void queryClient.invalidateQueries({
+      queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+    })
+    void queryClient.invalidateQueries({
+      queryKey: getGetSummariesQueryKey(shareCode),
+    })
+  }, [status, queryClient, shareCode])
 
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()

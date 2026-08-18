@@ -202,7 +202,7 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
         // 이 버퍼는 발행자와 아무 상태도 공유하지 않는다. 방금 뜬 인스턴스와 같은 조건이다.
         SseEventBuffer otherInstance = new SseEventBuffer(redisTemplate, objectMapper);
 
-        List<BufferedEvent> missed = otherInstance.getEventsAfter(ROOM_ID, 1L);
+        List<BufferedEvent> missed = otherInstance.getEventsAfter(ROOM_ID, 1L).events();
 
         assertThat(missed).hasSize(1);
         assertThat(missed.getFirst().id()).isEqualTo(2L);
@@ -263,7 +263,7 @@ class SseEventRedisRoundTripTest extends AbstractRedisContainerTest {
         assertThat(instanceA.getFirst().message().data())
                 .isEqualTo(java.util.Map.of("bidPrice", 12_000));
         assertThat(redisTemplate.opsForValue().get(SseRedisKeys.sequence(ROOM_ID))).isEqualTo("1");
-        assertThat(sseEventBuffer.getEventsAfter(ROOM_ID, 0L)).hasSize(1);
+        assertThat(sseEventBuffer.getEventsAfter(ROOM_ID, 0L).events()).hasSize(1);
     }
 
     private SseEventPublisher newPublisher() {

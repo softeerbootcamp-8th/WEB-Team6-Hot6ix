@@ -3,7 +3,6 @@ package com.hot6ix.upbid.domain.sse.service;
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.event.ParticipantCountPublisher;
 import jakarta.annotation.PostConstruct;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +26,14 @@ public class RoomSseManager {
      * {@code ParticipantCountPublisher}(다른 패키지)도 발행 지표 태그로 같은 값을 쓴다.
      */
     public static final String PARTICIPANT_COUNT_EVENT = "PARTICIPANT_COUNT_UPDATED";
+
+    /**
+     * 재연결 replay 로 메울 수 없는 구간이 있었음을 알리는 이벤트 이름.
+     *
+     * <p>{@code EventType}에 넣지 않는다. 도메인에서 일어난 사건이 아니고 Redis 발행·구독을
+     * 타지도 않는다 — 유실을 감지한 인스턴스가 그 연결 하나에만 직접 내보낸다.
+     */
+    public static final String EVENTS_LOST_EVENT = "SYSTEM_EVENTS_LOST";
 
     private static final int PARTICIPANT_JOINED = 1;
     private static final int PARTICIPANT_LEFT = -1;
@@ -55,6 +62,11 @@ public class RoomSseManager {
      * <p>재연결({@code lastEventId != null})이면 버퍼에서 그 ID 이후 이벤트를 replay한다. 아래
      * 참여자 수 브로드캐스트는 id 없이 나가므로(#311) {@code Last-Event-ID}에는 영향을 주지
      * 않는다 — 최초 연결이든 재연결이든 이 값이 {@code Last-Event-ID}의 시작점이 되지 않는다.
+     *
+     * <p>replay 로 메울 수 없는 구간이 있었으면 <b>남은 이벤트보다 먼저</b> 유실을 알린다.
+     * 순서가 중요하다 — 화면이 "지금부터 오는 것만으로는 상태를 맞출 수 없다"를 먼저 알아야
+     * 재조회를 걸 수 있다. 이 알림이 없던 동안에는 유실이 서버 로그에만 남고, 화면은 놓친 줄도
+     * 모른 채 낡은 상태로 있었다.
      */
     public SseEmitter subscribe(Long roomId, Long lastEventId) {
         SseEmitter emitter = createEmitter();
@@ -66,14 +78,7 @@ public class RoomSseManager {
         emitter.onError(e -> disconnect(roomId, emitter, closeReason(e)));
 
         if (lastEventId != null) {
-            List<BufferedEvent> missed = sseEventBuffer.getEventsAfter(roomId, lastEventId);
-            EmitterDispatcher dispatcher = dispatchers.get(emitter);
-            for (BufferedEvent event : missed) {
-                if (dispatcher != null) {
-                    dispatcher.enqueue(new SseDispatchTask.Event(
-                            roomId, event.eventName(), event.id(), event.data()));
-                }
-            }
+            replay(roomId, lastEventId, dispatchers.get(emitter));
         }
 
         incrementParticipantCount(roomId, PARTICIPANT_JOINED);
@@ -81,6 +86,31 @@ public class RoomSseManager {
         log.info("sse 연결 완료: roomId={}, lastEventId={}", roomId, lastEventId);
 
         return emitter;
+    }
+
+    /**
+     * 버퍼에서 놓친 구간을 이 연결 하나에만 흘려 넣는다.
+     *
+     * <p>dispatcher 가 {@code null}이면 등록과 조회 사이에 그 연결이 이미 정리된 것이다. 그
+     * 연결은 곧 재접속하면서 같은 {@code Last-Event-ID}를 다시 들고 오므로 여기서 따로
+     * 처리하지 않는다.
+     */
+    private void replay(Long roomId, long lastEventId, EmitterDispatcher dispatcher) {
+        if (dispatcher == null) {
+            return;
+        }
+
+        ReplayResult result = sseEventBuffer.getEventsAfter(roomId, lastEventId);
+
+        if (result.hasLoss()) {
+            sseMetrics.recordEventsLost(result.lostReason());
+            dispatcher.enqueue(new SseDispatchTask.EventsLost(roomId, result.lostReason()));
+        }
+
+        for (BufferedEvent event : result.events()) {
+            dispatcher.enqueue(new SseDispatchTask.Event(
+                    roomId, event.eventName(), event.id(), event.data()));
+        }
     }
 
     /**

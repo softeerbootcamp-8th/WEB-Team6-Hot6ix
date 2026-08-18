@@ -1,6 +1,7 @@
 package com.hot6ix.upbid.domain.sse.service;
 
 import com.hot6ix.upbid.domain.sse.dto.ParticipantCountDto;
+import com.hot6ix.upbid.domain.sse.dto.SseEventsLostDto;
 import java.io.IOException;
 import java.util.concurrent.Flow;
 import lombok.extern.slf4j.Slf4j;
@@ -105,6 +106,11 @@ class EmitterSubscriber implements Flow.Subscriber<QueuedSseDispatchTask> {
                     emitter.send(SseEmitter.event()
                             .name(RoomSseManager.PARTICIPANT_COUNT_EVENT)
                             .data(new ParticipantCountDto(p.count())));
+            // 참여자 수와 같은 이유로 id 를 붙이지 않는다(SseDispatchTask.EventsLost 참고).
+            case SseDispatchTask.EventsLost l ->
+                    emitter.send(SseEmitter.event()
+                            .name(RoomSseManager.EVENTS_LOST_EVENT)
+                            .data(new SseEventsLostDto(l.reason())));
         }
     }
 
