@@ -39,6 +39,18 @@ class EmitterDispatcher {
     private boolean ready = false;
     private final Queue<SseDispatchTask> pendingLiveEvents = new ArrayDeque<>();
 
+    /**
+     * 이 emitter에 마지막으로 제출한 {@code Event}의 id(#378). 재연결 시 방 단위로 놓친
+     * 이벤트를 replay할 때, 방 전체가 아니라 이 emitter가 실제로 어디까지 받았는지를
+     * 기준으로 삼기 위한 것이다 — 개별 SSE 재연결로 이미 캐치업한 emitter에게 중복
+     * replay를 보내지 않으려면 방 단위 값 하나로는 부족하다.
+     *
+     * <p>여러 스레드(라이브 전달을 부르는 dispatch 스레드, replay를 부르는 구독 스레드)가
+     * 시차를 두고 쓰고, 나중에 재연결 감지 스레드가 읽으므로 {@code volatile}로 가시성만
+     * 보장한다 — 갱신 자체는 {@link #submit}에서 한 스레드씩 순서대로 일어나 경쟁이 없다.
+     */
+    private volatile long lastDeliveredEventId = -1;
+
     EmitterDispatcher(Executor vtExecutor, int queueCapacity, Long roomId, SseEmitter emitter,
             SseMetrics sseMetrics) {
         this.emitter = emitter;
@@ -123,8 +135,17 @@ class EmitterDispatcher {
      * 큐 포화는 클라이언트가 이벤트를 전혀 소비하지 못하는 상태이므로 연결을 유지해도
      * 이후 이벤트가 계속 drop된다. 끊으면 EventSource가 재연결하고 Last-Event-ID로
      * 빠진 이벤트를 replay 받는다.
+     *
+     * <p>{@code Event}가 지나갈 때마다 {@link #lastDeliveredEventId}를 갱신한다(#378). 라이브
+     * 전달({@code enqueue}의 fast path)과 replay 전달({@code becomeReady})이 모두 이 메서드
+     * 하나를 거치므로, 두 경로를 따로 추적할 필요 없이 여기 한 곳에서만 갱신하면 된다. 이
+     * emitter에 대한 {@code Event} 제출은 항상 id 오름차순이라(레이스 없이 replay → 라이브
+     * 순서로 나가도록 이미 보장돼 있음) 비교 없이 덮어써도 된다.
      */
     private void submit(SseDispatchTask task) {
+        if (task instanceof SseDispatchTask.Event event) {
+            lastDeliveredEventId = event.id();
+        }
         if (publisher.isClosed()) {
             sseMetrics.recordRejected("dispatcher_closed");
             return;
@@ -149,6 +170,14 @@ class EmitterDispatcher {
 
     long estimatedQueueDepth() {
         return publisher.estimateMaximumLag();
+    }
+
+    /**
+     * 이 emitter가 마지막으로 받은 {@code Event}의 id. 아직 하나도 못 받았으면 {@code -1}.
+     * 재연결 시 방 단위 replay가 emitter마다 어디서부터 다시 보낼지 정하는 데 쓴다(#378).
+     */
+    long lastDeliveredEventId() {
+        return lastDeliveredEventId;
     }
 
     /**
