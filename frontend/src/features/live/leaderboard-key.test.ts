@@ -10,6 +10,9 @@ test('동명이인은 bidderKey로 서로 다른 리더보드 행을 유지한�
   )
 })
 
-test('기존 응답처럼 bidderKey가 없으면 닉네임을 호환 키로 쓴다', () => {
-  assert.equal(leaderboardEntryKey({ nickname: '민수' }), 'nickname:민수')
+test('기존 응답처럼 bidderKey가 없어도 동명이인은 rank로 서로 다른 키를 쓴다', () => {
+  assert.notEqual(
+    leaderboardEntryKey({ nickname: '민수', rank: 1 }),
+    leaderboardEntryKey({ nickname: '민수', rank: 2 }),
+  )
 })

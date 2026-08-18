@@ -101,6 +101,7 @@ export function applyLiveEvent(
 ): AuctionItemDetail[] {
   return items.map((item) => {
     if (item.id !== event.itemId) return item
+    if (item.status === 'CLOSED') return item
 
     const revision = revisionOf(event.revision)
     if (!canApply(item, revision)) return item
@@ -216,8 +217,16 @@ export function reconcileServerItems(
 
   return serverItems.map((serverItem) => {
     const current = currentById.get(serverItem.id)
-    if (!current || current.revision === 0 || serverItem.status === 'CLOSED') {
+    if (!current || current.revision === 0) {
       return serverItem
+    }
+    if (serverItem.status === 'CLOSED') {
+      return {
+        ...serverItem,
+        topBidderNickname: current.topBidderNickname,
+        leaderboard: current.leaderboard,
+        revision: current.revision,
+      }
     }
 
     return {

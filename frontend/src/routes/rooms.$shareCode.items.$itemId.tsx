@@ -19,8 +19,14 @@ import {
   mergeItemDetail,
   toAuctionItems,
 } from '@/features/live/adapt-item'
-import { applyAcceptedBid, applyLiveEvent } from '@/features/live/live-state'
+import {
+  applyAcceptedBid,
+  applyLiveEvent,
+  applyLiveSnapshots,
+} from '@/features/live/live-state'
+import { createLiveEventBuffer } from '@/features/live/live-event-buffer'
 import { useLiveItems } from '@/features/live/use-live-items'
+import { createRoomEventIdTracker } from '@/features/live/merge-recent-events'
 import { toBidErrorMessage } from '@/features/live/bid-error'
 import { createBidRequestIdTracker } from '@/features/live/bid-request-id'
 import {
@@ -125,6 +131,7 @@ function AuctionItemPage() {
   } | null>(null)
 
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
+  const roomEventIds = useRef(createRoomEventIdTracker()).current
 
   /*
    * 상세 API 가 원본이고, 목록은 왼쪽 열용이다.
@@ -144,8 +151,10 @@ function AuctionItemPage() {
 
   const item = base
 
-  const handleSseEvent = useCallback(
+  const processSseEvent = useCallback(
     (payload: SseEventPayload) => {
+      if (!roomEventIds.accept(payload.eventId)) return
+
       /*
        * 참여자 수는 물품에 딸린 이벤트가 아니다. 이 화면에는 방 헤더가
        * 없어서 보여줄 자리도 없으니 물품 필터보다 먼저 걸러낸다.
@@ -301,16 +310,53 @@ function AuctionItemPage() {
           break
       }
     },
-    [item.id, shareCode, navigate, queryClient, ownBids, setItems],
+    [
+      item.id,
+      shareCode,
+      navigate,
+      queryClient,
+      ownBids,
+      roomEventIds,
+      setItems,
+    ],
+  )
+
+  const processSseEventRef = useRef(processSseEvent)
+  processSseEventRef.current = processSseEvent
+  const liveEventBuffer = useMemo(
+    () =>
+      createLiveEventBuffer<SseEventPayload>((payload) => {
+        processSseEventRef.current(payload)
+      }),
+    [],
+  )
+  const handleSseEvent = useCallback(
+    (payload: SseEventPayload) => liveEventBuffer.receive(payload),
+    [liveEventBuffer],
   )
 
   const { status } = useRealtimeStatus(shareCode, handleSseEvent)
   const refetchLiveStates = liveStates.refetch
 
   useEffect(() => {
-    if (status !== 'connected') return
-    void refetchLiveStates()
-  }, [status, refetchLiveStates])
+    if (status !== 'connected') {
+      liveEventBuffer.start()
+      return
+    }
+
+    let active = true
+    void refetchLiveStates().then((result) => {
+      if (!active) return
+      const snapshots = result.data?.data
+      if (snapshots) {
+        setItems((current) => applyLiveSnapshots(current, snapshots))
+      }
+      liveEventBuffer.drain()
+    })
+    return () => {
+      active = false
+    }
+  }, [status, refetchLiveStates, liveEventBuffer, setItems])
 
   const disconnectNotifiedRef = useRef(false)
   useEffect(() => {

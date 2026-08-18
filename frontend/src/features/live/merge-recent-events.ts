@@ -13,3 +13,19 @@ export function mergeRecentRoomEvents<T extends { id: number }>(
     }),
   ]
 }
+
+export function createRoomEventIdTracker() {
+  const seen = new Set<number>()
+
+  return {
+    remember(ids: Iterable<number>) {
+      for (const id of ids) seen.add(id)
+    },
+    accept(id: number | undefined): boolean {
+      if (id === undefined) return true
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    },
+  }
+}

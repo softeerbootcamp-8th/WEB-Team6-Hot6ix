@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { mergeRecentRoomEvents } from './merge-recent-events.ts'
+import {
+  createRoomEventIdTracker,
+  mergeRecentRoomEvents,
+} from './merge-recent-events.ts'
 import type { RoomEvent } from '@/types/domain'
 
 const event = (id: number, message: string): RoomEvent => ({
@@ -21,4 +24,15 @@ test('최근 이벤트 API와 SSE가 같은 서버 event ID를 주면 피드에 
     result.map((entry) => entry.id),
     [41, 42, 43],
   )
+})
+
+test('REST로 본 event ID는 나중에 SSE로 도착해도 다시 처리하지 않는다', () => {
+  const tracker = createRoomEventIdTracker()
+
+  tracker.remember([42])
+
+  assert.equal(tracker.accept(42), false)
+  assert.equal(tracker.accept(43), true)
+  assert.equal(tracker.accept(43), false)
+  assert.equal(tracker.accept(undefined), true)
 })

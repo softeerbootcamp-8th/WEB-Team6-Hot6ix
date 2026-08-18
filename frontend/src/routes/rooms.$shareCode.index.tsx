@@ -32,7 +32,12 @@ import {
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { useGetRecentEvents } from '@/api/generated/sse/sse'
 import { mergeItemDetail, toAuctionItems } from '@/features/live/adapt-item'
-import { applyAcceptedBid, applyLiveEvent } from '@/features/live/live-state'
+import {
+  applyAcceptedBid,
+  applyLiveEvent,
+  applyLiveSnapshots,
+} from '@/features/live/live-state'
+import { createLiveEventBuffer } from '@/features/live/live-event-buffer'
 import { useLiveItems } from '@/features/live/use-live-items'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import { retryOnNetworkError } from '@/features/live/api-error'
@@ -42,7 +47,10 @@ import {
 } from '@/features/live/components/auction-start-flash'
 import { preloadLiveMotion } from '@/features/live/preload-motion'
 import { toInitialRoomEvents } from '@/features/live/recent-events'
-import { mergeRecentRoomEvents } from '@/features/live/merge-recent-events'
+import {
+  createRoomEventIdTracker,
+  mergeRecentRoomEvents,
+} from '@/features/live/merge-recent-events'
 import {
   SOFT_CLOSE_FLASH_MS,
   type SoftCloseFlash,
@@ -363,6 +371,7 @@ function LiveRoomPage() {
    */
   const recentEventsQuery = useGetRecentEvents(shareCode)
   const appliedRecentEventsRef = useRef(false)
+  const roomEventIds = useRef(createRoomEventIdTracker()).current
 
   useEffect(() => {
     if (appliedRecentEventsRef.current) return
@@ -373,9 +382,10 @@ function LiveRoomPage() {
     const initialEvents = toInitialRoomEvents(events)
     if (initialEvents.length === 0) return
 
+    roomEventIds.remember(initialEvents.map((event) => event.id))
     // 그사이 SSE 로 이미 들어온 이벤트와 겹치면 뺀다.
     setExtraEvents((prev) => mergeRecentRoomEvents(initialEvents, prev))
-  }, [recentEventsQuery.data])
+  }, [recentEventsQuery.data, roomEventIds])
 
   /**
    * SSE 이벤트 수신 핸들러.
@@ -387,8 +397,10 @@ function LiveRoomPage() {
    * 못 보고 낡은 목록 위에 덮어쓴다. 실제로 물품 2개가 동시에 마감됐을 때 나중 것만
    * 닫히고 앞의 낙찰 물품이 진행 중으로 남는 버그가 있었다.
    */
-  const handleSseEvent = useCallback(
+  const processSseEvent = useCallback(
     (payload: SseEventPayload) => {
+      if (!roomEventIds.accept(payload.eventId)) return
+
       // 같은 밀리초에 두 이벤트가 오면 id 가 겹쳐 피드의 React key 가 충돌한다.
       const eventId = payload.eventId ?? nextEventId()
 
@@ -600,16 +612,45 @@ function LiveRoomPage() {
           break
       }
     },
-    [shareCode, queryClient, ownBids, setItems],
+    [shareCode, queryClient, ownBids, roomEventIds, setItems],
+  )
+
+  const processSseEventRef = useRef(processSseEvent)
+  processSseEventRef.current = processSseEvent
+  const liveEventBuffer = useMemo(
+    () =>
+      createLiveEventBuffer<SseEventPayload>((payload) => {
+        processSseEventRef.current(payload)
+      }),
+    [],
+  )
+  const handleSseEvent = useCallback(
+    (payload: SseEventPayload) => liveEventBuffer.receive(payload),
+    [liveEventBuffer],
   )
 
   const { status } = useRealtimeStatus(shareCode, handleSseEvent)
   const refetchLiveStates = liveStates.refetch
 
   useEffect(() => {
-    if (status !== 'connected') return
-    void refetchLiveStates()
-  }, [status, refetchLiveStates])
+    if (status !== 'connected') {
+      liveEventBuffer.start()
+      return
+    }
+
+    let active = true
+    void refetchLiveStates().then((result) => {
+      if (!active) return
+      const snapshots = result.data?.data
+      if (snapshots) {
+        setItems((current) => applyLiveSnapshots(current, snapshots))
+      }
+      liveEventBuffer.drain()
+    })
+    return () => {
+      active = false
+    }
+  }, [status, refetchLiveStates, liveEventBuffer, setItems])
 
   const disconnectNotifiedRef = useRef(false)
   useEffect(() => {

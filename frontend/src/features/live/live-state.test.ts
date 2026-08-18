@@ -197,6 +197,46 @@ test('MySQL 재조회는 정적 필드만 갱신하고 revision이 있는 라이
   assert.equal(result[1]?.id, 11)
 })
 
+test('MySQL CLOSED 확정 뒤에는 낮은 revision SSE가 최종 상태를 되돌리지 않는다', () => {
+  const current = item(10, {
+    currentPrice: 30_000,
+    endsAt: '2026-08-17T23:05:00',
+    revision: 8,
+    leaderboard: [
+      {
+        rank: 1,
+        bidderKey: 'bidder-current',
+        nickname: '현재 낙찰자',
+        amount: 30_000,
+        isMe: false,
+      },
+    ],
+  })
+  const persisted = item(10, {
+    status: 'CLOSED',
+    sold: true,
+    currentPrice: 30_000,
+    endsAt: '2026-08-17T23:05:00',
+  })
+
+  const closed = reconcileServerItems([current], [persisted])
+  const afterStaleBid = applyLiveEvent(closed, {
+    kind: 'BidPlaced',
+    itemId: 10,
+    bidPrice: 20_000,
+    bidderNickname: '과거 입찰자',
+    bidderKey: 'bidder-old',
+    endedTime: '2026-08-17T23:00:00',
+    revision: 7,
+  })
+
+  assert.equal(afterStaleBid[0]?.status, 'CLOSED')
+  assert.equal(afterStaleBid[0]?.currentPrice, 30_000)
+  assert.equal(afterStaleBid[0]?.endsAt, '2026-08-17T23:05:00')
+  assert.equal(afterStaleBid[0]?.revision, 8)
+  assert.equal(afterStaleBid[0]?.leaderboard[0]?.bidderKey, 'bidder-current')
+})
+
 test('본인 입찰 HTTP 응답만 도착해도 SSE 없이 현재가와 타이머를 확정값으로 갱신한다', () => {
   const result = applyAcceptedBid(
     [item(10)],
