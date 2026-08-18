@@ -44,6 +44,7 @@ public class AuctionRealtimeSsePublisher {
                         accepted.amount(),
                         accepted.bidderNickname(),
                         bidderKeyEncoder.encode(accepted.roomId(), accepted.bidderUserId()),
+                        toLocalDateTime(accepted.endAtMillis()),
                         accepted.revision()));
 
         if (accepted.extendedSeconds() <= 0) {

@@ -49,7 +49,7 @@ class AuctionRealtimeSsePublisherTest {
     }
 
     @Test
-    @DisplayName("입찰 승인 스냅샷이 아직 최신이면 기존 BID_PLACED DTO로 발행한다")
+    @DisplayName("입찰 승인 스냅샷이 아직 최신이면 마감 시각을 포함한 BID_PLACED DTO로 발행한다")
     void publishesAcceptedBidWhenPriceAndLeaderStillMatch() {
 
         RedisBidDecision.Accepted accepted = accepted(0);
@@ -67,7 +67,13 @@ class AuctionRealtimeSsePublisherTest {
                         "leaderUserId", "11",
                         "revision", "1"),
                 new BidPlacedDto(
-                        ITEM_ID, "한정판 피규어", 12_000L, "한기", "bidder-a", 1L));
+                        ITEM_ID,
+                        "한정판 피규어",
+                        12_000L,
+                        "한기",
+                        "bidder-a",
+                        LocalDateTime.ofInstant(Instant.ofEpochMilli(END_AT), ZONE),
+                        1L));
     }
 
     @Test
