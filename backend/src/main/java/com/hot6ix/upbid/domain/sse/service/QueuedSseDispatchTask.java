@@ -12,6 +12,7 @@ record QueuedSseDispatchTask(SseDispatchTask task, long enqueuedAtNanos) {
             case SseDispatchTask.Event event -> event.name();
             case SseDispatchTask.Heartbeat ignored -> SseMetrics.HEARTBEAT_EVENT;
             case SseDispatchTask.ParticipantCount ignored -> RoomSseManager.PARTICIPANT_COUNT_EVENT;
+            case SseDispatchTask.EventsLost ignored -> RoomSseManager.EVENTS_LOST_EVENT;
         };
     }
 }

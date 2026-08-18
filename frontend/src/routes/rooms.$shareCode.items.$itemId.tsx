@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  getGetDetail1QueryKey,
   getGetSummariesQueryKey,
   useGetDetail1,
   useGetSummaries,
@@ -112,6 +113,23 @@ function AuctionItemPage() {
   /** 데모 입찰이 반영된 물품. 실시간 연동 전까지만 쓴다. */
   const [override, setOverride] = useState<AuctionItemDetail | null>(null)
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
+
+  /*
+   * 상세가 새로 도착하면 화면 덧칠을 버린다. **서버가 항상 이긴다.**
+   *
+   * 방 목록 화면이 `#328` 에서 같은 이유로 넣은 장치다. 여기에는 없어서, 한 번 얹힌
+   * 덧칠(`override`)을 비우는 통로가 아예 없었다 — `item = override ?? base` 라
+   * 재조회를 해도 새로 읽은 값이 화면까지 오지 못했다. 이벤트를 놓치거나 중복으로
+   * 받은 차이가 새로고침 전까지 남는다는 뜻이고, 마감 이벤트를 놓치면 "마감 처리 중"
+   * 에서 빠져나오지 못했다.
+   *
+   * `dataUpdatedAt` 은 조회가 성공할 때만 올라가고, 같은 값이 다시 와도 올라간다.
+   * 그래서 "서버에 물어봤다" 자체를 신호로 쓸 수 있다.
+   */
+  useEffect(() => {
+    if (detailQuery.dataUpdatedAt === 0) return
+    setOverride(null)
+  }, [detailQuery.dataUpdatedAt])
 
   /*
    * 상세 API 가 원본이고, 목록은 왼쪽 열용이다.
@@ -289,6 +307,26 @@ function AuctionItemPage() {
           })
           break
 
+        /*
+         * 끊긴 사이의 이벤트를 서버가 다 못 돌려줬다. 세 가지를 모두 다시 읽는다 —
+         * 이 물품(상세), 왼쪽 목록, 그리고 **방 정보**. 입찰 단위가 방 정보에서
+         * 나오므로 그게 낡으면 최소 입찰가가 서버 기준과 어긋나 입찰이 거절된다.
+         *
+         * 아래 `setOverride(null)` effect 가 재조회 결과를 화면에 실제로 반영한다.
+         * 덧칠을 비우지 않으면 새로 읽은 값이 화면까지 오지 못한다.
+         */
+        case 'EventsLost':
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetDetail1QueryKey(shareCode, auctionItemId),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(shareCode),
+          })
+          break
+
         case 'ItemEnded':
           setExtraEvents((prev) => [
             ...prev,
@@ -313,7 +351,7 @@ function AuctionItemPage() {
           break
       }
     },
-    [item, shareCode, navigate, queryClient, ownBids],
+    [item, auctionItemId, shareCode, navigate, queryClient, ownBids],
   )
 
   const { status } = useRealtimeStatus(shareCode, handleSseEvent)
@@ -331,6 +369,33 @@ function AuctionItemPage() {
       disconnectNotifiedRef.current = false
     }
   }, [status])
+
+  /*
+   * 재구독이 거절됐다(`failed`). **끊긴 사이에 방이 종료된 경우가 여기다.**
+   *
+   * 서버가 종료된 방 구독을 409 로 막으므로 `RoomClosed` 도 유실 알림도 도달하지
+   * 못한다. 이 화면은 진행 중인 방 전용인데 LIVE 인 채로 멈춰 있게 된다.
+   *
+   * 방 정보를 다시 읽어서 정말 종료됐을 때만 결과 화면으로 옮긴다. `failed` 자체로
+   * 바로 넘기면 안 된다 — 서버가 잠깐 죽은 경우까지 경매가 끝난 것처럼 보인다.
+   */
+  useEffect(() => {
+    if (status !== 'failed') return
+
+    void queryClient.invalidateQueries({
+      queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+    })
+  }, [status, queryClient, shareCode])
+
+  useEffect(() => {
+    if (status !== 'failed' || room.status !== 'CLOSED') return
+
+    void navigate({
+      to: '/rooms/$shareCode/result',
+      params: { shareCode },
+      replace: true,
+    })
+  }, [status, room.status, navigate, shareCode])
 
   const remaining = useCountdown(item.endsAt)
   const closed = item.status === 'CLOSED'
