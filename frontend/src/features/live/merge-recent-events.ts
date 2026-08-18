@@ -29,3 +29,10 @@ export function createRoomEventIdTracker() {
     },
   }
 }
+
+export function shouldProcessRoomEvent(
+  kind: string,
+  isNewEvent: boolean,
+): boolean {
+  return isNewEvent || kind === 'RoomClosed'
+}

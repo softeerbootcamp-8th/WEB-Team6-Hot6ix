@@ -50,6 +50,7 @@ import { toInitialRoomEvents } from '@/features/live/recent-events'
 import {
   createRoomEventIdTracker,
   mergeRecentRoomEvents,
+  shouldProcessRoomEvent,
 } from '@/features/live/merge-recent-events'
 import {
   SOFT_CLOSE_FLASH_MS,
@@ -399,7 +400,8 @@ function LiveRoomPage() {
    */
   const processSseEvent = useCallback(
     (payload: SseEventPayload) => {
-      if (!roomEventIds.accept(payload.eventId)) return
+      const isNewEvent = roomEventIds.accept(payload.eventId)
+      if (!shouldProcessRoomEvent(payload.kind, isNewEvent)) return
 
       // 같은 밀리초에 두 이벤트가 오면 id 가 겹쳐 피드의 React key 가 충돌한다.
       const eventId = payload.eventId ?? nextEventId()
@@ -552,16 +554,18 @@ function LiveRoomPage() {
           break
 
         case 'RoomClosed':
-          setExtraEvents((prev) => [
-            ...prev,
-            {
-              id: eventId,
-              at: new Date().toISOString(),
-              kind: 'CLOSE',
-              message: '판매자가 경매방을 종료했어요',
-              emphasized: true,
-            },
-          ])
+          if (isNewEvent) {
+            setExtraEvents((prev) => [
+              ...prev,
+              {
+                id: eventId,
+                at: new Date().toISOString(),
+                kind: 'CLOSE',
+                message: '판매자가 경매방을 종료했어요',
+                emphasized: true,
+              },
+            ])
+          }
           /*
            * 방 상태를 화면에서 직접 CLOSED 로 바꾸지 않고 다시 읽어온다.
            * 종료 화면은 closedAt·낙찰 결과까지 그리는데 이 이벤트에는 그 값이 없다.

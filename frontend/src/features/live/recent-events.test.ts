@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   createRoomEventIdTracker,
   mergeRecentRoomEvents,
+  shouldProcessRoomEvent,
 } from './merge-recent-events.ts'
 import type { RoomEvent } from '@/types/domain'
 
@@ -35,4 +36,15 @@ test('REST로 본 event ID는 나중에 SSE로 도착해도 다시 처리하지 
   assert.equal(tracker.accept(43), true)
   assert.equal(tracker.accept(43), false)
   assert.equal(tracker.accept(undefined), true)
+})
+
+test('REST로 본 방 종료 이벤트도 SSE 제어 처리는 수행한다', () => {
+  const tracker = createRoomEventIdTracker()
+  tracker.remember([42])
+
+  const isNewEvent = tracker.accept(42)
+
+  assert.equal(isNewEvent, false)
+  assert.equal(shouldProcessRoomEvent('RoomClosed', isNewEvent), true)
+  assert.equal(shouldProcessRoomEvent('BidPlaced', isNewEvent), false)
 })
