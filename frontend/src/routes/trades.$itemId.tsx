@@ -379,7 +379,7 @@ function TradeDetailPage() {
       {/* 한 칸일 때도 컬럼을 못 박는다. 이유는 `trades.index.tsx` 목록과 같다. */}
       <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[400px_minmax(0,1fr)]">
         {/* 물품 패널 — 400×560 */}
-        <Panel className="flex flex-col">
+        <Panel className="flex flex-col" fitContent={canRelist}>
           <h2 className="shrink-0 text-[18px] font-extrabold text-foreground">
             {isSeller ? '판매 물품' : '참여 물품'}
           </h2>
@@ -504,7 +504,6 @@ function TradeDetailPage() {
               </div>
             </>
           )}
-
           {/* 유찰·전원 실패 물품만 재등록 동선을 연다. 서버 판정을 그대로 따른다. */}
           {canRelist && (
             <div className="mt-5 shrink-0 border-t pt-5">
@@ -523,7 +522,7 @@ function TradeDetailPage() {
         </Panel>
 
         {/* 순위 패널 — 792×560 */}
-        <Panel className="flex flex-col">
+        <Panel className="flex flex-col" fitContent={canRelist}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-[18px] font-extrabold text-foreground">
@@ -863,18 +862,28 @@ const BUYER_COLS = 'grid-cols-[84px_minmax(150px,1fr)_210px_166px]'
  *
  * 높이를 `min-h` 가 아니라 `h` 로 못박는다. 물품 설명처럼 안에서만 스크롤하는
  * 블록이 줄어들 기준 높이가 있어야 하기 때문이다.
+ *
+ * @param fitContent 내용이 기준 높이를 넘으면 패널을 늘린다. 재등록 버튼처럼
+ *                   줄일 수 없는 블록이 들어올 때만 켠다. 못박은 높이 그대로
+ *                   두면 버튼이 테두리 밖으로 나가고, 안쪽만 스크롤시키면
+ *                   시작가와 상태 알약이 잘린다
  */
 function Panel({
   children,
   className,
+  fitContent = false,
 }: {
   children: ReactNode
   className?: string
+  fitContent?: boolean
 }) {
   return (
     <section
       className={cn(
-        'rounded-[24px] border bg-card p-7 lg:h-[calc(100svh-13rem)] lg:max-h-[720px] lg:min-h-[560px]',
+        'rounded-[24px] border bg-card p-7',
+        fitContent
+          ? 'lg:min-h-[calc(100svh-13rem)]'
+          : 'lg:h-[calc(100svh-13rem)] lg:max-h-[720px] lg:min-h-[560px]',
         className,
       )}
     >
