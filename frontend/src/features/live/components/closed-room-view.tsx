@@ -28,13 +28,35 @@ function winnerLine(item: ItemResult, fallback: string): string {
   return `${winner} · 내 입찰 ${item.myRank}위${amount}`
 }
 
+/** 물품명 옆 알약. 색이 셋이라 문구와 함께 어느 쪽인지도 같이 넘긴다. */
+type MyBid = { text: string; tone: 'win' | 'bid' | 'none' }
+
 /**
  * 데스크톱 표에서 쓰는 짧은 표기. 그쪽 낙찰자 칸은 머리글이 "낙찰자"라 내 입찰을
  * 같이 적으면 뜻이 어긋나서, 물품명 옆에 알약으로 붙인다.
+ *
+ * 낙찰이면 예전에는 비워 두었다. `내 낙찰` 알약이 이미 있다고 봤는데 그 알약은
+ * 모바일 카드에만 있어서, 데스크톱에서는 1등만 아무 표시도 없었다.
+ *
+ * `입찰 안 함` 은 낙찰된 물품에만 붙인다. 유찰은 결과 칸의 배지로 충분하다.
+ *
+ * @param showNoBid 입찰하지 않은 물품에 표시를 붙여도 되는지. 판매자는 자기 방에
+ *                  입찰할 수 없고, 비로그인은 서버가 순위 조회를 건너뛰어
+ *                  `myRank` 가 늘 `null` 이라 안 한 것과 구분되지 않는다
  */
-function myBidLabel(item: ItemResult): string | null {
-  if (item.isMyWin || item.myRank == null) return null
-  return `내 입찰 ${item.myRank}위`
+function myBidLabel(item: ItemResult, showNoBid: boolean): MyBid | null {
+  if (item.isMyWin) return { text: '내 낙찰', tone: 'win' }
+  if (item.myRank != null)
+    return { text: `내 입찰 ${item.myRank}위`, tone: 'bid' }
+  if (!showNoBid || item.outcome !== 'SOLD') return null
+  return { text: '입찰 안 함', tone: 'none' }
+}
+
+/** 알약 색. `내 낙찰` 은 모바일 카드와 같은 색을 쓴다. */
+const MY_BID_TONE: Record<MyBid['tone'], string> = {
+  win: 'bg-brand-500 text-white',
+  bid: 'bg-brand-50 text-brand-600',
+  none: 'bg-fill text-neutral-tertiary',
 }
 
 /**
@@ -140,6 +162,13 @@ export function ClosedRoomView({
   }, [orderedItems, keyword])
 
   const closedAtLabel = result.closedAt ? formatDate(result.closedAt) : null
+
+  /*
+   * 입찰하지 않은 물품에 표시를 붙일지. 판매자는 자기 방에 입찰할 수 없고,
+   * 비로그인은 `myRank` 가 전부 `null` 로 내려와서 둘 다 켜면 목록 전체가
+   * `입찰 안 함` 으로 덮인다.
+   */
+  const showNoBid = !isGuest && !isOwner
 
   /*
    * 차순위로 넘어온 거래 상대를 잡으려고 내 거래 목록을 대조한다(#178).
@@ -561,6 +590,7 @@ export function ClosedRoomView({
                     <ul className="space-y-2">
                       {orderedItems.map((item) => {
                         const won = item.outcome === 'SOLD'
+                        const myBid = myBidLabel(item, showNoBid)
 
                         return (
                           <li key={item.auctionItemId}>
@@ -577,9 +607,14 @@ export function ClosedRoomView({
                                 <span className="min-w-0 truncate font-medium text-foreground">
                                   {item.productName}
                                 </span>
-                                {myBidLabel(item) && (
-                                  <span className="shrink-0 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-600">
-                                    {myBidLabel(item)}
+                                {myBid && (
+                                  <span
+                                    className={cn(
+                                      'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold',
+                                      MY_BID_TONE[myBid.tone],
+                                    )}
+                                  >
+                                    {myBid.text}
                                   </span>
                                 )}
                               </span>
