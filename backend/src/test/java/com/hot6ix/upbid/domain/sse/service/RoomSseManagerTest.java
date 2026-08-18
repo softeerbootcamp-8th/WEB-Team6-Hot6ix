@@ -3,12 +3,16 @@ package com.hot6ix.upbid.domain.sse.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.sse.config.SseProperties;
 import com.hot6ix.upbid.domain.sse.event.ParticipantCountPublisher;
@@ -488,5 +492,60 @@ class RoomSseManagerTest {
 
         assertThat(emitters).doesNotContainNull();
         assertThat(roomSseManager.getParticipantCount(ROOM_ID)).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("재연결 시 아직 아무 이벤트도 못 받은 emitter는 버퍼 조회 자체를 건너뛴다")
+    void skipsNeverDeliveredEmitterOnReconnectReplay() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        manager.subscribe(ROOM_ID, null);
+
+        manager.replayAfterReconnect();
+
+        // lastDeliveredEventId가 -1(아직 아무것도 못 받음)이면, 접속 전 역사를 잘못
+        // 재전송하는 걸 막기 위해 이 emitter에 대한 버퍼 조회 자체를 하지 않는다.
+        verify(buffer, never()).getEventsAfter(any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("emitter마다 자기 lastDeliveredEventId 기준으로 개별적으로 replay를 조회한다")
+    void queriesReplayPerEmitterUsingItsOwnLastDeliveredEventId() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        when(buffer.getEventsAfter(any(), anyLong())).thenReturn(List.of());
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        manager.subscribe(ROOM_ID, null);                          // emitter B: 아직 -1
+        manager.deliverLocal(ROOM_ID, EVENT_NAME, 5L, "payload");  // B만 5까지 받음(A는 아직 구독 전)
+        manager.subscribe(ROOM_ID, null);                          // emitter A: 여전히 -1
+
+        manager.replayAfterReconnect();
+
+        verify(buffer, times(1)).getEventsAfter(ROOM_ID, 5L);
+        verify(buffer, never()).getEventsAfter(eq(ROOM_ID), eq(-1L));
+    }
+
+    @Test
+    @DisplayName("이 인스턴스가 갖고 있는 모든 방에 대해 각각 재연결 replay를 수행한다")
+    void replaysAcrossAllRoomsOnThisInstance() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        when(buffer.getEventsAfter(any(), anyLong())).thenReturn(List.of());
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        Long roomA = 1L;
+        Long roomB = 2L;
+        manager.subscribe(roomA, null);
+        manager.deliverLocal(roomA, EVENT_NAME, 3L, "payload");
+        manager.subscribe(roomB, null);
+        manager.deliverLocal(roomB, EVENT_NAME, 9L, "payload");
+
+        manager.replayAfterReconnect();
+
+        verify(buffer).getEventsAfter(roomA, 3L);
+        verify(buffer).getEventsAfter(roomB, 9L);
     }
 }
