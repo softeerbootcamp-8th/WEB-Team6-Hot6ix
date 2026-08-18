@@ -18,8 +18,14 @@ import java.time.LocalDateTime;
 public record AuctionItemCloseEarlyResponseDto(
         Long auctionItemId,
         LocalDateTime endAt,
-        int remainingSeconds
+        int remainingSeconds,
+        Long revision
 ) {
+    public AuctionItemCloseEarlyResponseDto(
+            Long auctionItemId, LocalDateTime endAt, int remainingSeconds) {
+        this(auctionItemId, endAt, remainingSeconds, 0L);
+    }
+
     /**
      * @param now 앞당길 때 쓴 기준 시각. 남은 초를 그 값으로 재야 화면에 알리는 시간과 실제
      *            마감 시각이 어긋나지 않는다
@@ -28,6 +34,7 @@ public record AuctionItemCloseEarlyResponseDto(
         return new AuctionItemCloseEarlyResponseDto(
                 auctionItem.getAuctionItemId(),
                 auctionItem.getEndAt(),
-                (int) Duration.between(now, auctionItem.getEndAt()).toSeconds());
+                (int) Duration.between(now, auctionItem.getEndAt()).toSeconds(),
+                0L);
     }
 }

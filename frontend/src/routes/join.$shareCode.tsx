@@ -1,6 +1,6 @@
 import { AlertTriangle, ChevronDown } from 'lucide-react'
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { Button } from '@/components/ui/button'
@@ -15,8 +15,13 @@ import {
   getGetRoomByShareCodeQueryKey,
   useGetRoomByShareCode,
 } from '@/api/generated/경매방/경매방'
-import { useGetSummaries } from '@/api/generated/경매-물품/경매-물품'
+import {
+  useGetLiveStates,
+  useGetSummaries,
+} from '@/api/generated/경매-물품/경매-물품'
 import { axiosInstance } from '@/api/mutator/custom-instance'
+import { toAuctionItems } from '@/features/live/adapt-item'
+import { applyLiveSnapshots } from '@/features/live/live-state'
 
 /**
  * 링크·QR 진입점.
@@ -54,6 +59,19 @@ function JoinRoomPage() {
    * 물품 하나 못 받았다고 링크 전체가 죽은 것처럼 보이면 안 된다.
    */
   const itemsQuery = useGetSummaries(shareCode)
+  const liveStatesQuery = useGetLiveStates(shareCode)
+  const serverItems = useMemo(
+    () =>
+      toAuctionItems(
+        itemsQuery.data?.data ?? [],
+        data?.data?.bidIncrement ?? 0,
+      ),
+    [itemsQuery.data, data],
+  )
+  const items = useMemo(
+    () => applyLiveSnapshots(serverItems, liveStatesQuery.data?.data ?? []),
+    [serverItems, liveStatesQuery.data],
+  )
 
   if (isPending) return <RoutePending />
 
@@ -117,7 +135,6 @@ function JoinRoomPage() {
   const isOwner = room.isOwner === true
   const alreadyAgreed = isOwner || room.agreedToTerms === true
   const roomTitle = room.name ?? '경매방'
-  const items = itemsQuery.data?.data ?? []
 
   const enter = async () => {
     setEntering(true)
@@ -220,7 +237,7 @@ function JoinRoomPage() {
               <ul className="mt-2.5 space-y-2">
                 {(expanded ? items : items.slice(0, 3)).map((item, index) => (
                   <li
-                    key={item.auctionItemId}
+                    key={item.id}
                     // 펼칠 때 아래로 하나씩 들어오게 한다.
                     style={
                       expanded && index >= 3
@@ -238,10 +255,10 @@ function JoinRoomPage() {
                       className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-fill text-neutral-muted"
                     />
                     <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
-                      {item.productName}
+                      {item.name}
                     </span>
                     <span className="shrink-0 text-[13px] font-bold tabular-nums text-brand-500">
-                      {formatWon(item.currentPrice ?? 0)}
+                      {formatWon(item.currentPrice)}
                     </span>
                   </li>
                 ))}

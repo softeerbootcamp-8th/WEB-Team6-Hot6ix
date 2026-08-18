@@ -111,13 +111,14 @@ class AuctionItemCloseServiceTest {
         when(auctionRedisStore.requestSellerAdvance(ITEM_ID, USER_ID, null))
                 .thenReturn(new RedisCloseDecision.Advanced(
                         ROOM_ID, ITEM_ID, "한정판 피규어",
-                        epochMillis(endAt), 60, epochMillis(advancedAt)));
+                        epochMillis(endAt), 60, epochMillis(advancedAt), 4L));
 
         AuctionItemCloseEarlyResponseDto response =
                 auctionItemCloseService.closeEarly(USER_ID, ITEM_ID, null);
 
         assertThat(response.remainingSeconds()).isEqualTo(60);
         assertThat(response.endAt()).isEqualTo(endAt);
+        assertThat(response.revision()).isEqualTo(4L);
         verify(auctionItemRepository, never()).findByIdForUpdate(anyLong());
         verify(domainEventPublisher, never()).publish(any());
         verify(auctionRealtimeSsePublisher).publishAdvanced(any(RedisCloseDecision.Advanced.class));

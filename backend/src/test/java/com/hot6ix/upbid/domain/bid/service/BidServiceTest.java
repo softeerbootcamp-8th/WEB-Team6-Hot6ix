@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.hot6ix.upbid.domain.auction.store.AuctionRedisStore;
 import com.hot6ix.upbid.domain.auction.realtime.AuctionRealtimeSsePublisher;
+import com.hot6ix.upbid.domain.auction.realtime.BidderKeyEncoder;
 import com.hot6ix.upbid.domain.bid.dto.response.BidCreateResponseDto;
 import com.hot6ix.upbid.domain.bid.exception.BidErrorType;
 import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
@@ -47,6 +48,9 @@ class BidServiceTest {
     @Mock
     private AuctionRealtimeSsePublisher auctionRealtimeSsePublisher;
 
+    @Mock
+    private BidderKeyEncoder bidderKeyEncoder;
+
     private BidService bidService;
 
     @BeforeEach
@@ -54,7 +58,8 @@ class BidServiceTest {
         bidService = new BidService(
                 Clock.fixed(Instant.ofEpochMilli(ARRIVED_AT), ZONE),
                 auctionRedisStore,
-                auctionRealtimeSsePublisher);
+                auctionRealtimeSsePublisher,
+                bidderKeyEncoder);
     }
 
     @Test
@@ -65,6 +70,7 @@ class BidServiceTest {
                 .thenReturn(new RedisBidDecision.Accepted(
                         REQUEST_ID, ROOM_ID, "한정판 피규어", BIDDER_ID, "한기",
                         AMOUNT, ACCEPTED_AT, END_AT, 30, 1L, false));
+        when(bidderKeyEncoder.encode(ROOM_ID, BIDDER_ID)).thenReturn("bidder-a");
 
         BidCreateResponseDto response = bidService.place(
                 ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID);
@@ -75,7 +81,9 @@ class BidServiceTest {
                 AMOUNT,
                 LocalDateTime.ofInstant(Instant.ofEpochMilli(ACCEPTED_AT), ZONE),
                 LocalDateTime.ofInstant(Instant.ofEpochMilli(END_AT), ZONE),
-                30));
+                30,
+                1L,
+                "bidder-a"));
         verify(auctionRedisStore)
                 .evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT);
         verify(auctionRealtimeSsePublisher).publishAccepted(
@@ -94,6 +102,7 @@ class BidServiceTest {
                 AMOUNT, ACCEPTED_AT, END_AT, 30, 1L, true);
         when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(duplicate);
+        when(bidderKeyEncoder.encode(ROOM_ID, BIDDER_ID)).thenReturn("bidder-a");
 
         BidCreateResponseDto response = bidService.place(
                 ITEM_ID, BIDDER_ID, AMOUNT, REQUEST_ID);
@@ -105,6 +114,8 @@ class BidServiceTest {
         assertThat(response.endAt())
                 .isEqualTo(LocalDateTime.ofInstant(Instant.ofEpochMilli(END_AT), ZONE));
         assertThat(response.extendedSeconds()).isEqualTo(30);
+        assertThat(response.revision()).isEqualTo(1L);
+        assertThat(response.bidderKey()).isEqualTo("bidder-a");
         verify(auctionRealtimeSsePublisher, never()).publishAccepted(ITEM_ID, duplicate);
     }
 
@@ -117,6 +128,7 @@ class BidServiceTest {
                 AMOUNT, ACCEPTED_AT, END_AT, 0, 1L, false);
         when(auctionRedisStore.evaluateBid(ITEM_ID, REQUEST_ID, BIDDER_ID, AMOUNT))
                 .thenReturn(accepted);
+        when(bidderKeyEncoder.encode(ROOM_ID, BIDDER_ID)).thenReturn("bidder-a");
         doThrow(new IllegalStateException("sse unavailable"))
                 .when(auctionRealtimeSsePublisher).publishAccepted(ITEM_ID, accepted);
 

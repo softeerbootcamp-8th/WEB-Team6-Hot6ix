@@ -14,6 +14,7 @@ import {
   getGetDetail1QueryKey,
   getGetSummariesQueryKey,
   useGetDetail1,
+  useGetLiveStates,
   useAddAll,
   useCloseEarly,
   useGetSummaries,
@@ -31,6 +32,13 @@ import {
 import { usePlace } from '@/api/generated/입찰/입찰'
 import { useGetRecentEvents } from '@/api/generated/sse/sse'
 import { mergeItemDetail, toAuctionItems } from '@/features/live/adapt-item'
+import {
+  applyAcceptedBid,
+  applyLiveEvent,
+  applyLiveSnapshots,
+} from '@/features/live/live-state'
+import { createLiveEventBuffer } from '@/features/live/live-event-buffer'
+import { useLiveItems } from '@/features/live/use-live-items'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import { retryOnNetworkError } from '@/features/live/api-error'
 import {
@@ -39,6 +47,11 @@ import {
 } from '@/features/live/components/auction-start-flash'
 import { preloadLiveMotion } from '@/features/live/preload-motion'
 import { toInitialRoomEvents } from '@/features/live/recent-events'
+import {
+  createRoomEventIdTracker,
+  mergeRecentRoomEvents,
+  shouldProcessRoomEvent,
+} from '@/features/live/merge-recent-events'
 import {
   SOFT_CLOSE_FLASH_MS,
   type SoftCloseFlash,
@@ -194,13 +207,6 @@ function LiveRoomPage() {
   const [removeMode, setRemoveMode] = useState(false)
   const [selectedForRemoval, setSelectedForRemoval] = useState<number[]>([])
   const [confirmingRemoval, setConfirmingRemoval] = useState(false)
-  /**
-   * SSE 로 덧칠한 물품 목록. 서버 목록 위에 덮어쓴다.
-   *
-   * **서버 응답이 새로 오면 버린다**(아래 재동기화 effect). 이게 없으면 이벤트를
-   * 한 번 놓치거나 중복으로 받았을 때 어긋난 리더보드가 마감까지 그대로 남는다.
-   */
-  const [items, setItems] = useState<AuctionItemDetail[] | null>(null)
   /** 실시간 연동 전까지 새 이벤트 애니메이션을 눈으로 보려고 쌓아 둔다. */
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
   /**
@@ -238,6 +244,18 @@ function LiveRoomPage() {
     [summaries.data, roomBidUnit],
   )
 
+  const liveStates = useGetLiveStates(shareCode)
+  const liveSnapshots = useMemo(
+    () => liveStates.data?.data ?? [],
+    [liveStates.data],
+  )
+  const [roomItems, setItems] = useLiveItems(
+    serverItems,
+    summaries.dataUpdatedAt,
+    liveSnapshots,
+    liveStates.dataUpdatedAt,
+  )
+
   /*
    * 물품은 서버 값만 쓴다.
    *
@@ -245,23 +263,7 @@ function LiveRoomPage() {
    * 리더보드·현재가가 실제 입찰과 무관한 가짜였고, 화면상 구분이 되지 않아
    * 백엔드가 값을 안 주고 있다는 사실 자체가 가려졌다. 비어 보이는 게 낫다.
    */
-  // 편성을 바꾸기 전까지는 서버가 준 목록을 그대로 쓴다.
-  const roomItems = items ?? serverItems
-
-  /*
-   * 서버 목록이 새로 도착하면 화면 덧칠을 버린다. **서버가 항상 이긴다.**
-   *
-   * SSE 덧칠은 다음 응답까지만 유효한 임시값이다. 예전에는 덧칠이 한 번 얹히면
-   * 재조회를 해도 화면이 안 바뀌어서, 이벤트를 놓치거나 중복으로 받은 차이가
-   * 새로고침 전까지 남았다(#328). 되돌릴 통로가 아예 없었다.
-   *
-   * `dataUpdatedAt` 은 조회가 성공할 때만 올라간다. 같은 값이 다시 와도 올라가므로
-   * "서버에 물어봤다" 자체를 신호로 쓸 수 있다.
-   */
-  useEffect(() => {
-    if (summaries.dataUpdatedAt === 0) return
-    setItems(null)
-  }, [summaries.dataUpdatedAt])
+  // MySQL 재조회와 Redis Snapshot은 revision 병합기를 거쳐 오래된 값의 롤백을 막는다.
 
   /*
    * 진행 중인 물품의 마감 시각. 이 문자열이 그대로면 아래 폴백이 재시도를 이어간다.
@@ -370,6 +372,7 @@ function LiveRoomPage() {
    */
   const recentEventsQuery = useGetRecentEvents(shareCode)
   const appliedRecentEventsRef = useRef(false)
+  const roomEventIds = useRef(createRoomEventIdTracker()).current
 
   useEffect(() => {
     if (appliedRecentEventsRef.current) return
@@ -380,13 +383,10 @@ function LiveRoomPage() {
     const initialEvents = toInitialRoomEvents(events)
     if (initialEvents.length === 0) return
 
+    roomEventIds.remember(initialEvents.map((event) => event.id))
     // 그사이 SSE 로 이미 들어온 이벤트와 겹치면 뺀다.
-    setExtraEvents((prev) => {
-      const knownIds = new Set(prev.map((event) => event.id))
-      const fresh = initialEvents.filter((event) => !knownIds.has(event.id))
-      return [...fresh, ...prev]
-    })
-  }, [recentEventsQuery.data])
+    setExtraEvents((prev) => mergeRecentRoomEvents(initialEvents, prev))
+  }, [recentEventsQuery.data, roomEventIds])
 
   /**
    * SSE 이벤트 수신 핸들러.
@@ -398,10 +398,13 @@ function LiveRoomPage() {
    * 못 보고 낡은 목록 위에 덮어쓴다. 실제로 물품 2개가 동시에 마감됐을 때 나중 것만
    * 닫히고 앞의 낙찰 물품이 진행 중으로 남는 버그가 있었다.
    */
-  const handleSseEvent = useCallback(
+  const processSseEvent = useCallback(
     (payload: SseEventPayload) => {
+      const isNewEvent = roomEventIds.accept(payload.eventId)
+      if (!shouldProcessRoomEvent(payload.kind, isNewEvent)) return
+
       // 같은 밀리초에 두 이벤트가 오면 id 가 겹쳐 피드의 React key 가 충돌한다.
-      const eventId = nextEventId()
+      const eventId = payload.eventId ?? nextEventId()
 
       switch (payload.kind) {
         case 'ItemStarted':
@@ -416,17 +419,7 @@ function LiveRoomPage() {
               message: '경매가 시작됐어요',
             },
           ])
-          setItems((prev) =>
-            (prev ?? roomItems).map((item) =>
-              item.id === payload.itemId
-                ? {
-                    ...item,
-                    status: 'ACTIVE' as const,
-                    endsAt: payload.endedTime,
-                  }
-                : item,
-            ),
-          )
+          setItems((prev) => applyLiveEvent(prev, payload))
           /*
            * 시작 알림. 뒤이어 또 시작되면 마지막 것만 남는다. 겹쳐 띄우면
            * 화면 가운데에서 그림이 서로 가린다.
@@ -473,30 +466,10 @@ function LiveRoomPage() {
             },
           ])
           setItems((prev) =>
-            (prev ?? roomItems).map((item) =>
-              item.id === payload.itemId
-                ? {
-                    ...item,
-                    currentPrice: payload.bidPrice,
-                    topBidderNickname: payload.bidderNickname,
-                    leaderboard: [
-                      {
-                        rank: 1,
-                        nickname: payload.bidderNickname,
-                        amount: payload.bidPrice,
-                        isMe: ownBids.has(payload.itemId, payload.bidPrice),
-                      },
-                      ...item.leaderboard.filter(
-                        (entry) => entry.nickname !== payload.bidderNickname,
-                      ),
-                    ]
-                      // 서버 리더보드도 상위 3명이다. 더 들고 있으면 서버 값이
-                      // 다시 올 때 줄 수가 줄어들어 화면이 들썩인다.
-                      .slice(0, 3)
-                      .map((entry, index) => ({ ...entry, rank: index + 1 })),
-                  }
-                : item,
-            ),
+            applyLiveEvent(prev, {
+              ...payload,
+              isMe: ownBids.has(payload.itemId, payload.bidPrice),
+            }),
           )
           break
 
@@ -515,13 +488,7 @@ function LiveRoomPage() {
           ])
           // 서버가 준 마감 시각을 그대로 쓴다. 직접 더하면 이벤트가 두 번 오거나
           // 유실됐을 때 화면 카운트다운만 서버와 어긋난 채로 남는다.
-          setItems((prev) =>
-            (prev ?? roomItems).map((item) =>
-              item.id === payload.itemId
-                ? { ...item, endsAt: payload.endedTime }
-                : item,
-            ),
-          )
+          setItems((prev) => applyLiveEvent(prev, payload))
           /*
            * 연장 연출. 같은 물품이 또 연장되면 count 가 올라가 APNG 가 처음부터
            * 다시 재생된다(`replayKey`).
@@ -554,13 +521,7 @@ function LiveRoomPage() {
           ])
           // 연장과 같은 이유로 서버가 준 마감 시각을 그대로 쓴다. 직접 빼서 계산하면
           // 이벤트가 두 번 오거나 유실됐을 때 화면만 서버와 어긋난다.
-          setItems((prev) =>
-            (prev ?? roomItems).map((item) =>
-              item.id === payload.itemId
-                ? { ...item, endsAt: payload.endedTime }
-                : item,
-            ),
-          )
+          setItems((prev) => applyLiveEvent(prev, payload))
           break
 
         case 'ItemEnded':
@@ -580,18 +541,7 @@ function LiveRoomPage() {
               emphasized: true,
             },
           ])
-          setItems((prev) =>
-            (prev ?? roomItems).map((item) =>
-              item.id === payload.itemId
-                ? {
-                    ...item,
-                    status: 'CLOSED' as const,
-                    // 낙찰자가 실렸으면 낙찰, 비었으면 유찰이다.
-                    sold: payload.winnerNickname !== null,
-                  }
-                : item,
-            ),
-          )
+          setItems((prev) => applyLiveEvent(prev, payload))
           // "경매 종료" 도장. 서버가 마감을 확정했을 때만 띄운다.
           setJustClosedId(payload.itemId)
           // 유찰이면 이 시점부터 재등록 가능 상품이 된다. 목록을 다시 읽지 않으면
@@ -604,21 +554,22 @@ function LiveRoomPage() {
           break
 
         case 'RoomClosed':
-          setExtraEvents((prev) => [
-            ...prev,
-            {
-              id: eventId,
-              at: new Date().toISOString(),
-              kind: 'CLOSE',
-              message: '판매자가 경매방을 종료했어요',
-              emphasized: true,
-            },
-          ])
+          if (isNewEvent) {
+            setExtraEvents((prev) => [
+              ...prev,
+              {
+                id: eventId,
+                at: new Date().toISOString(),
+                kind: 'CLOSE',
+                message: '판매자가 경매방을 종료했어요',
+                emphasized: true,
+              },
+            ])
+          }
           /*
            * 방 상태를 화면에서 직접 CLOSED 로 바꾸지 않고 다시 읽어온다.
            * 종료 화면은 closedAt·낙찰 결과까지 그리는데 이 이벤트에는 그 값이 없다.
            */
-          setItems(null)
           void queryClient.invalidateQueries({
             queryKey: getGetRoomByShareCodeQueryKey(shareCode),
           })
@@ -644,12 +595,11 @@ function LiveRoomPage() {
          *
          * 판매자 본인 화면도 `handleAdd`·`handleRemove` 에서 같은 방식으로 목록을
          * 다시 읽는다. 양쪽이 같은 경로라 이벤트와 응답이 겹쳐도 물품이 두 번
-         * 들어가지 않는다 — `setItems(null)` 이 화면 편성분을 버리고 서버 목록으로
-         * 되돌리기 때문이다.
+         * 들어가지 않는다. 새 목록은 revision 병합기를 거쳐 기존 Live State 위에
+         * 편성만 갱신한다.
          */
         case 'ItemAdded':
         case 'ItemRemoved':
-          setItems(null)
           void queryClient.invalidateQueries({
             queryKey: getGetSummariesQueryKey(shareCode),
           })
@@ -669,15 +619,17 @@ function LiveRoomPage() {
          * 끊긴 사이의 이벤트를 서버가 다 못 돌려줬다. **놓친 이벤트를 따라잡는 게
          * 아니라 상태를 통째로 다시 읽는다** — 무엇이 사라졌는지는 서버도 모른다.
          *
-         * **방 정보까지 다시 읽어야 한다.** `refreshItems()` 는 물품만 무효화하는데,
-         * 입찰 단위(`bidUnit`)는 방 정보에서 나온다. 그게 낡은 채로 남으면 화면이
-         * 제시하는 최소 입찰가가 서버 기준과 어긋나서 입찰이 계속 거절된다.
+         * **방 정보까지 다시 읽어야 한다.** 물품만 무효화하면 입찰 단위(`bidUnit`)가
+         * 낡은 채로 남고, 그러면 화면이 제시하는 최소 입찰가가 서버 기준과 어긋나서
+         * 입찰이 계속 거절된다.
+         *
+         * 다시 읽은 값을 화면에 얹는 일은 `useLiveItems` 가 한다. 이벤트로 고쳐 둔
+         * 값이 남아 있어도 서버 응답이 이긴다.
          *
          * 놓친 알림 피드는 복구하지 않는다. 서버 버퍼에도 남아 있지 않고, 자리를
          * 비운 사이의 입찰 수십 건을 뒤늦게 쏟아붓는 편이 더 이상하다.
          */
         case 'EventsLost':
-          setItems(null)
           void queryClient.invalidateQueries({
             queryKey: getGetRoomByShareCodeQueryKey(shareCode),
           })
@@ -687,10 +639,48 @@ function LiveRoomPage() {
           break
       }
     },
-    [roomItems, shareCode, queryClient, ownBids],
+    [shareCode, queryClient, ownBids, roomEventIds, setItems],
+  )
+
+  const processSseEventRef = useRef(processSseEvent)
+  processSseEventRef.current = processSseEvent
+  const liveEventBuffer = useMemo(
+    () =>
+      createLiveEventBuffer<SseEventPayload>(
+        (payload) => {
+          processSseEventRef.current(payload)
+        },
+        (payload) => payload.kind === 'RoomClosed',
+      ),
+    [],
+  )
+  const handleSseEvent = useCallback(
+    (payload: SseEventPayload) => liveEventBuffer.receive(payload),
+    [liveEventBuffer],
   )
 
   const { status } = useRealtimeStatus(shareCode, handleSseEvent)
+  const refetchLiveStates = liveStates.refetch
+
+  useEffect(() => {
+    if (status !== 'connected') {
+      liveEventBuffer.start()
+      return
+    }
+
+    let active = true
+    void refetchLiveStates().then((result) => {
+      if (!active) return
+      const snapshots = result.data?.data
+      if (snapshots) {
+        setItems((current) => applyLiveSnapshots(current, snapshots))
+      }
+      liveEventBuffer.drain()
+    })
+    return () => {
+      active = false
+    }
+  }, [status, refetchLiveStates, liveEventBuffer, setItems])
 
   const disconnectNotifiedRef = useRef(false)
   useEffect(() => {
@@ -722,7 +712,6 @@ function LiveRoomPage() {
   useEffect(() => {
     if (status !== 'failed') return
 
-    setItems(null)
     void queryClient.invalidateQueries({
       queryKey: getGetRoomByShareCodeQueryKey(shareCode),
     })
@@ -944,7 +933,6 @@ function LiveRoomPage() {
    * `auctionItemId` 를 주면 그 물품의 상세까지 같이 무효화한다.
    */
   const refreshItems = (auctionItemId?: number) => {
-    setItems(null)
     void queryClient.invalidateQueries({
       queryKey: getGetSummariesQueryKey(shareCode),
     })
@@ -1040,15 +1028,18 @@ function LiveRoomPage() {
        * 서버가 돌려준 새 마감 시각을 그대로 적는다. **목록을 다시 읽어 맞추면 안 된다**
        * (#374). 앞당김은 Redis 에 먼저 반영되고 MySQL 에는 Stream 이 옮긴 뒤에야 들어오는데,
        * 목록 API 는 MySQL 을 읽는다. 게다가 서버는 SSE 를 HTTP 응답보다 먼저 내보내므로
-       * `refreshItems` 의 `setItems(null)` 이 방금 SSE 로 맞춰 둔 값까지 버린다. 그러면
-       * 카운트다운이 옛 시각으로 돌아가고, 더 올 이벤트가 없어 새로고침 전까지 그대로 남는다.
+       * 예전처럼 목록을 바로 다시 읽으면 MySQL의 옛 시각이 Redis 확정값을 되돌릴 수 있다.
+       * 지금은 응답의 revision과 마감 시각을 Live State 병합기에 직접 넣는다.
        */
       const advancedEndAt = response.data?.endAt
       if (advancedEndAt) {
         setItems((prev) =>
-          (prev ?? roomItems).map((entry) =>
-            entry.id === item.id ? { ...entry, endsAt: advancedEndAt } : entry,
-          ),
+          applyLiveEvent(prev, {
+            kind: 'ItemCloseAdvanced',
+            itemId: item.id,
+            endedTime: advancedEndAt,
+            revision: response.data?.revision,
+          }),
         )
       }
       // 상세는 화면 편성과 무관하므로 그대로 무효화해 다음에 열 때 새로 읽는다.
@@ -1217,14 +1208,22 @@ function LiveRoomPage() {
 
     try {
       const requestId = bidRequestIds.acquire(detailItem.id, detailAmount)
-      await trackOwnBidAttempt(ownBids, detailItem.id, detailAmount, () =>
-        placeBid.mutateAsync({
-          auctionItemId: detailItem.id,
-          data: { amount: detailAmount },
-          headers: { 'Idempotency-Key': requestId },
-        }),
+      const response = await trackOwnBidAttempt(
+        ownBids,
+        detailItem.id,
+        detailAmount,
+        () =>
+          placeBid.mutateAsync({
+            auctionItemId: detailItem.id,
+            data: { amount: detailAmount },
+            headers: { 'Idempotency-Key': requestId },
+          }),
       )
       bidRequestIds.complete(requestId)
+      const accepted = response.data
+      if (accepted && user) {
+        setItems((prev) => applyAcceptedBid(prev, accepted, user.nickname))
+      }
 
       // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       setDetailFeedback({
@@ -1398,7 +1397,7 @@ function LiveRoomPage() {
 
     try {
       const requestId = bidRequestIds.acquire(item.id, amount)
-      await trackOwnBidAttempt(ownBids, item.id, amount, () =>
+      const response = await trackOwnBidAttempt(ownBids, item.id, amount, () =>
         placeBid.mutateAsync({
           auctionItemId: item.id,
           data: { amount },
@@ -1406,6 +1405,10 @@ function LiveRoomPage() {
         }),
       )
       bidRequestIds.complete(requestId)
+      const accepted = response.data
+      if (accepted && user) {
+        setItems((prev) => applyAcceptedBid(prev, accepted, user.nickname))
+      }
 
       // 서버가 확정해 준 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       toast.success('입찰이 등록됐어요', {
