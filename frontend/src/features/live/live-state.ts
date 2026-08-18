@@ -17,6 +17,7 @@ type RevisionedItemEvent =
       bidPrice: number
       bidderNickname: string
       bidderKey?: string | null
+      endedTime?: string
       revision?: number
       isMe?: boolean
     }
@@ -142,6 +143,7 @@ export function applyLiveEvent(
         return {
           ...item,
           currentPrice: event.bidPrice,
+          endsAt: event.endedTime ?? item.endsAt,
           topBidderNickname: event.bidderNickname,
           leaderboard,
           revision: nextRevision,

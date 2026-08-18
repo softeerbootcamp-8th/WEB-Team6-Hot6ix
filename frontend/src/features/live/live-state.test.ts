@@ -148,6 +148,33 @@ test('같은 revision의 입찰과 연장 이벤트는 모두 적용하고 동�
   assert.equal(afterExtension[0]?.revision, 7)
 })
 
+test('연장 이벤트보다 다음 revision 입찰이 먼저 도착해도 마감 시각을 복구한다', () => {
+  const nextBid = {
+    kind: 'BidPlaced' as const,
+    itemId: 10,
+    bidPrice: 31_000,
+    bidderNickname: '영희',
+    bidderKey: 'bidder-c',
+    endedTime: '2026-08-17T23:05:00',
+    revision: 8,
+  }
+
+  const afterBid = applyLiveEvent(
+    [item(10, { endsAt: '2026-08-17T23:00:00', revision: 6 })],
+    nextBid,
+  )
+  const afterDelayedExtension = applyLiveEvent(afterBid, {
+    kind: 'SoftCloseExtended',
+    itemId: 10,
+    endedTime: '2026-08-17T23:05:00',
+    revision: 7,
+  })
+
+  assert.equal(afterDelayedExtension[0]?.currentPrice, 31_000)
+  assert.equal(afterDelayedExtension[0]?.endsAt, '2026-08-17T23:05:00')
+  assert.equal(afterDelayedExtension[0]?.revision, 8)
+})
+
 test('MySQL 재조회는 정적 필드만 갱신하고 revision이 있는 라이브 필드는 보존한다', () => {
   const current = item(10, {
     name: '이전 이름',

@@ -53,6 +53,7 @@ type SseEventData =
       bidPrice: number
       bidderNickname: string
       bidderKey: string
+      endedTime: string
       revision: number
     }
   /**
