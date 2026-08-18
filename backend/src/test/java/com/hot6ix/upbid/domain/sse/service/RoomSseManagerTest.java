@@ -495,6 +495,31 @@ class RoomSseManagerTest {
     }
 
     @Test
+    @DisplayName("재연결(Last-Event-ID 있음)로 구독하면 그 이후 이벤트를 버퍼에서 조회한다")
+    void queriesBufferOnReconnectSubscribe() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        when(buffer.getEventsAfter(any(), anyLong())).thenReturn(List.of());
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        manager.subscribe(ROOM_ID, 10L);
+
+        verify(buffer, times(1)).getEventsAfter(ROOM_ID, 10L);
+    }
+
+    @Test
+    @DisplayName("최초 연결(Last-Event-ID 없음)은 버퍼 조회 자체를 하지 않는다")
+    void skipsBufferQueryOnFreshSubscribe() {
+
+        SseEventBuffer buffer = mock(SseEventBuffer.class);
+        RoomSseManager manager = newRoomSseManager(buffer, mock(ParticipantCountPublisher.class));
+
+        manager.subscribe(ROOM_ID, null);
+
+        verify(buffer, never()).getEventsAfter(any(), anyLong());
+    }
+
+    @Test
     @DisplayName("재연결 시 아직 아무 이벤트도 못 받은 emitter는 버퍼 조회 자체를 건너뛴다")
     void skipsNeverDeliveredEmitterOnReconnectReplay() {
 
