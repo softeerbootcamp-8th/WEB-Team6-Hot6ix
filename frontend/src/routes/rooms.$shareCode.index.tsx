@@ -82,6 +82,7 @@ import { useCurrentUser } from '@/lib/session'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import {
   useRealtimeStatus,
+  useRealtimeStatusToast,
   type SseEventPayload,
 } from '@/features/live/use-realtime-status'
 import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
@@ -669,21 +670,28 @@ function LiveRoomPage() {
     [roomItems, shareCode, queryClient, ownBids],
   )
 
-  const { status } = useRealtimeStatus(shareCode, handleSseEvent)
+  /*
+   * 다시 붙었을 때 끊긴 동안의 이벤트를 서버 값으로 메운다.
+   *
+   * 화면 덧칠(`items`)은 따로 버리지 않아도 된다 — 목록 응답이 도착하면
+   * 위 `summaries.dataUpdatedAt` effect 가 알아서 `null` 로 돌린다.
+   */
+  const handleReconnect = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+    })
+    void queryClient.invalidateQueries({
+      queryKey: getGetSummariesQueryKey(shareCode),
+    })
+  }, [queryClient, shareCode])
 
-  const disconnectNotifiedRef = useRef(false)
-  useEffect(() => {
-    if (status === 'reconnecting' || status === 'failed') {
-      if (!disconnectNotifiedRef.current) {
-        disconnectNotifiedRef.current = true
-        toast.error(
-          '실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.',
-        )
-      }
-    } else if (status === 'connected') {
-      disconnectNotifiedRef.current = false
-    }
-  }, [status])
+  const { status } = useRealtimeStatus(
+    shareCode,
+    handleSseEvent,
+    handleReconnect,
+  )
+
+  useRealtimeStatusToast(status)
 
   const visibleItems = useMemo(() => {
     const trimmed = keyword.trim()

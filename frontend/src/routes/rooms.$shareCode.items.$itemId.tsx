@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  getGetDetail1QueryKey,
   getGetSummariesQueryKey,
   useGetDetail1,
   useGetSummaries,
@@ -38,6 +39,7 @@ import { useCurrentUser } from '@/lib/session'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import {
   useRealtimeStatus,
+  useRealtimeStatusToast,
   type SseEventPayload,
 } from '@/features/live/use-realtime-status'
 import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
@@ -316,21 +318,37 @@ function AuctionItemPage() {
     [item, shareCode, navigate, queryClient, ownBids],
   )
 
-  const { status } = useRealtimeStatus(shareCode, handleSseEvent)
+  /*
+   * 다시 붙었을 때 끊긴 동안의 이벤트를 서버 값으로 메운다.
+   *
+   * **덧칠(`override`)은 재조회가 끝난 뒤에 버린다.** 이 화면에는 방 화면의
+   * `dataUpdatedAt` effect 같은 장치가 없어서 직접 비워야 하는데, 먼저 비우면
+   * 새 응답이 오기까지 덧칠보다 더 오래된 값이 잠깐 보인다.
+   */
+  const handleReconnect = useCallback(() => {
+    void (async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: getGetSummariesQueryKey(shareCode),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: getGetDetail1QueryKey(shareCode, auctionItemId),
+        }),
+      ])
+      setOverride(null)
+    })()
+  }, [queryClient, shareCode, auctionItemId])
 
-  const disconnectNotifiedRef = useRef(false)
-  useEffect(() => {
-    if (status === 'reconnecting' || status === 'failed') {
-      if (!disconnectNotifiedRef.current) {
-        disconnectNotifiedRef.current = true
-        toast.error(
-          '실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.',
-        )
-      }
-    } else if (status === 'connected') {
-      disconnectNotifiedRef.current = false
-    }
-  }, [status])
+  const { status } = useRealtimeStatus(
+    shareCode,
+    handleSseEvent,
+    handleReconnect,
+  )
+
+  useRealtimeStatusToast(status)
 
   const remaining = useCountdown(item.endsAt)
   const closed = item.status === 'CLOSED'
