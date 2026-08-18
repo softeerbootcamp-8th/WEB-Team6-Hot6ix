@@ -55,6 +55,15 @@ public class RoomSseManager {
      * <p>재연결({@code lastEventId != null})이면 버퍼에서 그 ID 이후 이벤트를 replay한다. 아래
      * 참여자 수 브로드캐스트는 id 없이 나가므로(#311) {@code Last-Event-ID}에는 영향을 주지
      * 않는다 — 최초 연결이든 재연결이든 이 값이 {@code Last-Event-ID}의 시작점이 되지 않는다.
+     *
+     * <p><b>{@code register()}를 제일 먼저 한다(#378).</b> 그 순간부터 이 emitter는
+     * {@code roomEmitters}에 존재해 라이브 이벤트를 받을 자격이 생기지만, {@code dispatcher}는
+     * 아직 "준비 중(warmup)" 상태라 그 사이 들어오는 라이브 이벤트를 즉시 보내지 않고 임시로
+     * 붙잡아 둔다({@link EmitterDispatcher#enqueue}). 버퍼 조회(Redis I/O)가 끝나면
+     * {@link EmitterDispatcher#becomeReady}가 놓친 이벤트를 먼저 내보내고, 그 사이 붙잡아 둔
+     * 라이브 이벤트를(이미 놓친 목록에 포함된 건 걸러내고) 이어서 내보낸 뒤에야 "준비 완료"로
+     * 전환한다. register가 먼저이므로 이 emitter가 이벤트를 통째로 놓치는 경우가 없고, 전송
+     * 순서는 항상 replay → 그 사이 라이브 순으로 고정된다.
      */
     public SseEmitter subscribe(Long roomId, Long lastEventId) {
         SseEmitter emitter = createEmitter();
@@ -65,15 +74,16 @@ public class RoomSseManager {
         emitter.onTimeout(() -> disconnect(roomId, emitter, SseMetrics.CLOSE_TIMEOUT));
         emitter.onError(e -> disconnect(roomId, emitter, closeReason(e)));
 
-        if (lastEventId != null) {
-            List<BufferedEvent> missed = sseEventBuffer.getEventsAfter(roomId, lastEventId);
-            EmitterDispatcher dispatcher = dispatchers.get(emitter);
-            for (BufferedEvent event : missed) {
-                if (dispatcher != null) {
-                    dispatcher.enqueue(new SseDispatchTask.Event(
-                            roomId, event.eventName(), event.id(), event.data()));
-                }
-            }
+        List<SseDispatchTask> replayEvents = lastEventId != null
+                ? sseEventBuffer.getEventsAfter(roomId, lastEventId).stream()
+                        .map(event -> (SseDispatchTask) new SseDispatchTask.Event(
+                                roomId, event.eventName(), event.id(), event.data()))
+                        .toList()
+                : List.of();
+
+        EmitterDispatcher dispatcher = dispatchers.get(emitter);
+        if (dispatcher != null) {
+            dispatcher.becomeReady(replayEvents);
         }
 
         incrementParticipantCount(roomId, PARTICIPANT_JOINED);
