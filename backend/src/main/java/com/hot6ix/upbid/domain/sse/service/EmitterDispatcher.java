@@ -88,9 +88,26 @@ class EmitterDispatcher {
     }
 
     /**
+     * 이미 ready인 emitter를 다시 "준비 중" 상태로 되돌린다(#378). Redis pub/sub 재연결이
+     * 감지돼 이 emitter가 그 사이 놓친 걸 다시 계산하려 할 때, {@code subscribe()} 최초
+     * 호출 때의 {@code register()}~{@link #becomeReady} 구간과 같은 보호가 다시 필요하다 —
+     * 그러지 않으면 놓친 목록을 조회하는 동안(Redis I/O) 들어오는 라이브 이벤트가 이번에
+     * 다시 계산한 replay보다 먼저 나가 순서가 역전된다(3-E, 1번과 같은 형태의 문제).
+     *
+     * <p>호출 직후부터 {@link #becomeReady}를 부르기 전까지, 들어오는 라이브 이벤트는
+     * {@link #enqueue}를 통해 다시 {@code pendingLiveEvents}에 붙잡힌다.
+     */
+    void pauseForReplay() {
+        synchronized (pendingLiveEventsLock) {
+            ready = false;
+        }
+    }
+
+    /**
      * 재연결 시 놓친 이벤트(replay)를 먼저 내보내고, {@code register()} 이후 {@link #enqueue}가
      * 붙잡아 둔 라이브 이벤트를 이어서 내보낸 뒤 이 dispatcher를 준비 완료 상태로 전환한다.
-     * {@code RoomSseManager.subscribe()}가 버퍼 조회 직후 딱 한 번 호출한다.
+     * {@code RoomSseManager.subscribe()}가 버퍼 조회 직후 딱 한 번 호출한다. 재연결 후 방
+     * 단위 replay에서는 {@link #pauseForReplay}로 다시 준비 중 상태를 만든 뒤 재사용한다.
      *
      * <p>드레인과 상태 전환을 하나의 임계 구역 안에서 처리한다 — 그러지 않으면 드레인 직후,
      * {@code ready}로 바뀌기 직전에 들어온 이벤트가 {@code pendingLiveEvents}에 남아 영영 안 나갈

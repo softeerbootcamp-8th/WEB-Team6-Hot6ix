@@ -94,6 +94,52 @@ public class RoomSseManager {
     }
 
     /**
+     * Redis pub/sub 재연결이 감지되면, 이 인스턴스에 붙어 있는 모든 방·모든 emitter를 각자
+     * 자기 {@code lastDeliveredEventId} 기준으로 다시 캐치업시킨다(#378).
+     *
+     * <p>emitter 단위로 기준을 잡는 이유는, 같은 방 emitter라도 그 사이 개별 SSE 재연결로
+     * 이미 스스로 캐치업을 마친 emitter가 섞여 있을 수 있어서다 — 방 단위로 한 기준만 쓰면
+     * 이미 최신인 emitter에게 중복으로 다시 보내게 된다.
+     *
+     * <p><b>{@code lastDeliveredEventId}가 -1인 emitter는 건너뛴다.</b> -1은 "아직 Event를
+     * 하나도 못 받았다"는 뜻인데, 이게 정상적으로 최근에 접속해 놓친 게 없는 흔한 경우인지,
+     * 하필 끊긴 동안 접속했는데 그 사이 뭔가 발생해 실제로 놓친 경우인지 구분할 수 없다.
+     * 구분 못 하는 채로 버퍼 전체를 보내면, 흔한 전자의 경우마다 이 emitter가 접속하기 전의
+     * 과거 역사까지 잘못 다시 보내게 되는 부작용이 더 크다. 드문 후자의 손해(이벤트 하나를
+     * 못 받는 것)는 다음 라이브 이벤트나 클라이언트의 새로고침(recent-events 재조회)으로
+     * 자연히 정정된다.
+     *
+     * <p>{@code pauseForReplay()}로 다시 준비 중 상태를 만든 뒤 버퍼를 조회하는 것은 1번
+     * (재연결 시 순서 역전)과 같은 이유다 — 조회하는 동안 들어오는 라이브 이벤트가 이번에
+     * 계산한 replay보다 먼저 나가지 않게 막는다.
+     */
+    public void replayAfterReconnect() {
+        roomEmitters.forEach((roomId, emitters) -> {
+            for (SseEmitter emitter : emitters) {
+                EmitterDispatcher dispatcher = dispatchers.get(emitter);
+                if (dispatcher == null) {
+                    continue;
+                }
+
+                long lastDeliveredEventId = dispatcher.lastDeliveredEventId();
+                if (lastDeliveredEventId == -1) {
+                    continue;
+                }
+
+                dispatcher.pauseForReplay();
+
+                List<SseDispatchTask> missed = sseEventBuffer.getEventsAfter(roomId, lastDeliveredEventId)
+                        .stream()
+                        .map(event -> (SseDispatchTask) new SseDispatchTask.Event(
+                                roomId, event.eventName(), event.id(), event.data()))
+                        .toList();
+
+                dispatcher.becomeReady(missed);
+            }
+        });
+    }
+
+    /**
      * <b>이 인스턴스에</b> 붙어 있는 emitter 별 dispatcher 에 이벤트를 넣는다. 실제 전송은
      * 설정된 executor에서 비동기로 일어나므로 호출 스레드는 즉시 반환된다.
      *
