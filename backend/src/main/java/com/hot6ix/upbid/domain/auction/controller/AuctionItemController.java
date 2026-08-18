@@ -9,8 +9,10 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDt
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionLiveStateResponseDto;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemCloseService;
 import com.hot6ix.upbid.domain.auction.service.AuctionItemService;
+import com.hot6ix.upbid.domain.auction.service.AuctionLiveStateService;
 import com.hot6ix.upbid.global.interceptor.GuestAllowed;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import java.util.List;
@@ -30,6 +32,7 @@ public class AuctionItemController implements AuctionItemApi {
 
     private final AuctionItemService auctionItemService;
     private final AuctionItemCloseService auctionItemCloseService;
+    private final AuctionLiveStateService auctionLiveStateService;
 
     @GetMapping("/auction-rooms/share/{shareCode}/auction-items")
     @GuestAllowed
@@ -40,6 +43,18 @@ public class AuctionItemController implements AuctionItemApi {
         List<AuctionItemSummaryResponseDto> response = auctionItemService.getSummaries(shareCode, userId);
 
         return ResponseEntity.ok(CommonResponse.ok(response, "경매 물품 목록 조회에 성공했습니다."));
+    }
+
+    @GetMapping("/auction-rooms/share/{shareCode}/live-states")
+    @GuestAllowed
+    @Override
+    public ResponseEntity<CommonResponse<List<AuctionLiveStateResponseDto>>> getLiveStates(
+            String shareCode, Long userId) {
+
+        List<AuctionLiveStateResponseDto> response =
+                auctionLiveStateService.getLiveStates(shareCode, userId);
+
+        return ResponseEntity.ok(CommonResponse.ok(response, "경매 물품 Live Snapshot 조회에 성공했습니다."));
     }
 
     @GetMapping("/auction-rooms/share/{shareCode}/auction-items/{auctionItemId}")

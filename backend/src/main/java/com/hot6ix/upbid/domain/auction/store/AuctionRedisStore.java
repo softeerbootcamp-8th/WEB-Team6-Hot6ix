@@ -1,14 +1,8 @@
 package com.hot6ix.upbid.domain.auction.store;
 
-import com.hot6ix.upbid.domain.auction.entity.AuctionItem;
-import com.hot6ix.upbid.domain.auction.entity.AuctionItemStatus;
 import com.hot6ix.upbid.domain.bid.store.RedisBidDecision;
 import com.hot6ix.upbid.domain.bid.stream.BidStreamMetrics;
-import com.hot6ix.upbid.domain.user.entity.User;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -115,7 +109,7 @@ public class AuctionRedisStore {
         return Optional.of(new AuctionRedisLiveState(
                 Long.parseLong(result.get(0)),
                 Long.parseLong(result.get(1)),
-                AuctionItemStatus.valueOf(result.get(2)),
+                AuctionRedisLiveStatus.valueOf(result.get(2)),
                 Long.parseLong(result.get(3)),
                 result.get(4).isBlank() ? null : Long.parseLong(result.get(4)),
                 Long.parseLong(result.get(5)),
@@ -227,39 +221,6 @@ public class AuctionRedisStore {
                 Integer.parseInt(result.get(9)),
                 Long.parseLong(result.get(10)),
                 "1".equals(result.get(11)));
-    }
-
-    /**
-     * 엔티티를 불변 seed 스냅샷으로 바꾼 뒤 {@link #seed(AuctionRedisSeed)}에 위임한다.
-     * 이미 공개된 Hash는 과거 DB 스냅샷으로 덮어쓰지 않는다.
-     */
-    public void seed(AuctionItem item, long roomId, long sellerUserId,
-                     Collection<AuctionRedisParticipant> participants) {
-        seed(item, roomId, sellerUserId, participants, List.of());
-    }
-
-    /** 복구 시 MySQL에 반영된 상위 입찰자까지 Redis 리더보드에 함께 준비한다. */
-    public void seed(AuctionItem item, long roomId, long sellerUserId,
-                     Collection<AuctionRedisParticipant> participants,
-                     Collection<AuctionRedisLeaderboardEntry> leaderboard) {
-        User leader = item.getLeaderUser();
-        seed(new AuctionRedisSeed(
-                item.getAuctionItemId(),
-                roomId,
-                sellerUserId,
-                item.getStatus(),
-                item.getStartingPrice(),
-                item.getCurrentPrice(),
-                leader == null ? null : leader.getUserId(),
-                item.getBidIncrement(),
-                toMillis(item.getEndAt()),
-                item.getAuctionRoom().getSoftCloseTriggerSeconds(),
-                item.getAuctionRoom().getSoftCloseExtendSeconds(),
-                item.getTotalExtensionSeconds(),
-                AuctionItem.MAX_TOTAL_EXTENSION_SECONDS,
-                item.getProduct().getName(),
-                List.copyOf(participants),
-                List.copyOf(leaderboard)));
     }
 
     /**
@@ -403,10 +364,6 @@ public class AuctionRedisStore {
                     result.size() < 3 || result.get(2).isBlank() ? null : Long.parseLong(result.get(2)));
             default -> throw new IllegalStateException("close-auction.lua가 모르는 결과를 반환했다: " + result);
         };
-    }
-
-    private static long toMillis(LocalDateTime value) {
-        return value.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
     private static String nullableNumber(Number value) {
