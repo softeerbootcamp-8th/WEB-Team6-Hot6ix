@@ -10,6 +10,10 @@ public final class AuctionRedisKeys {
         return "auction:item:" + itemId;
     }
 
+    public static String leaderboard(long itemId) {
+        return item(itemId) + ":leaderboard";
+    }
+
     public static String participants(long roomId) {
         return "auction:room:" + roomId + ":participants";
     }

@@ -8,6 +8,7 @@ import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemBulkAddResponseDt
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemCloseEarlyResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemDetailResponseDto;
 import com.hot6ix.upbid.domain.auction.dto.response.AuctionItemSummaryResponseDto;
+import com.hot6ix.upbid.domain.auction.dto.response.AuctionLiveStateResponseDto;
 import com.hot6ix.upbid.global.interceptor.LoginUserId;
 import com.hot6ix.upbid.global.response.CommonResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,6 +26,22 @@ import org.springframework.web.bind.annotation.RequestBody;
 @Tag(name = "경매 물품",
         description = "입찰자용 경매 물품 조회 API와 판매자용 물품 추가·제외·시작·마감 앞당기기 API")
 public interface AuctionItemApi {
+
+    @Operation(
+            summary = "경매방 물품 Live Snapshot 조회",
+            description = "진행 중이거나 MySQL 마감 저장을 기다리는 물품의 현재가, 상태, 마감 시각, "
+                    + "revision, 리더보드 Top 3를 Redis 기준으로 반환한다. 최초 SSE 연결과 재연결 뒤 "
+                    + "화면 상태를 맞출 때 사용한다. 비로그인으로 조회할 수 있다."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "404", description = "해당 공유 코드의 경매방이 없거나 삭제됨 (code 4002)")
+    })
+    @SecurityRequirements
+    ResponseEntity<CommonResponse<List<AuctionLiveStateResponseDto>>> getLiveStates(
+            @Parameter(description = "조회할 경매방의 공유 코드", required = true)
+            @PathVariable String shareCode,
+            @Parameter(hidden = true) @LoginUserId Long userId);
 
     @Operation(
             summary = "경매방 물품 목록 조회",

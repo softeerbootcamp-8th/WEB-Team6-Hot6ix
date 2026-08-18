@@ -1,5 +1,6 @@
 package com.hot6ix.upbid.domain.sse.service;
 
+import com.hot6ix.upbid.domain.sse.dto.SseEventsLostDto;
 import com.hot6ix.upbid.global.event.EventType;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -32,6 +33,7 @@ public class SseMetrics {
     private static final String QUEUE_WAIT = "upbid.sse.queue.wait";
     private static final String CONNECTIONS_CLOSED = "upbid.sse.connections.closed";
     private static final String REJECTED = "upbid.sse.rejected";
+    private static final String EVENTS_LOST = "upbid.sse.events.lost";
     private static final Set<String> SEND_FAILURE_CAUSES = Set.of("io", "illegal_state", "runtime");
 
     static final String HEARTBEAT_EVENT = "HEARTBEAT";
@@ -85,6 +87,15 @@ public class SseMetrics {
     private final Map<String, Counter> connectionsClosed;
     private final Map<String, Counter> rejected;
 
+    /**
+     * 재연결 replay 로 메울 수 없었던 횟수를 사유별로 센다.
+     *
+     * <p>버퍼 크기({@code upbid.sse.buffer-size})를 올릴 근거가 여기서 나온다.
+     * {@code buffer_overflow}가 계속 잡히면 버퍼가 작은 것이고, {@code buffer_missing}이
+     * 몰려서 찍히면 Redis 가 재시작된 것이다 — 원인이 달라서 합쳐 세면 구분이 안 된다.
+     */
+    private final Map<String, Counter> eventsLost;
+
     public SseMetrics(MeterRegistry registry) {
         this.registry = registry;
         this.heartbeat = registry.timer("upbid.sse.heartbeat");
@@ -103,6 +114,7 @@ public class SseMetrics {
         this.rejected = Map.of(
                 "queue_saturated", registry.counter(REJECTED, "reason", "queue_saturated"),
                 "dispatcher_closed", registry.counter(REJECTED, "reason", "dispatcher_closed"));
+        this.eventsLost = lostCounters(registry);
 
         Gauge.builder("upbid.sse.in.flight", sendsInFlight, AtomicInteger::get)
                 .description("현재 emitter.send 안에서 완료를 기다리는 전송 수")
@@ -137,6 +149,8 @@ public class SseMetrics {
         }
         counters.put(RoomSseManager.PARTICIPANT_COUNT_EVENT,
                 registry.counter(metricName, "event", RoomSseManager.PARTICIPANT_COUNT_EVENT));
+        counters.put(RoomSseManager.EVENTS_LOST_EVENT,
+                registry.counter(metricName, "event", RoomSseManager.EVENTS_LOST_EVENT));
         counters.put(HEARTBEAT_EVENT, registry.counter(metricName, "event", HEARTBEAT_EVENT));
 
         return Map.copyOf(counters);
@@ -151,6 +165,17 @@ public class SseMetrics {
                         registry.counter(CONNECTIONS_CLOSED, "reason", CLOSE_QUEUE_SATURATED),
                 CLOSE_ROOM_CLOSED,
                         registry.counter(CONNECTIONS_CLOSED, "reason", CLOSE_ROOM_CLOSED));
+    }
+
+    /** 유실 사유별 카운터. 사유는 {@code SseEventsLostDto}의 상수와 같다. */
+    private static Map<String, Counter> lostCounters(MeterRegistry registry) {
+        return Map.of(
+                SseEventsLostDto.BUFFER_OVERFLOW,
+                        registry.counter(EVENTS_LOST, "reason", SseEventsLostDto.BUFFER_OVERFLOW),
+                SseEventsLostDto.BUFFER_MISSING,
+                        registry.counter(EVENTS_LOST, "reason", SseEventsLostDto.BUFFER_MISSING),
+                SseEventsLostDto.SEQUENCE_RESET,
+                        registry.counter(EVENTS_LOST, "reason", SseEventsLostDto.SEQUENCE_RESET));
     }
 
     private static Map<String, Counter> eventCauseCounters(
@@ -174,6 +199,7 @@ public class SseMetrics {
             names.add(type.name());
         }
         names.add(RoomSseManager.PARTICIPANT_COUNT_EVENT);
+        names.add(RoomSseManager.EVENTS_LOST_EVENT);
         names.add(HEARTBEAT_EVENT);
         return Set.copyOf(names);
     }
@@ -229,6 +255,11 @@ public class SseMetrics {
     public void recordRejected(String reason) {
         Counter counter = rejected.get(reason);
         (counter != null ? counter : registry.counter(REJECTED, "reason", reason)).increment();
+    }
+
+    public void recordEventsLost(String reason) {
+        Counter counter = eventsLost.get(reason);
+        (counter != null ? counter : registry.counter(EVENTS_LOST, "reason", reason)).increment();
     }
 
     public void recordConnectionOpened() {

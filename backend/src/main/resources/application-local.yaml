@@ -23,3 +23,9 @@ logging:
     com.hot6ix.upbid: debug
     org.hibernate.SQL: debug
     org.hibernate.orm.jdbc.bind: trace
+
+upbid:
+  auction:
+    live-state:
+      # 로컬 식별값은 운영과 호환될 필요가 없다. 운영 키는 application-prod.yaml에서 필수다.
+      bidder-key-secret: local-development-bidder-key

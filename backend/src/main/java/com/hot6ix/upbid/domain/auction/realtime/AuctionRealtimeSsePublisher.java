@@ -22,6 +22,7 @@ import org.springframework.stereotype.Component;
 public class AuctionRealtimeSsePublisher {
 
     private final SseEventPublisher sseEventPublisher;
+    private final BidderKeyEncoder bidderKeyEncoder;
     private final Clock clock;
 
     /** 승인 직후 가격 이벤트와, 발생한 경우 Soft Close 이벤트를 최신 상태일 때만 발행한다. */
@@ -35,12 +36,16 @@ public class AuctionRealtimeSsePublisher {
                 Map.of(
                         "status", "IN_PROGRESS",
                         "currentPrice", String.valueOf(accepted.amount()),
-                        "leaderUserId", String.valueOf(accepted.bidderUserId())),
+                        "leaderUserId", String.valueOf(accepted.bidderUserId()),
+                        "revision", String.valueOf(accepted.revision())),
                 new BidPlacedDto(
                         itemId,
                         accepted.itemName(),
                         accepted.amount(),
-                        accepted.bidderNickname()));
+                        accepted.bidderNickname(),
+                        bidderKeyEncoder.encode(accepted.roomId(), accepted.bidderUserId()),
+                        toLocalDateTime(accepted.endAtMillis()),
+                        accepted.revision()));
 
         if (accepted.extendedSeconds() <= 0) {
             return;
@@ -52,12 +57,14 @@ public class AuctionRealtimeSsePublisher {
                 itemKey,
                 Map.of(
                         "status", "IN_PROGRESS",
-                        "endAt", String.valueOf(accepted.endAtMillis())),
+                        "endAt", String.valueOf(accepted.endAtMillis()),
+                        "revision", String.valueOf(accepted.revision())),
                 new SoftCloseExtendedDto(
                         itemId,
                         accepted.itemName(),
                         accepted.extendedSeconds(),
-                        toLocalDateTime(accepted.endAtMillis())));
+                        toLocalDateTime(accepted.endAtMillis()),
+                        accepted.revision()));
     }
 
     /** 판매자 마감 앞당기기를 Redis의 최신 endAt과 일치할 때만 알린다. */
@@ -68,12 +75,14 @@ public class AuctionRealtimeSsePublisher {
                 AuctionRedisKeys.item(advanced.itemId()),
                 Map.of(
                         "status", "IN_PROGRESS",
-                        "endAt", String.valueOf(advanced.endAtMillis())),
+                        "endAt", String.valueOf(advanced.endAtMillis()),
+                        "revision", String.valueOf(advanced.revision())),
                 new ItemCloseAdvancedDto(
                         advanced.itemId(),
                         advanced.itemName(),
                         advanced.remainingSeconds(),
-                        toLocalDateTime(advanced.endAtMillis())));
+                        toLocalDateTime(advanced.endAtMillis()),
+                        advanced.revision()));
     }
 
     /** Redis가 CLOSING으로 전환한 최종 스냅샷을 기존 ITEM_ENDED 계약으로 알린다. */
@@ -87,12 +96,16 @@ public class AuctionRealtimeSsePublisher {
                         "status", "CLOSING",
                         "currentPrice", String.valueOf(closing.currentPrice()),
                         "leaderUserId", passed ? "" : String.valueOf(closing.leaderUserId()),
-                        "endAt", String.valueOf(closing.endAtMillis())),
+                        "endAt", String.valueOf(closing.endAtMillis()),
+                        "revision", String.valueOf(closing.revision())),
                 new ItemEndedDto(
                         closing.itemId(),
                         closing.itemName(),
                         passed ? null : closing.currentPrice(),
-                        closing.winnerNickname()));
+                        closing.winnerNickname(),
+                        passed ? null : bidderKeyEncoder.encode(
+                                closing.roomId(), closing.leaderUserId()),
+                        closing.revision()));
     }
 
     private LocalDateTime toLocalDateTime(long epochMillis) {

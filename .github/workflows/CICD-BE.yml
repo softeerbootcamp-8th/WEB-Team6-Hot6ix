@@ -133,6 +133,7 @@ jobs:
             RDS_PASSWORD='${{ secrets.RDS_PASSWORD }}'
             KAKAO_CLIENT_ID='${{ secrets.KAKAO_CLIENT_ID }}'
             KAKAO_CLIENT_SECRET='${{ secrets.KAKAO_CLIENT_SECRET }}'
+            LIVE_BIDDER_KEY_SECRET='${{ secrets.LIVE_BIDDER_KEY_SECRET }}'
             KAKAO_REDIRECT_URI='${{ secrets.KAKAO_REDIRECT_URI }}'
             NCP_ACCESS_KEY='${{ secrets.NCP_ACCESS_KEY }}'
             NCP_SECRET_KEY='${{ secrets.NCP_SECRET_KEY }}'

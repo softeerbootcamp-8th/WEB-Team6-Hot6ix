@@ -4,8 +4,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
+  getGetDetail1QueryKey,
   getGetSummariesQueryKey,
   useGetDetail1,
+  useGetLiveStates,
   useGetSummaries,
 } from '@/api/generated/경매-물품/경매-물품'
 import { usePlace } from '@/api/generated/입찰/입찰'
@@ -15,11 +17,23 @@ import { LiveItemList } from '@/features/live/components/live-item-list'
 import { RouteError, RoutePending } from '@/components/route-states'
 import {
   emptyItem,
-  toAuctionItemDetail,
+  mergeItemDetail,
   toAuctionItems,
 } from '@/features/live/adapt-item'
+import {
+  applyAcceptedBid,
+  applyLiveEvent,
+  applyLiveSnapshots,
+} from '@/features/live/live-state'
+import { createLiveEventBuffer } from '@/features/live/live-event-buffer'
+import { useLiveItems } from '@/features/live/use-live-items'
+import { createRoomEventIdTracker } from '@/features/live/merge-recent-events'
 import { toBidErrorMessage } from '@/features/live/bid-error'
 import { createBidRequestIdTracker } from '@/features/live/bid-request-id'
+import {
+  createOwnBidTracker,
+  trackOwnBidAttempt,
+} from '@/features/live/own-bid-tracker'
 import { toAuctionRoomDetail } from '@/features/live/adapt-room'
 import {
   getGetRoomByShareCodeQueryKey,
@@ -34,9 +48,10 @@ import { useCurrentUser } from '@/lib/session'
 import { useIsDesktop } from '@/hooks/use-media-query'
 import {
   useRealtimeStatus,
+  useRealtimeStatusToast,
   type SseEventPayload,
 } from '@/features/live/use-realtime-status'
-import type { AuctionItemDetail, RoomEvent } from '@/types/domain'
+import type { RoomEvent } from '@/types/domain'
 
 /**
  * 물품 상세 (Figma `WEB-13 · 구매자 · 물품 상세 (LIVE)`).
@@ -74,7 +89,7 @@ function AuctionItemPage() {
    * 내가 접수시킨 입찰의 `물품id:금액`. 실시간 입찰 이벤트가 내 것인지 가린다.
    * 자세한 이유는 경매방 화면(`rooms.$shareCode.index.tsx`)에 적어 두었다.
    */
-  const myBidsRef = useRef<Set<string>>(new Set())
+  const ownBids = useRef(createOwnBidTracker()).current
 
   /*
    * 방 정보도 서버에서 받는다. 예전에는 제목·판매자명만 쓴다고 목업으로
@@ -92,9 +107,21 @@ function AuctionItemPage() {
     [summaries.data, roomBidUnit],
   )
 
+  const liveStates = useGetLiveStates(shareCode)
+  const liveSnapshots = useMemo(
+    () => liveStates.data?.data ?? [],
+    [liveStates.data],
+  )
+  const [roomItems, setItems] = useLiveItems(
+    serverItems,
+    summaries.dataUpdatedAt,
+    liveSnapshots,
+    liveStates.dataUpdatedAt,
+  )
+
   const room = useMemo(
-    () => toAuctionRoomDetail(roomQuery.data?.data ?? {}, serverItems),
-    [roomQuery.data, serverItems],
+    () => toAuctionRoomDetail(roomQuery.data?.data ?? {}, roomItems),
+    [roomQuery.data, roomItems],
   )
   const isGuest = user === null
 
@@ -105,9 +132,8 @@ function AuctionItemPage() {
     message: string
   } | null>(null)
 
-  /** 데모 입찰이 반영된 물품. 실시간 연동 전까지만 쓴다. */
-  const [override, setOverride] = useState<AuctionItemDetail | null>(null)
   const [extraEvents, setExtraEvents] = useState<RoomEvent[]>([])
+  const roomEventIds = useRef(createRoomEventIdTracker()).current
 
   /*
    * 상세 API 가 원본이고, 목록은 왼쪽 열용이다.
@@ -119,21 +145,40 @@ function AuctionItemPage() {
   const detailDto = detailQuery.data?.data
   const base = useMemo(() => {
     const listItem =
-      serverItems.find((candidate) => candidate.id === auctionItemId) ??
+      roomItems.find((candidate) => candidate.id === auctionItemId) ??
       emptyItem(auctionItemId)
     if (!detailDto || detailDto.auctionItemId !== auctionItemId) return listItem
-    return toAuctionItemDetail(detailDto, roomBidUnit)
-  }, [serverItems, detailDto, auctionItemId, roomBidUnit])
+    return mergeItemDetail(detailDto, listItem)
+  }, [roomItems, detailDto, auctionItemId])
 
-  const item = override?.id === base.id ? override : base
+  const item = base
 
-  const handleSseEvent = useCallback(
+  const processSseEvent = useCallback(
     (payload: SseEventPayload) => {
+      if (!roomEventIds.accept(payload.eventId)) return
+
       /*
        * 참여자 수는 물품에 딸린 이벤트가 아니다. 이 화면에는 방 헤더가
        * 없어서 보여줄 자리도 없으니 물품 필터보다 먼저 걸러낸다.
        */
       if (payload.kind === 'ParticipantCount') return
+
+      switch (payload.kind) {
+        case 'ItemStarted':
+        case 'SoftCloseExtended':
+        case 'ItemCloseAdvanced':
+        case 'ItemEnded':
+          setItems((prev) => applyLiveEvent(prev, payload))
+          break
+        case 'BidPlaced':
+          setItems((prev) =>
+            applyLiveEvent(prev, {
+              ...payload,
+              isMe: ownBids.has(payload.itemId, payload.bidPrice),
+            }),
+          )
+          break
+      }
 
       /*
        * 현재 보고 있는 물품과 관계없는 이벤트는 무시한다.
@@ -144,7 +189,7 @@ function AuctionItemPage() {
        */
       if ('itemId' in payload && payload.itemId !== item.id) return
 
-      const eventId = Date.now()
+      const eventId = payload.eventId ?? Date.now()
 
       switch (payload.kind) {
         case 'ItemStarted':
@@ -157,11 +202,6 @@ function AuctionItemPage() {
               message: '경매가 시작됐어요',
             },
           ])
-          setOverride((prev) => ({
-            ...(prev ?? item),
-            status: 'ACTIVE' as const,
-            endsAt: payload.endedTime,
-          }))
           break
 
         case 'ItemClosingSoon':
@@ -188,31 +228,6 @@ function AuctionItemPage() {
               emphasized: true,
             },
           ])
-          setOverride((prev) => {
-            const base = prev ?? item
-            return {
-              ...base,
-              currentPrice: payload.bidPrice,
-              topBidderNickname: payload.bidderNickname,
-              leaderboard: [
-                {
-                  rank: 1,
-                  nickname: payload.bidderNickname,
-                  amount: payload.bidPrice,
-                  isMe: myBidsRef.current.has(
-                    `${payload.itemId}:${payload.bidPrice}`,
-                  ),
-                },
-                ...base.leaderboard.filter(
-                  (entry) => entry.nickname !== payload.bidderNickname,
-                ),
-              ]
-                // 서버 리더보드도 상위 3명이다. 더 들고 있으면 서버 값이 다시
-                // 올 때 줄 수가 줄어들어 화면이 들썩인다.
-                .slice(0, 3)
-                .map((entry, index) => ({ ...entry, rank: index + 1 })),
-            }
-          })
           break
 
         case 'SoftCloseExtended':
@@ -228,10 +243,6 @@ function AuctionItemPage() {
           ])
           // 서버가 준 마감 시각을 그대로 쓴다. 직접 더하면 이벤트가 두 번 오거나
           // 유실됐을 때 화면 카운트다운만 서버와 어긋난 채로 남는다.
-          setOverride((prev) => ({
-            ...(prev ?? item),
-            endsAt: payload.endedTime,
-          }))
           break
 
         /*
@@ -251,10 +262,6 @@ function AuctionItemPage() {
               emphasized: true,
             },
           ])
-          setOverride((prev) => ({
-            ...(prev ?? item),
-            endsAt: payload.endedTime,
-          }))
           break
 
         /*
@@ -287,6 +294,26 @@ function AuctionItemPage() {
           })
           break
 
+        /*
+         * 끊긴 사이의 이벤트를 서버가 다 못 돌려줬다. 세 가지를 모두 다시 읽는다 —
+         * 이 물품(상세), 왼쪽 목록, 그리고 **방 정보**. 입찰 단위가 방 정보에서
+         * 나오므로 그게 낡으면 최소 입찰가가 서버 기준과 어긋나 입찰이 거절된다.
+         *
+         * 재조회 결과는 `useLiveItems` 가 화면 상태에 다시 얹는다. 이벤트로 고쳐 둔
+         * 값이 남아 있어도 서버에서 새로 읽은 값이 이긴다.
+         */
+        case 'EventsLost':
+          void queryClient.invalidateQueries({
+            queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetDetail1QueryKey(shareCode, auctionItemId),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: getGetSummariesQueryKey(shareCode),
+          })
+          break
+
         case 'ItemEnded':
           setExtraEvents((prev) => [
             ...prev,
@@ -302,33 +329,89 @@ function AuctionItemPage() {
               emphasized: true,
             },
           ])
-          setOverride((prev) => ({
-            ...(prev ?? item),
-            status: 'CLOSED' as const,
-            // 낙찰자가 실렸으면 낙찰, 비었으면 유찰이다.
-            sold: payload.winnerNickname !== null,
-          }))
           break
       }
     },
-    [item, shareCode, navigate, queryClient],
+    [
+      item.id,
+      auctionItemId,
+      shareCode,
+      navigate,
+      queryClient,
+      ownBids,
+      roomEventIds,
+      setItems,
+    ],
+  )
+
+  const processSseEventRef = useRef(processSseEvent)
+  processSseEventRef.current = processSseEvent
+  const liveEventBuffer = useMemo(
+    () =>
+      createLiveEventBuffer<SseEventPayload>(
+        (payload) => {
+          processSseEventRef.current(payload)
+        },
+        (payload) => payload.kind === 'RoomClosed',
+      ),
+    [],
+  )
+  const handleSseEvent = useCallback(
+    (payload: SseEventPayload) => liveEventBuffer.receive(payload),
+    [liveEventBuffer],
   )
 
   const { status } = useRealtimeStatus(shareCode, handleSseEvent)
+  const refetchLiveStates = liveStates.refetch
 
-  const disconnectNotifiedRef = useRef(false)
   useEffect(() => {
-    if (status === 'reconnecting' || status === 'failed') {
-      if (!disconnectNotifiedRef.current) {
-        disconnectNotifiedRef.current = true
-        toast.error(
-          '실시간 연결이 끊겼어요. 표시된 금액이 최신이 아닐 수 있어요.',
-        )
-      }
-    } else if (status === 'connected') {
-      disconnectNotifiedRef.current = false
+    if (status !== 'connected') {
+      liveEventBuffer.start()
+      return
     }
-  }, [status])
+
+    let active = true
+    void refetchLiveStates().then((result) => {
+      if (!active) return
+      const snapshots = result.data?.data
+      if (snapshots) {
+        setItems((current) => applyLiveSnapshots(current, snapshots))
+      }
+      liveEventBuffer.drain()
+    })
+    return () => {
+      active = false
+    }
+  }, [status, refetchLiveStates, liveEventBuffer, setItems])
+
+  useRealtimeStatusToast(status)
+
+  /*
+   * 재구독이 거절됐다(`failed`). **끊긴 사이에 방이 종료된 경우가 여기다.**
+   *
+   * 서버가 종료된 방 구독을 409 로 막으므로 `RoomClosed` 도 유실 알림도 도달하지
+   * 못한다. 이 화면은 진행 중인 방 전용인데 LIVE 인 채로 멈춰 있게 된다.
+   *
+   * 방 정보를 다시 읽어서 정말 종료됐을 때만 결과 화면으로 옮긴다. `failed` 자체로
+   * 바로 넘기면 안 된다 — 서버가 잠깐 죽은 경우까지 경매가 끝난 것처럼 보인다.
+   */
+  useEffect(() => {
+    if (status !== 'failed') return
+
+    void queryClient.invalidateQueries({
+      queryKey: getGetRoomByShareCodeQueryKey(shareCode),
+    })
+  }, [status, queryClient, shareCode])
+
+  useEffect(() => {
+    if (status !== 'failed' || room.status !== 'CLOSED') return
+
+    void navigate({
+      to: '/rooms/$shareCode/result',
+      params: { shareCode },
+      replace: true,
+    })
+  }, [status, room.status, navigate, shareCode])
 
   const remaining = useCountdown(item.endsAt)
   const closed = item.status === 'CLOSED'
@@ -400,18 +483,24 @@ function AuctionItemPage() {
     ])
 
     if (!shuffle) return
-    setOverride({
-      ...item,
-      currentPrice: next,
-      topBidderNickname: nickname,
-      leaderboard: [
-        { rank: 1, nickname, amount: next, isMe: false },
-        ...item.leaderboard.map((entry) => ({
-          ...entry,
-          rank: entry.rank + 1,
-        })),
-      ].slice(0, 5),
-    })
+    setItems((prev) =>
+      prev.map((entry) =>
+        entry.id === item.id
+          ? {
+              ...entry,
+              currentPrice: next,
+              topBidderNickname: nickname,
+              leaderboard: [
+                { rank: 1, nickname, amount: next, isMe: false },
+                ...entry.leaderboard.map((ranked) => ({
+                  ...ranked,
+                  rank: ranked.rank + 1,
+                })),
+              ].slice(0, 5),
+            }
+          : entry,
+      ),
+    )
   }
 
   const bidBlocked = closed || ready || amount < minimum
@@ -422,14 +511,18 @@ function AuctionItemPage() {
 
     try {
       const requestId = bidRequestIds.acquire(item.id, amount)
-      await placeBid.mutateAsync({
-        auctionItemId: item.id,
-        data: { amount },
-        headers: { 'Idempotency-Key': requestId },
-      })
+      const response = await trackOwnBidAttempt(ownBids, item.id, amount, () =>
+        placeBid.mutateAsync({
+          auctionItemId: item.id,
+          data: { amount },
+          headers: { 'Idempotency-Key': requestId },
+        }),
+      )
       bidRequestIds.complete(requestId)
-
-      myBidsRef.current.add(`${item.id}:${amount}`)
+      const accepted = response.data
+      if (accepted && user) {
+        setItems((prev) => applyAcceptedBid(prev, accepted, user.nickname))
+      }
 
       // 서버가 접수한 뒤에만 성공으로 알린다 (루트 CLAUDE.md).
       setFeedback({
@@ -439,10 +532,7 @@ function AuctionItemPage() {
       toast.success('입찰이 등록됐어요', {
         description: `${item.name} · ${formatWon(amount)}`,
       })
-      // 데모 입찰로 덮어쓴 값을 비워야 서버가 준 현재가가 보인다.
-      setOverride(null)
-      void detailQuery.refetch()
-      void summaries.refetch()
+      // MySQL 반영은 비동기다. 즉시 재조회해 먼저 온 SSE 상태를 되돌리지 않는다.
     } catch (error) {
       const { title, description } = toBidErrorMessage(error)
       setFeedback({ tone: 'error', message: `${title}. ${description}` })

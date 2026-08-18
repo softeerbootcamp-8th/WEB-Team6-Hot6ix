@@ -11,13 +11,26 @@ public sealed interface RedisCloseDecision {
             Long leaderUserId,
             String winnerNickname,
             long endAtMillis,
-            long closedAtMillis
+            long closedAtMillis,
+            long revision
     ) implements RedisCloseDecision {
+
+        public Closing(long roomId, long itemId, String itemName, long currentPrice,
+                       Long leaderUserId, String winnerNickname, long endAtMillis,
+                       long closedAtMillis) {
+            this(roomId, itemId, itemName, currentPrice, leaderUserId, winnerNickname,
+                    endAtMillis, closedAtMillis, 0L);
+        }
     }
 
     record Advanced(long roomId, long itemId, String itemName,
                     long endAtMillis, int remainingSeconds,
-                    long advancedAtMillis) implements RedisCloseDecision {
+                    long advancedAtMillis, long revision) implements RedisCloseDecision {
+
+        public Advanced(long roomId, long itemId, String itemName, long endAtMillis,
+                        int remainingSeconds, long advancedAtMillis) {
+            this(roomId, itemId, itemName, endAtMillis, remainingSeconds, advancedAtMillis, 0L);
+        }
     }
 
     record Rejected(Reason reason, Long endAtMillis) implements RedisCloseDecision {
