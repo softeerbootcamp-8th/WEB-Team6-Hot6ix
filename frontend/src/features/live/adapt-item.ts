@@ -66,6 +66,7 @@ function toLeaderboard(
 
   return named.map((entry, index) => ({
     rank: entry.rank ?? index + 1,
+    bidderKey: null,
     nickname: entry.nickname,
     amount: entry.amount ?? 0,
     isMe: entry.isMe ?? false,
@@ -115,6 +116,7 @@ export function toAuctionItemDetail(
     currentPrice: dto.currentPrice ?? 0,
     bidUnit: detail.bidIncrement ?? roomBidUnit,
     leaderboard,
+    revision: 0,
     /*
      * 최고 입찰자는 리더보드 1등이다. 서버가 리더보드를 준 이상 별도 필드가
      * 없어도 유도할 수 있고, 입찰이 없으면 `null` 이라 화면이 "입찰자 없음"을
@@ -163,6 +165,7 @@ export function emptyItem(id: number): AuctionItemDetail {
     endsAt: null,
     topBidderNickname: null,
     leaderboard: [],
+    revision: 0,
   }
 }
 

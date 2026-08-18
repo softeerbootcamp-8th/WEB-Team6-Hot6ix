@@ -9,10 +9,14 @@
 **그 외 환경**: 카카오 로그인 후 발급된 SESSION 쿠키가 자동으로 포함됩니다.
  * OpenAPI spec version: v1
  */
+import type { AuctionLiveStateResponseDtoStatus } from './auctionLiveStateResponseDtoStatus';
+import type { AuctionLiveLeaderboardEntryResponseDto } from './auctionLiveLeaderboardEntryResponseDto';
 
-export interface AuctionItemCloseEarlyResponseDto {
+export interface AuctionLiveStateResponseDto {
   auctionItemId?: number;
+  status?: AuctionLiveStateResponseDtoStatus;
+  currentPrice?: number;
   endAt?: string;
-  remainingSeconds?: number;
   revision?: number;
+  leaderboard?: AuctionLiveLeaderboardEntryResponseDto[];
 }
