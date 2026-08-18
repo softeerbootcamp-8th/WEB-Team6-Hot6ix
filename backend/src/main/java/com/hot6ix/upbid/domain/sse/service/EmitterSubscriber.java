@@ -21,13 +21,16 @@ class EmitterSubscriber implements Flow.Subscriber<QueuedSseDispatchTask> {
     private final Long roomId;
     private final SseEmitter emitter;
     private final SseMetrics sseMetrics;
+    /** emitter 가 종료 상태가 되었음을 dispatcher 에 알린다. 강제 종료 폴백이 이 값을 본다. */
+    private final Runnable onTerminated;
 
     private Flow.Subscription subscription;
 
-    EmitterSubscriber(Long roomId, SseEmitter emitter, SseMetrics sseMetrics) {
+    EmitterSubscriber(Long roomId, SseEmitter emitter, SseMetrics sseMetrics, Runnable onTerminated) {
         this.roomId = roomId;
         this.emitter = emitter;
         this.sseMetrics = sseMetrics;
+        this.onTerminated = onTerminated;
     }
 
     @Override
@@ -81,6 +84,7 @@ class EmitterSubscriber implements Flow.Subscriber<QueuedSseDispatchTask> {
     private void abort(Exception e) {
         subscription.cancel();
         completeWithError(e);
+        onTerminated.run();
     }
 
     @Override
@@ -88,9 +92,20 @@ class EmitterSubscriber implements Flow.Subscriber<QueuedSseDispatchTask> {
         log.debug("sse emitter dispatcher 종료: roomId={}", roomId);
     }
 
+    /**
+     * 큐에 남아 있던 이벤트까지 모두 전송된 뒤에 불린다({@code publisher.close()} 경로).
+     * <b>emitter 를 닫는 것이 여기인 이유</b>는 방 종료 때문이다 — 방을 닫는 스레드가 직접
+     * {@code complete()}를 부르면 마지막 이벤트를 쓰고 있는 이 스레드와 겹쳐서, 클라이언트가
+     * {@code ROOM_CLOSED}를 받기 전에 연결이 끊긴다(#307).
+     *
+     * <p>대기 항목을 버리는 {@code closeExceptionally} 경로는 {@code onError}로 가므로 여기에
+     * 오지 않는다. 그쪽 emitter 는 이미 종료된 연결이다.
+     */
     @Override
     public void onComplete() {
         log.debug("sse emitter dispatcher 완료: roomId={}", roomId);
+        completeQuietly();
+        onTerminated.run();
     }
 
     private void send(SseDispatchTask task) throws IOException {
@@ -121,6 +136,14 @@ class EmitterSubscriber implements Flow.Subscriber<QueuedSseDispatchTask> {
     private void completeWithError(Exception e) {
         try {
             emitter.completeWithError(e);
+        } catch (IllegalStateException ignored) {
+        }
+    }
+
+    /** 이미 닫힌 emitter 에 불려도 터지지 않게 삼킨다. 강제 종료 폴백과 겹칠 수 있다. */
+    private void completeQuietly() {
+        try {
+            emitter.complete();
         } catch (IllegalStateException ignored) {
         }
     }
